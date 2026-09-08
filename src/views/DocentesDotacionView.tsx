@@ -275,8 +275,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     const hTallerSepDoc = d.horasTallerSep || 0;
     const hColabDoc = d.horasTrabajoColaborativo || 0;
 
-    const hInstNoAula = hDir + hInsp + hTec + hCoord + hCoordPie + hConv + hExtra;
-    const hExentas = hInstNoAula + hTallerSepDoc + hColabDoc;
+    const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
+    const pieCronologicas = Math.max(hColabDoc, pedTrabajoColab, hCoordPie, (d.estamento === 'DOCENTE_DIFERENCIAL' || ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 && pedAulaRegular === 0) ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : 0)));
+
+    const hInstNoAula = hDir + hInsp + hTec + hCoord + hConv + hExtra;
+    const hExentas = hInstNoAula + sepExentas + pieCronologicas;
     const horasParaDocencia = Math.max(0, d.horasContrato - hExentas);
     const esExento = horasParaDocencia === 0;
 
@@ -323,11 +326,6 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
-
-    const pieCronologicas = ((d.horasPieTitular || 0) + (d.horasPieContrata || 0)) > 0
-      ? ((d.horasPieTitular || 0) + (d.horasPieContrata || 0))
-      : (hColabDoc || d.horasCoordinacionPie || 0);
-    const sepExentas = hTallerSepDoc;
 
     const auditMulti = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: ped65,

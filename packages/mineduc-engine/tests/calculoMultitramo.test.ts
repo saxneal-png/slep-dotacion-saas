@@ -153,4 +153,28 @@ describe('Motor MINEDUC - B�squeda Inversa y Auditoría Multitramo', () => {
     expect(res.porcentajeLectivoReal).toBe(56.3);
     expect(res.porcentajeLimitePonderado).toBe(64.6);
   });
+
+  it('audita correctamente docente con 37h Subv + 2h SEP Taller + 3h PIE (total 42h) y 32 HA aula', () => {
+    // Caso real: 32 HA aula regular en 65/35 (req 37h), 2h SEP taller extraprogramático, 3h PIE trabajo colaborativo
+    const res = calcularAuditoriaDocenteMultitramo({
+      horasAula65_35: 32, // req: 37h
+      horasAula60_40: 0,
+      horasPieCronologicas: 3, // 3h PIE colaborativo
+      horasTallerSepExento: 2, // 2h SEP taller extraprogramático
+      horasContratoReal: 42
+    });
+
+    expect(res.req65_35).toBe(37);
+    expect(res.horasPie).toBe(3);
+    expect(res.horasTallerSep).toBe(2);
+    expect(res.contratoCalculadoTotal).toBe(42); // 37 + 3 + 2 = 42h
+    expect(res.contratoRegularBase).toBe(37); // 42 - 3 - 2 = 37h base regular
+    expect(res.contratoPonderado65_35).toBe(37);
+    expect(res.saldoHoras).toBe(0); // Exacto
+    expect(res.horasVacantes).toBe(0); // 0 vacantes
+    expect(res.estadoSaldo).toBe('EXACTO');
+    expect(res.esInfractorExcesoLectivo).toBe(false);
+    expect(res.minutosLectivosAula).toBe(32 * 45); // 1440 mins
+    expect(res.minutosLimitePermitido).toBe(1440); // 1440 mins según tabla oficial de 37h
+  });
 });

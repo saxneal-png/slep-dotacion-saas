@@ -348,7 +348,7 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                     )}
 
                     {/* Desglose de Horas Institucionales Fuera de Aula / Exentas */}
-                    {Boolean((c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || 0) + (c.horasTrabajoColaborativo || 0)) && (
+                    {Boolean((c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)) && (
                       <div className="bg-purple-50/60 border border-purple-200 rounded-lg p-3 text-xs">
                         <div className="font-bold text-purple-900 flex items-center justify-between mb-1">
                           <span className="flex items-center gap-1.5">
@@ -356,7 +356,7 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                             Funciones Exentas de Proporción Ley 20.903 (Gestión, Talleres SEP y Trabajo Colaborativo)
                           </span>
                           <span className="text-[10px] bg-purple-200/80 text-purple-800 px-2 py-0.5 rounded-full font-bold">
-                            Total: {(c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || 0) + (c.horasTrabajoColaborativo || 0)} hrs
+                            Total: {(c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)} hrs
                           </span>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px] mt-2">
@@ -380,11 +380,11 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                           </div>
                           <div className="bg-white p-2 rounded border border-purple-100">
                             <span className="text-slate-500 block">Taller SEP:</span>
-                            <strong className="text-emerald-800 font-bold">{c.horasTallerSep || 0} hrs</strong>
+                            <strong className="text-emerald-800 font-bold">{c.horasTallerSep || c.horasTallerSepExento || 0} hrs</strong>
                           </div>
                           <div className="bg-white p-2 rounded border border-purple-100">
                             <span className="text-slate-500 block">Trabajo Colab.:</span>
-                            <strong className="text-indigo-800 font-bold">{c.horasTrabajoColaborativo || 0} hrs</strong>
+                            <strong className="text-indigo-800 font-bold">{c.horasTrabajoColaborativo || c.horasPieCronologicas || 0} hrs</strong>
                           </div>
                         </div>
                         <p className="text-[10px] text-purple-700 mt-2 italic">

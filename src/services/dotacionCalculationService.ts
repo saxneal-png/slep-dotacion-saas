@@ -208,8 +208,11 @@ export function calcularDiagnosticoColegio(
     // Solo las horas de aula regular lectivas se comparan con la demanda curricular del plan
     horasLectivasAsignadas += pedAulaRegular;
 
-    // Deducir funciones exentas de proporción (Directivas, Inspectoría, UTP, Coordinación, Taller SEP, Trabajo Colaborativo)
-    const hExentas = hDir + hInsp + hTec + hCoord + hCoordPie + hConv + hExtra + hTallerSepDoc + hColabDoc;
+    // Deducir funciones exentas de proporción (Directivas, Inspectoría, UTP, Coordinación, Taller SEP, Trabajo Colaborativo / PIE)
+    const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
+    const pieCronologicas = Math.max(hColabDoc, pedTrabajoColab, hCoordPie, (doc.estamento === 'DOCENTE_DIFERENCIAL' || ((Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0)) > 0 && pedAulaRegular === 0) ? (Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0)) : 0));
+
+    const hExentas = hDir + hInsp + hTec + hCoord + hConv + hExtra + sepExentas + pieCronologicas;
     const horasParaDocenciaAula = Math.max(0, doc.horasContrato - hExentas);
 
     // Verificar si el docente imparte clases en algún curso con régimen 60/40 (ej. NT1 a 4° Básico)
@@ -257,8 +260,8 @@ export function calcularDiagnosticoColegio(
       );
     }
 
-    const hInstNoAula = hDir + hInsp + hTec + hCoord + hCoordPie + hConv + hExtra;
-    const cargaTotalTrabajo = pedTotalAsignadas + hInstNoAula;
+    const hInstNoAula = hDir + hInsp + hTec + hCoord + hConv + hExtra;
+    const cargaTotalTrabajo = pedAulaRegular + pedCoDocencia + sepExentas + pieCronologicas + hInstNoAula;
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
 
     return {
@@ -584,8 +587,30 @@ export function obtenerDocentesConsolidadosTerritorio(
       const hTallerSepDoc = doc.horasTallerSep || 0;
       const hColabDoc = doc.horasTrabajoColaborativo || 0;
 
-      const hInstNoAula = hDir + hInsp + hTec + hCoord + hCoordPie + hConv + hExtra;
-      const hExentas = hInstNoAula + hTallerSepDoc + hColabDoc;
+      // Fuentes de financiamiento
+      let subTit = Number(doc.horasSubvencionGeneralTitular || 0);
+      let subCon = Number(doc.horasSubvencionGeneralContrata || 0);
+      let sepTit = Number(doc.horasSepTitular || 0);
+      let sepCon = Number(doc.horasSepContrata || 0);
+      let pieTit = Number(doc.horasPieTitular || 0);
+      let pieCon = Number(doc.horasPieContrata || 0);
+
+      const sumaF = subTit + subCon + sepTit + sepCon + pieTit + pieCon;
+      if (sumaF === 0 && doc.horasContrato > 0) {
+        if (doc.calidadJuridica === 'TITULAR') {
+          subTit = doc.horasContrato;
+        } else {
+          subCon = doc.horasContrato;
+        }
+      }
+
+      // Horas PIE cronológicas directas (Dec. 170 / Trabajo Colaborativo)
+      const pieCronologicas = Math.max(hColabDoc, pedTrabajoColab, hCoordPie, (doc.estamento === 'DOCENTE_DIFERENCIAL' || ((pieTit + pieCon > 0) && pedAulaRegular === 0) ? (pieTit + pieCon) : (pieTit + pieCon > 0 ? (pieTit + pieCon) : 0)));
+      // Horas SEP exentas (talleres específicos fuera de aula regular / financiamiento SEP)
+      const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
+
+      const hInstNoAula = hDir + hInsp + hTec + hCoord + hConv + hExtra;
+      const hExentas = hInstNoAula + sepExentas + pieCronologicas;
       const horasDocenciaNeta = Math.max(0, doc.horasContrato - hExentas);
 
       const regimen: '65/35' | '60/40' = colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
@@ -620,28 +645,6 @@ export function obtenerDocentesConsolidadosTerritorio(
             excesoHoras: pedAulaRegular,
             mensaje: ''
           };
-
-      // Fuentes de financiamiento
-      let subTit = Number(doc.horasSubvencionGeneralTitular || 0);
-      let subCon = Number(doc.horasSubvencionGeneralContrata || 0);
-      let sepTit = Number(doc.horasSepTitular || 0);
-      let sepCon = Number(doc.horasSepContrata || 0);
-      let pieTit = Number(doc.horasPieTitular || 0);
-      let pieCon = Number(doc.horasPieContrata || 0);
-
-      const sumaF = subTit + subCon + sepTit + sepCon + pieTit + pieCon;
-      if (sumaF === 0 && doc.horasContrato > 0) {
-        if (doc.calidadJuridica === 'TITULAR') {
-          subTit = doc.horasContrato;
-        } else {
-          subCon = doc.horasContrato;
-        }
-      }
-
-      // Horas PIE cronológicas directas (Dec. 170 / Trabajo Colaborativo)
-      const pieCronologicas = (pieTit + pieCon) > 0 ? (pieTit + pieCon) : (hColabDoc || hCoordPie);
-      // Horas SEP exentas (talleres específicos fuera de aula regular)
-      const sepExentas = hTallerSepDoc;
       const cursosColegio = (cursos || []).filter(c => c.rbd === colegio.rbd);
 
       const horasAula65_35 = asigsAulaRegular
@@ -692,8 +695,8 @@ export function obtenerDocentesConsolidadosTerritorio(
         horasInspectorGeneral: hInsp,
         horasTecnicoPedagogicas: hTec,
         horasCoordinacion: hCoord,
-        horasTallerSep: hTallerSepDoc,
-        horasTrabajoColaborativo: hColabDoc,
+        horasTallerSep: sepExentas,
+        horasTrabajoColaborativo: pieCronologicas,
         horasCoDocencia: pedCoDocencia,
         horasAulaRegular: pedAulaRegular,
         esExentoProporcion: horasDocenciaNeta === 0,
