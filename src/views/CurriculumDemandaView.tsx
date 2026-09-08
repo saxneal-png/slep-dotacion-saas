@@ -70,7 +70,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   // Curso seleccionado y subpestaña activa
   const [cursoSeleccionadoPlan, setCursoSeleccionadoPlan] = useState<string>(cursos[0]?.id || '');
-  const [tabCurso, setTabCurso] = useState<'docencia' | 'pie' | 'malla'>('docencia');
+  const [tabCurso, setTabCurso] = useState<'docencia' | 'codocencia' | 'pie' | 'malla'>('docencia');
   const [busquedaCurso, setBusquedaCurso] = useState('');
 
   // Modal Docencia Regular
@@ -80,6 +80,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [docenciaAsignatura, setDocenciaAsignatura] = useState('');
   const [docenciaHoras, setDocenciaHoras] = useState(4);
   const [docenciaTipoFuncion, setDocenciaTipoFuncion] = useState<'CURRICULAR' | 'TALLER_JEC' | 'TALLER_SEP' | 'TRABAJO_COLABORATIVO'>('CURRICULAR');
+
+  // Modal Co-Docencia (No PIE) / Agrupaciones Flexibles
+  const [modalCoDocenciaOpen, setModalCoDocenciaOpen] = useState(false);
+  const [editandoAsigCoDocencia, setEditandoAsigCoDocencia] = useState<AsignacionHoraria | null>(null);
+  const [coDocDocenteId, setCoDocDocenteId] = useState('');
+  const [coDocAsignatura, setCoDocAsignatura] = useState('');
+  const [coDocHoras, setCoDocHoras] = useState(4);
+  const [coDocTipoModalidad, setCoDocTipoModalidad] = useState<'AGRUPACION_FLEXIBLE' | 'CO_DOCENCIA' | 'REFUERZO_AULA' | 'APOYO_DOCENTE'>('AGRUPACION_FLEXIBLE');
+  const [coDocEsSep, setCoDocEsSep] = useState(false);
 
   // Modal Apoyo PIE
   const [modalPieOpen, setModalPieOpen] = useState(false);
@@ -102,16 +111,30 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     );
   }
 
-  // Helper para discriminar si una asignación es de Apoyo PIE o Docencia Regular
+  // Helper para discriminar si una asignación es de Apoyo PIE (Decreto 170)
   const esApoyoPie = (a: AsignacionHoraria) => {
     return (
-      a.esCoDocencia === true ||
       a.tipoApoyo === 'PIE' ||
       (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
       (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
-      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('co-docencia')) ||
-      (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
-      (a.asignatura && a.asignatura.toLowerCase().includes('codocenc'))
+      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('co-docencia en aula regular')) ||
+      (a.asignatura && a.asignatura.toLowerCase().includes('pie'))
+    );
+  };
+
+  // Helper para discriminar Co-Docencia no PIE / Agrupaciones Flexibles
+  const esCoDocenciaNoPie = (a: AsignacionHoraria) => {
+    if (esApoyoPie(a)) return false;
+    return (
+      a.esCoDocencia === true ||
+      a.esAgrupacionFlexible === true ||
+      a.tipoApoyo === 'CO_DOCENCIA' ||
+      a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
+      a.tipoApoyo === 'REFUERZO_AULA' ||
+      a.tipoApoyo === 'APOYO_DOCENTE' ||
+      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('agrupaci')) ||
+      (a.asignatura && a.asignatura.toLowerCase().includes('agrupaci')) ||
+      (a.asignatura && a.asignatura.toLowerCase().includes('co-docenc') && !a.asignatura.toLowerCase().includes('pie'))
     );
   };
 
@@ -119,7 +142,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const disponibilidadDocentes = useMemo(() => {
     const mapa = new Map<string, { horasAsignadas: number; horasLibres: number }>();
     for (const d of docentes) {
-      const asigsD = asignaciones.filter(a => a.docenteId === d.id);
+      const asigsD = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
       const totalAsig = asigsD.reduce((sum, a) => {
         return sum + (a.horasPedagogicasAula || a.horasCronologicasPie || 0);
       }, 0);
@@ -168,23 +191,39 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     return asignaciones.filter(a => a.cursoId === cursoActivo.id);
   }, [asignaciones, cursoActivo]);
 
-  const asignacionesDocenciaCurso = useMemo(() => {
-    return asignacionesCurso.filter(a => !esApoyoPie(a));
+  // Solo las horas de Malla Regular y Talleres JEC oficiales del plan suman a la cobertura del plan de estudio (38h/30h)
+  // Las horas SEP, Co-Docencia no PIE, Agrupaciones Flexibles, Trabajo Colaborativo y PIE NO suman al plan de estudio del curso
+  const asignacionesPlanRegularCurso = useMemo(() => {
+    return asignacionesCurso.filter(
+      a => !esApoyoPie(a) &&
+           !esCoDocenciaNoPie(a) &&
+           !a.esTallerSep &&
+           a.tipoApoyo !== 'TALLER_SEP' &&
+           !a.esTrabajoColaborativo &&
+           a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
+    );
   }, [asignacionesCurso]);
 
-  // Solo las horas de Malla Regular y JEC suman a la cobertura del plan de estudio (38h/30h)
-  const asignacionesPlanRegularCurso = useMemo(() => {
-    return asignacionesDocenciaCurso.filter(a => !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO');
-  }, [asignacionesDocenciaCurso]);
+  // Asignaciones de Co-Docencia No PIE y Agrupaciones Flexibles
+  const asignacionesCoDocenciaCurso = useMemo(() => {
+    return asignacionesCurso.filter(a => esCoDocenciaNoPie(a));
+  }, [asignacionesCurso]);
 
+  // Asignaciones de Apoyo PIE (Decreto 170)
   const asignacionesPieCurso = useMemo(() => {
     return asignacionesCurso.filter(a => esApoyoPie(a));
   }, [asignacionesCurso]);
 
+  // Asignaciones generales de docencia (no PIE)
+  const asignacionesDocenciaCurso = useMemo(() => {
+    return asignacionesCurso.filter(a => !esApoyoPie(a) && !esCoDocenciaNoPie(a));
+  }, [asignacionesCurso]);
+
   // Sumas del curso activo: La co-docencia y talleres SEP NO inflan el plan de estudio regular
   const totalHorasDocenciaAsignadas = asignacionesPlanRegularCurso.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
-  const totalHorasTallerSepAsignadas = asignacionesDocenciaCurso.filter(a => a.esTallerSep).reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
-  const totalHorasColaborativoAsignadas = asignacionesDocenciaCurso.filter(a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO').reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+  const totalHorasCoDocenciaAsignadas = asignacionesCoDocenciaCurso.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+  const totalHorasTallerSepAsignadas = asignacionesCurso.filter(a => a.esTallerSep || a.tipoApoyo === 'TALLER_SEP').reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+  const totalHorasColaborativoAsignadas = asignacionesCurso.filter(a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO').reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
   const totalHorasPieAsignadas = asignacionesPieCurso.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
 
   // Demanda normativa PIE según Decreto 170 y Ord. 2398
@@ -233,8 +272,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     return sumCursos + totalHorasTransversales;
   }, [cursos, totalHorasTransversales]);
 
-  // Total de horas docencia asignadas en todo el colegio
-  const totalHorasAsignadasDocenciaColegio = asignaciones.filter(a => !esApoyoPie(a)).reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+  // Total de horas docencia del plan regular asignadas en todo el colegio (sin inflar con SEP ni Co-Docencia)
+  const totalHorasAsignadasDocenciaColegio = asignaciones.filter(a =>
+    !esApoyoPie(a) &&
+    !esCoDocenciaNoPie(a) &&
+    !a.esTallerSep &&
+    a.tipoApoyo !== 'TALLER_SEP' &&
+    !a.esTrabajoColaborativo &&
+    a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
+  ).reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
   // Handlers para guardar y eliminar asignación Docencia Regular / Talleres
   const abrirModalNuevaDocencia = (asignaturaSugerida?: string, horasSugeridas?: number) => {
@@ -290,6 +336,58 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
     await onGuardarAsignacion(asig);
     setModalDocenciaOpen(false);
+  };
+
+  // Handlers para guardar y eliminar Co-Docencia (No PIE) / Agrupaciones Flexibles
+  const abrirModalNuevaCoDocencia = (asigSugerida?: string, hrsSugeridas?: number) => {
+    setEditandoAsigCoDocencia(null);
+    setCoDocAsignatura(asigSugerida || (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación'));
+    setCoDocHoras(hrsSugeridas || 4);
+    setCoDocTipoModalidad('AGRUPACION_FLEXIBLE');
+    setCoDocEsSep(false);
+    const docSugerido = docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0];
+    setCoDocDocenteId(docSugerido ? docSugerido.id : '');
+    setModalCoDocenciaOpen(true);
+  };
+
+  const abrirModalEditarCoDocencia = (asig: AsignacionHoraria) => {
+    setEditandoAsigCoDocencia(asig);
+    setCoDocDocenteId(asig.docenteId);
+    setCoDocAsignatura(asig.asignatura);
+    setCoDocHoras(asig.horasPedagogicasAula);
+    if (asig.tipoApoyo === 'CO_DOCENCIA') {
+      setCoDocTipoModalidad('CO_DOCENCIA');
+    } else if (asig.tipoApoyo === 'REFUERZO_AULA') {
+      setCoDocTipoModalidad('REFUERZO_AULA');
+    } else if (asig.tipoApoyo === 'APOYO_DOCENTE') {
+      setCoDocTipoModalidad('APOYO_DOCENTE');
+    } else {
+      setCoDocTipoModalidad('AGRUPACION_FLEXIBLE');
+    }
+    setCoDocEsSep(Boolean(asig.esTallerSep));
+    setModalCoDocenciaOpen(true);
+  };
+
+  const handleGuardarCoDocenciaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cursoActivo || !coDocDocenteId || !onGuardarAsignacion) return;
+
+    const asig: AsignacionHoraria = {
+      id: editandoAsigCoDocencia ? editandoAsigCoDocencia.id : `asig-codoc-${Date.now()}`,
+      rbd: colegio.rbd,
+      periodo: periodoActivo,
+      cursoId: cursoActivo.id,
+      docenteId: coDocDocenteId,
+      asignatura: coDocAsignatura,
+      horasPedagogicasAula: Number(coDocHoras),
+      esCoDocencia: true,
+      esAgrupacionFlexible: coDocTipoModalidad === 'AGRUPACION_FLEXIBLE',
+      esTallerSep: coDocEsSep,
+      tipoApoyo: coDocTipoModalidad
+    };
+
+    await onGuardarAsignacion(asig);
+    setModalCoDocenciaOpen(false);
   };
 
   // Handlers para guardar y eliminar asignación PIE
@@ -527,9 +625,25 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
                 const hrsPlan = plan ? plan.totalHorasPlan : c.regimen === 'JEC' ? 38 : 30;
 
-                // Horas de docencia asignadas en este curso
-                const asigsDoc = asignaciones.filter(a => a.cursoId === c.id && !esApoyoPie(a));
-                const totDocAsig = asigsDoc.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+                // Horas de docencia asignadas en el plan regular de este curso (sin inflar por SEP, Co-Docencia ni PIE)
+                const asigsPlanReg = asignaciones.filter(a =>
+                  a.cursoId === c.id &&
+                  !esApoyoPie(a) &&
+                  !esCoDocenciaNoPie(a) &&
+                  !a.esTallerSep &&
+                  a.tipoApoyo !== 'TALLER_SEP' &&
+                  !a.esTrabajoColaborativo &&
+                  a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
+                );
+                const totDocPlanAsig = asigsPlanReg.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+
+                // Horas de Co-Docencia No PIE y Agrupaciones Flexibles
+                const asigsCoDoc = asignaciones.filter(a => a.cursoId === c.id && esCoDocenciaNoPie(a));
+                const totCoDoc = asigsCoDoc.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+
+                // Horas de Talleres SEP
+                const asigsSep = asignaciones.filter(a => a.cursoId === c.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP'));
+                const totSep = asigsSep.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
                 // Demanda y asignación PIE en este curso
                 const cNeet = c.alumnosNeet !== undefined ? c.alumnosNeet : 5;
@@ -538,9 +652,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 const asigsPie = asignaciones.filter(a => a.cursoId === c.id && esApoyoPie(a));
                 const totPieAsig = asigsPie.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
 
-                const coberturaDocPct = hrsPlan > 0 ? Math.round((totDocAsig / hrsPlan) * 100) : 0;
-                const docColor = totDocAsig === hrsPlan ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
-                                 totDocAsig > hrsPlan ? 'text-red-700 bg-red-50 border-red-200' :
+                const coberturaDocPct = hrsPlan > 0 ? Math.round((totDocPlanAsig / hrsPlan) * 100) : 0;
+                const docColor = totDocPlanAsig === hrsPlan ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+                                 totDocPlanAsig > hrsPlan ? 'text-red-700 bg-red-50 border-red-200' :
                                  'text-amber-700 bg-amber-50 border-amber-200';
 
                 return (
@@ -582,11 +696,27 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
                     {/* Badges de Cobertura */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
-                      {/* Badge Docencia */}
+                      {/* Badge Docencia Plan Regular */}
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${docColor}`}>
                         <BookOpen className="w-3 h-3" />
-                        {totDocAsig}/{hrsPlan} HA ({coberturaDocPct}%)
+                        {totDocPlanAsig}/{hrsPlan} HA ({coberturaDocPct}%)
                       </span>
+
+                      {/* Badge Co-Docencia no PIE */}
+                      {totCoDoc > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200">
+                          <Users className="w-3 h-3 text-indigo-600" />
+                          {totCoDoc}h Co-Doc
+                        </span>
+                      )}
+
+                      {/* Badge SEP */}
+                      {totSep > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold text-emerald-700 bg-emerald-50 border-emerald-200">
+                          <Sparkles className="w-3 h-3 text-emerald-600" />
+                          {totSep}h SEP
+                        </span>
+                      )}
 
                       {/* Badge PIE */}
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold text-purple-700 bg-purple-50 border-purple-200">
@@ -872,10 +1002,13 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                      totalHorasDocenciaAsignadas > horasPlanCurso ? `⚠️ Exceso de ${totalHorasDocenciaAsignadas - horasPlanCurso} HA` :
                      `Faltan ${horasPlanCurso - totalHorasDocenciaAsignadas} HA`}
                   </div>
-                  {(totalHorasTallerSepAsignadas > 0 || totalHorasColaborativoAsignadas > 0) && (
-                    <div className="text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-200 flex justify-end gap-2">
+                  {(totalHorasCoDocenciaAsignadas > 0 || totalHorasTallerSepAsignadas > 0 || totalHorasColaborativoAsignadas > 0) && (
+                    <div className="text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-200 flex justify-end gap-2 flex-wrap">
+                      {totalHorasCoDocenciaAsignadas > 0 && (
+                        <span className="text-indigo-700 font-semibold">+{totalHorasCoDocenciaAsignadas} HA Co-Docencia (Exenta de Plan)</span>
+                      )}
                       {totalHorasTallerSepAsignadas > 0 && (
-                        <span className="text-emerald-700 font-semibold">+{totalHorasTallerSepAsignadas} HA SEP (Exenta)</span>
+                        <span className="text-emerald-700 font-semibold">+{totalHorasTallerSepAsignadas} HA SEP (Exenta de Plan)</span>
                       )}
                       {totalHorasColaborativoAsignadas > 0 && (
                         <span className="text-purple-700 font-semibold">+{totalHorasColaborativoAsignadas} HA Colab (Exenta)</span>
@@ -902,6 +1035,19 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
                 <button
                   type="button"
+                  onClick={() => setTabCurso('codocencia')}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
+                    tabCurso === 'codocencia'
+                      ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <Users className="w-4 h-4 text-indigo-600" />
+                  <span>Co-Docencia & Agrupaciones ({totalHorasCoDocenciaAsignadas} HA)</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setTabCurso('pie')}
                   className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
                     tabCurso === 'pie'
@@ -910,7 +1056,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   }`}
                 >
                   <ShieldCheck className="w-4 h-4 text-purple-600" />
-                  <span>Apoyo PIE / Co-Docencia ({totalHorasPieAsignadas.toFixed(1)}/{demandaPieCurso.horasTotalCronologicas.toFixed(1)} hrs)</span>
+                  <span>Apoyo PIE ({totalHorasPieAsignadas.toFixed(1)}/{demandaPieCurso.horasTotalCronologicas.toFixed(1)} hrs)</span>
                 </button>
 
                 <button
@@ -963,14 +1109,14 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {asignacionesDocenciaCurso.length === 0 ? (
+                        {asignacionesPlanRegularCurso.length === 0 ? (
                           <tr>
                             <td colSpan={5} className="p-6 text-center text-slate-400 italic">
                               No hay docentes ni asignaturas asignadas a este curso aún. Haz clic en <strong>"+ Asignar Docente / Asignatura"</strong> o selecciona una materia del plan sugerido abajo.
                             </td>
                           </tr>
                         ) : (
-                          asignacionesDocenciaCurso.map(a => {
+                          asignacionesPlanRegularCurso.map(a => {
                             const doc = docentes.find(d => d.id === a.docenteId);
                             const disp = doc ? disponibilidadDocentes.get(doc.id) : null;
 
@@ -999,14 +1145,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                   {a.esTallerJec ? (
                                     <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
                                       Taller JEC
-                                    </span>
-                                  ) : a.esTallerSep ? (
-                                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                                      Taller SEP (Exento)
-                                    </span>
-                                  ) : (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO') ? (
-                                    <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold">
-                                      Trabajo Colab. (Exento)
                                     </span>
                                   ) : (
                                     <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">
@@ -1054,7 +1192,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     </h5>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       {planActivo.asignaturasBase.map((asig, i) => {
-                        const yaAsignada = asignacionesDocenciaCurso.some(a =>
+                        const yaAsignada = asignacionesPlanRegularCurso.some(a =>
                           a.asignatura.toLowerCase().includes(asig.nombre.toLowerCase()) ||
                           asig.nombre.toLowerCase().includes(a.asignatura.toLowerCase())
                         );
@@ -1094,7 +1232,180 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
               )}
 
               {/* ========================================================= */}
-              {/* SUBPESTAÑA 2: APOYO PIE (DECRETO 170 / CO-DOCENCIA & PAE) */}
+              {/* SUBPESTAÑA 2: CO-DOCENCIA & AGRUPACIONES FLEXIBLES (NO PIE) */}
+              {/* ========================================================= */}
+              {tabCurso === 'codocencia' && (
+                <div className="space-y-4 pt-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-50/70 p-4 rounded-xl border border-indigo-200">
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[11px] font-bold mb-1">
+                        <Users className="w-3.5 h-3.5 text-indigo-700" />
+                        Co-Enseñanza & Apoyo Pedagógico en Sala (No PIE)
+                      </div>
+                      <h4 className="text-sm font-bold text-indigo-950">
+                        Co-Docencia, Agrupaciones Flexibles y Refuerzo de Aula
+                      </h4>
+                      <p className="text-[11px] text-indigo-900/80 mt-0.5 max-w-xl">
+                        Asigna docentes o funcionarios de apoyo (segundo profesor, división de grupos, refuerzo pedagógico). Suman horas al contrato del funcionario pero <strong>no inflan el plan de estudio oficial del curso</strong> ({horasPlanCurso} HA).
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => abrirModalNuevaCoDocencia()}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all whitespace-nowrap"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>+ Asignar Co-Docencia</span>
+                    </button>
+                  </div>
+
+                  {/* Tarjetas Resumen de Co-Docencia */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-3 bg-indigo-50/40 rounded-xl border border-indigo-100">
+                      <span className="text-[10px] uppercase font-bold text-indigo-800 block">Total Horas Co-Docencia</span>
+                      <div className="text-xl font-black text-indigo-950 mt-0.5 flex items-baseline gap-1">
+                        <span>{totalHorasCoDocenciaAsignadas}</span>
+                        <span className="text-xs font-semibold text-indigo-700">HA</span>
+                      </div>
+                      <span className="text-[10px] text-indigo-600 mt-0.5 block">Suma a carga de docentes</span>
+                    </div>
+
+                    <div className="p-3 bg-white rounded-xl border border-slate-200">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Agrupaciones Flexibles</span>
+                      <div className="text-xl font-black text-slate-800 mt-0.5 flex items-baseline gap-1">
+                        <span>
+                          {asignacionesCoDocenciaCurso.filter(a => a.esAgrupacionFlexible || a.tipoApoyo === 'AGRUPACION_FLEXIBLE').reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0)}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-500">HA</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">División modular de cursos</span>
+                    </div>
+
+                    <div className="p-3 bg-emerald-50/40 rounded-xl border border-emerald-100">
+                      <span className="text-[10px] uppercase font-bold text-emerald-800 block">Financiadas con SEP</span>
+                      <div className="text-xl font-black text-emerald-950 mt-0.5 flex items-baseline gap-1">
+                        <span>
+                          {asignacionesCoDocenciaCurso.filter(a => a.esTallerSep).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0)}
+                        </span>
+                        <span className="text-xs font-semibold text-emerald-700">HA</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-600 mt-0.5 block">Refuerzo SEP en aula</span>
+                    </div>
+                  </div>
+
+                  {/* Tabla de Asignaciones de Co-Docencia */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-xs text-slate-600">
+                      <thead className="bg-indigo-50/60 text-indigo-950 uppercase font-semibold text-[10px] border-b border-indigo-100">
+                        <tr>
+                          <th className="px-4 py-2.5">Asignatura Apoyada</th>
+                          <th className="px-4 py-2.5">Docente / Funcionario de Apoyo</th>
+                          <th className="px-4 py-2.5">Modalidad de Apoyo</th>
+                          <th className="px-4 py-2.5 text-center">Horas Aula (HA)</th>
+                          <th className="px-4 py-2.5 text-center">Financiamiento</th>
+                          <th className="px-4 py-2.5 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {asignacionesCoDocenciaCurso.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="p-6 text-center text-slate-400 italic">
+                              No hay registros de co-docencia ni agrupaciones flexibles en este curso. Usa el botón <strong>"+ Asignar Co-Docencia"</strong> para agregar un docente de apoyo en sala.
+                            </td>
+                          </tr>
+                        ) : (
+                          asignacionesCoDocenciaCurso.map(a => {
+                            const doc = docentes.find(d => d.id === a.docenteId);
+                            const disp = doc ? disponibilidadDocentes.get(doc.id) : null;
+
+                            return (
+                              <tr key={a.id} className="hover:bg-indigo-50/30">
+                                <td className="px-4 py-2.5 font-bold text-slate-800 flex items-center gap-2">
+                                  <Users className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+                                  <span>{a.asignatura}</span>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {doc ? (
+                                    <div>
+                                      <div className="font-bold text-slate-800">{doc.nombres} {doc.apellidos}</div>
+                                      <div className="text-[10px] text-slate-500">
+                                        RUN: {doc.run} • {doc.estamento} • Contrato: {doc.horasContrato}h (Asig: {disp?.horasAsignadas || 0}h)
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-amber-600 italic">Docente no especificado</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {a.esAgrupacionFlexible || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ? (
+                                    <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold text-[10px]">
+                                      Agrupación Flexible
+                                    </span>
+                                  ) : a.tipoApoyo === 'REFUERZO_AULA' ? (
+                                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                                      Refuerzo en Sala
+                                    </span>
+                                  ) : a.tipoApoyo === 'APOYO_DOCENTE' ? (
+                                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">
+                                      Apoyo Docente
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">
+                                      Co-Docencia (2° Docente)
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-center font-bold text-indigo-900 text-sm">
+                                  {a.horasPedagogicasAula} HA
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  {a.esTallerSep ? (
+                                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                      SEP (Exento)
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                                      Subv. General
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirModalEditarCoDocencia(a)}
+                                      className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
+                                      title="Editar co-docencia"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (confirm(`¿Eliminar el apoyo de co-docencia en ${a.asignatura}?`)) {
+                                          if (onEliminarAsignacion) await onEliminarAsignacion(a.id);
+                                        }
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
+                                      title="Eliminar co-docencia"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* SUBPESTAÑA 3: APOYO PIE (DECRETO 170 / CO-DOCENCIA & PAE) */}
               {/* ========================================================= */}
               {tabCurso === 'pie' && (
                 <div className="space-y-4 pt-2">
@@ -1682,6 +1993,144 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow"
                 >
                   {editandoAsigDocencia ? 'Guardar Cambios' : 'Asignar Docencia'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 2.5: ASIGNAR / EDITAR CO-DOCENCIA (NO PIE)          */}
+      {/* ========================================================= */}
+      {modalCoDocenciaOpen && cursoActivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-base font-bold text-indigo-950 flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-600" />
+                {editandoAsigCoDocencia ? 'Editar Co-Docencia / Apoyo' : 'Asignar Co-Docencia / Agrupación Flexible'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalCoDocenciaOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarCoDocenciaSubmit} className="space-y-4 text-xs mt-4">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
+                <input
+                  type="text"
+                  disabled
+                  value={`${cursoActivo.nivel} ${cursoActivo.letra} (${cursoActivo.regimen})`}
+                  className="w-full px-3 py-2 border rounded-lg bg-indigo-50/70 text-indigo-950 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Modalidad de Apoyo / Co-Enseñanza *</label>
+                <select
+                  value={coDocTipoModalidad}
+                  onChange={e => setCoDocTipoModalidad(e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                >
+                  <option value="AGRUPACION_FLEXIBLE">Agrupación Flexible (División de subgrupos en aula)</option>
+                  <option value="CO_DOCENCIA">Co-Docencia Regular (2° Docente en sala simultáneo)</option>
+                  <option value="REFUERZO_AULA">Refuerzo Pedagógico en Sala (Nivelación)</option>
+                  <option value="APOYO_DOCENTE">Apoyo Docente / Asistente Pedagógico</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Asignatura o Área Apoyada *</label>
+                <input
+                  type="text"
+                  required
+                  list="sugerencias-materias-codoc"
+                  value={coDocAsignatura}
+                  onChange={e => setCoDocAsignatura(e.target.value)}
+                  placeholder="Ej. Lenguaje y Comunicación, Matemática..."
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold"
+                />
+                <datalist id="sugerencias-materias-codoc">
+                  {planActivo?.asignaturasBase.map((asig, i) => (
+                    <option key={i} value={asig.nombre} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Docente o Funcionario de Apoyo *
+                </label>
+                <select
+                  required
+                  value={coDocDocenteId}
+                  onChange={e => setCoDocDocenteId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                >
+                  <option value="">-- Seleccionar Docente / Funcionario --</option>
+                  {docentes.map(d => {
+                    const disp = disponibilidadDocentes.get(d.id);
+                    return (
+                      <option key={d.id} value={d.id}>
+                        {d.nombres} {d.apellidos} ({d.estamento}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Horas Pedagógicas (HA) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    required
+                    value={coDocHoras}
+                    onChange={e => setCoDocHoras(parseInt(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-center font-bold text-indigo-700 text-base"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">1 HA = 45 minutos</p>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Fuente Financiamiento</label>
+                  <select
+                    value={coDocEsSep ? 'SEP' : 'SUB_GEN'}
+                    onChange={e => setCoDocEsSep(e.target.value === 'SEP')}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                  >
+                    <option value="SUB_GEN">Subvención General</option>
+                    <option value="SEP">SEP (Refuerzo/PME)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">{coDocEsSep ? 'Exento prop. 65/35' : 'Carga regular'}</p>
+                </div>
+              </div>
+
+              <div className="p-2.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-[11px]">
+                ℹ️ Esta asignación sumará a la carga horaria del docente seleccionado, pero <strong>no inflará las {horasPlanCurso} HA del Plan de Estudio del curso</strong>.
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setModalCoDocenciaOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow"
+                >
+                  {editandoAsigCoDocencia ? 'Guardar Cambios' : 'Asignar Co-Docencia'}
                 </button>
               </div>
             </form>

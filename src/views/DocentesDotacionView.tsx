@@ -327,11 +327,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
   // Resúmenes de sobreasignación considerando horas directivas, inspectoría, UTP, coordinaciones, taller SEP y trabajo colaborativo
   const docentesAuditados = docentes.map(d => {
-    const asigs = asignaciones.filter(a => a.docenteId === d.id);
-    const asigsAulaRegular = asigs.filter(a => !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO');
-    const asigsCoDocencia = asigs.filter(a => a.esCoDocencia);
-    const asigsTallerSep = asigs.filter(a => a.esTallerSep);
-    const asigsTrabajoColab = asigs.filter(a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO');
+    const asigs = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
+    const asigsCoDocencia = asigs.filter(a => (a.coDocenteId === d.id && a.tieneCoDocente) || a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE');
+    const asigsTallerSep = asigs.filter(a => a.docenteId === d.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP'));
+    const asigsTrabajoColab = asigs.filter(a => a.docenteId === d.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO'));
+    const asigsAulaRegular = asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a));
 
     const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
     const pedCoDocencia = asigsCoDocencia.reduce((s, a) => s + a.horasPedagogicasAula, 0);

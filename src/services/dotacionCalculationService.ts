@@ -198,16 +198,16 @@ export function calcularDiagnosticoColegio(
     const docenteAsigs = asignaciones.filter(a => a.docenteId === doc.id);
     const coDocenteAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
 
-    const asigsAulaRegular = docenteAsigs.filter(
-      a => !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
-    );
     const asigsCoDocencia = [
-      ...docenteAsigs.filter(a => a.esCoDocencia),
+      ...docenteAsigs.filter(a => a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'),
       ...coDocenteAsigs
     ];
-    const asigsTallerSep = docenteAsigs.filter(a => a.esTallerSep);
+    const asigsTallerSep = docenteAsigs.filter(a => a.esTallerSep || a.tipoApoyo === 'TALLER_SEP');
     const asigsTrabajoColaborativo = docenteAsigs.filter(
       a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO' || a.asignatura.toLowerCase().includes('colaborativ')
+    );
+    const asigsAulaRegular = docenteAsigs.filter(
+      a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a)
     );
 
     const pedAulaRegular = asigsAulaRegular.reduce((sum, a) => sum + a.horasPedagogicasAula, 0);
@@ -589,17 +589,17 @@ export function obtenerDocentesConsolidadosTerritorio(
         a => a.rbd === doc.rbd && (a.docenteId === doc.id || (a.coDocenteId === doc.id && a.tieneCoDocente))
       );
 
-      const asigsAulaRegular = asigsColegio.filter(
-        a => a.docenteId === doc.id && !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
-      );
       const asigsCoDocencia = asigsColegio.filter(
-        a => (a.coDocenteId === doc.id && a.tieneCoDocente) || (a.docenteId === doc.id && a.esCoDocencia)
+        a => (a.coDocenteId === doc.id && a.tieneCoDocente) || (a.docenteId === doc.id && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'))
       );
       const asigsTallerSep = asigsColegio.filter(
-        a => a.docenteId === doc.id && a.esTallerSep
+        a => a.docenteId === doc.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP')
       );
       const asigsTrabajoColaborativo = asigsColegio.filter(
         a => a.docenteId === doc.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO' || a.asignatura.toLowerCase().includes('colaborativ'))
+      );
+      const asigsAulaRegular = asigsColegio.filter(
+        a => a.docenteId === doc.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a)
       );
 
       const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
