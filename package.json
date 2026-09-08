@@ -1,0 +1,72 @@
+{
+  "name": "slep-valle-diguillin-dotacion",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Sistema Consolidador de Dotación Docente y Auditoría PIE - SLEP Valle Diguillín (Standalone Desktop)",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "test": "vitest run",
+    "test:engine": "vitest run packages/mineduc-engine/tests",
+    "test:all": "vitest run",
+    "dev": "vite",
+    "build": "tsc -b && vite build && esbuild electron/main.ts --bundle --platform=node --external:electron --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs",
+    "electron:dev": "vite",
+    "pack": "electron-builder --dir",
+    "dist": "npm run build && electron-builder --win portable"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "author": "UATP SLEP Valle Diguillín",
+  "license": "ISC",
+  "dependencies": {
+    "@slep/mineduc-engine": "*",
+    "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5",
+    "lucide-react": "^1.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sql.js": "^1.12.0",
+    "tailwind-merge": "^2.5.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/file-saver": "^2.0.7",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/sql.js": "^1.4.9",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vite-plugin-electron": "^0.29.0",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "cl.gob.slepvallediguillin.dotacion",
+    "productName": "Consolidador Dotación SLEP Valle Diguillín",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/sql.js/dist/sql-wasm.wasm"
+    ],
+    "asarUnpack": [
+      "**/*.wasm"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "public/icon.png"
+    }
+  }
+}

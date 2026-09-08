@@ -1,0 +1,1922 @@
+import React, { useState, useMemo } from 'react';
+import {
+  BookOpen, Plus, Clock, Trash2, Layers, ShieldCheck, Users,
+  Edit2, AlertCircle, CheckCircle2, UserCheck, Sparkles,
+  BookCheck, AlertTriangle, ChevronRight, X, HeartHandshake,
+  Stethoscope, GraduationCap, School
+} from 'lucide-react';
+import {
+  Establecimiento,
+  CursoSae,
+  Docente,
+  AsignacionHoraria,
+  EstamentoDocente
+} from '../types';
+import {
+  PLANES_MINEDUC,
+  obtenerPlanPorCurso,
+  calcularDemandaNormativaPieCurso,
+  autoAsignarHorasPieCursos
+} from '@slep/mineduc-engine';
+
+export interface CurriculumDemandaViewProps {
+  colegio: Establecimiento | null;
+  cursos: CursoSae[];
+  docentes?: Docente[];
+  asignaciones?: AsignacionHoraria[];
+  onGuardarCurso: (curso: CursoSae) => void;
+  onEliminarCurso: (id: string) => void;
+  onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void;
+  onEliminarAsignacion?: (id: string) => Promise<void> | void;
+  periodoActivo?: number;
+}
+
+const NIVELES_DISPONIBLES = [
+  '1° Básico', '2° Básico', '3° Básico', '4° Básico',
+  '5° Básico', '6° Básico', '7° Básico', '8° Básico',
+  '1° Medio', '2° Medio',
+  '3° Medio (Humanístico-Científico)', '4° Medio (Humanístico-Científico)',
+  '3° Medio (Técnico-Profesional)', '4° Medio (Técnico-Profesional)'
+];
+
+const TIPOS_APOYO_PIE = [
+  { id: 'Co-Docencia en Aula Regular', label: 'Co-Docencia en Aula Regular (Docente Diferencial)', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
+  { id: 'Aula de Recursos / Apoyo Especializado', label: 'Aula de Recursos / Apoyo Especializado', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
+  { id: 'Apoyo Multidisciplinario / Clínico PAE', label: 'Apoyo Profesional PAE (Fonoaudiólogo / Psicólogo / TO)', estamentoSugerido: 'PROFESIONAL_PAE' },
+  { id: 'Apoyo Técnico en Aula', label: 'Apoyo Técnico en Educación Especial', estamentoSugerido: 'TECNICO_ESPECIAL' },
+  { id: 'Trabajo Colaborativo / Co-Planificación', label: 'Trabajo Colaborativo Art. 86 (Docente de Aula)', estamentoSugerido: 'DOCENTE_AULA' }
+];
+
+export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
+  colegio,
+  cursos,
+  docentes = [],
+  asignaciones = [],
+  onGuardarCurso,
+  onEliminarCurso,
+  onGuardarAsignacion,
+  onEliminarAsignacion,
+  periodoActivo = 2026
+}) => {
+  // Modal de Curso
+  const [modalCursoOpen, setModalCursoOpen] = useState(false);
+  const [nivel, setNivel] = useState('1° Básico');
+  const [letra, setLetra] = useState('A');
+  const [regimen, setRegimen] = useState<'JEC' | 'No JEC'>('JEC');
+  const [cupoSae, setCupoSae] = useState(38);
+  const [matriculaProyectada, setMatriculaProyectada] = useState(35);
+  const [alumnosNeet, setAlumnosNeet] = useState(5);
+  const [alumnosNeep, setAlumnosNeep] = useState(2);
+
+  // Curso seleccionado y subpestaña activa
+  const [cursoSeleccionadoPlan, setCursoSeleccionadoPlan] = useState<string>(cursos[0]?.id || '');
+  const [tabCurso, setTabCurso] = useState<'docencia' | 'pie' | 'malla'>('docencia');
+  const [busquedaCurso, setBusquedaCurso] = useState('');
+
+  // Modal Docencia Regular
+  const [modalDocenciaOpen, setModalDocenciaOpen] = useState(false);
+  const [editandoAsigDocencia, setEditandoAsigDocencia] = useState<AsignacionHoraria | null>(null);
+  const [docenciaDocenteId, setDocenciaDocenteId] = useState('');
+  const [docenciaAsignatura, setDocenciaAsignatura] = useState('');
+  const [docenciaHoras, setDocenciaHoras] = useState(4);
+  const [docenciaTipoFuncion, setDocenciaTipoFuncion] = useState<'CURRICULAR' | 'TALLER_JEC' | 'TALLER_SEP' | 'TRABAJO_COLABORATIVO'>('CURRICULAR');
+
+  // Modal Apoyo PIE
+  const [modalPieOpen, setModalPieOpen] = useState(false);
+  const [editandoAsigPie, setEditandoAsigPie] = useState<AsignacionHoraria | null>(null);
+  const [pieDocenteId, setPieDocenteId] = useState('');
+  const [pieTipoApoyo, setPieTipoApoyo] = useState('Co-Docencia en Aula Regular');
+  const [pieHoras, setPieHoras] = useState(6);
+  const [pieAsignatura, setPieAsignatura] = useState('Apoyo PIE - Co-docencia Lenguaje / Matemática');
+
+  // Modal Ajuste NEET/NEEP del Curso
+  const [modalNeeOpen, setModalNeeOpen] = useState(false);
+  const [editNeet, setEditNeet] = useState(5);
+  const [editNeep, setEditNeep] = useState(2);
+
+  if (!colegio) {
+    return (
+      <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-500">
+        Selecciona un establecimiento en la barra superior.
+      </div>
+    );
+  }
+
+  // Helper para discriminar si una asignación es de Apoyo PIE o Docencia Regular
+  const esApoyoPie = (a: AsignacionHoraria) => {
+    return (
+      a.esCoDocencia === true ||
+      a.tipoApoyo === 'PIE' ||
+      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
+      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
+      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('co-docencia')) ||
+      (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
+      (a.asignatura && a.asignatura.toLowerCase().includes('codocenc'))
+    );
+  };
+
+  // Cálculo de disponibilidad y carga horaria de cada docente/asistente
+  const disponibilidadDocentes = useMemo(() => {
+    const mapa = new Map<string, { horasAsignadas: number; horasLibres: number }>();
+    for (const d of docentes) {
+      const asigsD = asignaciones.filter(a => a.docenteId === d.id);
+      const totalAsig = asigsD.reduce((sum, a) => {
+        return sum + (a.horasPedagogicasAula || a.horasCronologicasPie || 0);
+      }, 0);
+      mapa.set(d.id, {
+        horasAsignadas: totalAsig,
+        horasLibres: Math.max(0, d.horasContrato - totalAsig)
+      });
+    }
+    return mapa;
+  }, [docentes, asignaciones]);
+
+  const handleCrearCurso = (e: React.FormEvent) => {
+    e.preventDefault();
+    const nuevo: CursoSae = {
+      id: `curso-${Date.now()}`,
+      rbd: colegio.rbd,
+      periodo: periodoActivo,
+      nivel,
+      letra: letra.trim().toUpperCase(),
+      regimen,
+      cupoSae: Number(cupoSae),
+      matriculaProyectada: Number(matriculaProyectada),
+      alumnosNeet: Number(alumnosNeet),
+      alumnosNeep: Number(alumnosNeep)
+    };
+    onGuardarCurso(nuevo);
+    setModalCursoOpen(false);
+    setCursoSeleccionadoPlan(nuevo.id);
+  };
+
+  const esModoTransversal = cursoSeleccionadoPlan === 'TRANSVERSAL';
+  const cursoActivo = esModoTransversal ? null : (cursos.find(c => c.id === cursoSeleccionadoPlan) || cursos[0]);
+  const planActivo = cursoActivo ? obtenerPlanPorCurso(cursoActivo.nivel, cursoActivo.regimen) : null;
+  const horasPlanCurso = planActivo ? planActivo.totalHorasPlan : (cursoActivo?.regimen === 'JEC' ? 38 : 30);
+
+  // Asignaciones transversales / institucionales (sin curso asociado)
+  const asignacionesTransversales = useMemo(() => {
+    return asignaciones.filter(a => !a.cursoId || a.cursoId === 'TRANSVERSAL' || a.cursoId === 'SIN_CURSO');
+  }, [asignaciones]);
+
+  const totalHorasTransversales = asignacionesTransversales.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+
+  // Asignaciones del curso activo
+  const asignacionesCurso = useMemo(() => {
+    if (!cursoActivo) return [];
+    return asignaciones.filter(a => a.cursoId === cursoActivo.id);
+  }, [asignaciones, cursoActivo]);
+
+  const asignacionesDocenciaCurso = useMemo(() => {
+    return asignacionesCurso.filter(a => !esApoyoPie(a));
+  }, [asignacionesCurso]);
+
+  // Solo las horas de Malla Regular y JEC suman a la cobertura del plan de estudio (38h/30h)
+  const asignacionesPlanRegularCurso = useMemo(() => {
+    return asignacionesDocenciaCurso.filter(a => !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO');
+  }, [asignacionesDocenciaCurso]);
+
+  const asignacionesPieCurso = useMemo(() => {
+    return asignacionesCurso.filter(a => esApoyoPie(a));
+  }, [asignacionesCurso]);
+
+  // Sumas del curso activo: La co-docencia y talleres SEP NO inflan el plan de estudio regular
+  const totalHorasDocenciaAsignadas = asignacionesPlanRegularCurso.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+  const totalHorasTallerSepAsignadas = asignacionesDocenciaCurso.filter(a => a.esTallerSep).reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+  const totalHorasColaborativoAsignadas = asignacionesDocenciaCurso.filter(a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO').reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+  const totalHorasPieAsignadas = asignacionesPieCurso.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
+
+  // Demanda normativa PIE según Decreto 170 y Ord. 2398
+  const demandaPieCurso = useMemo(() => {
+    if (!cursoActivo) {
+      return calcularDemandaNormativaPieCurso(0, 0, true);
+    }
+    const neet = cursoActivo.alumnosNeet !== undefined ? cursoActivo.alumnosNeet : 5;
+    const neep = cursoActivo.alumnosNeep !== undefined ? cursoActivo.alumnosNeep : 2;
+    const isJec = cursoActivo.regimen === 'JEC';
+    return calcularDemandaNormativaPieCurso(neet, neep, isJec);
+  }, [cursoActivo]);
+
+  // Desglose de horas PIE asignadas en este curso por rol
+  const desglosePieAsignado = useMemo(() => {
+    let dif = 0;
+    let pae = 0;
+    let colab = 0;
+
+    for (const a of asignacionesPieCurso) {
+      const doc = docentes.find(d => d.id === a.docenteId);
+      const hrs = a.horasCronologicasPie || a.horasPedagogicasAula || 0;
+      const tipo = (a.tipoApoyo || '').toLowerCase();
+
+      if (doc?.estamento === 'DOCENTE_DIFERENCIAL' || tipo.includes('diferencial') || tipo.includes('co-docencia')) {
+        dif += hrs;
+      } else if (doc?.estamento === 'PROFESIONAL_PAE' || tipo.includes('pae') || tipo.includes('clínico') || tipo.includes('clinico') || tipo.includes('fono') || tipo.includes('psico')) {
+        pae += hrs;
+      } else if (doc?.estamento === 'DOCENTE_AULA' || tipo.includes('colaborativ')) {
+        colab += hrs;
+      } else {
+        dif += hrs;
+      }
+    }
+
+    return { dif, pae, colab, total: dif + pae + colab };
+  }, [asignacionesPieCurso, docentes]);
+
+  // Demanda total calculada de horas aula de todo el colegio (incluye cursos + talleres transversales)
+  const totalHorasDemandaColegio = useMemo(() => {
+    const sumCursos = cursos.reduce((sum, c) => {
+      const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
+      const horasTalleres = (c.talleresJec || []).reduce((s, t) => s + t.horas, 0);
+      return sum + (plan ? plan.totalHorasPlan : c.regimen === 'JEC' ? 38 : 30) + horasTalleres;
+    }, 0);
+    return sumCursos + totalHorasTransversales;
+  }, [cursos, totalHorasTransversales]);
+
+  // Total de horas docencia asignadas en todo el colegio
+  const totalHorasAsignadasDocenciaColegio = asignaciones.filter(a => !esApoyoPie(a)).reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+
+  // Handlers para guardar y eliminar asignación Docencia Regular / Talleres
+  const abrirModalNuevaDocencia = (asignaturaSugerida?: string, horasSugeridas?: number) => {
+    setEditandoAsigDocencia(null);
+    setDocenciaAsignatura(asignaturaSugerida || (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación'));
+    setDocenciaHoras(horasSugeridas || 4);
+    setDocenciaTipoFuncion('CURRICULAR');
+    // Sugerir primer docente disponible que sea DOCENTE_AULA o no directivo
+    const docSugerido = docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0];
+    setDocenciaDocenteId(docSugerido ? docSugerido.id : '');
+    setModalDocenciaOpen(true);
+  };
+
+  const abrirModalEditarDocencia = (asig: AsignacionHoraria) => {
+    setEditandoAsigDocencia(asig);
+    setDocenciaDocenteId(asig.docenteId);
+    setDocenciaAsignatura(asig.asignatura);
+    setDocenciaHoras(asig.horasPedagogicasAula);
+    if (asig.esTallerJec) {
+      setDocenciaTipoFuncion('TALLER_JEC');
+    } else if (asig.esTallerSep) {
+      setDocenciaTipoFuncion('TALLER_SEP');
+    } else if (asig.esTrabajoColaborativo || asig.tipoApoyo === 'TRABAJO_COLABORATIVO') {
+      setDocenciaTipoFuncion('TRABAJO_COLABORATIVO');
+    } else {
+      setDocenciaTipoFuncion('CURRICULAR');
+    }
+    setModalDocenciaOpen(true);
+  };
+
+  const handleGuardarDocenciaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if ((!cursoActivo && !esModoTransversal) || !docenciaDocenteId || !onGuardarAsignacion) return;
+
+    const esJec = docenciaTipoFuncion === 'TALLER_JEC';
+    const esSep = docenciaTipoFuncion === 'TALLER_SEP';
+    const esColab = docenciaTipoFuncion === 'TRABAJO_COLABORATIVO';
+
+    const asig: AsignacionHoraria = {
+      id: editandoAsigDocencia ? editandoAsigDocencia.id : `asig-doc-${Date.now()}`,
+      rbd: colegio.rbd,
+      periodo: periodoActivo,
+      cursoId: esModoTransversal ? 'TRANSVERSAL' : (cursoActivo ? cursoActivo.id : 'TRANSVERSAL'),
+      docenteId: docenciaDocenteId,
+      asignatura: docenciaAsignatura,
+      horasPedagogicasAula: Number(docenciaHoras),
+      esCoDocencia: false,
+      esTallerJec: esJec && !esModoTransversal,
+      esTallerSep: esSep,
+      esTrabajoColaborativo: esColab,
+      tipoApoyo: esColab ? 'TRABAJO_COLABORATIVO' : (esSep ? 'TALLER_SEP' : (esJec ? 'TALLER_JEC' : 'AULA_REGULAR'))
+    };
+
+    await onGuardarAsignacion(asig);
+    setModalDocenciaOpen(false);
+  };
+
+  // Handlers para guardar y eliminar asignación PIE
+  const abrirModalNuevoPie = () => {
+    setEditandoAsigPie(null);
+    setPieTipoApoyo('Co-Docencia en Aula Regular');
+    setPieHoras(6);
+    setPieAsignatura('Apoyo PIE - Co-docencia Aula Regular');
+    // Priorizar Educadora Diferencial o Profesional PAE
+    const pieSugerido = docentes.find(d => d.estamento === 'DOCENTE_DIFERENCIAL') ||
+                         docentes.find(d => d.estamento === 'PROFESIONAL_PAE') ||
+                         docentes[0];
+    setPieDocenteId(pieSugerido ? pieSugerido.id : '');
+    setModalPieOpen(true);
+  };
+
+  const abrirModalEditarPie = (asig: AsignacionHoraria) => {
+    setEditandoAsigPie(asig);
+    setPieDocenteId(asig.docenteId);
+    setPieTipoApoyo(asig.tipoApoyo || 'Co-Docencia en Aula Regular');
+    setPieHoras(asig.horasCronologicasPie || asig.horasPedagogicasAula || 4);
+    setPieAsignatura(asig.asignatura);
+    setModalPieOpen(true);
+  };
+
+  const handleGuardarPieSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cursoActivo || !pieDocenteId || !onGuardarAsignacion) return;
+
+    const asig: AsignacionHoraria = {
+      id: editandoAsigPie ? editandoAsigPie.id : `asig-pie-${Date.now()}`,
+      rbd: colegio.rbd,
+      periodo: periodoActivo,
+      cursoId: cursoActivo.id,
+      docenteId: pieDocenteId,
+      asignatura: pieAsignatura || `Apoyo PIE (${pieTipoApoyo})`,
+      horasPedagogicasAula: Math.round(Number(pieHoras) * 1.333), // Equivalente pedagógico si aplica
+      horasCronologicasPie: Number(pieHoras),
+      esCoDocencia: true,
+      tipoApoyo: pieTipoApoyo
+    };
+
+    await onGuardarAsignacion(asig);
+    setModalPieOpen(false);
+  };
+
+  // Auto-asignación asistida Jidoka para PIE en este curso
+  const handleAutoAsignarPieCurso = async () => {
+    if (!cursoActivo || !onGuardarAsignacion) return;
+
+    const educadores = docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL');
+    const asistentesPae = docentes.filter(d => d.estamento === 'PROFESIONAL_PAE');
+    const docentesAula = docentes.filter(d => d.estamento === 'DOCENTE_AULA');
+
+    if (educadores.length === 0 && asistentesPae.length === 0) {
+      alert('No se encontraron Educadoras Diferenciales ni Profesionales Asistentes PAE en la dotación del establecimiento.');
+      return;
+    }
+
+    const hrsDifDemandadas = demandaPieCurso.horasDiferencialDecimal;
+    const hrsPaeDemandadas = demandaPieCurso.horasPaeDecimal;
+
+    let asignadasCount = 0;
+
+    // 1. Asignar Docente Diferencial si falta cobertura
+    if (desglosePieAsignado.dif < hrsDifDemandadas && educadores.length > 0) {
+      // Buscar el educador con más horas disponibles
+      const docDif = educadores.reduce((best, cur) => {
+        const dispBest = disponibilidadDocentes.get(best.id)?.horasLibres || 0;
+        const dispCur = disponibilidadDocentes.get(cur.id)?.horasLibres || 0;
+        return dispCur > dispBest ? cur : best;
+      }, educadores[0]);
+
+      const falta = parseFloat((hrsDifDemandadas - desglosePieAsignado.dif).toFixed(1));
+      const asigDif: AsignacionHoraria = {
+        id: `auto-pie-dif-${cursoActivo.id}-${Date.now()}`,
+        rbd: colegio.rbd,
+        periodo: periodoActivo,
+        cursoId: cursoActivo.id,
+        docenteId: docDif.id,
+        asignatura: 'Apoyo PIE - Co-Docencia Aula Común (Decreto 170)',
+        horasPedagogicasAula: Math.round(falta * 1.333),
+        horasCronologicasPie: falta,
+        esCoDocencia: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      };
+      await onGuardarAsignacion(asigDif);
+      asignadasCount++;
+    }
+
+    // 2. Asignar Profesional PAE si falta cobertura
+    if (desglosePieAsignado.pae < hrsPaeDemandadas && asistentesPae.length > 0) {
+      const paeDoc = asistentesPae.reduce((best, cur) => {
+        const dispBest = disponibilidadDocentes.get(best.id)?.horasLibres || 0;
+        const dispCur = disponibilidadDocentes.get(cur.id)?.horasLibres || 0;
+        return dispCur > dispBest ? cur : best;
+      }, asistentesPae[0]);
+
+      const faltaPae = parseFloat((hrsPaeDemandadas - desglosePieAsignado.pae).toFixed(1));
+      const asigPae: AsignacionHoraria = {
+        id: `auto-pie-pae-${cursoActivo.id}-${Date.now()}`,
+        rbd: colegio.rbd,
+        periodo: periodoActivo,
+        cursoId: cursoActivo.id,
+        docenteId: paeDoc.id,
+        asignatura: `Apoyo Especializado PAE - ${paeDoc.titulo || 'Profesional Asistente'}`,
+        horasPedagogicasAula: Math.round(faltaPae * 1.333),
+        horasCronologicasPie: faltaPae,
+        esCoDocencia: true,
+        tipoApoyo: 'Apoyo Multidisciplinario / Clínico PAE'
+      };
+      await onGuardarAsignacion(asigPae);
+      asignadasCount++;
+    }
+
+    // 3. Asignar Horas Colaborativas si faltan (3.0 hrs Art. 86)
+    if (desglosePieAsignado.colab < 3.0 && docentesAula.length > 0) {
+      const docAula = docentesAula[0];
+      const asigColab: AsignacionHoraria = {
+        id: `auto-pie-colab-${cursoActivo.id}-${Date.now()}`,
+        rbd: colegio.rbd,
+        periodo: periodoActivo,
+        cursoId: cursoActivo.id,
+        docenteId: docAula.id,
+        asignatura: 'Trabajo Colaborativo / Co-Planificación (Art. 86)',
+        horasPedagogicasAula: 4,
+        horasCronologicasPie: 3.0,
+        esCoDocencia: true,
+        tipoApoyo: 'Trabajo Colaborativo / Co-Planificación'
+      };
+      await onGuardarAsignacion(asigColab);
+      asignadasCount++;
+    }
+
+    alert(`¡Asignación Inteligente Jidoka Completada! Se generaron ${asignadasCount} asignaciones PIE para ${cursoActivo.nivel} ${cursoActivo.letra}.`);
+  };
+
+  // Cursos filtrados por búsqueda
+  const cursosFiltrados = cursos.filter(c =>
+    `${c.nivel} ${c.letra}`.toLowerCase().includes(busquedaCurso.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Resumen Superior */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-bold">
+            <School className="w-3.5 h-3.5" />
+            Bases Curriculares Oficiales MINEDUC & Decreto 170
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mt-1">
+            Planes de Estudio & Asignación Docente / PIE - {colegio.nombre}
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Asigna asignaturas de la malla obligatoria y co-docencia de inclusión a cada curso con control normativo de horas en tiempo real.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="bg-slate-50 p-2.5 px-4 rounded-lg border border-slate-200 text-right">
+            <div className="text-[10px] uppercase font-bold text-slate-500">Demanda Total Malla</div>
+            <div className="text-lg font-black text-[#002B49] flex items-center gap-1 justify-end">
+              <Clock className="w-4 h-4 text-orange-600" />
+              <span>{totalHorasDemandaColegio}</span>
+              <span className="text-[10px] font-bold text-slate-400">HA/sem</span>
+            </div>
+            <div className="text-[10px] text-slate-500 font-semibold">
+              Cubierto: {totalHorasAsignadasDocenciaColegio} HA ({totalHorasDemandaColegio > 0 ? Math.round((totalHorasAsignadasDocenciaColegio / totalHorasDemandaColegio) * 100) : 0}%)
+            </div>
+          </div>
+
+          <button
+            onClick={() => setModalCursoOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Agregar Curso</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Columna Izquierda: Lista de Cursos del Colegio con Badges de Docencia y PIE */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-slate-600" />
+              Cursos Proyectados ({cursos.length})
+            </h3>
+          </div>
+
+          {/* Buscador de cursos */}
+          <input
+            type="text"
+            placeholder="Filtrar cursos..."
+            value={busquedaCurso}
+            onChange={e => setBusquedaCurso(e.target.value)}
+            className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
+          />
+
+          <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
+            {/* Card especial: Talleres Transversales / Institucionales */}
+            <div
+              onClick={() => setCursoSeleccionadoPlan('TRANSVERSAL')}
+              className={`p-3 rounded-xl border text-xs cursor-pointer transition-all space-y-1.5 ${
+                cursoSeleccionadoPlan === 'TRANSVERSAL'
+                  ? 'border-amber-500 bg-amber-50/60 shadow-sm ring-1 ring-amber-400/30'
+                  : 'border-slate-200 bg-amber-50/20 hover:bg-amber-50/40'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Talleres Transversales</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">
+                    Institucional
+                  </span>
+                </div>
+                <span className="text-[11px] font-extrabold text-amber-700">
+                  {totalHorasTransversales} HA
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-500 flex items-center justify-between">
+                <span>{asignacionesTransversales.length} taller(es) registrados</span>
+                <span className="font-semibold text-slate-600">Sin curso fijo</span>
+              </div>
+            </div>
+
+            {cursosFiltrados.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No hay cursos registrados o que coincidan con la búsqueda.</p>
+            ) : (
+              cursosFiltrados.map(c => {
+                const isSelected = cursoActivo?.id === c.id;
+                const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
+                const hrsPlan = plan ? plan.totalHorasPlan : c.regimen === 'JEC' ? 38 : 30;
+
+                // Horas de docencia asignadas en este curso
+                const asigsDoc = asignaciones.filter(a => a.cursoId === c.id && !esApoyoPie(a));
+                const totDocAsig = asigsDoc.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+
+                // Demanda y asignación PIE en este curso
+                const cNeet = c.alumnosNeet !== undefined ? c.alumnosNeet : 5;
+                const cNeep = c.alumnosNeep !== undefined ? c.alumnosNeep : 2;
+                const demPie = calcularDemandaNormativaPieCurso(cNeet, cNeep, c.regimen === 'JEC');
+                const asigsPie = asignaciones.filter(a => a.cursoId === c.id && esApoyoPie(a));
+                const totPieAsig = asigsPie.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
+
+                const coberturaDocPct = hrsPlan > 0 ? Math.round((totDocAsig / hrsPlan) * 100) : 0;
+                const docColor = totDocAsig === hrsPlan ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+                                 totDocAsig > hrsPlan ? 'text-red-700 bg-red-50 border-red-200' :
+                                 'text-amber-700 bg-amber-50 border-amber-200';
+
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => setCursoSeleccionadoPlan(c.id)}
+                    className={`p-3 rounded-xl border text-xs cursor-pointer transition-all space-y-2 ${
+                      isSelected
+                        ? 'border-orange-500 bg-orange-50/40 shadow-sm ring-1 ring-orange-400/30'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>{c.nivel} {c.letra}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-semibold">
+                            {c.regimen}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Matrícula: <strong className="text-slate-700">{c.matriculaProyectada}</strong> est. (Cupo {c.cupoSae})
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`¿Eliminar ${c.nivel} ${c.letra} y todas sus asignaciones?`)) {
+                            onEliminarCurso(c.id);
+                          }
+                        }}
+                        title="Eliminar curso"
+                        className="text-slate-400 hover:text-red-600 p-1 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Badges de Cobertura */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
+                      {/* Badge Docencia */}
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${docColor}`}>
+                        <BookOpen className="w-3 h-3" />
+                        {totDocAsig}/{hrsPlan} HA ({coberturaDocPct}%)
+                      </span>
+
+                      {/* Badge PIE */}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold text-purple-700 bg-purple-50 border-purple-200">
+                        <ShieldCheck className="w-3 h-3 text-purple-600" />
+                        {totPieAsig.toFixed(1)}/{demPie.horasTotalCronologicas.toFixed(1)}h PIE
+                      </span>
+
+                      {/* Alumnos NEE */}
+                      <span className="text-[10px] font-medium text-slate-500 ml-auto">
+                        {cNeet}T • {cNeep}P
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Columna Derecha: Panel Principal del Curso con Subpestañas o Panel de Talleres Transversales */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+          {cursoSeleccionadoPlan === 'TRANSVERSAL' ? (
+            <div className="space-y-6">
+              {/* Cabecera de Talleres Transversales */}
+              <div className="flex flex-col md:flex-row md:items-start justify-between border-b pb-4 gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-600" />
+                      Nivel Institucional / Extraescolar
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                      Sin Curso Específico
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 mt-1">
+                    Talleres Institucionales & Transversales
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Talleres extraescolares, robótica, academias, deportes, artes, teatro y refuerzo pedagógico SEP transversal.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => abrirModalNuevaDocencia('Taller de Robótica / Extraescolar', 4)}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Crear Taller Transversal</span>
+                </button>
+              </div>
+
+              {/* Métricas de Talleres Transversales */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 bg-amber-50/50 rounded-xl border border-amber-200">
+                  <span className="text-[10px] font-bold text-amber-800 uppercase block">Total Horas Transversales</span>
+                  <div className="text-xl font-black text-amber-900 mt-1 flex items-baseline gap-1">
+                    <span>{totalHorasTransversales}</span>
+                    <span className="text-xs font-semibold text-amber-700">HA/sem</span>
+                  </div>
+                  <span className="text-[10px] text-amber-700 mt-0.5 block">Suman a la demanda del colegio</span>
+                </div>
+
+                <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase block">Talleres SEP</span>
+                  <div className="text-xl font-black text-emerald-900 mt-1 flex items-baseline gap-1">
+                    <span>{asignacionesTransversales.filter(a => a.esTallerSep).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0)}</span>
+                    <span className="text-xs font-semibold text-emerald-700">HA/sem</span>
+                  </div>
+                  <span className="text-[10px] text-emerald-700 mt-0.5 block">Financiamiento SEP / Exento</span>
+                </div>
+
+                <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200">
+                  <span className="text-[10px] font-bold text-blue-800 uppercase block">Talleres Regulares</span>
+                  <div className="text-xl font-black text-blue-900 mt-1 flex items-baseline gap-1">
+                    <span>{asignacionesTransversales.filter(a => !a.esTallerSep).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0)}</span>
+                    <span className="text-xs font-semibold text-blue-700">HA/sem</span>
+                  </div>
+                  <span className="text-[10px] text-blue-700 mt-0.5 block">Subvención General</span>
+                </div>
+              </div>
+
+              {/* Tabla de Talleres Transversales */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[11px] border-b">
+                    <tr>
+                      <th className="px-4 py-3">Nombre del Taller</th>
+                      <th className="px-3 py-3">Docente a Cargo</th>
+                      <th className="px-3 py-3 text-center">Horas Pedagógicas</th>
+                      <th className="px-3 py-3 text-center">Tipo / Financiamiento</th>
+                      <th className="px-4 py-3 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {asignacionesTransversales.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-400">
+                          <p className="font-semibold text-sm">No hay talleres transversales registrados.</p>
+                          <p className="text-xs mt-1">Haz clic en "Crear Taller Transversal" para agregar academias o talleres institucionales.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      asignacionesTransversales.map(asig => {
+                        const doc = docentes.find(d => d.id === asig.docenteId);
+                        return (
+                          <tr key={asig.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 font-bold text-slate-800">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                <span>{asig.asignatura}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              {doc ? (
+                                <div>
+                                  <div className="font-semibold text-slate-800">{doc.nombres} {doc.apellidos}</div>
+                                  <div className="text-[10px] text-slate-400 font-mono">{doc.run}</div>
+                                </div>
+                              ) : (
+                                <span className="text-amber-600 italic font-semibold">Sin docente asignado</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 text-center font-black text-slate-900 text-sm">
+                              {asig.horasPedagogicasAula} HA
+                            </td>
+                            <td className="px-3 py-3 text-center">
+                              {asig.esTallerSep ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  SEP Extracurricular
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                                  Regular / Institucional
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalEditarDocencia(asig)}
+                                  className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50"
+                                  title="Editar taller"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (confirm(`¿Eliminar el taller "${asig.asignatura}"?`)) {
+                                      if (onEliminarAsignacion) await onEliminarAsignacion(asig.id);
+                                    }
+                                  }}
+                                  className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
+                                  title="Eliminar taller"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Cálculo Automático en Planta & Carga Horaria:</strong> Cada taller transversal se contabiliza automáticamente en la carga del docente asignado, se valida contra las tablas MINEDUC de la Ley 20.903 y se agrega a la demanda global del establecimiento.
+                </span>
+              </div>
+            </div>
+          ) : cursoActivo && planActivo ? (
+            <div>
+              {/* Cabecera del Curso Activo */}
+              <div className="flex flex-col md:flex-row md:items-start justify-between border-b pb-4 gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                      {planActivo.nivel} ({cursoActivo.regimen})
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      Proporción: {cursoActivo.regimenProporcion === '60_40' ? '60/40' : '65/35'}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setEditNeet(cursoActivo.alumnosNeet !== undefined ? cursoActivo.alumnosNeet : 5);
+                        setEditNeep(cursoActivo.alumnosNeep !== undefined ? cursoActivo.alumnosNeep : 2);
+                        setModalNeeOpen(true);
+                      }}
+                      className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200 flex items-center gap-1 transition-colors"
+                      title="Editar cupos PIE del curso"
+                    >
+                      <Users className="w-3 h-3" />
+                      PIE: {cursoActivo.alumnosNeet || 0} NEET / {cursoActivo.alumnosNeep || 0} NEEP
+                      <Edit2 className="w-2.5 h-2.5 ml-0.5 text-purple-500" />
+                    </button>
+                  </div>
+
+                  <h3 className="text-xl font-black text-slate-800 mt-1">
+                    {cursoActivo.nivel} {cursoActivo.letra}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Plan MINEDUC: {horasPlanCurso} HA | Matrícula: {cursoActivo.matriculaProyectada} estudiantes | Aforo SAE: {cursoActivo.cupoSae}
+                  </p>
+
+                  {/* Controles de Ajuste Rápido del Curso */}
+                  <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-600">Jornada:</span>
+                      <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                        <button
+                          type="button"
+                          onClick={() => onGuardarCurso({ ...cursoActivo, regimen: 'JEC' })}
+                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                            cursoActivo.regimen === 'JEC'
+                              ? 'bg-orange-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          JEC (38h)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onGuardarCurso({ ...cursoActivo, regimen: 'No JEC' })}
+                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                            cursoActivo.regimen === 'No JEC'
+                              ? 'bg-slate-800 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          No JEC (30h)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-600">Régimen Docente:</span>
+                      <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                        <button
+                          type="button"
+                          onClick={() => onGuardarCurso({ ...cursoActivo, regimenProporcion: '65_35' })}
+                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                            (cursoActivo.regimenProporcion || '65_35') === '65_35'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          65/35 (Estándar)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onGuardarCurso({ ...cursoActivo, regimenProporcion: '60_40' })}
+                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                            cursoActivo.regimenProporcion === '60_40'
+                              ? 'bg-purple-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          60/40 (Vulnerabilidad)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resumen Indicador de Cobertura del Curso */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-right min-w-[200px] flex-shrink-0">
+                  <div className="text-[10px] uppercase font-bold text-slate-500">Plan de Estudio (Malla + JEC)</div>
+                  <div className="text-2xl font-black text-[#002B49] flex items-center gap-1 justify-end">
+                    <span>{totalHorasDocenciaAsignadas}</span>
+                    <span className="text-slate-400 text-sm font-bold">/ {horasPlanCurso} HA</span>
+                  </div>
+                  <div className={`text-[11px] font-bold mt-0.5 ${
+                    totalHorasDocenciaAsignadas === horasPlanCurso ? 'text-emerald-600' :
+                    totalHorasDocenciaAsignadas > horasPlanCurso ? 'text-red-600' : 'text-amber-600'
+                  }`}>
+                    {totalHorasDocenciaAsignadas === horasPlanCurso ? '✓ Plan 100% Cubierto' :
+                     totalHorasDocenciaAsignadas > horasPlanCurso ? `⚠️ Exceso de ${totalHorasDocenciaAsignadas - horasPlanCurso} HA` :
+                     `Faltan ${horasPlanCurso - totalHorasDocenciaAsignadas} HA`}
+                  </div>
+                  {(totalHorasTallerSepAsignadas > 0 || totalHorasColaborativoAsignadas > 0) && (
+                    <div className="text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-200 flex justify-end gap-2">
+                      {totalHorasTallerSepAsignadas > 0 && (
+                        <span className="text-emerald-700 font-semibold">+{totalHorasTallerSepAsignadas} HA SEP (Exenta)</span>
+                      )}
+                      {totalHorasColaborativoAsignadas > 0 && (
+                        <span className="text-purple-700 font-semibold">+{totalHorasColaborativoAsignadas} HA Colab (Exenta)</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Selector de Subpestañas del Curso */}
+              <div className="flex border-b border-slate-200 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setTabCurso('docencia')}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
+                    tabCurso === 'docencia'
+                      ? 'border-orange-600 text-orange-600 bg-orange-50/50'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>Docencia de Aula ({totalHorasDocenciaAsignadas}/{horasPlanCurso} HA)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTabCurso('pie')}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
+                    tabCurso === 'pie'
+                      ? 'border-purple-600 text-purple-700 bg-purple-50/50'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-purple-600" />
+                  <span>Apoyo PIE / Co-Docencia ({totalHorasPieAsignadas.toFixed(1)}/{demandaPieCurso.horasTotalCronologicas.toFixed(1)} hrs)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTabCurso('malla')}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
+                    tabCurso === 'malla'
+                      ? 'border-blue-600 text-blue-700 bg-blue-50/50'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <BookCheck className="w-4 h-4" />
+                  <span>Malla Oficial MINEDUC</span>
+                </button>
+              </div>
+
+              {/* ========================================================= */}
+              {/* SUBPESTAÑA 1: DOCENCIA DE AULA CURRICULAR REGULAR         */}
+              {/* ========================================================= */}
+              {tabCurso === 'docencia' && (
+                <div className="space-y-4 pt-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-orange-50/60 p-3 rounded-lg border border-orange-100">
+                    <div>
+                      <h4 className="text-xs font-bold text-orange-950">Malla Curricular Obligatoria</h4>
+                      <p className="text-[11px] text-orange-800/80">
+                        Asigna profesores y horas pedagógicas semanales (HA) para cubrir el plan obligatorio de este curso.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => abrirModalNuevaDocencia()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all whitespace-nowrap"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Asignar Docente / Asignatura</span>
+                    </button>
+                  </div>
+
+                  {/* Tabla de Asignaciones de Aula Regular */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-xs text-slate-600">
+                      <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b">
+                        <tr>
+                          <th className="px-4 py-2.5">Asignatura</th>
+                          <th className="px-4 py-2.5">Docente Asignado</th>
+                          <th className="px-4 py-2.5 text-center">Horas Aula (HA)</th>
+                          <th className="px-4 py-2.5 text-center">Tipo</th>
+                          <th className="px-4 py-2.5 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {asignacionesDocenciaCurso.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-slate-400 italic">
+                              No hay docentes ni asignaturas asignadas a este curso aún. Haz clic en <strong>"+ Asignar Docente / Asignatura"</strong> o selecciona una materia del plan sugerido abajo.
+                            </td>
+                          </tr>
+                        ) : (
+                          asignacionesDocenciaCurso.map(a => {
+                            const doc = docentes.find(d => d.id === a.docenteId);
+                            const disp = doc ? disponibilidadDocentes.get(doc.id) : null;
+
+                            return (
+                              <tr key={a.id} className="hover:bg-slate-50/70">
+                                <td className="px-4 py-2.5 font-medium text-slate-800 flex items-center gap-2">
+                                  <BookOpen className="w-3.5 h-3.5 text-orange-600 flex-shrink-0" />
+                                  <span>{a.asignatura}</span>
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {doc ? (
+                                    <div>
+                                      <div className="font-bold text-slate-800">{doc.nombres} {doc.apellidos}</div>
+                                      <div className="text-[10px] text-slate-500">
+                                        RUN: {doc.run} • Contrato: {doc.horasContrato}h (Asig: {disp?.horasAsignadas || 0}h)
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-red-500 italic">Docente no encontrado (ID: {a.docenteId})</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-center font-bold text-slate-800">
+                                  {a.horasPedagogicasAula} HA
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  {a.esTallerJec ? (
+                                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                                      Taller JEC
+                                    </span>
+                                  ) : a.esTallerSep ? (
+                                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                      Taller SEP (Exento)
+                                    </span>
+                                  ) : (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO') ? (
+                                    <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold">
+                                      Trabajo Colab. (Exento)
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">
+                                      Plan Regular
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirModalEditarDocencia(a)}
+                                      className="p-1 text-slate-400 hover:text-blue-600 rounded transition-colors"
+                                      title="Editar horas o docente"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (confirm(`¿Eliminar la asignación de ${a.asignatura}?`)) {
+                                          if (onEliminarAsignacion) await onEliminarAsignacion(a.id);
+                                        }
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
+                                      title="Eliminar asignación"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Sugerencias Rápidas de Asignaturas del Plan MINEDUC */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2.5">
+                    <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-orange-600" />
+                      Asignaturas Sugeridas por el Plan Oficial ({planActivo.nivel})
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {planActivo.asignaturasBase.map((asig, i) => {
+                        const yaAsignada = asignacionesDocenciaCurso.some(a =>
+                          a.asignatura.toLowerCase().includes(asig.nombre.toLowerCase()) ||
+                          asig.nombre.toLowerCase().includes(a.asignatura.toLowerCase())
+                        );
+
+                        return (
+                          <div
+                            key={i}
+                            className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                              yaAsignada
+                                ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900'
+                                : 'bg-white border-slate-200 hover:border-orange-400'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-bold flex items-center gap-1">
+                                {yaAsignada ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : null}
+                                <span className="truncate max-w-[130px]">{asig.nombre}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500">Plan: {asig.horasSugeridas} HA</div>
+                            </div>
+
+                            {!yaAsignada && (
+                              <button
+                                type="button"
+                                onClick={() => abrirModalNuevaDocencia(asig.nombre, asig.horasSugeridas)}
+                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-800 text-[10px] font-bold rounded transition-colors"
+                              >
+                                + Asignar
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* SUBPESTAÑA 2: APOYO PIE (DECRETO 170 / CO-DOCENCIA & PAE) */}
+              {/* ========================================================= */}
+              {tabCurso === 'pie' && (
+                <div className="space-y-4 pt-2">
+                  {/* Banner Normativo Decreto 170 / Ord. 2398 */}
+                  <div className="bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 text-white p-5 rounded-xl border border-purple-900 shadow-sm space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-purple-600/30 border border-purple-500/40 text-purple-300 text-[11px] font-bold">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          Decreto 170/2009 & Ordinario N° 2398 MINEDUC
+                        </div>
+                        <h4 className="text-base font-bold text-white mt-1">
+                          Demanda y Co-Docencia PIE: {cursoActivo.nivel} {cursoActivo.letra}
+                        </h4>
+                        <p className="text-xs text-purple-200/80 mt-0.5 max-w-xl">
+                          Calculado según los {demandaPieCurso.neetCount} estudiantes NEET y {demandaPieCurso.neepCount} NEEP en régimen {cursoActivo.regimen}.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditNeet(cursoActivo.alumnosNeet !== undefined ? cursoActivo.alumnosNeet : 5);
+                            setEditNeep(cursoActivo.alumnosNeep !== undefined ? cursoActivo.alumnosNeep : 2);
+                            setModalNeeOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-purple-800/60 hover:bg-purple-700 text-purple-100 text-xs font-bold rounded-lg border border-purple-600 transition-colors"
+                        >
+                          Ajustar Cupos PIE
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleAutoAsignarPieCurso}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-lg shadow-sm transition-all"
+                          title="Auto-asignar horas PIE con docentes y asistentes disponibles en el establecimiento"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>⚡ Auto-Asignar PIE (Jidoka)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tarjetas de Demanda Normativa Calculada */}
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
+                      <div className="bg-white/10 p-3 rounded-lg border border-white/10">
+                        <div className="text-[10px] uppercase font-bold text-purple-200">Educador(a) Diferencial</div>
+                        <div className="text-lg font-black text-white">
+                          {demandaPieCurso.horasDiferencialHHMM} <span className="text-xs font-normal text-purple-300">({demandaPieCurso.horasDiferencialDecimal}h)</span>
+                        </div>
+                        <div className={`text-[10px] font-bold ${desglosePieAsignado.dif >= demandaPieCurso.horasDiferencialDecimal ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          Asignadas: {desglosePieAsignado.dif.toFixed(1)}h
+                        </div>
+                      </div>
+
+                      <div className="bg-white/10 p-3 rounded-lg border border-white/10">
+                        <div className="text-[10px] uppercase font-bold text-purple-200">Profesional Asistente PAE</div>
+                        <div className="text-lg font-black text-white">
+                          {demandaPieCurso.horasPaeHHMM} <span className="text-xs font-normal text-purple-300">({demandaPieCurso.horasPaeDecimal}h)</span>
+                        </div>
+                        <div className={`text-[10px] font-bold ${desglosePieAsignado.pae >= demandaPieCurso.horasPaeDecimal ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          Asignadas: {desglosePieAsignado.pae.toFixed(1)}h
+                        </div>
+                      </div>
+
+                      <div className="bg-white/10 p-3 rounded-lg border border-white/10">
+                        <div className="text-[10px] uppercase font-bold text-purple-200">Trabajo Colaborativo</div>
+                        <div className="text-lg font-black text-white">
+                          03:00 <span className="text-xs font-normal text-purple-300">(3.0h Art.86)</span>
+                        </div>
+                        <div className={`text-[10px] font-bold ${desglosePieAsignado.colab >= 3.0 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          Asignadas: {desglosePieAsignado.colab.toFixed(1)}h
+                        </div>
+                      </div>
+
+                      <div className="bg-white/10 p-3 rounded-lg border border-white/10">
+                        <div className="text-[10px] uppercase font-bold text-purple-200">Total Demanda Dec. 170</div>
+                        <div className="text-lg font-black text-amber-300">
+                          {demandaPieCurso.horasTotalCronologicas.toFixed(1)} hrs
+                        </div>
+                        <div className={`text-[10px] font-bold ${demandaPieCurso.cumpleAforo ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {demandaPieCurso.cumpleAforo ? '✓ Aforo Cumplido' : '⚠️ Aforo Excedido'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Acciones y Botón Asignar PIE */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800">
+                        Profesionales y Asistentes Asignados al Apoyo PIE ({asignacionesPieCurso.length})
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Incluye Educadoras Diferenciales, Asistentes de la Educación Profesionales (PAE) y Técnicos.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={abrirModalNuevoPie}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-lg shadow-xs transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Asignar Profesional PIE</span>
+                    </button>
+                  </div>
+
+                  {/* Tabla de Asignaciones PIE */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-xs text-slate-600">
+                      <thead className="bg-purple-50/60 text-purple-950 uppercase font-semibold text-[10px] border-b border-purple-100">
+                        <tr>
+                          <th className="px-4 py-2.5">Profesional / Asistente</th>
+                          <th className="px-4 py-2.5">Estamento / Rol</th>
+                          <th className="px-4 py-2.5">Tipo de Apoyo Decreto 170</th>
+                          <th className="px-4 py-2.5 text-center">Horas Cronológicas</th>
+                          <th className="px-4 py-2.5 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {asignacionesPieCurso.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-slate-400 italic">
+                              No se han asignado profesionales PIE a este curso. Usa el botón <strong>"+ Asignar Profesional PIE"</strong> o <strong>"⚡ Auto-Asignar PIE"</strong>.
+                            </td>
+                          </tr>
+                        ) : (
+                          asignacionesPieCurso.map(a => {
+                            const doc = docentes.find(d => d.id === a.docenteId);
+                            const disp = doc ? disponibilidadDocentes.get(doc.id) : null;
+
+                            // Badge de rol
+                            let estamentoBadge = (
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
+                                {doc?.estamento || 'Personal'}
+                              </span>
+                            );
+
+                            if (doc?.estamento === 'DOCENTE_DIFERENCIAL') {
+                              estamentoBadge = (
+                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-bold inline-flex items-center gap-1">
+                                  <GraduationCap className="w-3 h-3" />
+                                  Docente Diferencial
+                                </span>
+                              );
+                            } else if (doc?.estamento === 'PROFESIONAL_PAE') {
+                              estamentoBadge = (
+                                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-bold inline-flex items-center gap-1">
+                                  <Stethoscope className="w-3 h-3" />
+                                  Asistente Profesional PAE
+                                </span>
+                              );
+                            } else if (doc?.estamento === 'TECNICO_ESPECIAL' || doc?.estamento === 'ASISTENTE_AULA') {
+                              estamentoBadge = (
+                                <span className="px-2 py-0.5 rounded bg-cyan-100 text-cyan-800 text-[10px] font-bold inline-flex items-center gap-1">
+                                  <HeartHandshake className="w-3 h-3" />
+                                  Asistente Técnico
+                                </span>
+                              );
+                            } else if (doc?.estamento === 'DOCENTE_AULA') {
+                              estamentoBadge = (
+                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold inline-flex items-center gap-1">
+                                  <BookOpen className="w-3 h-3" />
+                                  Docente Regular (Colaborativo)
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <tr key={a.id} className="hover:bg-slate-50/70">
+                                <td className="px-4 py-2.5">
+                                  {doc ? (
+                                    <div>
+                                      <div className="font-bold text-slate-800">{doc.nombres} {doc.apellidos}</div>
+                                      <div className="text-[10px] text-slate-500">
+                                        RUN: {doc.run} {doc.titulo ? `• ${doc.titulo}` : ''} • Contrato: {doc.horasContrato}h (Asig: {disp?.horasAsignadas || 0}h)
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="text-red-500 italic">Funcionario no encontrado (ID: {a.docenteId})</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {estamentoBadge}
+                                </td>
+                                <td className="px-4 py-2.5 font-medium text-slate-700">
+                                  <div className="flex items-center gap-1.5">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                                    <span>{a.tipoApoyo || a.asignatura}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5 text-center font-bold text-purple-900">
+                                  {a.horasCronologicasPie || a.horasPedagogicasAula} hrs/sem
+                                </td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirModalEditarPie(a)}
+                                      className="p-1 text-slate-400 hover:text-purple-600 rounded transition-colors"
+                                      title="Editar asignación PIE"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (confirm(`¿Eliminar la asignación de apoyo PIE para este curso?`)) {
+                                          if (onEliminarAsignacion) await onEliminarAsignacion(a.id);
+                                        }
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
+                                      title="Eliminar asignación"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* SUBPESTAÑA 3: MALLA Y PLAN OFICIAL MINEDUC                */}
+              {/* ========================================================= */}
+              {tabCurso === 'malla' && (
+                <div className="space-y-4 pt-2">
+                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                    <table className="w-full text-left text-xs text-slate-600">
+                      <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b">
+                        <tr>
+                          <th className="px-4 py-2.5">Subsector / Asignatura Oficial MINEDUC</th>
+                          <th className="px-4 py-2.5 text-center">Horas Semanales Sugeridas (HA)</th>
+                          <th className="px-4 py-2.5 text-center">Minutos Cronológicos</th>
+                          <th className="px-4 py-2.5 text-right">% del Plan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {planActivo.asignaturasBase.map((asig, idx) => {
+                          const mins = asig.horasSugeridas * 45;
+                          const pct = Math.round((asig.horasSugeridas / planActivo.totalHorasPlan) * 100);
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/80">
+                              <td className="px-4 py-2.5 font-medium text-slate-800 flex items-center gap-2">
+                                <BookOpen className="w-3.5 h-3.5 text-slate-400" />
+                                {asig.nombre}
+                              </td>
+                              <td className="px-4 py-2.5 text-center font-bold text-slate-700">
+                                {asig.horasSugeridas} HA
+                              </td>
+                              <td className="px-4 py-2.5 text-center text-slate-500">
+                                {Math.floor(mins / 60)}h {mins % 60}m
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-semibold text-slate-600">
+                                {pct}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {planActivo.horasLibreDisposicion > 0 && (
+                          <tr className="bg-amber-50/60 font-semibold text-amber-900">
+                            <td className="px-4 py-2.5">Horas de Libre Disposición (Proyecto Educativo Institucional)</td>
+                            <td className="px-4 py-2.5 text-center font-bold">{planActivo.horasLibreDisposicion} HA</td>
+                            <td className="px-4 py-2.5 text-center">{Math.floor(planActivo.horasLibreDisposicion * 45 / 60)}h {(planActivo.horasLibreDisposicion * 45) % 60}m</td>
+                            <td className="px-4 py-2.5 text-right">{Math.round((planActivo.horasLibreDisposicion / planActivo.totalHorasPlan) * 100)}%</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              Selecciona un curso para inspeccionar su docencia, apoyo PIE y requerimientos curriculares oficiales.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* MODAL 1: AGREGAR CURSO                                    */}
+      {/* ========================================================= */}
+      {modalCursoOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+            <h3 className="text-base font-bold text-slate-800 mb-4">
+              Agregar Nuevo Curso / Sección
+            </h3>
+
+            <form onSubmit={handleCrearCurso} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Nivel Educativo *</label>
+                <select
+                  value={nivel}
+                  onChange={e => setNivel(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-medium"
+                >
+                  {NIVELES_DISPONIBLES.map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Letra / Sección *</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={2}
+                    value={letra}
+                    onChange={e => setLetra(e.target.value.toUpperCase())}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Jornada *</label>
+                  <select
+                    value={regimen}
+                    onChange={e => setRegimen(e.target.value as any)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                  >
+                    <option value="JEC">JEC (Completa - 38 HA)</option>
+                    <option value="No JEC">No JEC (Media - 30 HA)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Cupo SAE Declarado</label>
+                  <input
+                    type="number"
+                    min="10"
+                    max="50"
+                    required
+                    value={cupoSae}
+                    onChange={e => setCupoSae(parseInt(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Matrícula Proyectada</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    required
+                    value={matriculaProyectada}
+                    onChange={e => setMatriculaProyectada(parseInt(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold text-orange-600"
+                  />
+                </div>
+              </div>
+
+              {/* Matrícula PIE para el cálculo de Demanda Decreto 170 */}
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200 space-y-2">
+                <div className="text-[11px] font-bold text-purple-900 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+                  Matrícula PIE Inicial (Decreto 170)
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-purple-800 mb-1">Alumnos NEET (máx 5)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="10"
+                      value={alumnosNeet}
+                      onChange={e => setAlumnosNeet(parseInt(e.target.value) || 0)}
+                      className="w-full px-2 py-1.5 border border-purple-300 rounded focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold text-purple-800 mb-1">Alumnos NEEP (máx 2)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="10"
+                      value={alumnosNeep}
+                      onChange={e => setAlumnosNeep(parseInt(e.target.value) || 0)}
+                      className="w-full px-2 py-1.5 border border-purple-300 rounded focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setModalCursoOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow"
+                >
+                  Guardar Curso
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 2: ASIGNAR / EDITAR DOCENCIA REGULAR                */}
+      {/* ========================================================= */}
+      {modalDocenciaOpen && (cursoActivo || esModoTransversal) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-orange-600" />
+                {editandoAsigDocencia ? 'Editar Asignación / Taller' : (esModoTransversal ? 'Crear Taller Transversal' : 'Asignar Docente / Asignatura')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalDocenciaOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarDocenciaSubmit} className="space-y-4 text-xs mt-4">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Destino / Ámbito</label>
+                <input
+                  type="text"
+                  disabled
+                  value={esModoTransversal ? '🌟 Taller Institucional / Transversal (Sin Curso)' : (cursoActivo ? `${cursoActivo.nivel} ${cursoActivo.letra} (${cursoActivo.regimen})` : 'Transversal')}
+                  className="w-full px-3 py-2 border rounded-lg bg-slate-100 text-slate-700 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Asignatura / Subsector *</label>
+                <input
+                  type="text"
+                  required
+                  list="sugerencias-materias"
+                  value={docenciaAsignatura}
+                  onChange={e => setDocenciaAsignatura(e.target.value)}
+                  placeholder="Ej. Lenguaje y Comunicación, Matemática..."
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-bold"
+                />
+                <datalist id="sugerencias-materias">
+                  {planActivo?.asignaturasBase.map((asig, i) => (
+                    <option key={i} value={asig.nombre} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Profesor(a) Asignado(a) *</label>
+                <select
+                  required
+                  value={docenciaDocenteId}
+                  onChange={e => setDocenciaDocenteId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-medium"
+                >
+                  <option value="">-- Seleccionar Docente --</option>
+                  {docentes.map(d => {
+                    const disp = disponibilidadDocentes.get(d.id);
+                    return (
+                      <option key={d.id} value={d.id}>
+                        {d.nombres} {d.apellidos} ({d.estamento}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Horas Pedagógicas Semanales (HA) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  required
+                  value={docenciaHoras}
+                  onChange={e => setDocenciaHoras(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold text-orange-600 text-base"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">1 hora pedagógica = 45 minutos de aula.</p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1.5">Tipo de Función / Régimen Horario</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
+                    docenciaTipoFuncion === 'CURRICULAR' ? 'border-orange-500 bg-orange-50/70 text-orange-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="tipoFuncion"
+                        checked={docenciaTipoFuncion === 'CURRICULAR'}
+                        onChange={() => setDocenciaTipoFuncion('CURRICULAR')}
+                        className="text-orange-600 focus:ring-orange-500"
+                      />
+                      <span className="text-xs">Plan Regular</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal ml-5">Afecto a proporción Ley 20.903</span>
+                  </label>
+
+                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
+                    docenciaTipoFuncion === 'TALLER_JEC' ? 'border-blue-500 bg-blue-50/70 text-blue-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="tipoFuncion"
+                        checked={docenciaTipoFuncion === 'TALLER_JEC'}
+                        onChange={() => setDocenciaTipoFuncion('TALLER_JEC')}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-xs">Taller JEC</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal ml-5">Afecto a proporción Ley 20.903</span>
+                  </label>
+
+                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
+                    docenciaTipoFuncion === 'TALLER_SEP' ? 'border-emerald-500 bg-emerald-50/70 text-emerald-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="tipoFuncion"
+                        checked={docenciaTipoFuncion === 'TALLER_SEP'}
+                        onChange={() => setDocenciaTipoFuncion('TALLER_SEP')}
+                        className="text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-xs">Taller SEP</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-700 font-normal ml-5">Exento de proporción Ley 20.903</span>
+                  </label>
+
+                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
+                    docenciaTipoFuncion === 'TRABAJO_COLABORATIVO' ? 'border-purple-500 bg-purple-50/70 text-purple-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="tipoFuncion"
+                        checked={docenciaTipoFuncion === 'TRABAJO_COLABORATIVO'}
+                        onChange={() => setDocenciaTipoFuncion('TRABAJO_COLABORATIVO')}
+                        className="text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-xs">Trabajo Colaborativo</span>
+                    </div>
+                    <span className="text-[10px] text-purple-700 font-normal ml-5">Art. 86 / Exento Ley 20.903</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setModalDocenciaOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow"
+                >
+                  {editandoAsigDocencia ? 'Guardar Cambios' : 'Asignar Docencia'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 3: ASIGNAR / EDITAR APOYO PIE                       */}
+      {/* ========================================================= */}
+      {modalPieOpen && cursoActivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-base font-bold text-purple-950 flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-purple-600" />
+                {editandoAsigPie ? 'Editar Apoyo PIE' : 'Asignar Apoyo PIE / Co-Docencia'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalPieOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarPieSubmit} className="space-y-4 text-xs mt-4">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
+                <input
+                  type="text"
+                  disabled
+                  value={`${cursoActivo.nivel} ${cursoActivo.letra} (${demandaPieCurso.neetCount} NEET / ${demandaPieCurso.neepCount} NEEP)`}
+                  className="w-full px-3 py-2 border rounded-lg bg-purple-50 text-purple-900 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Tipo de Apoyo Decreto 170 *</label>
+                <select
+                  value={pieTipoApoyo}
+                  onChange={e => setPieTipoApoyo(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+                >
+                  {TIPOS_APOYO_PIE.map(t => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Profesional / Asistente Asignado *
+                </label>
+                <select
+                  required
+                  value={pieDocenteId}
+                  onChange={e => setPieDocenteId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+                >
+                  <option value="">-- Seleccionar Profesional o Asistente --</option>
+                  <optgroup label="Educadoras Diferenciales (PIE)">
+                    {docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL').map(d => {
+                      const disp = disponibilidadDocentes.get(d.id);
+                      return (
+                        <option key={d.id} value={d.id}>
+                          {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  <optgroup label="Asistentes Profesionales PAE (Fono/Psico/TO)">
+                    {docentes.filter(d => d.estamento === 'PROFESIONAL_PAE').map(d => {
+                      const disp = disponibilidadDocentes.get(d.id);
+                      return (
+                        <option key={d.id} value={d.id}>
+                          {d.nombres} {d.apellidos} ({d.titulo || 'PAE'}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  <optgroup label="Asistentes Técnicos en Educación Especial / Aula">
+                    {docentes.filter(d => d.estamento === 'TECNICO_ESPECIAL' || d.estamento === 'ASISTENTE_AULA').map(d => {
+                      const disp = disponibilidadDocentes.get(d.id);
+                      return (
+                        <option key={d.id} value={d.id}>
+                          {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                  <optgroup label="Docentes de Aula Regular (Co-docencia / Colaborativo)">
+                    {docentes.filter(d => d.estamento === 'DOCENTE_AULA').map(d => {
+                      const disp = disponibilidadDocentes.get(d.id);
+                      return (
+                        <option key={d.id} value={d.id}>
+                          {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                        </option>
+                      );
+                    })}
+                  </optgroup>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Descripción / Asignatura Articulada</label>
+                <input
+                  type="text"
+                  value={pieAsignatura}
+                  onChange={e => setPieAsignatura(e.target.value)}
+                  placeholder="Ej. Co-Docencia en Lenguaje y Matemática, Fonoaudiología en Aula Recursos..."
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Horas Cronológicas Semanales *</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  max="44"
+                  required
+                  value={pieHoras}
+                  onChange={e => setPieHoras(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-700 text-base"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Horas cronológicas según Decreto 170 (1 hora cronológica = 60 minutos).</p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setModalPieOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg shadow"
+                >
+                  {editandoAsigPie ? 'Guardar Cambios' : 'Asignar Apoyo PIE'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 4: AJUSTAR ALUMNOS NEET / NEEP DEL CURSO            */}
+      {/* ========================================================= */}
+      {modalNeeOpen && cursoActivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 border border-slate-200">
+            <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+              <Users className="w-4 h-4 text-purple-600" />
+              Matrícula PIE: {cursoActivo.nivel} {cursoActivo.letra}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Ajusta los estudiantes con NEE para recalcular la demanda normativa de Educadoras Diferenciales y Profesionales PAE.
+            </p>
+
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                onGuardarCurso({
+                  ...cursoActivo,
+                  alumnosNeet: Number(editNeet),
+                  alumnosNeep: Number(editNeep)
+                });
+                setModalNeeOpen(false);
+              }}
+              className="space-y-4 text-xs"
+            >
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Estudiantes Transitorios (NEET) - Máx 5
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="15"
+                  required
+                  value={editNeet}
+                  onChange={e => setEditNeet(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 text-base"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Estudiantes Permanentes (NEEP) - Máx 2
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  required
+                  value={editNeep}
+                  onChange={e => setEditNeep(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 text-base"
+                />
+              </div>
+
+              {Number(editNeet) > 5 || Number(editNeep) > 2 ? (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-[11px] flex items-start gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Aforo excedido:</strong> Decreto 170 fija tope de 5 NEET y 2 NEEP por sala. Requerirá autorización fundada de la SEREMI.
+                  </span>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setModalNeeOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg shadow"
+                >
+                  Guardar Cupos
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

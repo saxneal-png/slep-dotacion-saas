@@ -1,0 +1,13 @@
+{
+  "name": "@slep/mineduc-engine",
+  "version": "1.0.0",
+  "description": "Motor de cálculo normativo de dotación docente y auditoría PIE - MINEDUC Chile",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "keywords": ["mineduc", "slep", "dotacion", "pie", "decreto170", "ley20903"],
+  "author": "UATP SLEP Valle Diguillín",
+  "license": "ISC"
+}
