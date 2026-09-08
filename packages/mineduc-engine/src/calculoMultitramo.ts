@@ -1,5 +1,7 @@
 import {
   buscarContratoMinimoPorTabla,
+  buscarDetallePorHorasAula,
+  DetalleTramoHorasAula,
   RAW_65_35,
   RAW_60_40,
   parseHHMMToMinutes
@@ -40,6 +42,11 @@ export interface ResultadoAuditoriaDocenteMultitramo {
   contratoPonderado65_35: number;
   /** Distribución proporcional del contrato real asignada al tramo 60/40 */
   contratoPonderado60_40: number;
+
+  /** Detalle normativo exacto de horas aula asignadas en tramo 65/35 (jornada, lectivas, recreo, HNL) */
+  detalle65_35: DetalleTramoHorasAula;
+  /** Detalle normativo exacto de horas aula asignadas en tramo 60/40 (jornada, lectivas, recreo, HNL) */
+  detalle60_40: DetalleTramoHorasAula;
 
   /** Minutos cronológicos reales impartidos en aula por el docente: (HA 65 + HA 60) * 45 */
   minutosLectivosAula: number;
@@ -91,8 +98,10 @@ export function calcularAuditoriaDocenteMultitramo(
   const contratoReal = Math.max(0, Math.round(params.horasContratoReal || 0));
 
   // 1. Obtención de jornadas requeridas por tramos independientes según tablas oficiales
-  const req65 = buscarContratoMinimoPorTabla(l65, '65_35');
-  const req60 = buscarContratoMinimoPorTabla(l60, '60_40');
+  const detalle65 = buscarDetallePorHorasAula(l65, '65_35');
+  const detalle60 = buscarDetallePorHorasAula(l60, '60_40');
+  const req65 = detalle65.jornada;
+  const req60 = detalle60.jornada;
   const contratoCalculadoTotal = req65 + req60 + pie + tallerSep + noAula;
 
   // 2. División del contrato base regular entre ambos regímenes (descontando funciones exentas PIE, SEP exento y No Aula)
@@ -140,20 +149,27 @@ export function calcularAuditoriaDocenteMultitramo(
 
   const clampJornada = (val: number) => Math.min(44, Math.max(1, val));
 
-  if (c65 > 0) {
-    const entry65 = RAW_65_35.find(e => e.jornada === clampJornada(c65));
-    if (entry65) {
-      totalRecreoMins += parseHHMMToMinutes(entry65.recreo);
-      totalHnlMins += parseHHMMToMinutes(entry65.hnl);
-      totalLectivaCronMins += parseHHMMToMinutes(entry65.lectivas);
+  if (contratoReal === 0 || cReg === reqTotalReg) {
+    // Cálculo exacto considerando por separado las proporciones de aula asignadas y luego sumando
+    totalRecreoMins = detalle65.recreoMinutos + detalle60.recreoMinutos;
+    totalHnlMins = detalle65.hnlMinutos + detalle60.hnlMinutos;
+    totalLectivaCronMins = detalle65.lectivasMinutos + detalle60.lectivasMinutos;
+  } else {
+    if (c65 > 0) {
+      const entry65 = RAW_65_35.find(e => e.jornada === clampJornada(c65));
+      if (entry65) {
+        totalRecreoMins += parseHHMMToMinutes(entry65.recreo);
+        totalHnlMins += parseHHMMToMinutes(entry65.hnl);
+        totalLectivaCronMins += parseHHMMToMinutes(entry65.lectivas);
+      }
     }
-  }
-  if (c60 > 0) {
-    const entry60 = RAW_60_40.find(e => e.jornada === clampJornada(c60));
-    if (entry60) {
-      totalRecreoMins += parseHHMMToMinutes(entry60.recreo);
-      totalHnlMins += parseHHMMToMinutes(entry60.hnl);
-      totalLectivaCronMins += parseHHMMToMinutes(entry60.lectivas);
+    if (c60 > 0) {
+      const entry60 = RAW_60_40.find(e => e.jornada === clampJornada(c60));
+      if (entry60) {
+        totalRecreoMins += parseHHMMToMinutes(entry60.recreo);
+        totalHnlMins += parseHHMMToMinutes(entry60.hnl);
+        totalLectivaCronMins += parseHHMMToMinutes(entry60.lectivas);
+      }
     }
   }
 
@@ -221,6 +237,8 @@ export function calcularAuditoriaDocenteMultitramo(
     contratoRegularBase: cReg,
     contratoPonderado65_35: c65,
     contratoPonderado60_40: c60,
+    detalle65_35: detalle65,
+    detalle60_40: detalle60,
     minutosLectivosAula,
     minutosLectivosTablaTotal: totalLectivaCronMins,
     minutosRecreoTotal: totalRecreoMins,

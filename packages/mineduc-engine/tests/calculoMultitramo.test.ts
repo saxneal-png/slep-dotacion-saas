@@ -202,4 +202,47 @@ describe('Motor MINEDUC - B�squeda Inversa y Auditoría Multitramo', () => {
     expect(res.estadoSaldo).toBe('EXACTO');
     expect(res.esInfractorExcesoLectivo).toBe(false);
   });
+
+  it('audita caso mixto con proporción 60/40 y 65/35 por cursos (10 HA en 60/40 y 10 HA en 65/35)', () => {
+    // Requerimiento exacto del usuario:
+    // 10 horas en 60/40: 7h 30m lectivas cronológicas, 0h 49m recreo y 3h 41m no lectivo (12h contrato requeridas)
+    // 10 horas en 65/35: 7h 30m lectivas cronológicas, 0h 45m recreo y 2h 45m no lectivo (11h contrato requeridas)
+    // Suma: 20 horas aula, 15h 00m lectivas (900m), 1h 34m recreo (94m), 6h 26m no lectivo (386m) -> 23h contrato
+    const res = calcularAuditoriaDocenteMultitramo({
+      horasAula60_40: 10,
+      horasAula65_35: 10,
+      horasContratoReal: 23
+    });
+
+    // Detalle tramo 60/40
+    expect(res.req60_40).toBe(12);
+    expect(res.detalle60_40.jornada).toBe(12);
+    expect(res.detalle60_40.lectivasMinutos).toBe(450); // 7h 30m
+    expect(res.detalle60_40.lectivasTexto).toBe('7 h 30 m');
+    expect(res.detalle60_40.recreoMinutos).toBe(49); // 0h 49m
+    expect(res.detalle60_40.recreoTexto).toBe('0 h 49 m');
+    expect(res.detalle60_40.hnlMinutos).toBe(221); // 3h 41m
+    expect(res.detalle60_40.hnlTexto).toBe('3 h 41 m');
+
+    // Detalle tramo 65/35
+    expect(res.req65_35).toBe(11);
+    expect(res.detalle65_35.jornada).toBe(11);
+    expect(res.detalle65_35.lectivasMinutos).toBe(450); // 7h 30m
+    expect(res.detalle65_35.lectivasTexto).toBe('7 h 30 m');
+    expect(res.detalle65_35.recreoMinutos).toBe(45); // 0h 45m
+    expect(res.detalle65_35.recreoTexto).toBe('0 h 45 m');
+    expect(res.detalle65_35.hnlMinutos).toBe(165); // 2h 45m
+    expect(res.detalle65_35.hnlTexto).toBe('2 h 45 m');
+
+    // Totales sumados
+    expect(res.contratoCalculadoTotal).toBe(23); // 12 + 11
+    expect(res.minutosLectivosAula).toBe(900); // 20 HA * 45 = 900m (15h 00m)
+    expect(res.minutosLectivosTablaTotal).toBe(900); // 450 + 450 = 900m (15h 00m)
+    expect(res.minutosRecreoTotal).toBe(94); // 49 + 45 = 94m (1h 34m)
+    expect(res.minutosHnlTotal).toBe(386); // 221 + 165 = 386m (6h 26m)
+    expect(res.minutosHnlPlanificacion40).toBe(154); // 386 * 0.40 = 154m (2h 34m)
+    expect(res.saldoHoras).toBe(0);
+    expect(res.estadoSaldo).toBe('EXACTO');
+    expect(res.esInfractorExcesoLectivo).toBe(false);
+  });
 });

@@ -17,6 +17,7 @@ import {
   evaluarCapacidadSaeYInfraestructura,
   calcularDemandaNormativaPieCurso,
   calcularJornadaMinutos,
+  calcularAuditoriaDocenteMultitramo,
   validarSobreasignacionDocente,
   obtenerPlanPorCurso,
   PLANES_MINEDUC
@@ -140,23 +141,49 @@ export const ColegioWorkflowView: React.FC<ColegioWorkflowViewProps> = ({
     for (const doc of docentes) {
       const titAsigs = asignaciones.filter(a => a.docenteId === doc.id);
       const coAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
-      const pedAsignadas = titAsigs.reduce((s, a) => s + a.horasPedagogicasAula, 0) +
-                           coAsigs.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const docAsigs = [...titAsigs, ...coAsigs];
+      const pedAsignadas = docAsigs.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+      const asigsRegulares = docAsigs.filter(a => !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO');
+      const ped60 = asigsRegulares
+        .filter(a => {
+          const c = cursos.find(x => x.id === a.cursoId);
+          return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+        })
+        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+      const ped65 = asigsRegulares
+        .filter(a => {
+          const c = cursos.find(x => x.id === a.cursoId);
+          return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
+        })
+        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
       const hDir = doc.horasDirectivas || 0;
       const hInsp = doc.horasInspectorGeneral || 0;
       const hTec = doc.horasTecnicoPedagogicas || 0;
       const hCoord = doc.horasCoordinacion || 0;
-      const hDocencia = Math.max(0, doc.horasContrato - hDir - hInsp - hTec - hCoord);
+      const hNoAula = hDir + hInsp + hTec + hCoord;
+      const hDocencia = Math.max(0, doc.horasContrato - hNoAula);
 
       if (hDocencia > 0) {
-        const c = calcularJornadaMinutos(hDocencia, pedAsignadas, regimenTabla);
-        const v = validarSobreasignacionDocente(hDocencia, pedAsignadas, regimenProporcion);
+        const audit = calcularAuditoriaDocenteMultitramo({
+          horasAula65_35: ped65,
+          horasAula60_40: ped60,
+          horasNoAulaInstitucionales: hNoAula,
+          horasContratoReal: doc.horasContrato,
+          aplicaArticulo69: Boolean(doc.aplicaArticulo69)
+        });
+
+        const maxHA = Math.floor(audit.minutosLimitePermitido / 45);
+        const vacantes = Math.max(0, maxHA - pedAsignadas);
+        const sobreasignado = audit.esInfractorExcesoLectivo || (doc.horasContrato > 0 && audit.saldoHoras < 0);
+
         map.set(doc.id, {
           pedAsignadas,
-          maxHA: c.horasPedagogicasDisponiblesMax,
-          vacantes: c.horasPedagogicasVacantes,
-          sobreasignado: v.estaSobreasignado
+          maxHA,
+          vacantes,
+          sobreasignado
         });
       } else {
         map.set(doc.id, {
@@ -168,7 +195,7 @@ export const ColegioWorkflowView: React.FC<ColegioWorkflowViewProps> = ({
       }
     }
     return map;
-  }, [docentes, asignaciones, regimenTabla, regimenProporcion]);
+  }, [docentes, asignaciones, cursos, colegio]);
 
   // Pasos de navegación
   const pasos = [
@@ -1654,11 +1681,35 @@ export const ColegioWorkflowView: React.FC<ColegioWorkflowViewProps> = ({
 
                     const titAsigs = asignaciones.filter(a => a.docenteId === d.id);
                     const coAsigs = asignaciones.filter(a => a.coDocenteId === d.id && a.tieneCoDocente);
-                    const pedAsignadas = titAsigs.reduce((s, a) => s + a.horasPedagogicasAula, 0) +
-                                         coAsigs.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+                    const docAsigs = [...titAsigs, ...coAsigs];
+                    const pedAsignadas = docAsigs.reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-                    const calculo = hDocencia > 0 ? calcularJornadaMinutos(hDocencia, pedAsignadas, regimenTabla) : null;
-                    const val = hDocencia > 0 ? validarSobreasignacionDocente(hDocencia, pedAsignadas, regimenProporcion) : null;
+                    const asigsRegulares = docAsigs.filter(a => !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO');
+                    const ped60 = asigsRegulares
+                      .filter(a => {
+                        const c = cursos.find(x => x.id === a.cursoId);
+                        return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+                      })
+                      .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+                    const ped65 = asigsRegulares
+                      .filter(a => {
+                        const c = cursos.find(x => x.id === a.cursoId);
+                        return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
+                      })
+                      .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+                    const audit = hDocencia > 0 ? calcularAuditoriaDocenteMultitramo({
+                      horasAula65_35: ped65,
+                      horasAula60_40: ped60,
+                      horasNoAulaInstitucionales: hNoAula,
+                      horasContratoReal: d.horasContrato,
+                      aplicaArticulo69: Boolean(d.aplicaArticulo69)
+                    }) : null;
+
+                    const maxHA = audit ? Math.floor(audit.minutosLimitePermitido / 45) : 0;
+                    const estaSobreasignado = audit ? (audit.esInfractorExcesoLectivo || (d.horasContrato > 0 && audit.saldoHoras < 0)) : pedAsignadas > 0;
+                    const excesoHA = Math.max(0, pedAsignadas - maxHA);
 
                     return (
                       <tr key={d.id} className="hover:bg-slate-50">
@@ -1672,26 +1723,31 @@ export const ColegioWorkflowView: React.FC<ColegioWorkflowViewProps> = ({
                         <td className="px-4 py-3 text-center font-black text-slate-700">{hDocencia}h</td>
 
                         <td className="px-4 py-3 text-center font-black text-emerald-700">
-                          {calculo ? `${calculo.horasPedagogicasDisponiblesMax} HA` : '0 HA'}
+                          {audit ? `${maxHA} HA` : '0 HA'}
                         </td>
 
                         <td className="px-4 py-3 text-center font-black text-orange-600">
                           {pedAsignadas} HA
+                          {(ped60 > 0 && ped65 > 0) && (
+                            <span className="block text-[9px] font-normal text-slate-400 font-mono">
+                              ({ped65} en 65/35 + {ped60} en 60/40)
+                            </span>
+                          )}
                         </td>
 
                         <td className="px-4 py-3 text-center text-slate-500">
-                          {calculo ? `${calculo.minutosRecreoAsignados} min` : '0 min'}
+                          {audit ? `${audit.minutosRecreoTotal} min` : '0 min'}
                         </td>
 
                         <td className="px-4 py-3 text-center text-slate-500">
-                          {calculo ? `${Math.round(calculo.minutosNoLectivosCalculados / 60)}h (${calculo.minutosNoLectivosCalculados}m)` : '0h'}
+                          {audit ? `${Math.round(audit.minutosHnlTotal / 60)}h (${audit.minutosHnlTotal}m)` : '0h'}
                         </td>
 
                         <td className="px-4 py-3 text-center">
-                          {val?.estaSobreasignado ? (
+                          {estaSobreasignado ? (
                             <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-50 border border-red-200 px-2 py-0.5 rounded text-[10px]">
                               <AlertTriangle className="w-3 h-3 text-red-600" />
-                              Sobreasignado (+{val.excesoHoras} HA)
+                              Sobreasignado (+{excesoHA} HA)
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[10px]">

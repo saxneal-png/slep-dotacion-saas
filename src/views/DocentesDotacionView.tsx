@@ -283,7 +283,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
       const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
-      const reqSubvDoc = buscarContratoMinimoPorTabla(pedAulaRegular, regimenTabla);
+      const reqSubvDoc = auditMulti.req65_35 + auditMulti.req60_40;
       const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
       const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
 

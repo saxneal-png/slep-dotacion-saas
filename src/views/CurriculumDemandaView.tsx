@@ -68,6 +68,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [nivel, setNivel] = useState('1° Básico');
   const [letra, setLetra] = useState('A');
   const [regimen, setRegimen] = useState<'JEC' | 'No JEC'>('JEC');
+  const [regimenProporcionModal, setRegimenProporcionModal] = useState<'65_35' | '60_40'>('65_35');
   const [cupoSae, setCupoSae] = useState(38);
   const [matriculaProyectada, setMatriculaProyectada] = useState(35);
   const [alumnosNeet, setAlumnosNeet] = useState(5);
@@ -166,6 +167,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
       nivel,
       letra: letra.trim().toUpperCase(),
       regimen,
+      regimenProporcion: regimenProporcionModal,
       cupoSae: Number(cupoSae),
       matriculaProyectada: Number(matriculaProyectada),
       alumnosNeet: Number(alumnosNeet),
@@ -1744,6 +1746,18 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   >
                     <option value="JEC">JEC (Completa - 38 HA)</option>
                     <option value="No JEC">No JEC (Media - 30 HA)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Proporción Docente *</label>
+                  <select
+                    value={regimenProporcionModal}
+                    onChange={e => setRegimenProporcionModal(e.target.value as any)}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-semibold text-xs"
+                  >
+                    <option value="65_35">65/35 (Estándar)</option>
+                    <option value="60_40">60/40 (Vulnerabilidad / 1° Ciclo)</option>
                   </select>
                 </div>
               </div>

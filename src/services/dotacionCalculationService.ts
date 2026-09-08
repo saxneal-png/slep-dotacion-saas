@@ -298,51 +298,39 @@ export function calcularDiagnosticoColegio(
     const hExentas = hInstNoAula + sepExentas + pieCronologicas;
     const horasParaDocenciaAula = Math.max(0, doc.horasContrato - hExentas);
 
-    // Verificar si el docente imparte clases en algún curso con régimen 60/40 (ej. NT1 a 4° Básico)
-    const teacherCourseIds = new Set(asigsAulaRegular.map(a => a.cursoId));
-    const teacherCourses = cursos.filter(c => teacherCourseIds.has(c.id));
-    const has60_40Course = teacherCourses.some(c => c.regimenProporcion === '60_40');
-    const docRegimenTabla = (has60_40Course || est.porcentajePrioritarios >= 80) ? '60_40' : '65_35';
-    const docRegimenProporcion = (has60_40Course || est.porcentajePrioritarios >= 80) ? '60/40' : '65/35';
+    // Separar horas regulares según régimen del curso (60/40 vs 65/35) para cálculo independiente
+    const ped60 = asigsAulaRegular
+      .filter(a => {
+        const c = cursos.find(x => x.id === a.cursoId);
+        return c ? c.regimenProporcion === '60_40' : (est.porcentajePrioritarios >= 80);
+      })
+      .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-    // El cálculo de proporción Ley 20.903 aplica EXCLUSIVAMENTE a las horas de aula regular
-    const calculo = horasParaDocenciaAula > 0 
-      ? calcularJornadaMinutos(horasParaDocenciaAula, pedAulaRegular, docRegimenTabla, Boolean(doc.aplicaArticulo69))
-      : {
-          horasContrato: 0,
-          minutosContratoTotales: 0,
-          horasPedagogicasDisponiblesMax: 0,
-          minutosLectivosDisponiblesMax: 0,
-          horasPedagogicasAsignadas: pedAulaRegular,
-          minutosLectivosAsignados: pedAulaRegular * 45,
-          horasPedagogicasVacantes: 0,
-          minutosLectivosVacantes: 0,
-          minutosRecreoAsignados: 0,
-          minutosNoLectivosCalculados: 0,
-          minutosUsadosTotales: 0,
-          esSobreasignado: pedAulaRegular > 0,
-          minutosSobreasignados: pedAulaRegular * 45,
-          cumple65_35: pedAulaRegular === 0,
-          aplicaArticulo69: Boolean(doc.aplicaArticulo69),
-          minutosReduccionArticulo69: 0,
-          horasReduccionArticulo69: 0
-        };
+    const ped65 = asigsAulaRegular
+      .filter(a => {
+        const c = cursos.find(x => x.id === a.cursoId);
+        return c ? c.regimenProporcion !== '60_40' : (est.porcentajePrioritarios < 80);
+      })
+      .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-    horasLectivasDisponibles += calculo.horasPedagogicasDisponiblesMax;
+    const auditDoc = calcularAuditoriaDocenteMultitramo({
+      horasAula65_35: ped65,
+      horasAula60_40: ped60,
+      horasPieCronologicas: pieCronologicas,
+      horasTallerSepExento: sepExentas,
+      horasPieSepCronologicas: pieCronologicas,
+      horasNoAulaInstitucionales: hInstNoAula,
+      horasContratoReal: doc.horasContrato,
+      aplicaArticulo69: Boolean(doc.aplicaArticulo69)
+    });
 
-    const valSobre = horasParaDocenciaAula > 0
-      ? validarSobreasignacionDocente(horasParaDocenciaAula, pedAulaRegular, docRegimenProporcion)
-      : {
-          estaSobreasignado: pedAulaRegular > 0,
-          horasAsignadas: pedAulaRegular,
-          horasMaxLectivasPermitidas: 0,
-          excesoHoras: pedAulaRegular,
-          mensaje: pedAulaRegular > 0 ? `Funcionario sin horas aula afectas con ${pedAulaRegular} HA de aula asignadas.` : 'Sin horas de aula regular asignadas.'
-        };
+    const maxHAPermitidas = Math.floor(auditDoc.minutosLimitePermitido / 45);
+    horasLectivasDisponibles += maxHAPermitidas;
 
-    if (valSobre.estaSobreasignado || calculo.esSobreasignado) {
+    if (auditDoc.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditDoc.saldoHoras < 0)) {
+      const exceso = Math.max(0, pedAulaRegular - maxHAPermitidas);
       sobreasignacionesAlertas.push(
-        `${doc.nombres} ${doc.apellidos} (${doc.run}): Asignadas ${pedAulaRegular} HA regulares de máx ${calculo.horasPedagogicasDisponiblesMax} HA (+${Math.max(valSobre.excesoHoras, pedAulaRegular - calculo.horasPedagogicasDisponiblesMax)} HA).`
+        `${doc.nombres} ${doc.apellidos} (${doc.run}): Asignadas ${pedAulaRegular} HA regulares (${ped65} HA en 65/35 + ${ped60} HA en 60/40) de máx ${maxHAPermitidas} HA (+${exceso} HA).`
       );
     }
 
@@ -354,7 +342,7 @@ export function calcularDiagnosticoColegio(
 
     // Auditoría Financiera: El Plan de Estudio y talleres JEC deben financiarse exclusivamente con Subvención General
     const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
-    const reqSubvDoc = buscarContratoMinimoPorTabla(pedAulaRegular, docRegimenTabla);
+    const reqSubvDoc = auditDoc.req65_35 + auditDoc.req60_40;
     if (reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0) {
       const defSub = reqSubvDoc - subTotalDoc;
       sobreasignacionesAlertas.push(
@@ -363,9 +351,9 @@ export function calcularDiagnosticoColegio(
     }
 
     // Carga total de trabajo considerando docencia regular requerida y funciones exentas
-    const reqContratoDoc = buscarContratoMinimoPorTabla(pedAulaRegular, docRegimenTabla);
+    const reqContratoDoc = reqSubvDoc;
     const coDocenciaNoPieSep = (doc.estamento === 'DOCENTE_DIFERENCIAL' || contratoPieDoc > 0) ? 0 : pedCoDocencia;
-    const cargaTotalTrabajo = reqContratoDoc + coDocenciaNoPieSep + sepExentas + pieCronologicas + hInstNoAula;
+    const cargaTotalTrabajo = auditDoc.contratoCalculadoTotal + coDocenciaNoPieSep;
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
 
     return {
@@ -377,9 +365,9 @@ export function calcularDiagnosticoColegio(
       horasTrabajoColaborativo: pedTrabajoColab,
       horasDocenciaAfecta: horasParaDocenciaAula,
       horasExentas: hExentas,
-      horasLectivasMaximas: calculo.horasPedagogicasDisponiblesMax,
-      estaSobreasignado: valSobre.estaSobreasignado,
-      excesoHoras: valSobre.excesoHoras,
+      horasLectivasMaximas: maxHAPermitidas,
+      estaSobreasignado: auditDoc.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditDoc.saldoHoras < 0),
+      excesoHoras: Math.max(0, pedAulaRegular - maxHAPermitidas),
       horasVacantes: horasVacantesFuncionario
     };
   });
@@ -871,7 +859,7 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       // Auditoría Financiera: Restricción de financiamiento de Plan de Estudio y JEC con SEP/PIE
       const horasAulaPlanEstudioYJec = pedAulaRegular;
-      const contratoReqSubvencionGeneral = buscarContratoMinimoPorTabla(horasAulaPlanEstudioYJec, regimenTabla);
+      const contratoReqSubvencionGeneral = auditMulti.req65_35 + auditMulti.req60_40;
       const subvencionGeneralContratoTotal = subTit + subCon;
       const sepPieContratoTotal = sepTit + sepCon + pieTit + pieCon;
 
@@ -884,6 +872,8 @@ export function obtenerDocentesConsolidadosTerritorio(
         esImprocedenteFinanciamientoSepPie = true;
         alertaFinanciamientoSepPie = `Improcedencia Financiera: El docente imparte ${horasAulaPlanEstudioYJec} HA de Plan de Estudio / JEC que exigen ${contratoReqSubvencionGeneral}h de Subvención General, pero su contrato solo dispone de ${subvencionGeneralContratoTotal}h de Subv. General (Déficit: ${deficitSubvencionGeneral}h cubiertas improcedentemente con fondos SEP o PIE).`;
       }
+
+      const maxPermitidasDoc = Math.floor(auditMulti.minutosLimitePermitido / 45);
 
       contratos.push({
         colegio,
@@ -901,13 +891,13 @@ export function obtenerDocentesConsolidadosTerritorio(
         esExentoProporcion: horasDocenciaNeta === 0,
         horasPedagogicasAsignadas: pedTotalAsignadas,
         regimen,
-        maxHorasPedagogicasMineduc: doc.aplicaArticulo69 ? Math.min(calculo.horasPedagogicasDisponiblesMax, 32) : calculo.horasPedagogicasDisponiblesMax,
-        minutosLectivosMineduc: doc.aplicaArticulo69 ? Math.min(calculo.minutosLectivosDisponiblesMax, 1440) : calculo.minutosLectivosDisponiblesMax,
-        minutosRecreoMineduc: auditMulti.minutosRecreoTotal || calculo.minutosRecreoAsignados,
-        minutosNoLectivosMineduc: auditMulti.minutosHnlTotal || calculo.minutosNoLectivosCalculados,
+        maxHorasPedagogicasMineduc: doc.aplicaArticulo69 ? Math.min(maxPermitidasDoc, 32) : maxPermitidasDoc,
+        minutosLectivosMineduc: doc.aplicaArticulo69 ? Math.min(auditMulti.minutosLectivosTablaTotal, 1440) : auditMulti.minutosLectivosTablaTotal,
+        minutosRecreoMineduc: auditMulti.minutosRecreoTotal,
+        minutosNoLectivosMineduc: auditMulti.minutosHnlTotal,
         minutosTotalesContrato: Math.round(doc.horasContrato * 60),
-        estaSobreasignado: valSobre.estaSobreasignado || calculo.esSobreasignado || auditMulti.esInfractorExcesoLectivo,
-        excesoHorasAula: Math.max(valSobre.excesoHoras, pedAulaRegular - (doc.aplicaArticulo69 ? Math.min(calculo.horasPedagogicasDisponiblesMax, 32) : calculo.horasPedagogicasDisponiblesMax)),
+        estaSobreasignado: auditMulti.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditMulti.saldoHoras < 0),
+        excesoHorasAula: Math.max(0, pedAulaRegular - (doc.aplicaArticulo69 ? Math.min(maxPermitidasDoc, 32) : maxPermitidasDoc)),
         fuentesFinanciamiento: {
           subvencionGeneralTitular: subTit,
           subvencionGeneralContrata: subCon,

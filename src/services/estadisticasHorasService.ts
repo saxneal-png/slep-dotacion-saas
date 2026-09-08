@@ -7,6 +7,7 @@ import {
 } from '../types';
 import {
   calcularJornadaMinutos,
+  calcularAuditoriaDocenteMultitramo,
   obtenerPlanPorCurso,
   calcularDemandaNormativaPieCurso
 } from '@slep/mineduc-engine';
@@ -269,23 +270,39 @@ export function calcularEstadisticasColegio(
     const hExentas = dDir + dInsp + dTec + dCoord + dTallerSep + dColab;
     const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);
 
-    // Calcular tramo Ley 20.903
-    const calculo = hAfectasDocencia > 0
-      ? calcularJornadaMinutos(hAfectasDocencia, haRegular, regimenTabla)
-      : {
-          horasPedagogicasDisponiblesMax: 0,
-          minutosLectivosDisponiblesMax: 0,
-          minutosNoLectivosCalculados: 0,
-          minutosRecreoAsignados: 0,
-          esSobreasignado: haRegular > 0
-        };
+    // Separar horas regulares según régimen del curso (60/40 vs 65/35) para cálculo independiente
+    const ha60 = asigsRegulares
+      .filter(a => {
+        const c = cursos.find(x => x.id === a.cursoId);
+        return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+      })
+      .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
-    horasLectivasMaximasPermitidas += calculo.horasPedagogicasDisponiblesMax;
-    minutosNoLectivosCalculadosTotal += calculo.minutosNoLectivosCalculados;
-    minutosRecreoCalculadosTotal += calculo.minutosRecreoAsignados;
+    const ha65 = asigsRegulares
+      .filter(a => {
+        const c = cursos.find(x => x.id === a.cursoId);
+        return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
+      })
+      .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
-    const horasNoLectivasDoc = Math.round((calculo.minutosNoLectivosCalculados / 60) * 10) / 10;
-    const horasRecreoDoc = Math.round((calculo.minutosRecreoAsignados / 60) * 10) / 10;
+    // Auditoría multitramo oficial MINEDUC (calcula 60/40 y 65/35 por separado y suma minutos de recreo, lectivas y HNL)
+    const auditDoc = calcularAuditoriaDocenteMultitramo({
+      horasAula65_35: ha65,
+      horasAula60_40: ha60,
+      horasPieCronologicas: pTit + pCon,
+      horasTallerSepExento: dTallerSep,
+      horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord,
+      horasContratoReal: doc.horasContrato,
+      aplicaArticulo69: Boolean(doc.aplicaArticulo69)
+    });
+
+    const maxHAPermitidas = Math.floor(auditDoc.minutosLimitePermitido / 45);
+    horasLectivasMaximasPermitidas += maxHAPermitidas;
+    minutosNoLectivosCalculadosTotal += auditDoc.minutosHnlTotal;
+    minutosRecreoCalculadosTotal += auditDoc.minutosRecreoTotal;
+
+    const horasNoLectivasDoc = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
+    const horasRecreoDoc = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
 
     return {
       id: doc.id,
@@ -302,7 +319,7 @@ export function calcularEstadisticasColegio(
       horasPie: pTit + pCon,
       horasSubvGeneral: sTit + sCon,
       horasInstitucionales: hExentas,
-      estaSobreasignado: calculo.esSobreasignado
+      estaSobreasignado: auditDoc.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditDoc.saldoHoras < 0)
     };
   });
 

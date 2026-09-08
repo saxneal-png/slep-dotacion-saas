@@ -153,30 +153,94 @@ export const MAPA_MINEDUC_65_35: ReadonlyMap<number, MineducTramoMinutos> = buil
 /** Mapa inmutable 60/40 indexed por horas de contrato */
 export const MAPA_MINEDUC_60_40: ReadonlyMap<number, MineducTramoMinutos> = buildMinutesMap(RAW_60_40);
 
+export interface DetalleTramoHorasAula {
+  /** Horas cronológicas semanales de contrato de este tramo */
+  jornada: number;
+  /** Horas pedagógicas de aula del tramo */
+  ha: number;
+  /** Minutos cronológicos lectivos en aula */
+  lectivasMinutos: number;
+  /** Minutos cronológicos de recreo asociados */
+  recreoMinutos: number;
+  /** Minutos cronológicos no lectivos (HNL) asociados */
+  hnlMinutos: number;
+  /** Texto original de minutos lectivos cronológicos, ej: "7 h 30 m" */
+  lectivasTexto: string;
+  /** Texto original de recreo, ej: "0 h 49 m" */
+  recreoTexto: string;
+  /** Texto original de tiempo no lectivo, ej: "3 h 41 m" */
+  hnlTexto: string;
+}
+
+/**
+ * Busca el detalle normativo completo (jornada requerida, minutos lectivos cronológicos,
+ * minutos de recreo y minutos no lectivos HNL) para una cantidad dada de horas de aula (HA)
+ * en un régimen específico ('65_35' o '60_40').
+ */
+export function buscarDetallePorHorasAula(
+  horasAulaRequeridas: number,
+  regimen: RegimenHorario = '65_35'
+): DetalleTramoHorasAula {
+  if (horasAulaRequeridas <= 0) {
+    return {
+      jornada: 0,
+      ha: 0,
+      lectivasMinutos: 0,
+      recreoMinutos: 0,
+      hnlMinutos: 0,
+      lectivasTexto: "0 h 0 m",
+      recreoTexto: "0 h 0 m",
+      hnlTexto: "0 h 0 m"
+    };
+  }
+
+  const lista = regimen === '60_40' ? RAW_60_40 : RAW_65_35;
+
+  for (let i = lista.length - 1; i >= 0; i--) {
+    if (lista[i].ha >= horasAulaRequeridas) {
+      const item = lista[i];
+      return {
+        jornada: item.jornada,
+        ha: horasAulaRequeridas,
+        lectivasMinutos: horasAulaRequeridas * 45,
+        recreoMinutos: parseHHMMToMinutes(item.recreo),
+        hnlMinutos: parseHHMMToMinutes(item.hnl),
+        lectivasTexto: item.lectivas,
+        recreoTexto: item.recreo,
+        hnlTexto: item.hnl
+      };
+    }
+  }
+
+  // Si supera el máximo de la tabla oficial (ej. > 38 HA en 65/35 o > 35 HA en 60/40)
+  const maxItem = lista[0];
+  const maxHA = maxItem.ha;
+  const factor = maxItem.jornada / maxHA;
+  const jornadaExtrapolada = Math.ceil(horasAulaRequeridas * factor);
+  const lectivasMins = horasAulaRequeridas * 45;
+  const recreoMins = Math.round(lectivasMins * (regimen === '60_40' ? (3 / 26.25) : (3 / 28.5)));
+  const contratoMins = jornadaExtrapolada * 60;
+  const hnlMins = Math.max(0, contratoMins - lectivasMins - recreoMins);
+
+  return {
+    jornada: jornadaExtrapolada,
+    ha: horasAulaRequeridas,
+    lectivasMinutos: lectivasMins,
+    recreoMinutos: recreoMins,
+    hnlMinutos: hnlMins,
+    lectivasTexto: `${Math.floor(lectivasMins / 60)} h ${lectivasMins % 60} m`,
+    recreoTexto: `${Math.floor(recreoMins / 60)} h ${recreoMins % 60} m`,
+    hnlTexto: `${Math.floor(hnlMins / 60)} h ${hnlMins % 60} m`
+  };
+}
+
 /**
  * Busca el contrato mínimo en la tabla oficial MINEDUC para cubrir una determinada cantidad de horas de aula (HA).
  * Si horasAulaRequeridas <= 0, retorna 0.
  * Recorre la tabla buscando la jornada mínima que cumpla horas_lectivas_HA >= horasAulaRequeridas.
  */
 export function buscarContratoMinimoPorTabla(horasAulaRequeridas: number, regimen: RegimenHorario = '65_35'): number {
-  if (horasAulaRequeridas <= 0) return 0;
-  const lista = regimen === '60_40' ? RAW_60_40 : RAW_65_35;
-
-  // Recorremos de menor a mayor (la lista va de 44 a 1, por lo que recorremos desde el final hacia el principio)
-  for (let i = lista.length - 1; i >= 0; i--) {
-    if (lista[i].ha >= horasAulaRequeridas) {
-      return lista[i].jornada;
-    }
-  }
-
-  // Extrapolación de seguridad si supera el máximo de la tabla (ej. >38 HA en 65/35 o >35 HA en 60/40)
-  const maxHorasAula = lista[0].ha;
-  const maxJornada = lista[0].jornada;
-  if (horasAulaRequeridas > maxHorasAula) {
-    const factorExtra = maxJornada / maxHorasAula;
-    return Math.ceil(horasAulaRequeridas * factorExtra);
-  }
-  return 0;
+  return buscarDetallePorHorasAula(horasAulaRequeridas, regimen).jornada;
 }
 
 // =============================================================================
