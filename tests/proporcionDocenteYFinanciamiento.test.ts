@@ -201,4 +201,49 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
                  resFin.pieTitular + resFin.pieContrata;
     expect(suma7).toBe(resFin.total);
   });
+
+  it('detecta alerta de improcedencia cuando el Plan de Estudio o JEC se financia indebidamente con SEP o PIE', () => {
+    // Docente con 40h de contrato: 20h Subvención General + 20h SEP
+    // Asignado a 30 HA de Plan de Estudio / JEC (requiere 35h de Subvención General en 65/35)
+    const docentes: Docente[] = [
+      {
+        id: 'doc-alerta-fin',
+        rbd: '9999',
+        run: '15.999.888-1',
+        nombres: 'Marcos',
+        apellidos: 'Soto',
+        calidadJuridica: 'TITULAR',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 40,
+        horasSubvencionGeneralTitular: 20,
+        horasSubvencionGeneralContrata: 0,
+        horasSepTitular: 20,
+        horasSepContrata: 0,
+        horasPieTitular: 0,
+        horasPieContrata: 0
+      }
+    ];
+
+    const asignaciones: AsignacionHoraria[] = [
+      {
+        id: 'asig-plan-1',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-alerta-fin',
+        asignatura: 'Lenguaje y Comunicación',
+        horasPedagogicasAula: 30
+      }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], docentes, asignaciones);
+    const contrato = consolidado[0].contratos[0];
+
+    // 30 HA de plan curricular exigen 35h de Subvención General
+    expect(contrato.horasAulaPlanEstudioYJec).toBe(30);
+    expect(contrato.contratoReqSubvencionGeneral).toBe(35);
+    expect(contrato.subvencionGeneralContratoTotal).toBe(20);
+    expect(contrato.deficitSubvencionGeneral).toBe(15); // 35 - 20 = 15h déficit
+    expect(contrato.esImprocedenteFinanciamientoSepPie).toBe(true);
+    expect(contrato.alertaFinanciamientoSepPie).toContain('Improcedencia Financiera');
+  });
 });

@@ -30,7 +30,7 @@ import {
   EstamentoDocente,
   DocenteConsolidadoTerritorial 
 } from '../types';
-import { calcularJornadaMinutos, validarSobreasignacionDocente, calcularAuditoriaDocenteMultitramo } from '@slep/mineduc-engine';
+import { calcularJornadaMinutos, validarSobreasignacionDocente, calcularAuditoriaDocenteMultitramo, buscarContratoMinimoPorTabla } from '@slep/mineduc-engine';
 import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalculationService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 
@@ -339,6 +339,12 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
     const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
+    const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
+    const sepPieTotalDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0) + Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+    const reqSubvDoc = buscarContratoMinimoPorTabla(pedAulaRegular, regimenTabla);
+    const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
+    const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
+
     return {
       docente: d,
       pedAsignadas: pedTotalAsignadas,
@@ -361,7 +367,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       hCoord,
       hTallerSepDoc,
       hColabDoc,
-      docTerritorial
+      docTerritorial,
+      esImprocedenteFinanciamiento,
+      deficitFinanciamiento,
+      reqSubvDoc,
+      subTotalDoc
     };
   });
 
@@ -369,7 +379,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
   // Filtrado de docentes para búsqueda rápida
   const docentesFiltrados = useMemo(() => {
-    return docentesAuditados.filter(({ docente: d, auditMulti, valSobre }) => {
+    return docentesAuditados.filter(({ docente: d, auditMulti, valSobre, esImprocedenteFinanciamiento }) => {
       const q = busquedaDocente.toLowerCase().trim();
       const matchTexto = q === '' ||
         `${d.nombres} ${d.apellidos}`.toLowerCase().includes(q) ||
@@ -381,7 +391,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
       let matchEstado = true;
       if (filtroEstadoCarga === 'SOBREASIGNADOS') {
-        matchEstado = auditMulti.esInfractorExcesoLectivo || valSobre.estaSobreasignado || auditMulti.estadoSaldo === 'DEFICIT';
+        matchEstado = auditMulti.esInfractorExcesoLectivo || valSobre.estaSobreasignado || auditMulti.estadoSaldo === 'DEFICIT' || esImprocedenteFinanciamiento;
       } else if (filtroEstadoCarga === 'HOLGURA') {
         matchEstado = auditMulti.estadoSaldo === 'HOLGURA';
       } else if (filtroEstadoCarga === 'EXACTO') {
@@ -765,7 +775,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                docentesFiltrados.map(({ docente: d, pedAsignadas, pedAulaRegular, pedCoDocencia, pedTallerSep, pedTrabajoColab, ped65, ped60, pieCronologicas, sepExentas, calculo, valSobre, auditMulti, esExento, hDir, hInsp, hTec, hCoord, hTallerSepDoc, hColabDoc, docTerritorial }) => {
+                docentesFiltrados.map(({ docente: d, pedAsignadas, pedAulaRegular, pedCoDocencia, pedTallerSep, pedTrabajoColab, ped65, ped60, pieCronologicas, sepExentas, calculo, valSobre, auditMulti, esExento, hDir, hInsp, hTec, hCoord, hTallerSepDoc, hColabDoc, docTerritorial, esImprocedenteFinanciamiento, deficitFinanciamiento }) => {
                 const esMultiEscuela = docTerritorial && docTerritorial.contratos.length > 1;
                 const hnlHoras = Math.floor(auditMulti.minutosHnlTotal / 60);
                 const hnlMins = auditMulti.minutosHnlTotal % 60;
@@ -873,6 +883,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                           Exacto (0)
                         </span>
+                      )}
+
+                      {esImprocedenteFinanciamiento && (
+                        <div className="mt-1">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300" title={`Déficit de ${deficitFinanciamiento}h de Subvención General cubiertas improcedentemente con fondos SEP o PIE`}>
+                            <AlertTriangle className="w-3 h-3 text-amber-700 shrink-0" />
+                            Improcedencia SEP/PIE (-{deficitFinanciamiento}h)
+                          </span>
+                        </div>
                       )}
                     </td>
 

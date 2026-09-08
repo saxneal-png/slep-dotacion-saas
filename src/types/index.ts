@@ -244,6 +244,13 @@ export interface ContratoDocenteColegio {
   esInfractorExcesoLectivo?: boolean;
   saldoHoras?: number;
   estadoSaldo?: 'EXACTO' | 'HOLGURA' | 'DEFICIT' | 'POR_AUDITAR';
+  // Auditoría Financiera: Restricción de financiamiento de Plan de Estudio y JEC con SEP/PIE
+  horasAulaPlanEstudioYJec?: number;
+  contratoReqSubvencionGeneral?: number;
+  subvencionGeneralContratoTotal?: number;
+  deficitSubvencionGeneral?: number;
+  esImprocedenteFinanciamientoSepPie?: boolean;
+  alertaFinanciamientoSepPie?: string;
 }
 
 export interface DocenteConsolidadoTerritorial {

@@ -12,7 +12,8 @@ import {
   Scale, 
   Layers, 
   Coins, 
-  GraduationCap
+  GraduationCap,
+  AlertTriangle
 } from 'lucide-react';
 import type { DocenteConsolidadoTerritorial, ContratoDocenteColegio } from '../types';
 
@@ -298,6 +299,20 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                           <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-[11px] flex items-center gap-2">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                             <span>Proporción lectiva ({c.porcentajeLectivoReal}%) cumple con el límite ponderado legal de {c.porcentajeLimitePonderado}%.</span>
+                          </div>
+                        )}
+
+                        {/* Alerta de Improcedencia Financiera: Plan de Estudio o JEC con SEP/PIE */}
+                        {c.esImprocedenteFinanciamientoSepPie && (
+                          <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg text-xs space-y-1">
+                            <div className="flex items-center gap-2 font-bold text-amber-800">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>⚠️ Alerta de Financiamiento (Improcedencia SEP / PIE)</span>
+                            </div>
+                            <p className="text-[11px] text-amber-900 leading-relaxed">
+                              El Plan de Estudio y las horas JEC deben financiarse <strong>exclusivamente con Subvención General</strong>.
+                              El docente imparte <strong>{c.horasAulaPlanEstudioYJec} HA</strong> que exigen <strong>{c.contratoReqSubvencionGeneral} hrs</strong> de Subvención General, pero su contrato solo dispone de <strong>{c.subvencionGeneralContratoTotal} hrs</strong> (Déficit: <strong>{c.deficitSubvencionGeneral} hrs</strong> cubiertas improcedentemente con fondos SEP o PIE).
+                            </p>
                           </div>
                         )}
 

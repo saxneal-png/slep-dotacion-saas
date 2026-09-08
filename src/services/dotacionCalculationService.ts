@@ -260,6 +260,17 @@ export function calcularDiagnosticoColegio(
       );
     }
 
+    // Auditoría Financiera: El Plan de Estudio y talleres JEC deben financiarse exclusivamente con Subvención General
+    const subTotalDoc = Number(doc.horasSubvencionGeneralTitular || 0) + Number(doc.horasSubvencionGeneralContrata || 0);
+    const sepPieTotalDoc = Number(doc.horasSepTitular || 0) + Number(doc.horasSepContrata || 0) + Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0);
+    const reqSubvDoc = buscarContratoMinimoPorTabla(pedAulaRegular, docRegimenTabla);
+    if (reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0) {
+      const defSub = reqSubvDoc - subTotalDoc;
+      sobreasignacionesAlertas.push(
+        `ALERTA FINANCIERA: ${doc.nombres} ${doc.apellidos} (${doc.run}): Imparte ${pedAulaRegular} HA de Plan de Estudio / JEC que exigen ${reqSubvDoc}h de Subvención General, pero solo tiene ${subTotalDoc}h de Subv. General (Déficit de ${defSub}h pagadas improcedentemente con fondos SEP o PIE).`
+      );
+    }
+
     const hInstNoAula = hDir + hInsp + hTec + hCoord + hConv + hExtra;
     const cargaTotalTrabajo = pedAulaRegular + pedCoDocencia + sepExentas + pieCronologicas + hInstNoAula;
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
@@ -686,6 +697,22 @@ export function obtenerDocentesConsolidadosTerritorio(
       totalTrabajoColaborativo += (hColabDoc || pedTrabajoColab);
       totalInstitucionalesNoAula += hInstNoAula;
 
+      // Auditoría Financiera: Restricción de financiamiento de Plan de Estudio y JEC con SEP/PIE
+      const horasAulaPlanEstudioYJec = pedAulaRegular;
+      const contratoReqSubvencionGeneral = buscarContratoMinimoPorTabla(horasAulaPlanEstudioYJec, regimenTabla);
+      const subvencionGeneralContratoTotal = subTit + subCon;
+      const sepPieContratoTotal = sepTit + sepCon + pieTit + pieCon;
+
+      let deficitSubvencionGeneral = 0;
+      let esImprocedenteFinanciamientoSepPie = false;
+      let alertaFinanciamientoSepPie = '';
+
+      if (contratoReqSubvencionGeneral > subvencionGeneralContratoTotal && sepPieContratoTotal > 0 && horasAulaPlanEstudioYJec > 0) {
+        deficitSubvencionGeneral = contratoReqSubvencionGeneral - subvencionGeneralContratoTotal;
+        esImprocedenteFinanciamientoSepPie = true;
+        alertaFinanciamientoSepPie = `Improcedencia Financiera: El docente imparte ${horasAulaPlanEstudioYJec} HA de Plan de Estudio / JEC que exigen ${contratoReqSubvencionGeneral}h de Subvención General, pero su contrato solo dispone de ${subvencionGeneralContratoTotal}h de Subv. General (Déficit: ${deficitSubvencionGeneral}h cubiertas improcedentemente con fondos SEP o PIE).`;
+      }
+
       contratos.push({
         colegio,
         docente: doc,
@@ -733,7 +760,13 @@ export function obtenerDocentesConsolidadosTerritorio(
         porcentajeLimitePonderado: auditMulti.porcentajeLimitePonderado,
         esInfractorExcesoLectivo: auditMulti.esInfractorExcesoLectivo,
         saldoHoras: auditMulti.saldoHoras,
-        estadoSaldo: auditMulti.estadoSaldo
+        estadoSaldo: auditMulti.estadoSaldo,
+        horasAulaPlanEstudioYJec,
+        contratoReqSubvencionGeneral,
+        subvencionGeneralContratoTotal,
+        deficitSubvencionGeneral,
+        esImprocedenteFinanciamientoSepPie,
+        alertaFinanciamientoSepPie
       });
     }
 
