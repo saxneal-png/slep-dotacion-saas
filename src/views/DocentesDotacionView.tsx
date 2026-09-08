@@ -30,7 +30,8 @@ import {
   EstamentoDocente,
   DocenteConsolidadoTerritorial,
   FuncionNoAulaDocente,
-  TipoFuncionNoAula
+  TipoFuncionNoAula,
+  FuenteFinanciamientoFuncion
 } from '../types';
 import { calcularJornadaMinutos, validarSobreasignacionDocente, calcularAuditoriaDocenteMultitramo, buscarContratoMinimoPorTabla } from '@slep/mineduc-engine';
 import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalculationService';
@@ -119,6 +120,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const [nuevaFuncionTipo, setNuevaFuncionTipo] = useState<TipoFuncionNoAula>('COORDINACION');
   const [nuevaFuncionNombre, setNuevaFuncionNombre] = useState('');
   const [nuevaFuncionHoras, setNuevaFuncionHoras] = useState<number>(2);
+  const [nuevaFuncionFinanciamiento, setNuevaFuncionFinanciamiento] = useState<FuenteFinanciamientoFuncion>('SUBVENCION_GENERAL');
 
   const [horasDirectivas, setHorasDirectivas] = useState(0);
   const [horasInspectorGeneral, setHorasInspectorGeneral] = useState(0);
@@ -170,6 +172,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     setNuevaFuncionTipo('COORDINACION');
     setNuevaFuncionNombre('');
     setNuevaFuncionHoras(2);
+    setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
     setHorasDirectivas(0);
     setHorasInspectorGeneral(0);
     setHorasTecnicoPedagogicas(0);
@@ -203,16 +206,17 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       setFuncionesNoAula([...d.funcionesNoAula]);
     } else {
       const legacyList: FuncionNoAulaDocente[] = [];
-      if (d.horasDirectivas) legacyList.push({ id: `f-${Date.now()}-1`, tipo: 'DIRECTIVA', nombre: 'Gestión Directiva (Dirección/Subdirección)', horas: d.horasDirectivas });
-      if (d.horasInspectorGeneral) legacyList.push({ id: `f-${Date.now()}-2`, tipo: 'INSPECTORIA', nombre: 'Inspectoría General', horas: d.horasInspectorGeneral });
-      if (d.horasTecnicoPedagogicas) legacyList.push({ id: `f-${Date.now()}-3`, tipo: 'UTP', nombre: 'Jefatura Técnico-Pedagógica (UTP)', horas: d.horasTecnicoPedagogicas });
-      if (d.horasCoordinacion) legacyList.push({ id: `f-${Date.now()}-4`, tipo: 'COORDINACION', nombre: d.tipoCoordinacion ? `Coordinación UTP (${d.tipoCoordinacion})` : 'Coordinación Pedagógica UTP', horas: d.horasCoordinacion });
+      if (d.horasDirectivas) legacyList.push({ id: `f-${Date.now()}-1`, tipo: 'DIRECTIVA', nombre: 'Gestión Directiva (Dirección/Subdirección)', horas: d.horasDirectivas, financiamiento: 'SUBVENCION_GENERAL' });
+      if (d.horasInspectorGeneral) legacyList.push({ id: `f-${Date.now()}-2`, tipo: 'INSPECTORIA', nombre: 'Inspectoría General', horas: d.horasInspectorGeneral, financiamiento: 'SUBVENCION_GENERAL' });
+      if (d.horasTecnicoPedagogicas) legacyList.push({ id: `f-${Date.now()}-3`, tipo: 'UTP', nombre: 'Jefatura Técnico-Pedagógica (UTP)', horas: d.horasTecnicoPedagogicas, financiamiento: 'SUBVENCION_GENERAL' });
+      if (d.horasCoordinacion) legacyList.push({ id: `f-${Date.now()}-4`, tipo: 'COORDINACION', nombre: d.tipoCoordinacion ? `Coordinación UTP (${d.tipoCoordinacion})` : 'Coordinación Pedagógica UTP', horas: d.horasCoordinacion, financiamiento: 'SUBVENCION_GENERAL' });
       setFuncionesNoAula(legacyList);
     }
 
     setNuevaFuncionTipo('COORDINACION');
     setNuevaFuncionNombre('');
     setNuevaFuncionHoras(2);
+    setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
 
     setHorasDirectivas(d.horasDirectivas || 0);
     setHorasInspectorGeneral(d.horasInspectorGeneral || 0);
@@ -259,11 +263,13 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       id: `func-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       tipo: nuevaFuncionTipo,
       nombre: nombreFinal,
-      horas: Number(nuevaFuncionHoras)
+      horas: Number(nuevaFuncionHoras),
+      financiamiento: nuevaFuncionFinanciamiento
     };
     setFuncionesNoAula(prev => [...prev, item]);
     setNuevaFuncionNombre('');
     setNuevaFuncionHoras(2);
+    setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
   };
 
   const eliminarFuncionNoAula = (id: string) => {
@@ -282,10 +288,22 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const dirHours = funcionesNoAula.filter(f => f.tipo === 'DIRECTIVA').reduce((s, f) => s + Number(f.horas || 0), 0);
-    const inspHours = funcionesNoAula.filter(f => f.tipo === 'INSPECTORIA').reduce((s, f) => s + Number(f.horas || 0), 0);
-    const utpHours = funcionesNoAula.filter(f => f.tipo === 'UTP' || f.tipo === 'EVALUACION' || f.tipo === 'ORIENTACION').reduce((s, f) => s + Number(f.horas || 0), 0);
-    const coordHours = funcionesNoAula.filter(f => f.tipo === 'COORDINACION' || f.tipo === 'CONVIVENCIA' || f.tipo === 'CRA' || f.tipo === 'ENLACES' || f.tipo === 'EXTRAESCOLAR' || f.tipo === 'GREMIAL' || f.tipo === 'ADMINISTRATIVA' || f.tipo === 'OTRA').reduce((s, f) => s + Number(f.horas || 0), 0);
+    let finalFunciones = [...funcionesNoAula];
+    // Auto-commit si el usuario escribió datos en la fila pero no presionó el botón "+" antes de Guardar Docente
+    if (nuevaFuncionHoras > 0 && nuevaFuncionNombre.trim()) {
+      finalFunciones.push({
+        id: `func-${Date.now()}-pending`,
+        tipo: nuevaFuncionTipo,
+        nombre: nuevaFuncionNombre.trim(),
+        horas: Number(nuevaFuncionHoras),
+        financiamiento: nuevaFuncionFinanciamiento
+      });
+    }
+
+    const dirHours = finalFunciones.filter(f => f.tipo === 'DIRECTIVA').reduce((s, f) => s + Number(f.horas || 0), 0);
+    const inspHours = finalFunciones.filter(f => f.tipo === 'INSPECTORIA').reduce((s, f) => s + Number(f.horas || 0), 0);
+    const utpHours = finalFunciones.filter(f => f.tipo === 'UTP' || f.tipo === 'EVALUACION' || f.tipo === 'ORIENTACION').reduce((s, f) => s + Number(f.horas || 0), 0);
+    const coordHours = finalFunciones.filter(f => f.tipo === 'COORDINACION' || f.tipo === 'CONVIVENCIA' || f.tipo === 'CRA' || f.tipo === 'ENLACES' || f.tipo === 'EXTRAESCOLAR' || f.tipo === 'GREMIAL' || f.tipo === 'ADMINISTRATIVA' || f.tipo === 'OTRA').reduce((s, f) => s + Number(f.horas || 0), 0);
 
     const doc: Docente = {
       id: editingDoc ? editingDoc.id : `doc-${Date.now()}`,
@@ -308,7 +326,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       horasTecnicoPedagogicas: utpHours || Number(horasTecnicoPedagogicas) || 0,
       horasCoordinacion: coordHours || Number(horasCoordinacion) || 0,
       tipoCoordinacion: tipoCoordinacion.trim() || undefined,
-      funcionesNoAula: funcionesNoAula.length > 0 ? funcionesNoAula : undefined,
+      funcionesNoAula: finalFunciones.length > 0 ? finalFunciones : undefined,
       horasTallerSep: Number(horasTallerSep) || 0,
       horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
       asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,
@@ -890,7 +908,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           </span>
                         )}
                         {Boolean(d.funcionesNoAula && d.funcionesNoAula.length > 0) && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-800 border border-purple-200" title={d.funcionesNoAula?.map(f => `${f.nombre}: ${f.horas}h`).join(', ')}>
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-800 border border-purple-200" title={d.funcionesNoAula?.map(f => `${f.nombre}: ${f.horas}h (${f.financiamiento || 'Subv. Gen'})`).join(', ')}>
                             🏢 {d.funcionesNoAula?.length} func. no aula ({d.funcionesNoAula?.reduce((s, f) => s + (Number(f.horas) || 0), 0)}h)
                           </span>
                         )}
@@ -1499,13 +1517,22 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     {funcionesNoAula.map(f => {
                       const meta = TIPOS_FUNCIONES_LABELS[f.tipo] || { label: f.tipo, defaultNombre: f.nombre, badgeColor: 'bg-slate-100 text-slate-800 border-slate-200' };
+                      const metaFinanc = f.financiamiento === 'SEP'
+                        ? { label: 'SEP', badgeColor: 'bg-purple-100 text-purple-800 border-purple-200' }
+                        : f.financiamiento === 'PIE'
+                        ? { label: 'PIE', badgeColor: 'bg-blue-100 text-blue-800 border-blue-200' }
+                        : { label: 'Subv. Gen', badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+
                       return (
                         <div key={f.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 text-xs shadow-sm">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${meta.badgeColor}`}>
                               {f.tipo}
                             </span>
                             <span className="font-semibold text-slate-800">{f.nombre}</span>
+                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${metaFinanc.badgeColor}`}>
+                              {metaFinanc.label}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <strong className="text-purple-900 font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-100">{f.horas} hrs</strong>
@@ -1535,7 +1562,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                     Agregar Nueva Función Fuera de Aula / Administrativa:
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                    <div className="sm:col-span-4">
+                    <div className="sm:col-span-3">
                       <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Tipo / Categoría</label>
                       <select
                         value={nuevaFuncionTipo}
@@ -1554,7 +1581,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       </select>
                     </div>
 
-                    <div className="sm:col-span-5">
+                    <div className="sm:col-span-4">
                       <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Nombre / Descripción</label>
                       <input
                         type="text"
@@ -1565,7 +1592,20 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div className="sm:col-span-3">
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Financiamiento</label>
+                      <select
+                        value={nuevaFuncionFinanciamiento}
+                        onChange={e => setNuevaFuncionFinanciamiento(e.target.value as FuenteFinanciamientoFuncion)}
+                        className="w-full px-2 py-1.5 border rounded-lg text-xs bg-white focus:ring-2 focus:ring-purple-400 focus:outline-none font-medium"
+                      >
+                        <option value="SUBVENCION_GENERAL">Subvención General</option>
+                        <option value="SEP">SEP (Ley 20.248)</option>
+                        <option value="PIE">PIE (Dec. 170)</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-1">
                       <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Horas</label>
                       <input
                         type="number"
@@ -1573,7 +1613,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                         max={horasContrato}
                         value={nuevaFuncionHoras}
                         onChange={e => setNuevaFuncionHoras(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                        className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-400 focus:outline-none font-semibold text-center"
                       />
                     </div>
 
@@ -1582,7 +1622,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                         type="button"
                         onClick={agregarFuncionNoAula}
                         className="w-full h-[30px] bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center justify-center shadow-sm transition-colors text-xs font-bold"
-                        title="Agregar función a la lista"
+                        title="Añadir función a la lista"
                       >
                         <Plus className="w-4 h-4" />
                       </button>

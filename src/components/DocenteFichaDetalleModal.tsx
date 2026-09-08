@@ -408,17 +408,30 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                         {/* Listado de Múltiples Funciones si existen */}
                         {(c.funcionesNoAula || c.docente?.funcionesNoAula || []).length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-[11px] mt-2">
-                            {(c.funcionesNoAula || c.docente?.funcionesNoAula || []).map((f: any, fIdx: number) => (
-                              <div key={f.id || fIdx} className="bg-white p-2 rounded border border-purple-100 flex items-center justify-between shadow-xs">
-                                <div>
-                                  <span className="font-semibold text-purple-900 block capitalize">{f.tipo.replace('_', ' ')}</span>
-                                  {f.nombre && <span className="text-[10px] text-slate-500 block truncate max-w-[140px]">{f.nombre}</span>}
+                            {(c.funcionesNoAula || c.docente?.funcionesNoAula || []).map((f: any, fIdx: number) => {
+                              const metaFinanc = f.financiamiento === 'SEP'
+                                ? { label: 'SEP', cls: 'bg-purple-100 text-purple-800 border-purple-200' }
+                                : f.financiamiento === 'PIE'
+                                ? { label: 'PIE', cls: 'bg-blue-100 text-blue-800 border-blue-200' }
+                                : { label: 'Subv. Gen', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+
+                              return (
+                                <div key={f.id || fIdx} className="bg-white p-2 rounded border border-purple-100 flex items-center justify-between shadow-xs">
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-semibold text-purple-900 block capitalize">{f.tipo.replace('_', ' ')}</span>
+                                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold border ${metaFinanc.cls}`}>
+                                        {metaFinanc.label}
+                                      </span>
+                                    </div>
+                                    {f.nombre && <span className="text-[10px] text-slate-500 block truncate max-w-[140px]">{f.nombre}</span>}
+                                  </div>
+                                  <span className="font-mono font-bold text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                    {f.horas} hrs
+                                  </span>
                                 </div>
-                                <span className="font-mono font-bold text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                                  {f.horas} hrs
-                                </span>
-                              </div>
-                            ))}
+                              );
+                            })}
                             {Boolean(c.horasTallerSep || c.horasTallerSepExento) && (
                               <div className="bg-white p-2 rounded border border-purple-100 flex items-center justify-between">
                                 <span className="text-slate-600 block">Taller SEP</span>

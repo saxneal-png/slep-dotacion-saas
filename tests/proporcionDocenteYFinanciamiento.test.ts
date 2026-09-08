@@ -246,4 +246,55 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     expect(contrato.esImprocedenteFinanciamientoSepPie).toBe(true);
     expect(contrato.alertaFinanciamientoSepPie).toContain('Improcedencia Financiera');
   });
+
+  it('debe registrar y calcular correctamente múltiples funciones no aula con distintas fuentes de financiamiento', () => {
+    const docMultiFunc: Docente = {
+      id: 'doc-multi-func',
+      rbd: '9999',
+      run: '16.111.222-3',
+      nombres: 'Francisca',
+      apellidos: 'Reyes',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 34,
+      horasSepTitular: 6,
+      horasPieTitular: 4,
+      funcionesNoAula: [
+        {
+          id: 'f-1',
+          tipo: 'UTP',
+          nombre: 'Jefa de UTP',
+          horas: 10,
+          financiamiento: 'SUBVENCION_GENERAL'
+        },
+        {
+          id: 'f-2',
+          tipo: 'CONVIVENCIA',
+          nombre: 'Encargada Convivencia SEP',
+          horas: 6,
+          financiamiento: 'SEP'
+        },
+        {
+          id: 'f-3',
+          tipo: 'COORDINACION',
+          nombre: 'Coordinación PIE',
+          horas: 4,
+          financiamiento: 'PIE'
+        }
+      ]
+    };
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docMultiFunc], []);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.funcionesNoAula?.length).toBe(3);
+    expect(contrato.funcionesNoAula?.[0].financiamiento).toBe('SUBVENCION_GENERAL');
+    expect(contrato.funcionesNoAula?.[1].financiamiento).toBe('SEP');
+    expect(contrato.funcionesNoAula?.[2].financiamiento).toBe('PIE');
+
+    // Total de horas no aula: 10 + 6 + 4 = 20 hrs.
+    // Horas netas de docencia afectas: 44 - 20 = 24 hrs.
+    expect(contrato.horasDocenciaNeta).toBe(24);
+  });
 });

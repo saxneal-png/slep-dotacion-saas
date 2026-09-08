@@ -82,11 +82,14 @@ export type TipoFuncionNoAula =
   | 'ADMINISTRATIVA'
   | 'OTRA';
 
+export type FuenteFinanciamientoFuncion = 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
+
 export interface FuncionNoAulaDocente {
   id: string;
   tipo: TipoFuncionNoAula;
   nombre: string;
   horas: number;
+  financiamiento?: FuenteFinanciamientoFuncion;
 }
 
 export interface Docente {

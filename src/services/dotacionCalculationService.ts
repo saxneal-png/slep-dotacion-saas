@@ -226,7 +226,16 @@ export function calcularDiagnosticoColegio(
     const sumFuncionesNoAula = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
       ? doc.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
-    const hExentas = sumFuncionesNoAula + sepExentas + pieCronologicas;
+    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP').reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE').reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+
+    const sepExentasRestantes = Math.max(0, sepExentas - sumFuncionesNoAulaSep);
+    const pieCronologicasRestantes = Math.max(0, pieCronologicas - sumFuncionesNoAulaPie);
+    const hExentas = sumFuncionesNoAula + sepExentasRestantes + pieCronologicasRestantes;
     const horasParaDocenciaAula = Math.max(0, doc.horasContrato - hExentas);
 
     // Verificar si el docente imparte clases en algún curso con régimen 60/40 (ej. NT1 a 4° Básico)
@@ -643,10 +652,19 @@ export function obtenerDocentesConsolidadosTerritorio(
       const sumFuncionesNoAula = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
         ? doc.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
         : 0;
+      const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+        ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP').reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : 0;
+      const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+        ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE').reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : 0;
+
       const hInstNoAula = sumFuncionesNoAula > 0
         ? sumFuncionesNoAula
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
-      const hExentas = hInstNoAula + sepExentas + pieCronologicas;
+      const sepExentasRestantes = Math.max(0, sepExentas - sumFuncionesNoAulaSep);
+      const pieCronologicasRestantes = Math.max(0, pieCronologicas - sumFuncionesNoAulaPie);
+      const hExentas = hInstNoAula + sepExentasRestantes + pieCronologicasRestantes;
       const horasDocenciaNeta = Math.max(0, doc.horasContrato - hExentas);
 
       const regimen: '65/35' | '60/40' = colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
