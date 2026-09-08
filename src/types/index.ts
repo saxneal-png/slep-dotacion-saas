@@ -230,6 +230,8 @@ export interface ContratoDocenteColegio {
   // Campos de Auditoría Multitramo y Proporción Estricta MINEDUC
   horasAula65_35?: number;
   horasAula60_40?: number;
+  horasPieCronologicas?: number;
+  horasTallerSepExento?: number;
   horasPieSepCronologicas?: number;
   contratoCalculadoTotal?: number;
   contratoReq65_35?: number;

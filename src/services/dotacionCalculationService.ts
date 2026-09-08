@@ -638,7 +638,10 @@ export function obtenerDocentesConsolidadosTerritorio(
         }
       }
 
-      const pieSepCronologicas = pieTit + pieCon + sepTit + sepCon;
+      // Horas PIE cronológicas directas (Dec. 170 / Trabajo Colaborativo)
+      const pieCronologicas = (pieTit + pieCon) > 0 ? (pieTit + pieCon) : (hColabDoc || hCoordPie);
+      // Horas SEP exentas (talleres específicos fuera de aula regular)
+      const sepExentas = hTallerSepDoc;
       const cursosColegio = (cursos || []).filter(c => c.rbd === colegio.rbd);
 
       const horasAula65_35 = asigsAulaRegular
@@ -658,7 +661,9 @@ export function obtenerDocentesConsolidadosTerritorio(
       const auditMulti = calcularAuditoriaDocenteMultitramo({
         horasAula65_35,
         horasAula60_40,
-        horasPieSepCronologicas: pieSepCronologicas,
+        horasPieCronologicas: pieCronologicas,
+        horasTallerSepExento: sepExentas,
+        horasPieSepCronologicas: pieCronologicas,
         horasNoAulaInstitucionales: hInstNoAula,
         horasContratoReal: doc.horasContrato
       });
@@ -712,7 +717,9 @@ export function obtenerDocentesConsolidadosTerritorio(
         },
         horasAula65_35,
         horasAula60_40,
-        horasPieSepCronologicas: pieSepCronologicas,
+        horasPieCronologicas: pieCronologicas,
+        horasTallerSepExento: sepExentas,
+        horasPieSepCronologicas: pieCronologicas,
         contratoCalculadoTotal: auditMulti.contratoCalculadoTotal,
         contratoReq65_35: auditMulti.req65_35,
         contratoReq60_40: auditMulti.req60_40,

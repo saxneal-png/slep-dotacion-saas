@@ -313,10 +313,16 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                               <span>Tramo Vulnerable 60/40:</span>
                               <span className="font-semibold text-purple-700">{c.contratoPonderado60_40 || 0} hrs ({c.horasAula60_40 || 0} HA aula)</span>
                             </div>
-                            {Boolean(c.horasPieSepCronologicas) && (
+                            {Boolean(c.horasPieCronologicas ?? c.horasPieSepCronologicas) && (
                               <div className="flex justify-between text-slate-600 text-[11px] border-t border-slate-100 pt-1">
-                                <span>Apoyo Directo PIE/SEP:</span>
-                                <span className="font-semibold text-blue-700">{c.horasPieSepCronologicas} hrs cron</span>
+                                <span>Apoyo Directo PIE:</span>
+                                <span className="font-semibold text-blue-700">{c.horasPieCronologicas ?? c.horasPieSepCronologicas} hrs cron</span>
+                              </div>
+                            )}
+                            {Boolean(c.horasTallerSepExento) && (
+                              <div className="flex justify-between text-slate-600 text-[11px] border-t border-slate-100 pt-1">
+                                <span>Taller SEP Exento:</span>
+                                <span className="font-semibold text-purple-700">{c.horasTallerSepExento} hrs cron</span>
                               </div>
                             )}
                           </div>

@@ -8,6 +8,8 @@ import {
 export interface ParametrosAuditoriaDocenteMultitramo {
   horasAula65_35: number;
   horasAula60_40: number;
+  horasPieCronologicas?: number;
+  horasTallerSepExento?: number;
   horasPieSepCronologicas?: number;
   horasNoAulaInstitucionales?: number;
   horasContratoReal?: number;
@@ -18,11 +20,15 @@ export interface ResultadoAuditoriaDocenteMultitramo {
   req65_35: number;
   /** Requerimiento de contrato para cubrir la carga lectiva en tramo vulnerable 60/40 */
   req60_40: number;
-  /** Horas cronológicas de apoyo directo PIE o SEP */
+  /** Horas cronológicas de apoyo directo PIE (Decreto 170 / Trabajo Colaborativo) */
+  horasPie: number;
+  /** Horas cronológicas de talleres SEP exentos fuera de aula */
+  horasTallerSep: number;
+  /** Horas cronológicas totales de apoyo directo PIE / SEP exento */
   horasPieSep: number;
   /** Horas cronológicas de funciones no aula (Directivas, UTP, Coordinaciones) */
   horasNoAula: number;
-  /** Contrato total mínimo calculado / carga total requerida (req65 + req60 + pie + noAula) */
+  /** Contrato total mínimo calculado / carga total requerida (req65 + req60 + pie + tallerSep + noAula) */
   contratoCalculadoTotal: number;
 
   /** Total de horas de contrato pagadas/reales */
@@ -73,19 +79,20 @@ export function calcularAuditoriaDocenteMultitramo(
 ): ResultadoAuditoriaDocenteMultitramo {
   const l65 = Math.max(0, Math.round(params.horasAula65_35 || 0));
   const l60 = Math.max(0, Math.round(params.horasAula60_40 || 0));
-  const pie = Math.max(0, Math.round(params.horasPieSepCronologicas || 0));
+  const pie = Math.max(0, Math.round(params.horasPieCronologicas ?? (params.horasPieSepCronologicas !== undefined ? params.horasPieSepCronologicas : 0)));
+  const tallerSep = Math.max(0, Math.round(params.horasTallerSepExento || 0));
   const noAula = Math.max(0, Math.round(params.horasNoAulaInstitucionales || 0));
   const contratoReal = Math.max(0, Math.round(params.horasContratoReal || 0));
 
   // 1. Obtención de jornadas requeridas por tramos independientes según tablas oficiales
   const req65 = buscarContratoMinimoPorTabla(l65, '65_35');
   const req60 = buscarContratoMinimoPorTabla(l60, '60_40');
-  const contratoCalculadoTotal = req65 + req60 + pie + noAula;
+  const contratoCalculadoTotal = req65 + req60 + pie + tallerSep + noAula;
 
-  // 2. División del contrato base regular entre ambos regímenes (descontando funciones exentas PIE/No Aula)
+  // 2. División del contrato base regular entre ambos regímenes (descontando funciones exentas PIE, SEP exento y No Aula)
   let cReg = 0;
   if (contratoReal > 0) {
-    cReg = Math.max(0, contratoReal - pie - noAula);
+    cReg = Math.max(0, contratoReal - pie - tallerSep - noAula);
   } else {
     cReg = req65 + req60; // fallback al requerido
   }
@@ -189,7 +196,9 @@ export function calcularAuditoriaDocenteMultitramo(
   return {
     req65_35: req65,
     req60_40: req60,
-    horasPieSep: pie,
+    horasPie: pie,
+    horasTallerSep: tallerSep,
+    horasPieSep: pie + tallerSep,
     horasNoAula: noAula,
     contratoCalculadoTotal,
     contratoRealTotal: contratoReal,
