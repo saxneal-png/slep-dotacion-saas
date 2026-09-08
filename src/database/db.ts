@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS docentes (
   funcion_secundaria TEXT,
   asignatura_principal TEXT,
   aplica_articulo_69 INTEGER DEFAULT 0,
+  funciones_no_aula_json TEXT,
   periodo INTEGER NOT NULL DEFAULT 2026,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
@@ -273,6 +274,9 @@ export async function getDb(): Promise<Database> {
   } catch (_) {}
   try {
     db.run("ALTER TABLE docentes ADD COLUMN horas_trabajo_colaborativo REAL DEFAULT 0;");
+  } catch (_) {}
+  try {
+    db.run("ALTER TABLE docentes ADD COLUMN funciones_no_aula_json TEXT;");
   } catch (_) {}
 
   persistDb();
@@ -546,7 +550,7 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
            horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
            horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
            periodo, horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
-           horas_taller_sep, horas_trabajo_colaborativo
+           horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json
     FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY apellidos, nombres
   `, [rbd, periodo, periodo]);
   if (!res.length) return [];
@@ -570,75 +574,11 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
       }
     }
 
-    return {
-      id: String(row[0]),
-      rbd: String(row[1]),
-      run: String(row[2]),
-      nombres: String(row[3]),
-      apellidos: String(row[4]),
-      titulo: row[5] ? String(row[5]) : undefined,
-      calidadJuridica: calJuridica,
-      estamento: row[7] as any,
-      horasContrato,
-      horasSubvencionGeneralTitular: subvGenTitular,
-      horasSubvencionGeneralContrata: subvGenContrata,
-      horasSepTitular: sepTitular,
-      horasSepContrata: sepContrata,
-      horasPieTitular: pieTitular,
-      horasPieContrata: pieContrata,
-      horasDirectivas: Number(row[15] || 0),
-      horasInspectorGeneral: Number(row[16] || 0),
-      horasTecnicoPedagogicas: Number(row[17] || 0),
-      horasCoordinacion: Number(row[18] || 0),
-      tipoCoordinacion: row[19] ? String(row[19]) : undefined,
-      horasAula: Number(row[20] || 0),
-      horasIngles: Number(row[21] || 0),
-      funcionPrincipal: row[22] ? String(row[22]) : undefined,
-      funcionSecundaria: row[23] ? String(row[23]) : undefined,
-      asignaturaPrincipal: row[24] ? String(row[24]) : undefined,
-      aplicaArticulo69: Boolean(row[25]),
-      periodo: row[26] ? Number(row[26]) : 2026,
-      horasCoordinacionPie: Number(row[27] || 0),
-      horasConvivenciaEscolar: Number(row[28] || 0),
-      horasExtraescolar: Number(row[29] || 0),
-      cargoInstitucional: row[30] ? String(row[30]) : undefined,
-      horasTallerSep: Number(row[31] || 0),
-      horasTrabajoColaborativo: Number(row[32] || 0)
-    };
-  });
-}
-
-export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): Promise<Docente[]> {
-  const db = await getDb();
-  const res = db.exec(`
-    SELECT id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
-           horas_subvencion_general_titular, horas_subvencion_general_contrata,
-           horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
-           horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
-           horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-           periodo, horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
-           horas_taller_sep, horas_trabajo_colaborativo
-    FROM docentes
-    WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))
-  `, [periodo, periodo]);
-  if (!res.length) return [];
-  return res[0].values.map(row => {
-    const horasContrato = Number(row[8]);
-    const calJuridica = row[6] as any;
-    let subvGenTitular = Number(row[9] || 0);
-    let subvGenContrata = Number(row[10] || 0);
-    let sepTitular = Number(row[11] || 0);
-    let sepContrata = Number(row[12] || 0);
-    let pieTitular = Number(row[13] || 0);
-    let pieContrata = Number(row[14] || 0);
-
-    const sumaFuentes = subvGenTitular + subvGenContrata + sepTitular + sepContrata + pieTitular + pieContrata;
-    if (sumaFuentes === 0 && horasContrato > 0) {
-      if (calJuridica === 'TITULAR') {
-        subvGenTitular = horasContrato;
-      } else {
-        subvGenContrata = horasContrato;
-      }
+    let funcionesNoAula: any[] = [];
+    if (row[33]) {
+      try {
+        funcionesNoAula = JSON.parse(String(row[33]));
+      } catch (_) {}
     }
 
     return {
@@ -674,7 +614,87 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
       horasExtraescolar: Number(row[29] || 0),
       cargoInstitucional: row[30] ? String(row[30]) : undefined,
       horasTallerSep: Number(row[31] || 0),
-      horasTrabajoColaborativo: Number(row[32] || 0)
+      horasTrabajoColaborativo: Number(row[32] || 0),
+      funcionesNoAula: funcionesNoAula.length > 0 ? funcionesNoAula : undefined
+    };
+  });
+}
+
+export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): Promise<Docente[]> {
+  const db = await getDb();
+  const res = db.exec(`
+    SELECT id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
+           horas_subvencion_general_titular, horas_subvencion_general_contrata,
+           horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
+           horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
+           horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
+           periodo, horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
+           horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json
+    FROM docentes
+    WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))
+  `, [periodo, periodo]);
+  if (!res.length) return [];
+  return res[0].values.map(row => {
+    const horasContrato = Number(row[8]);
+    const calJuridica = row[6] as any;
+    let subvGenTitular = Number(row[9] || 0);
+    let subvGenContrata = Number(row[10] || 0);
+    let sepTitular = Number(row[11] || 0);
+    let sepContrata = Number(row[12] || 0);
+    let pieTitular = Number(row[13] || 0);
+    let pieContrata = Number(row[14] || 0);
+
+    const sumaFuentes = subvGenTitular + subvGenContrata + sepTitular + sepContrata + pieTitular + pieContrata;
+    if (sumaFuentes === 0 && horasContrato > 0) {
+      if (calJuridica === 'TITULAR') {
+        subvGenTitular = horasContrato;
+      } else {
+        subvGenContrata = horasContrato;
+      }
+    }
+
+    let funcionesNoAula: any[] = [];
+    if (row[33]) {
+      try {
+        funcionesNoAula = JSON.parse(String(row[33]));
+      } catch (_) {}
+    }
+
+    return {
+      id: String(row[0]),
+      rbd: String(row[1]),
+      run: String(row[2]),
+      nombres: String(row[3]),
+      apellidos: String(row[4]),
+      titulo: row[5] ? String(row[5]) : undefined,
+      calidadJuridica: calJuridica,
+      estamento: row[7] as any,
+      horasContrato,
+      horasSubvencionGeneralTitular: subvGenTitular,
+      horasSubvencionGeneralContrata: subvGenContrata,
+      horasSepTitular: sepTitular,
+      horasSepContrata: sepContrata,
+      horasPieTitular: pieTitular,
+      horasPieContrata: pieContrata,
+      horasDirectivas: Number(row[15] || 0),
+      horasInspectorGeneral: Number(row[16] || 0),
+      horasTecnicoPedagogicas: Number(row[17] || 0),
+      horasCoordinacion: Number(row[18] || 0),
+      tipoCoordinacion: row[19] ? String(row[19]) : undefined,
+      horasAula: Number(row[20] || 0),
+      horasIngles: Number(row[21] || 0),
+      funcionPrincipal: row[22] ? String(row[22]) : undefined,
+      funcionSecundaria: row[23] ? String(row[23]) : undefined,
+      asignaturaPrincipal: row[24] ? String(row[24]) : undefined,
+      aplicaArticulo69: Boolean(row[25]),
+      periodo: row[26] ? Number(row[26]) : 2026,
+      horasCoordinacionPie: Number(row[27] || 0),
+      horasConvivenciaEscolar: Number(row[28] || 0),
+      horasExtraescolar: Number(row[29] || 0),
+      cargoInstitucional: row[30] ? String(row[30]) : undefined,
+      horasTallerSep: Number(row[31] || 0),
+      horasTrabajoColaborativo: Number(row[32] || 0),
+      funcionesNoAula: funcionesNoAula.length > 0 ? funcionesNoAula : undefined
     };
   });
 }
@@ -701,6 +721,8 @@ export async function guardarDocente(d: Docente): Promise<void> {
     }
   }
 
+  const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
+
   db.run(`
     INSERT INTO docentes (
       id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
@@ -710,9 +732,9 @@ export async function guardarDocente(d: Docente): Promise<void> {
       horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
       horas_taller_sep, horas_trabajo_colaborativo,
       horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-      periodo
+      funciones_no_aula_json, periodo
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
       titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -736,6 +758,7 @@ export async function guardarDocente(d: Docente): Promise<void> {
       horas_aula=excluded.horas_aula, horas_ingles=excluded.horas_ingles,
       funcion_principal=excluded.funcion_principal, funcion_secundaria=excluded.funcion_secundaria,
       asignatura_principal=excluded.asignatura_principal, aplica_articulo_69=excluded.aplica_articulo_69,
+      funciones_no_aula_json=excluded.funciones_no_aula_json,
       periodo=excluded.periodo;
   `, [
     docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
@@ -745,7 +768,7 @@ export async function guardarDocente(d: Docente): Promise<void> {
     d.horasTallerSep || 0, d.horasTrabajoColaborativo || 0,
     d.horasAula || 0, d.horasIngles || 0,
     d.funcionPrincipal || null, d.funcionSecundaria || null, d.asignaturaPrincipal || null, d.aplicaArticulo69 ? 1 : 0,
-    docPeriodo
+    funcionesJson, docPeriodo
   ]);
   persistDb();
 }
@@ -776,6 +799,8 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
         }
       }
 
+      const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
+
       db.run(`
         INSERT INTO docentes (
           id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
@@ -785,9 +810,9 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
           horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
           horas_taller_sep, horas_trabajo_colaborativo,
           horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-          periodo
+          funciones_no_aula_json, periodo
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
           titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -811,6 +836,7 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
           horas_aula=excluded.horas_aula, horas_ingles=excluded.horas_ingles,
           funcion_principal=excluded.funcion_principal, funcion_secundaria=excluded.funcion_secundaria,
           asignatura_principal=excluded.asignatura_principal, aplica_articulo_69=excluded.aplica_articulo_69,
+          funciones_no_aula_json=excluded.funciones_no_aula_json,
           periodo=excluded.periodo;
       `, [
         docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
@@ -820,7 +846,7 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
         d.horasTallerSep || 0, d.horasTrabajoColaborativo || 0,
         d.horasAula || 0, d.horasIngles || 0,
         d.funcionPrincipal || null, d.funcionSecundaria || null, d.asignaturaPrincipal || null, d.aplicaArticulo69 ? 1 : 0,
-        docPeriodo
+        funcionesJson, docPeriodo
       ]);
     }
     db.run("COMMIT;");

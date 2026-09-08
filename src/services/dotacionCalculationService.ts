@@ -178,10 +178,21 @@ export function calcularDiagnosticoColegio(
     const hTallerSepDoc = doc.horasTallerSep || 0;
     const hColabDoc = doc.horasTrabajoColaborativo || 0;
 
-    horasDirectivasTotales += hDir;
-    horasInspectorGeneralTotales += hInsp;
-    horasTecnicoPedagogicasTotales += hTec;
-    horasCoordinacionTotales += hCoord;
+    let hDirEfectivo = hDir;
+    let hInspEfectivo = hInsp;
+    let hTecEfectivo = hTec;
+    let hCoordEfectivo = hCoord;
+    if (doc.funcionesNoAula && doc.funcionesNoAula.length > 0) {
+      hDirEfectivo = doc.funcionesNoAula.filter(f => f.tipo === 'DIRECTIVA').reduce((s, f) => s + Number(f.horas || 0), 0);
+      hInspEfectivo = doc.funcionesNoAula.filter(f => f.tipo === 'INSPECTORIA').reduce((s, f) => s + Number(f.horas || 0), 0);
+      hTecEfectivo = doc.funcionesNoAula.filter(f => f.tipo === 'UTP' || f.tipo === 'EVALUACION' || f.tipo === 'ORIENTACION').reduce((s, f) => s + Number(f.horas || 0), 0);
+      hCoordEfectivo = doc.funcionesNoAula.filter(f => f.tipo === 'COORDINACION' || f.tipo === 'CONVIVENCIA' || f.tipo === 'CRA' || f.tipo === 'ENLACES' || f.tipo === 'EXTRAESCOLAR' || f.tipo === 'GREMIAL' || f.tipo === 'ADMINISTRATIVA' || f.tipo === 'OTRA').reduce((s, f) => s + Number(f.horas || 0), 0);
+    }
+
+    horasDirectivasTotales += hDirEfectivo;
+    horasInspectorGeneralTotales += hInspEfectivo;
+    horasTecnicoPedagogicasTotales += hTecEfectivo;
+    horasCoordinacionTotales += hCoordEfectivo;
 
     // Clasificar asignaciones del docente en este establecimiento
     const docenteAsigs = asignaciones.filter(a => a.docenteId === doc.id);
@@ -212,7 +223,10 @@ export function calcularDiagnosticoColegio(
     const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
     const pieCronologicas = Math.max(hColabDoc, pedTrabajoColab, hCoordPie, (doc.estamento === 'DOCENTE_DIFERENCIAL' || ((Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0)) > 0 && pedAulaRegular === 0) ? (Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0)) : 0));
 
-    const hExentas = hDir + hInsp + hTec + hCoord + hConv + hExtra + sepExentas + pieCronologicas;
+    const sumFuncionesNoAula = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
+    const hExentas = sumFuncionesNoAula + sepExentas + pieCronologicas;
     const horasParaDocenciaAula = Math.max(0, doc.horasContrato - hExentas);
 
     // Verificar si el docente imparte clases en algún curso con régimen 60/40 (ej. NT1 a 4° Básico)
@@ -224,7 +238,7 @@ export function calcularDiagnosticoColegio(
 
     // El cálculo de proporción Ley 20.903 aplica EXCLUSIVAMENTE a las horas de aula regular
     const calculo = horasParaDocenciaAula > 0 
-      ? calcularJornadaMinutos(horasParaDocenciaAula, pedAulaRegular, docRegimenTabla)
+      ? calcularJornadaMinutos(horasParaDocenciaAula, pedAulaRegular, docRegimenTabla, Boolean(doc.aplicaArticulo69))
       : {
           horasContrato: 0,
           minutosContratoTotales: 0,
@@ -254,9 +268,15 @@ export function calcularDiagnosticoColegio(
           mensaje: pedAulaRegular > 0 ? `Funcionario sin horas aula afectas con ${pedAulaRegular} HA de aula asignadas.` : 'Sin horas de aula regular asignadas.'
         };
 
-    if (valSobre.estaSobreasignado) {
+    if (valSobre.estaSobreasignado || calculo.esSobreasignado) {
       sobreasignacionesAlertas.push(
-        `${doc.nombres} ${doc.apellidos} (${doc.run}): Asignadas ${pedAulaRegular} HA regulares de máx ${calculo.horasPedagogicasDisponiblesMax} HA (+${valSobre.excesoHoras} HA).`
+        `${doc.nombres} ${doc.apellidos} (${doc.run}): Asignadas ${pedAulaRegular} HA regulares de máx ${calculo.horasPedagogicasDisponiblesMax} HA (+${Math.max(valSobre.excesoHoras, pedAulaRegular - calculo.horasPedagogicasDisponiblesMax)} HA).`
+      );
+    }
+
+    if (doc.aplicaArticulo69 && pedAulaRegular > 32) {
+      sobreasignacionesAlertas.push(
+        `ALERTA ARTÍCULO 69: ${doc.nombres} ${doc.apellidos} (${doc.run}): Asignadas ${pedAulaRegular} HA, excediendo el tope legal de 24h cronológicas aula (32 HA).`
       );
     }
 
@@ -620,7 +640,12 @@ export function obtenerDocentesConsolidadosTerritorio(
       // Horas SEP exentas (talleres específicos fuera de aula regular / financiamiento SEP)
       const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
 
-      const hInstNoAula = hDir + hInsp + hTec + hCoord + hConv + hExtra;
+      const sumFuncionesNoAula = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+        ? doc.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : 0;
+      const hInstNoAula = sumFuncionesNoAula > 0
+        ? sumFuncionesNoAula
+        : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
       const horasDocenciaNeta = Math.max(0, doc.horasContrato - hExentas);
 
@@ -629,7 +654,7 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       // Proporción evaluada sobre horas de aula regular
       const calculo = horasDocenciaNeta > 0
-        ? calcularJornadaMinutos(horasDocenciaNeta, pedAulaRegular, regimenTabla)
+        ? calcularJornadaMinutos(horasDocenciaNeta, pedAulaRegular, regimenTabla, Boolean(doc.aplicaArticulo69))
         : {
             horasContrato: 0,
             minutosContratoTotales: 0,
@@ -644,7 +669,10 @@ export function obtenerDocentesConsolidadosTerritorio(
             minutosUsadosTotales: 0,
             esSobreasignado: pedAulaRegular > 0,
             minutosSobreasignados: pedAulaRegular * 45,
-            cumple65_35: pedAulaRegular === 0
+            cumple65_35: pedAulaRegular === 0,
+            aplicaArticulo69: Boolean(doc.aplicaArticulo69),
+            minutosReduccionArticulo69: 0,
+            horasReduccionArticulo69: 0
           };
 
       const valSobre = horasDocenciaNeta > 0
@@ -679,7 +707,8 @@ export function obtenerDocentesConsolidadosTerritorio(
         horasTallerSepExento: sepExentas,
         horasPieSepCronologicas: pieCronologicas,
         horasNoAulaInstitucionales: hInstNoAula,
-        horasContratoReal: doc.horasContrato
+        horasContratoReal: doc.horasContrato,
+        aplicaArticulo69: Boolean(doc.aplicaArticulo69)
       });
 
       totalSubvTitular += subTit;
@@ -729,13 +758,13 @@ export function obtenerDocentesConsolidadosTerritorio(
         esExentoProporcion: horasDocenciaNeta === 0,
         horasPedagogicasAsignadas: pedTotalAsignadas,
         regimen,
-        maxHorasPedagogicasMineduc: calculo.horasPedagogicasDisponiblesMax,
-        minutosLectivosMineduc: calculo.minutosLectivosDisponiblesMax,
+        maxHorasPedagogicasMineduc: doc.aplicaArticulo69 ? Math.min(calculo.horasPedagogicasDisponiblesMax, 32) : calculo.horasPedagogicasDisponiblesMax,
+        minutosLectivosMineduc: doc.aplicaArticulo69 ? Math.min(calculo.minutosLectivosDisponiblesMax, 1440) : calculo.minutosLectivosDisponiblesMax,
         minutosRecreoMineduc: auditMulti.minutosRecreoTotal || calculo.minutosRecreoAsignados,
         minutosNoLectivosMineduc: auditMulti.minutosHnlTotal || calculo.minutosNoLectivosCalculados,
         minutosTotalesContrato: Math.round(doc.horasContrato * 60),
-        estaSobreasignado: valSobre.estaSobreasignado || auditMulti.esInfractorExcesoLectivo,
-        excesoHorasAula: valSobre.excesoHoras,
+        estaSobreasignado: valSobre.estaSobreasignado || calculo.esSobreasignado || auditMulti.esInfractorExcesoLectivo,
+        excesoHorasAula: Math.max(valSobre.excesoHoras, pedAulaRegular - (doc.aplicaArticulo69 ? Math.min(calculo.horasPedagogicasDisponiblesMax, 32) : calculo.horasPedagogicasDisponiblesMax)),
         fuentesFinanciamiento: {
           subvencionGeneralTitular: subTit,
           subvencionGeneralContrata: subCon,
@@ -766,7 +795,11 @@ export function obtenerDocentesConsolidadosTerritorio(
         subvencionGeneralContratoTotal,
         deficitSubvencionGeneral,
         esImprocedenteFinanciamientoSepPie,
-        alertaFinanciamientoSepPie
+        alertaFinanciamientoSepPie,
+        funcionesNoAula: doc.funcionesNoAula,
+        aplicaArticulo69: Boolean(doc.aplicaArticulo69),
+        horasReduccionArticulo69: auditMulti.horasReduccionArticulo69 || calculo.horasReduccionArticulo69 || 0,
+        minutosReduccionArticulo69: auditMulti.minutosReduccionArticulo69 || calculo.minutosReduccionArticulo69 || 0
       });
     }
 
@@ -792,6 +825,8 @@ export function obtenerDocentesConsolidadosTerritorio(
       totalHorasTallerSep: totalTallerSep,
       totalHorasTrabajoColaborativo: totalTrabajoColaborativo,
       totalHorasInstitucionalesNoAula: totalInstitucionalesNoAula,
+      funcionesNoAula: primerDoc.funcionesNoAula,
+      aplicaArticulo69: Boolean(primerDoc.aplicaArticulo69 || listaDocentes.some(d => d.aplicaArticulo69)),
       resumenFinanciamiento: {
         subvencionGeneralTitular: totalSubvTitular,
         subvencionGeneralContrata: totalSubvContrata,

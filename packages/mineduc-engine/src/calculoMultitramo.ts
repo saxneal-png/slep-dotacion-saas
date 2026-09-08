@@ -13,6 +13,7 @@ export interface ParametrosAuditoriaDocenteMultitramo {
   horasPieSepCronologicas?: number;
   horasNoAulaInstitucionales?: number;
   horasContratoReal?: number;
+  aplicaArticulo69?: boolean;
 }
 
 export interface ResultadoAuditoriaDocenteMultitramo {
@@ -68,6 +69,11 @@ export interface ResultadoAuditoriaDocenteMultitramo {
   estadoSaldo: 'EXACTO' | 'HOLGURA' | 'DEFICIT' | 'POR_AUDITAR';
   /** Mensaje descriptivo con el veredicto de la auditoría */
   mensajeAuditoria: string;
+
+  /** Aplicación y reducción Artículo 69 */
+  aplicaArticulo69?: boolean;
+  minutosReduccionArticulo69?: number;
+  horasReduccionArticulo69?: number;
 }
 
 /**
@@ -151,6 +157,14 @@ export function calcularAuditoriaDocenteMultitramo(
     }
   }
 
+  // Aplicación de reducción voluntaria Artículo 69 (máximo 24h cronológicas aula = 1.440 mins)
+  let reduccionArt69Mins = 0;
+  if (params.aplicaArticulo69 && totalLectivaCronMins > 1440) {
+    reduccionArt69Mins = totalLectivaCronMins - 1440;
+    totalLectivaCronMins = 1440;
+    totalHnlMins += reduccionArt69Mins;
+  }
+
   const hnlPlanificacion40 = Math.round(totalHnlMins * 0.40);
 
   // 4. Auditoría de límites y exceso lectivo ponderado según tablas oficiales MINEDUC
@@ -190,7 +204,9 @@ export function calcularAuditoriaDocenteMultitramo(
   }
 
   if (esInfractor) {
-    mensajeAuditoria += ` ALERTA LEY 20.903: Exceso lectivo (${lectivePctReal}% > ${limitePonderadoPct}% ponderado permitido).`;
+    mensajeAuditoria += params.aplicaArticulo69
+      ? ` ALERTA ARTÍCULO 69 / LEY 20.903: Excede el límite máximo de 24 hrs cronológicas de aula (32 HA).`
+      : ` ALERTA LEY 20.903: Exceso lectivo (${lectivePctReal}% > ${limitePonderadoPct}% ponderado permitido).`;
   }
 
   return {
@@ -217,6 +233,9 @@ export function calcularAuditoriaDocenteMultitramo(
     saldoHoras,
     horasVacantes,
     estadoSaldo,
-    mensajeAuditoria
+    mensajeAuditoria,
+    aplicaArticulo69: params.aplicaArticulo69,
+    minutosReduccionArticulo69: reduccionArt69Mins,
+    horasReduccionArticulo69: Number((reduccionArt69Mins / 60).toFixed(2))
   };
 }

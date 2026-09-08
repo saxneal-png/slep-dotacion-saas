@@ -67,6 +67,28 @@ export type EstamentoDocente =
   | 'COORDINADOR_CRA'
   | 'OTRA_ESTABLECIMIENTO';
 
+export type TipoFuncionNoAula =
+  | 'DIRECTIVA'
+  | 'INSPECTORIA'
+  | 'UTP'
+  | 'COORDINACION'
+  | 'CONVIVENCIA'
+  | 'CRA'
+  | 'ENLACES'
+  | 'EXTRAESCOLAR'
+  | 'EVALUACION'
+  | 'ORIENTACION'
+  | 'GREMIAL'
+  | 'ADMINISTRATIVA'
+  | 'OTRA';
+
+export interface FuncionNoAulaDocente {
+  id: string;
+  tipo: TipoFuncionNoAula;
+  nombre: string;
+  horas: number;
+}
+
 export interface Docente {
   id: string;
   rbd: string;
@@ -96,6 +118,7 @@ export interface Docente {
   horasExtraescolar?: number;
   cargoInstitucional?: string;
   tipoCoordinacion?: string;
+  funcionesNoAula?: FuncionNoAulaDocente[]; // Múltiples funciones no aula / administrativas
   horasAula?: number;
   horasIngles?: number;
   funcionPrincipal?: string;
@@ -251,6 +274,11 @@ export interface ContratoDocenteColegio {
   deficitSubvencionGeneral?: number;
   esImprocedenteFinanciamientoSepPie?: boolean;
   alertaFinanciamientoSepPie?: string;
+  // Funciones fuera de aula y Artículo 69
+  funcionesNoAula?: FuncionNoAulaDocente[];
+  aplicaArticulo69?: boolean;
+  horasReduccionArticulo69?: number;
+  minutosReduccionArticulo69?: number;
 }
 
 export interface DocenteConsolidadoTerritorial {
@@ -270,6 +298,8 @@ export interface DocenteConsolidadoTerritorial {
   totalHorasTallerSep?: number;
   totalHorasTrabajoColaborativo?: number;
   totalHorasInstitucionalesNoAula?: number;
+  funcionesNoAula?: FuncionNoAulaDocente[];
+  aplicaArticulo69?: boolean;
   resumenFinanciamiento: {
     subvencionGeneralTitular: number;
     subvencionGeneralContrata: number;

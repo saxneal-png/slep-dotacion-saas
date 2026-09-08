@@ -217,6 +217,13 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* Badge Artículo 69 */}
+                        {(c.aplicaArticulo69 || c.docente?.aplicaArticulo69) && (
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 bg-amber-100 text-amber-800 border-amber-200">
+                            ⚖️ Art. 69 (Máx 24h)
+                          </span>
+                        )}
+
                         {/* Badge Régimen 65/35 o 60/40 */}
                         <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 ${
                           c.regimen === '60/40'
@@ -316,6 +323,22 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                           </div>
                         )}
 
+                        {/* Alerta de Régimen Especial Artículo 69 */}
+                        {(c.aplicaArticulo69 || c.docente?.aplicaArticulo69) && (
+                          <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg text-xs space-y-1">
+                            <div className="flex items-center gap-2 font-bold text-amber-800">
+                              <Scale className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>⚖️ Régimen Especial: Artículo 69 Ley 19.070 (Reducción 30+ Años de Servicio)</span>
+                            </div>
+                            <p className="text-[11px] text-amber-900 leading-relaxed">
+                              El docente se encuentra acogido a la reducción voluntaria de jornada de aula por antigüedad docente. Su tope lectivo máximo legal es de <strong>24h cronológicas (32 Horas Aula)</strong>.
+                              {(c.horasReduccionArticulo69 || 0) > 0 ? (
+                                <span> Se transfirieron automáticamente <strong>{c.horasReduccionArticulo69} hrs ({formatMins(c.minutosReduccionArticulo69 || (c.horasReduccionArticulo69 || 0) * 60)})</strong> de aula hacia Tiempo No Lectivo (HNL).</span>
+                              ) : null}
+                            </p>
+                          </div>
+                        )}
+
                         {/* División de Jornada y Barra de Distribución */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                           <div className="space-y-1 bg-white p-2.5 rounded-lg border border-slate-200">
@@ -362,48 +385,85 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                       </div>
                     )}
 
-                    {/* Desglose de Horas Institucionales Fuera de Aula / Exentas */}
-                    {Boolean((c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)) && (
+                    {/* Desglose de Funciones Fuera de Aula / Administrativas y Exentas */}
+                    {Boolean(
+                      (c.funcionesNoAula && c.funcionesNoAula.length > 0) ||
+                      (c.docente?.funcionesNoAula && c.docente.funcionesNoAula.length > 0) ||
+                      (c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)
+                    ) && (
                       <div className="bg-purple-50/60 border border-purple-200 rounded-lg p-3 text-xs">
                         <div className="font-bold text-purple-900 flex items-center justify-between mb-1">
                           <span className="flex items-center gap-1.5">
                             <ShieldAlert className="w-3.5 h-3.5 text-purple-600" />
-                            Funciones Exentas de Proporción Ley 20.903 (Gestión, Talleres SEP y Trabajo Colaborativo)
+                            Funciones Fuera de Aula / Administrativas (Exentas de Proporción Ley 20.903)
                           </span>
                           <span className="text-[10px] bg-purple-200/80 text-purple-800 px-2 py-0.5 rounded-full font-bold">
-                            Total: {(c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)} hrs
+                            Total: {(c.funcionesNoAula || c.docente?.funcionesNoAula || []).length > 0
+                              ? (c.funcionesNoAula || c.docente?.funcionesNoAula || []).reduce((acc: number, f: any) => acc + (f.horas || 0), 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)
+                              : (c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)
+                            } hrs
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px] mt-2">
-                          <div className="bg-white p-2 rounded border border-purple-100">
-                            <span className="text-slate-500 block">Dirección:</span>
-                            <strong className="text-purple-800 font-bold">{c.horasDirectivas || 0} hrs</strong>
+
+                        {/* Listado de Múltiples Funciones si existen */}
+                        {(c.funcionesNoAula || c.docente?.funcionesNoAula || []).length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-[11px] mt-2">
+                            {(c.funcionesNoAula || c.docente?.funcionesNoAula || []).map((f: any, fIdx: number) => (
+                              <div key={f.id || fIdx} className="bg-white p-2 rounded border border-purple-100 flex items-center justify-between shadow-xs">
+                                <div>
+                                  <span className="font-semibold text-purple-900 block capitalize">{f.tipo.replace('_', ' ')}</span>
+                                  {f.nombre && <span className="text-[10px] text-slate-500 block truncate max-w-[140px]">{f.nombre}</span>}
+                                </div>
+                                <span className="font-mono font-bold text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                  {f.horas} hrs
+                                </span>
+                              </div>
+                            ))}
+                            {Boolean(c.horasTallerSep || c.horasTallerSepExento) && (
+                              <div className="bg-white p-2 rounded border border-purple-100 flex items-center justify-between">
+                                <span className="text-slate-600 block">Taller SEP</span>
+                                <strong className="text-emerald-800 font-bold">{c.horasTallerSep || c.horasTallerSepExento} hrs</strong>
+                              </div>
+                            )}
+                            {Boolean(c.horasTrabajoColaborativo || c.horasPieCronologicas) && (
+                              <div className="bg-white p-2 rounded border border-purple-100 flex items-center justify-between">
+                                <span className="text-slate-600 block">Trabajo Colaborativo</span>
+                                <strong className="text-indigo-800 font-bold">{c.horasTrabajoColaborativo || c.horasPieCronologicas} hrs</strong>
+                              </div>
+                            )}
                           </div>
-                          <div className="bg-white p-2 rounded border border-purple-100">
-                            <span className="text-slate-500 block">Inspectoría:</span>
-                            <strong className="text-purple-800 font-bold">{c.horasInspectorGeneral || 0} hrs</strong>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px] mt-2">
+                            <div className="bg-white p-2 rounded border border-purple-100">
+                              <span className="text-slate-500 block">Dirección:</span>
+                              <strong className="text-purple-800 font-bold">{c.horasDirectivas || 0} hrs</strong>
+                            </div>
+                            <div className="bg-white p-2 rounded border border-purple-100">
+                              <span className="text-slate-500 block">Inspectoría:</span>
+                              <strong className="text-purple-800 font-bold">{c.horasInspectorGeneral || 0} hrs</strong>
+                            </div>
+                            <div className="bg-white p-2 rounded border border-purple-100">
+                              <span className="text-slate-500 block">Jefatura UTP:</span>
+                              <strong className="text-blue-800 font-bold">{c.horasTecnicoPedagogicas || 0} hrs</strong>
+                            </div>
+                            <div className="bg-white p-2 rounded border border-purple-100">
+                              <span className="text-slate-500 block">Coord. UTP:</span>
+                              <strong className="text-blue-800 font-bold">
+                                {c.horasCoordinacion || 0} hrs {c.docente.tipoCoordinacion ? `(${c.docente.tipoCoordinacion})` : ''}
+                              </strong>
+                            </div>
+                            <div className="bg-white p-2 rounded border border-purple-100">
+                              <span className="text-slate-500 block">Taller SEP:</span>
+                              <strong className="text-emerald-800 font-bold">{c.horasTallerSep || c.horasTallerSepExento || 0} hrs</strong>
+                            </div>
+                            <div className="bg-white p-2 rounded border border-purple-100">
+                              <span className="text-slate-500 block">Trabajo Colab.:</span>
+                              <strong className="text-indigo-800 font-bold">{c.horasTrabajoColaborativo || c.horasPieCronologicas || 0} hrs</strong>
+                            </div>
                           </div>
-                          <div className="bg-white p-2 rounded border border-purple-100">
-                            <span className="text-slate-500 block">Jefatura UTP:</span>
-                            <strong className="text-blue-800 font-bold">{c.horasTecnicoPedagogicas || 0} hrs</strong>
-                          </div>
-                          <div className="bg-white p-2 rounded border border-purple-100">
-                            <span className="text-slate-500 block">Coord. UTP:</span>
-                            <strong className="text-blue-800 font-bold">
-                              {c.horasCoordinacion || 0} hrs {c.docente.tipoCoordinacion ? `(${c.docente.tipoCoordinacion})` : ''}
-                            </strong>
-                          </div>
-                          <div className="bg-white p-2 rounded border border-purple-100">
-                            <span className="text-slate-500 block">Taller SEP:</span>
-                            <strong className="text-emerald-800 font-bold">{c.horasTallerSep || c.horasTallerSepExento || 0} hrs</strong>
-                          </div>
-                          <div className="bg-white p-2 rounded border border-purple-100">
-                            <span className="text-slate-500 block">Trabajo Colab.:</span>
-                            <strong className="text-indigo-800 font-bold">{c.horasTrabajoColaborativo || c.horasPieCronologicas || 0} hrs</strong>
-                          </div>
-                        </div>
+                        )}
                         <p className="text-[10px] text-purple-700 mt-2 italic">
-                          * El régimen 65/35 o 60/40 solo aplica sobre horas de aula regular ({c.horasDocenciaNeta}h netas). Los directivos, UTP, talleres SEP y trabajo colaborativo están exentos.
+                          * El régimen 65/35 o 60/40 solo aplica sobre horas de aula regular ({c.horasDocenciaNeta}h netas). Los directivos, UTP, talleres SEP, trabajo colaborativo y funciones no aula están exentos.
                         </p>
                       </div>
                     )}
