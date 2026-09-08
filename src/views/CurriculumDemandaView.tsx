@@ -18,6 +18,11 @@ import {
   calcularDemandaNormativaPieCurso,
   autoAsignarHorasPieCursos
 } from '@slep/mineduc-engine';
+import {
+  ModalAsignarDocencia,
+  ModalAsignarCoDocencia,
+  ModalAsignarPie
+} from '../components/CurriculumAsignacionModals';
 
 export interface CurriculumDemandaViewProps {
   colegio: Establecimiento | null;
@@ -76,30 +81,25 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [filtroRegimenCurso, setFiltroRegimenCurso] = useState<'TODOS' | 'JEC' | 'No JEC'>('TODOS');
   const [filtroCoberturaCurso, setFiltroCoberturaCurso] = useState<'TODOS' | 'COMPLETO' | 'DEFICIT' | 'SOBRE'>('TODOS');
 
-  // Modal Docencia Regular
-  const [modalDocenciaOpen, setModalDocenciaOpen] = useState(false);
-  const [editandoAsigDocencia, setEditandoAsigDocencia] = useState<AsignacionHoraria | null>(null);
-  const [docenciaDocenteId, setDocenciaDocenteId] = useState('');
-  const [docenciaAsignatura, setDocenciaAsignatura] = useState('');
-  const [docenciaHoras, setDocenciaHoras] = useState(4);
-  const [docenciaTipoFuncion, setDocenciaTipoFuncion] = useState<'CURRICULAR' | 'TALLER_JEC' | 'TALLER_SEP' | 'TRABAJO_COLABORATIVO'>('CURRICULAR');
+  // Modales Asignación Aislados (0 lag al tipear)
+  const [modalDocencia, setModalDocencia] = useState<{
+    isOpen: boolean;
+    editandoAsig: AsignacionHoraria | null;
+    asignaturaSugerida?: string;
+    horasSugeridas?: number;
+  }>({ isOpen: false, editandoAsig: null });
 
-  // Modal Co-Docencia (No PIE) / Agrupaciones Flexibles
-  const [modalCoDocenciaOpen, setModalCoDocenciaOpen] = useState(false);
-  const [editandoAsigCoDocencia, setEditandoAsigCoDocencia] = useState<AsignacionHoraria | null>(null);
-  const [coDocDocenteId, setCoDocDocenteId] = useState('');
-  const [coDocAsignatura, setCoDocAsignatura] = useState('');
-  const [coDocHoras, setCoDocHoras] = useState(4);
-  const [coDocTipoModalidad, setCoDocTipoModalidad] = useState<'AGRUPACION_FLEXIBLE' | 'CO_DOCENCIA' | 'REFUERZO_AULA' | 'APOYO_DOCENTE'>('AGRUPACION_FLEXIBLE');
-  const [coDocEsSep, setCoDocEsSep] = useState(false);
+  const [modalCoDocencia, setModalCoDocencia] = useState<{
+    isOpen: boolean;
+    editandoAsig: AsignacionHoraria | null;
+    asignaturaSugerida?: string;
+    horasSugeridas?: number;
+  }>({ isOpen: false, editandoAsig: null });
 
-  // Modal Apoyo PIE
-  const [modalPieOpen, setModalPieOpen] = useState(false);
-  const [editandoAsigPie, setEditandoAsigPie] = useState<AsignacionHoraria | null>(null);
-  const [pieDocenteId, setPieDocenteId] = useState('');
-  const [pieTipoApoyo, setPieTipoApoyo] = useState('Co-Docencia en Aula Regular');
-  const [pieHoras, setPieHoras] = useState(6);
-  const [pieAsignatura, setPieAsignatura] = useState('Apoyo PIE - Co-docencia Lenguaje / Matemática');
+  const [modalPie, setModalPie] = useState<{
+    isOpen: boolean;
+    editandoAsig: AsignacionHoraria | null;
+  }>({ isOpen: false, editandoAsig: null });
 
   // Modal Ajuste NEET/NEEP del Curso
   const [modalNeeOpen, setModalNeeOpen] = useState(false);
@@ -285,156 +285,51 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
   ).reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
-  // Handlers para guardar y eliminar asignación Docencia Regular / Talleres
+  // Handlers para abrir los modales aislados (0 lag)
   const abrirModalNuevaDocencia = (asignaturaSugerida?: string, horasSugeridas?: number) => {
-    setEditandoAsigDocencia(null);
-    setDocenciaAsignatura(asignaturaSugerida || (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación'));
-    setDocenciaHoras(horasSugeridas || 4);
-    setDocenciaTipoFuncion('CURRICULAR');
-    // Sugerir primer docente disponible que sea DOCENTE_AULA o no directivo
-    const docSugerido = docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0];
-    setDocenciaDocenteId(docSugerido ? docSugerido.id : '');
-    setModalDocenciaOpen(true);
+    setModalDocencia({
+      isOpen: true,
+      editandoAsig: null,
+      asignaturaSugerida,
+      horasSugeridas
+    });
   };
 
   const abrirModalEditarDocencia = (asig: AsignacionHoraria) => {
-    setEditandoAsigDocencia(asig);
-    setDocenciaDocenteId(asig.docenteId);
-    setDocenciaAsignatura(asig.asignatura);
-    setDocenciaHoras(asig.horasPedagogicasAula);
-    if (asig.esTallerJec) {
-      setDocenciaTipoFuncion('TALLER_JEC');
-    } else if (asig.esTallerSep) {
-      setDocenciaTipoFuncion('TALLER_SEP');
-    } else if (asig.esTrabajoColaborativo || asig.tipoApoyo === 'TRABAJO_COLABORATIVO') {
-      setDocenciaTipoFuncion('TRABAJO_COLABORATIVO');
-    } else {
-      setDocenciaTipoFuncion('CURRICULAR');
-    }
-    setModalDocenciaOpen(true);
+    setModalDocencia({
+      isOpen: true,
+      editandoAsig: asig
+    });
   };
 
-  const handleGuardarDocenciaSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!cursoActivo && !esModoTransversal) || !docenciaDocenteId || !onGuardarAsignacion) return;
-
-    const esJec = docenciaTipoFuncion === 'TALLER_JEC';
-    const esSep = docenciaTipoFuncion === 'TALLER_SEP';
-    const esColab = docenciaTipoFuncion === 'TRABAJO_COLABORATIVO';
-
-    const asig: AsignacionHoraria = {
-      id: editandoAsigDocencia ? editandoAsigDocencia.id : `asig-doc-${Date.now()}`,
-      rbd: colegio.rbd,
-      periodo: periodoActivo,
-      cursoId: esModoTransversal ? 'TRANSVERSAL' : (cursoActivo ? cursoActivo.id : 'TRANSVERSAL'),
-      docenteId: docenciaDocenteId,
-      asignatura: docenciaAsignatura,
-      horasPedagogicasAula: Number(docenciaHoras),
-      esCoDocencia: false,
-      esTallerJec: esJec && !esModoTransversal,
-      esTallerSep: esSep,
-      esTrabajoColaborativo: esColab,
-      tipoApoyo: esColab ? 'TRABAJO_COLABORATIVO' : (esSep ? 'TALLER_SEP' : (esJec ? 'TALLER_JEC' : 'AULA_REGULAR'))
-    };
-
-    await onGuardarAsignacion(asig);
-    setModalDocenciaOpen(false);
-  };
-
-  // Handlers para guardar y eliminar Co-Docencia (No PIE) / Agrupaciones Flexibles
   const abrirModalNuevaCoDocencia = (asigSugerida?: string, hrsSugeridas?: number) => {
-    setEditandoAsigCoDocencia(null);
-    setCoDocAsignatura(asigSugerida || (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación'));
-    setCoDocHoras(hrsSugeridas || 4);
-    setCoDocTipoModalidad('AGRUPACION_FLEXIBLE');
-    setCoDocEsSep(false);
-    const docSugerido = docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0];
-    setCoDocDocenteId(docSugerido ? docSugerido.id : '');
-    setModalCoDocenciaOpen(true);
+    setModalCoDocencia({
+      isOpen: true,
+      editandoAsig: null,
+      asignaturaSugerida: asigSugerida,
+      horasSugeridas: hrsSugeridas
+    });
   };
 
   const abrirModalEditarCoDocencia = (asig: AsignacionHoraria) => {
-    setEditandoAsigCoDocencia(asig);
-    setCoDocDocenteId(asig.docenteId);
-    setCoDocAsignatura(asig.asignatura);
-    setCoDocHoras(asig.horasPedagogicasAula);
-    if (asig.tipoApoyo === 'CO_DOCENCIA') {
-      setCoDocTipoModalidad('CO_DOCENCIA');
-    } else if (asig.tipoApoyo === 'REFUERZO_AULA') {
-      setCoDocTipoModalidad('REFUERZO_AULA');
-    } else if (asig.tipoApoyo === 'APOYO_DOCENTE') {
-      setCoDocTipoModalidad('APOYO_DOCENTE');
-    } else {
-      setCoDocTipoModalidad('AGRUPACION_FLEXIBLE');
-    }
-    setCoDocEsSep(Boolean(asig.esTallerSep));
-    setModalCoDocenciaOpen(true);
+    setModalCoDocencia({
+      isOpen: true,
+      editandoAsig: asig
+    });
   };
 
-  const handleGuardarCoDocenciaSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cursoActivo || !coDocDocenteId || !onGuardarAsignacion) return;
-
-    const asig: AsignacionHoraria = {
-      id: editandoAsigCoDocencia ? editandoAsigCoDocencia.id : `asig-codoc-${Date.now()}`,
-      rbd: colegio.rbd,
-      periodo: periodoActivo,
-      cursoId: cursoActivo.id,
-      docenteId: coDocDocenteId,
-      asignatura: coDocAsignatura,
-      horasPedagogicasAula: Number(coDocHoras),
-      esCoDocencia: true,
-      esAgrupacionFlexible: coDocTipoModalidad === 'AGRUPACION_FLEXIBLE',
-      esTallerSep: coDocEsSep,
-      tipoApoyo: coDocTipoModalidad
-    };
-
-    await onGuardarAsignacion(asig);
-    setModalCoDocenciaOpen(false);
-  };
-
-  // Handlers para guardar y eliminar asignación PIE
   const abrirModalNuevoPie = () => {
-    setEditandoAsigPie(null);
-    setPieTipoApoyo('Co-Docencia en Aula Regular');
-    setPieHoras(6);
-    setPieAsignatura('Apoyo PIE - Co-docencia Aula Regular');
-    // Priorizar Educadora Diferencial o Profesional PAE
-    const pieSugerido = docentes.find(d => d.estamento === 'DOCENTE_DIFERENCIAL') ||
-                         docentes.find(d => d.estamento === 'PROFESIONAL_PAE') ||
-                         docentes[0];
-    setPieDocenteId(pieSugerido ? pieSugerido.id : '');
-    setModalPieOpen(true);
+    setModalPie({
+      isOpen: true,
+      editandoAsig: null
+    });
   };
 
   const abrirModalEditarPie = (asig: AsignacionHoraria) => {
-    setEditandoAsigPie(asig);
-    setPieDocenteId(asig.docenteId);
-    setPieTipoApoyo(asig.tipoApoyo || 'Co-Docencia en Aula Regular');
-    setPieHoras(asig.horasCronologicasPie || asig.horasPedagogicasAula || 4);
-    setPieAsignatura(asig.asignatura);
-    setModalPieOpen(true);
-  };
-
-  const handleGuardarPieSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cursoActivo || !pieDocenteId || !onGuardarAsignacion) return;
-
-    const asig: AsignacionHoraria = {
-      id: editandoAsigPie ? editandoAsigPie.id : `asig-pie-${Date.now()}`,
-      rbd: colegio.rbd,
-      periodo: periodoActivo,
-      cursoId: cursoActivo.id,
-      docenteId: pieDocenteId,
-      asignatura: pieAsignatura || `Apoyo PIE (${pieTipoApoyo})`,
-      horasPedagogicasAula: Math.round(Number(pieHoras) * 1.333), // Equivalente pedagógico si aplica
-      horasCronologicasPie: Number(pieHoras),
-      esCoDocencia: true,
-      tipoApoyo: pieTipoApoyo
-    };
-
-    await onGuardarAsignacion(asig);
-    setModalPieOpen(false);
+    setModalPie({
+      isOpen: true,
+      editandoAsig: asig
+    });
   };
 
   // Auto-asignación asistida Jidoka para PIE en este curso
@@ -1935,457 +1830,55 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 2: ASIGNAR / EDITAR DOCENCIA REGULAR                */}
+      {/* MODALES AISLADOS DE ASIGNACIÓN (0 LAG AL TIPEAR)          */}
       {/* ========================================================= */}
-      {modalDocenciaOpen && (cursoActivo || esModoTransversal) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-orange-600" />
-                {editandoAsigDocencia ? 'Editar Asignación / Taller' : (esModoTransversal ? 'Crear Taller Transversal' : 'Asignar Docente / Asignatura')}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalDocenciaOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {onGuardarAsignacion && (
+        <>
+          <ModalAsignarDocencia
+            isOpen={modalDocencia.isOpen}
+            onClose={() => setModalDocencia({ isOpen: false, editandoAsig: null })}
+            onGuardar={onGuardarAsignacion}
+            cursoActivo={cursoActivo}
+            esModoTransversal={esModoTransversal}
+            colegio={colegio}
+            periodoActivo={periodoActivo}
+            editandoAsig={modalDocencia.editandoAsig}
+            asignaturaSugerida={modalDocencia.asignaturaSugerida}
+            horasSugeridas={modalDocencia.horasSugeridas}
+            docentes={docentes}
+            disponibilidadDocentes={disponibilidadDocentes}
+            planActivo={planActivo}
+          />
 
-            <form onSubmit={handleGuardarDocenciaSubmit} className="space-y-4 text-xs mt-4">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Destino / Ámbito</label>
-                <input
-                  type="text"
-                  disabled
-                  value={esModoTransversal ? '🌟 Taller Institucional / Transversal (Sin Curso)' : (cursoActivo ? `${cursoActivo.nivel} ${cursoActivo.letra} (${cursoActivo.regimen})` : 'Transversal')}
-                  className="w-full px-3 py-2 border rounded-lg bg-slate-100 text-slate-700 font-bold"
-                />
-              </div>
+          <ModalAsignarCoDocencia
+            isOpen={modalCoDocencia.isOpen}
+            onClose={() => setModalCoDocencia({ isOpen: false, editandoAsig: null })}
+            onGuardar={onGuardarAsignacion}
+            cursoActivo={cursoActivo}
+            colegio={colegio}
+            periodoActivo={periodoActivo}
+            editandoAsig={modalCoDocencia.editandoAsig}
+            asignaturaSugerida={modalCoDocencia.asignaturaSugerida}
+            horasSugeridas={modalCoDocencia.horasSugeridas}
+            docentes={docentes}
+            disponibilidadDocentes={disponibilidadDocentes}
+            planActivo={planActivo}
+            horasPlanCurso={horasPlanCurso}
+          />
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Asignatura / Subsector *</label>
-                <input
-                  type="text"
-                  required
-                  list="sugerencias-materias"
-                  value={docenciaAsignatura}
-                  onChange={e => setDocenciaAsignatura(e.target.value)}
-                  placeholder="Ej. Lenguaje y Comunicación, Matemática..."
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-bold"
-                />
-                <datalist id="sugerencias-materias">
-                  {planActivo?.asignaturasBase.map((asig, i) => (
-                    <option key={i} value={asig.nombre} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Profesor(a) Asignado(a) *</label>
-                <select
-                  required
-                  value={docenciaDocenteId}
-                  onChange={e => setDocenciaDocenteId(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-medium"
-                >
-                  <option value="">-- Seleccionar Docente --</option>
-                  {docentes.map(d => {
-                    const disp = disponibilidadDocentes.get(d.id);
-                    return (
-                      <option key={d.id} value={d.id}>
-                        {d.nombres} {d.apellidos} ({d.estamento}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Horas Pedagógicas Semanales (HA) *</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="44"
-                  required
-                  value={docenciaHoras}
-                  onChange={e => setDocenciaHoras(parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold text-orange-600 text-base"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">1 hora pedagógica = 45 minutos de aula.</p>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">Tipo de Función / Régimen Horario</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
-                    docenciaTipoFuncion === 'CURRICULAR' ? 'border-orange-500 bg-orange-50/70 text-orange-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        name="tipoFuncion"
-                        checked={docenciaTipoFuncion === 'CURRICULAR'}
-                        onChange={() => setDocenciaTipoFuncion('CURRICULAR')}
-                        className="text-orange-600 focus:ring-orange-500"
-                      />
-                      <span className="text-xs">Plan Regular</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-normal ml-5">Afecto a proporción Ley 20.903</span>
-                  </label>
-
-                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
-                    docenciaTipoFuncion === 'TALLER_JEC' ? 'border-blue-500 bg-blue-50/70 text-blue-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        name="tipoFuncion"
-                        checked={docenciaTipoFuncion === 'TALLER_JEC'}
-                        onChange={() => setDocenciaTipoFuncion('TALLER_JEC')}
-                        className="text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-xs">Taller JEC</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-normal ml-5">Afecto a proporción Ley 20.903</span>
-                  </label>
-
-                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
-                    docenciaTipoFuncion === 'TALLER_SEP' ? 'border-emerald-500 bg-emerald-50/70 text-emerald-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        name="tipoFuncion"
-                        checked={docenciaTipoFuncion === 'TALLER_SEP'}
-                        onChange={() => setDocenciaTipoFuncion('TALLER_SEP')}
-                        className="text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <span className="text-xs">Taller SEP</span>
-                    </div>
-                    <span className="text-[10px] text-emerald-700 font-normal ml-5">Exento de proporción Ley 20.903</span>
-                  </label>
-
-                  <label className={`p-2.5 rounded-lg border cursor-pointer flex flex-col gap-0.5 transition-all ${
-                    docenciaTipoFuncion === 'TRABAJO_COLABORATIVO' ? 'border-purple-500 bg-purple-50/70 text-purple-950 font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        name="tipoFuncion"
-                        checked={docenciaTipoFuncion === 'TRABAJO_COLABORATIVO'}
-                        onChange={() => setDocenciaTipoFuncion('TRABAJO_COLABORATIVO')}
-                        className="text-purple-600 focus:ring-purple-500"
-                      />
-                      <span className="text-xs">Trabajo Colaborativo</span>
-                    </div>
-                    <span className="text-[10px] text-purple-700 font-normal ml-5">Art. 86 / Exento Ley 20.903</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setModalDocenciaOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow"
-                >
-                  {editandoAsigDocencia ? 'Guardar Cambios' : 'Asignar Docencia'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* MODAL 2.5: ASIGNAR / EDITAR CO-DOCENCIA (NO PIE)          */}
-      {/* ========================================================= */}
-      {modalCoDocenciaOpen && cursoActivo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-indigo-950 flex items-center gap-2">
-                <Users className="w-5 h-5 text-indigo-600" />
-                {editandoAsigCoDocencia ? 'Editar Co-Docencia / Apoyo' : 'Asignar Co-Docencia / Agrupación Flexible'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalCoDocenciaOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleGuardarCoDocenciaSubmit} className="space-y-4 text-xs mt-4">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
-                <input
-                  type="text"
-                  disabled
-                  value={`${cursoActivo.nivel} ${cursoActivo.letra} (${cursoActivo.regimen})`}
-                  className="w-full px-3 py-2 border rounded-lg bg-indigo-50/70 text-indigo-950 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Modalidad de Apoyo / Co-Enseñanza *</label>
-                <select
-                  value={coDocTipoModalidad}
-                  onChange={e => setCoDocTipoModalidad(e.target.value as any)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
-                >
-                  <option value="AGRUPACION_FLEXIBLE">Agrupación Flexible (División de subgrupos en aula)</option>
-                  <option value="CO_DOCENCIA">Co-Docencia Regular (2° Docente en sala simultáneo)</option>
-                  <option value="REFUERZO_AULA">Refuerzo Pedagógico en Sala (Nivelación)</option>
-                  <option value="APOYO_DOCENTE">Apoyo Docente / Asistente Pedagógico</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Asignatura o Área Apoyada *</label>
-                <input
-                  type="text"
-                  required
-                  list="sugerencias-materias-codoc"
-                  value={coDocAsignatura}
-                  onChange={e => setCoDocAsignatura(e.target.value)}
-                  placeholder="Ej. Lenguaje y Comunicación, Matemática..."
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold"
-                />
-                <datalist id="sugerencias-materias-codoc">
-                  {planActivo?.asignaturasBase.map((asig, i) => (
-                    <option key={i} value={asig.nombre} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Docente o Funcionario de Apoyo *
-                </label>
-                <select
-                  required
-                  value={coDocDocenteId}
-                  onChange={e => setCoDocDocenteId(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
-                >
-                  <option value="">-- Seleccionar Docente / Funcionario --</option>
-                  {docentes.map(d => {
-                    const disp = disponibilidadDocentes.get(d.id);
-                    return (
-                      <option key={d.id} value={d.id}>
-                        {d.nombres} {d.apellidos} ({d.estamento}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Horas Pedagógicas (HA) *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="44"
-                    required
-                    value={coDocHoras}
-                    onChange={e => setCoDocHoras(parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-center font-bold text-indigo-700 text-base"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">1 HA = 45 minutos</p>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Fuente Financiamiento</label>
-                  <select
-                    value={coDocEsSep ? 'SEP' : 'SUB_GEN'}
-                    onChange={e => setCoDocEsSep(e.target.value === 'SEP')}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
-                  >
-                    <option value="SUB_GEN">Subvención General</option>
-                    <option value="SEP">SEP (Refuerzo/PME)</option>
-                  </select>
-                  <p className="text-[10px] text-slate-400 mt-1">{coDocEsSep ? 'Exento prop. 65/35' : 'Carga regular'}</p>
-                </div>
-              </div>
-
-              <div className="p-2.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-[11px]">
-                ℹ️ Esta asignación sumará a la carga horaria del docente seleccionado, pero <strong>no inflará las {horasPlanCurso} HA del Plan de Estudio del curso</strong>.
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setModalCoDocenciaOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow"
-                >
-                  {editandoAsigCoDocencia ? 'Guardar Cambios' : 'Asignar Co-Docencia'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* MODAL 3: ASIGNAR / EDITAR APOYO PIE                       */}
-      {/* ========================================================= */}
-      {modalPieOpen && cursoActivo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-base font-bold text-purple-950 flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-purple-600" />
-                {editandoAsigPie ? 'Editar Apoyo PIE' : 'Asignar Apoyo PIE / Co-Docencia'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalPieOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleGuardarPieSubmit} className="space-y-4 text-xs mt-4">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
-                <input
-                  type="text"
-                  disabled
-                  value={`${cursoActivo.nivel} ${cursoActivo.letra} (${demandaPieCurso.neetCount} NEET / ${demandaPieCurso.neepCount} NEEP)`}
-                  className="w-full px-3 py-2 border rounded-lg bg-purple-50 text-purple-900 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Tipo de Apoyo Decreto 170 *</label>
-                <select
-                  value={pieTipoApoyo}
-                  onChange={e => setPieTipoApoyo(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
-                >
-                  {TIPOS_APOYO_PIE.map(t => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Profesional / Asistente Asignado *
-                </label>
-                <select
-                  required
-                  value={pieDocenteId}
-                  onChange={e => setPieDocenteId(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
-                >
-                  <option value="">-- Seleccionar Profesional o Asistente --</option>
-                  <optgroup label="Educadoras Diferenciales (PIE)">
-                    {docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL').map(d => {
-                      const disp = disponibilidadDocentes.get(d.id);
-                      return (
-                        <option key={d.id} value={d.id}>
-                          {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                  <optgroup label="Asistentes Profesionales PAE (Fono/Psico/TO)">
-                    {docentes.filter(d => d.estamento === 'PROFESIONAL_PAE').map(d => {
-                      const disp = disponibilidadDocentes.get(d.id);
-                      return (
-                        <option key={d.id} value={d.id}>
-                          {d.nombres} {d.apellidos} ({d.titulo || 'PAE'}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                  <optgroup label="Asistentes Técnicos en Educación Especial / Aula">
-                    {docentes.filter(d => d.estamento === 'TECNICO_ESPECIAL' || d.estamento === 'ASISTENTE_AULA').map(d => {
-                      const disp = disponibilidadDocentes.get(d.id);
-                      return (
-                        <option key={d.id} value={d.id}>
-                          {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                  <optgroup label="Docentes de Aula Regular (Co-docencia / Colaborativo)">
-                    {docentes.filter(d => d.estamento === 'DOCENTE_AULA').map(d => {
-                      const disp = disponibilidadDocentes.get(d.id);
-                      return (
-                        <option key={d.id} value={d.id}>
-                          {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Descripción / Asignatura Articulada</label>
-                <input
-                  type="text"
-                  value={pieAsignatura}
-                  onChange={e => setPieAsignatura(e.target.value)}
-                  placeholder="Ej. Co-Docencia en Lenguaje y Matemática, Fonoaudiología en Aula Recursos..."
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Horas Cronológicas Semanales *</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0.5"
-                  max="44"
-                  required
-                  value={pieHoras}
-                  onChange={e => setPieHoras(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-700 text-base"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Horas cronológicas según Decreto 170 (1 hora cronológica = 60 minutos).</p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setModalPieOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg shadow"
-                >
-                  {editandoAsigPie ? 'Guardar Cambios' : 'Asignar Apoyo PIE'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          <ModalAsignarPie
+            isOpen={modalPie.isOpen}
+            onClose={() => setModalPie({ isOpen: false, editandoAsig: null })}
+            onGuardar={onGuardarAsignacion}
+            cursoActivo={cursoActivo}
+            colegio={colegio}
+            periodoActivo={periodoActivo}
+            editandoAsig={modalPie.editandoAsig}
+            docentes={docentes}
+            disponibilidadDocentes={disponibilidadDocentes}
+            demandaPieCurso={demandaPieCurso}
+          />
+        </>
       )}
 
       {/* ========================================================= */}

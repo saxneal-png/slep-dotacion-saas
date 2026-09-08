@@ -19,42 +19,33 @@ interface DocenteAsignacionPanelProps {
 
 type TipoFormularioActivo = 'REGULAR' | 'CO_DOCENCIA' | 'PIE' | null;
 
-export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
+// ============================================================================
+// Subcomponentes aislados para evitar re-renderizados del panel al tipear
+// ============================================================================
+
+interface FormRegularProps {
+  docente: Docente;
+  colegio: Establecimiento;
+  cursos: CursoSae[];
+  onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
+  onCerrar: () => void;
+}
+
+const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   docente,
   colegio,
   cursos,
-  asignaciones,
-  onGuardarAsignacion,
-  onEliminarAsignacion
+  onGuardar,
+  onCerrar
 }) => {
-  const [formActivo, setFormActivo] = useState<TipoFormularioActivo>(null);
-
-  // Estado Local Formulario Regular / Taller
   const [regNombre, setRegNombre] = useState('Lenguaje y Comunicación');
   const [regCursoId, setRegCursoId] = useState(cursos[0]?.id || 'TRANSVERSAL');
   const [regHoras, setRegHoras] = useState(4);
   const [regEsTallerSep, setRegEsTallerSep] = useState(false);
 
-  // Estado Local Formulario Co-Docencia
-  const [coDocCursoId, setCoDocCursoId] = useState(cursos[0]?.id || '');
-  const [coDocAsignatura, setCoDocAsignatura] = useState('Lenguaje y Comunicación');
-  const [coDocHoras, setCoDocHoras] = useState(4);
-  const [coDocTipo, setCoDocTipo] = useState<'CO_DOCENCIA' | 'AGRUPACION_FLEXIBLE' | 'REFUERZO_AULA' | 'APOYO_DOCENTE'>('CO_DOCENCIA');
-  const [coDocFinanciamiento, setCoDocFinanciamiento] = useState<'SUB_GEN' | 'SEP'>('SEP');
-
-  // Estado Local Formulario Apoyo PIE (Decreto 170)
-  const [pieCursoId, setPieCursoId] = useState(cursos[0]?.id || '');
-  const [pieAsignatura, setPieAsignatura] = useState('Apoyo PIE - Co-docencia Aula Común');
-  const [pieHoras, setPieHoras] = useState(6);
-  const [pieTipo, setPieTipo] = useState<'Co-Docencia en Aula Regular' | 'Aula de Recursos / Refuerzo Especializado' | 'Trabajo Colaborativo / Co-Planificación Art. 86' | 'Apoyo Multidisciplinario / Clínico PAE'>('Co-Docencia en Aula Regular');
-
-  const esDocentePie = docente.estamento === 'DOCENTE_DIFERENCIAL' ||
-                       docente.estamento === 'PROFESIONAL_PAE' ||
-                       (Number(docente.horasPieTitular || 0) + Number(docente.horasPieContrata || 0)) > 0;
-
-  const handleGuardarRegular = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regNombre.trim() || !regCursoId || !onGuardarAsignacion) return;
+    if (!regNombre.trim() || !regCursoId) return;
 
     const newAsig: AsignacionHoraria = {
       id: `asig-${Date.now()}`,
@@ -69,13 +60,103 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       esProporcionDocente: false
     };
 
-    await onGuardarAsignacion(newAsig);
-    setFormActivo(null);
+    await onGuardar(newAsig);
+    onCerrar();
   };
 
-  const handleGuardarCoDocencia = async (e: React.FormEvent) => {
+  return (
+    <form onSubmit={handleSubmit} className="p-3 bg-white border border-orange-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
+      <div className="flex-1 min-w-[150px]">
+        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Asignatura</label>
+        <input
+          type="text"
+          value={regNombre}
+          onChange={(e) => setRegNombre(e.target.value)}
+          className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-medium focus:ring-1 focus:ring-orange-500 focus:outline-none"
+          placeholder="Ej: Matemática"
+          required
+        />
+      </div>
+      <div className="min-w-[180px]">
+        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Curso o Modalidad</label>
+        <select
+          value={regCursoId}
+          onChange={(e) => setRegCursoId(e.target.value)}
+          className="w-full px-2 py-1 border border-slate-200 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-orange-500 focus:outline-none"
+        >
+          <option value="TRANSVERSAL">🌟 Taller Institucional / Transversal (Sin Curso)</option>
+          {cursos.map(c => (
+            <option key={c.id} value={c.id}>
+              {c.nivel} {c.letra} ({c.regimen})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="w-20">
+        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Horas Aula</label>
+        <input
+          type="number"
+          value={regHoras}
+          onChange={(e) => setRegHoras(Number(e.target.value))}
+          className="w-full px-2 py-1 border border-slate-200 rounded text-xs text-center font-bold focus:ring-1 focus:ring-orange-500 focus:outline-none"
+          min={1}
+          max={44}
+          required
+        />
+      </div>
+      <div className="flex items-center gap-1.5 pt-4">
+        <label className="flex items-center gap-1 cursor-pointer text-[11px] font-semibold text-slate-700">
+          <input
+            type="checkbox"
+            checked={regEsTallerSep}
+            onChange={(e) => setRegEsTallerSep(e.target.checked)}
+          />
+          <span>Taller Extracurricular SEP</span>
+        </label>
+      </div>
+      <div className="flex items-center gap-2 pt-4">
+        <button
+          type="submit"
+          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition-colors"
+        >
+          Guardar
+        </button>
+        <button
+          type="button"
+          onClick={onCerrar}
+          className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
+        >
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+});
+
+interface FormCoDocenciaProps {
+  docente: Docente;
+  colegio: Establecimiento;
+  cursos: CursoSae[];
+  onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
+  onCerrar: () => void;
+}
+
+const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
+  docente,
+  colegio,
+  cursos,
+  onGuardar,
+  onCerrar
+}) => {
+  const [coDocCursoId, setCoDocCursoId] = useState(cursos[0]?.id || '');
+  const [coDocAsignatura, setCoDocAsignatura] = useState('Lenguaje y Comunicación');
+  const [coDocHoras, setCoDocHoras] = useState(4);
+  const [coDocTipo, setCoDocTipo] = useState<'CO_DOCENCIA' | 'AGRUPACION_FLEXIBLE' | 'REFUERZO_AULA' | 'APOYO_DOCENTE'>('CO_DOCENCIA');
+  const [coDocFinanciamiento, setCoDocFinanciamiento] = useState<'SUB_GEN' | 'SEP'>('SEP');
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!coDocAsignatura.trim() || !coDocCursoId || !onGuardarAsignacion) return;
+    if (!coDocAsignatura.trim() || !coDocCursoId) return;
 
     const newAsig: AsignacionHoraria = {
       id: `asig-codoc-${Date.now()}`,
@@ -92,13 +173,116 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       esProporcionDocente: false
     };
 
-    await onGuardarAsignacion(newAsig);
-    setFormActivo(null);
+    await onGuardar(newAsig);
+    onCerrar();
   };
 
-  const handleGuardarPie = async (e: React.FormEvent) => {
+  return (
+    <form onSubmit={handleSubmit} className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
+      <div className="min-w-[180px]">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Curso Receptor del Apoyo</label>
+        <select
+          value={coDocCursoId}
+          onChange={(e) => setCoDocCursoId(e.target.value)}
+          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+          required
+        >
+          {cursos.map(c => (
+            <option key={c.id} value={c.id}>
+              {c.nivel} {c.letra} ({c.regimen})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex-1 min-w-[140px]">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Asignatura</label>
+        <input
+          type="text"
+          value={coDocAsignatura}
+          onChange={(e) => setCoDocAsignatura(e.target.value)}
+          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+          placeholder="Ej: Matemática"
+          required
+        />
+      </div>
+      <div className="min-w-[180px]">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Modalidad de Apoyo</label>
+        <select
+          value={coDocTipo}
+          onChange={(e) => setCoDocTipo(e.target.value as any)}
+          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+        >
+          <option value="CO_DOCENCIA">🤝 Co-Docencia en Aula</option>
+          <option value="AGRUPACION_FLEXIBLE">👥 Agrupación Flexible (Separación)</option>
+          <option value="REFUERZO_AULA">💡 Refuerzo Pedagógico en Aula</option>
+          <option value="APOYO_DOCENTE">🛡️ Apoyo Docente Adicional</option>
+        </select>
+      </div>
+      <div className="w-20">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Horas Aula</label>
+        <input
+          type="number"
+          value={coDocHoras}
+          onChange={(e) => setCoDocHoras(Number(e.target.value))}
+          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+          min={1}
+          max={44}
+          required
+        />
+      </div>
+      <div className="min-w-[140px]">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Financiamiento</label>
+        <select
+          value={coDocFinanciamiento}
+          onChange={(e) => setCoDocFinanciamiento(e.target.value as any)}
+          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+        >
+          <option value="SEP">Subvención SEP (No suma plan)</option>
+          <option value="SUB_GEN">Subvención General</option>
+        </select>
+      </div>
+      <div className="flex items-center gap-2 pt-4">
+        <button
+          type="submit"
+          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-xs shadow-xs transition-colors"
+        >
+          Guardar Co-Docencia
+        </button>
+        <button
+          type="button"
+          onClick={onCerrar}
+          className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
+        >
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+});
+
+interface FormPieProps {
+  docente: Docente;
+  colegio: Establecimiento;
+  cursos: CursoSae[];
+  onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
+  onCerrar: () => void;
+}
+
+const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
+  docente,
+  colegio,
+  cursos,
+  onGuardar,
+  onCerrar
+}) => {
+  const [pieCursoId, setPieCursoId] = useState(cursos[0]?.id || '');
+  const [pieAsignatura, setPieAsignatura] = useState('Apoyo PIE - Co-docencia Aula Común');
+  const [pieHoras, setPieHoras] = useState(6);
+  const [pieTipo, setPieTipo] = useState<'Co-Docencia en Aula Regular' | 'Aula de Recursos / Refuerzo Especializado' | 'Trabajo Colaborativo / Co-Planificación Art. 86' | 'Apoyo Multidisciplinario / Clínico PAE'>('Co-Docencia en Aula Regular');
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pieCursoId || !onGuardarAsignacion) return;
+    if (!pieCursoId) return;
 
     const esColab = pieTipo.includes('Colaborativo') || pieTipo.includes('86');
     const horasCron = Number(pieHoras);
@@ -119,9 +303,113 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       esProporcionDocente: false
     };
 
-    await onGuardarAsignacion(newAsig);
-    setFormActivo(null);
+    await onGuardar(newAsig);
+    onCerrar();
   };
+
+  return (
+    <form onSubmit={handleSubmit} className="p-3 bg-purple-50 border border-purple-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
+      <div className="min-w-[180px]">
+        <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Curso Receptor PIE</label>
+        <select
+          value={pieCursoId}
+          onChange={(e) => setPieCursoId(e.target.value)}
+          className="w-full px-2 py-1 border border-purple-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-purple-500 focus:outline-none"
+          required
+        >
+          {cursos.map(c => (
+            <option key={c.id} value={c.id}>
+              {c.nivel} {c.letra} ({c.regimen})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="min-w-[200px]">
+        <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Modalidad de Apoyo PIE (Dec. 170)</label>
+        <select
+          value={pieTipo}
+          onChange={(e) => {
+            const val = e.target.value as any;
+            setPieTipo(val);
+            if (val.includes('Colaborativo')) {
+              setPieHoras(3);
+              setPieAsignatura('Trabajo Colaborativo / Co-Planificación PIE Art. 86');
+            } else if (val.includes('Recursos')) {
+              setPieHoras(4);
+              setPieAsignatura('Apoyo PIE - Aula de Recursos');
+            } else {
+              setPieHoras(6);
+              setPieAsignatura('Apoyo PIE - Co-docencia Aula Común');
+            }
+          }}
+          className="w-full px-2 py-1 border border-purple-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-purple-500 focus:outline-none"
+        >
+          <option value="Co-Docencia en Aula Regular">Co-Docencia en Aula Regular (Común)</option>
+          <option value="Aula de Recursos / Refuerzo Especializado">Aula de Recursos (Refuerzo Especializado)</option>
+          <option value="Trabajo Colaborativo / Co-Planificación Art. 86">Trabajo Colaborativo Art. 86 (3h cron.)</option>
+          <option value="Apoyo Multidisciplinario / Clínico PAE">Apoyo Multidisciplinario / Clínico PAE</option>
+        </select>
+      </div>
+
+      <div className="flex-1 min-w-[160px]">
+        <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Descripción / Asignatura</label>
+        <input
+          type="text"
+          value={pieAsignatura}
+          onChange={(e) => setPieAsignatura(e.target.value)}
+          className="w-full px-2 py-1 border border-purple-300 rounded text-xs font-medium focus:ring-1 focus:ring-purple-500 focus:outline-none"
+          placeholder="Ej: Apoyo PIE Matemática"
+          required
+        />
+      </div>
+
+      <div className="w-24">
+        <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Horas Cron.</label>
+        <input
+          type="number"
+          value={pieHoras}
+          onChange={(e) => setPieHoras(Number(e.target.value))}
+          className="w-full px-2 py-1 border border-purple-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-purple-500 focus:outline-none"
+          min={1}
+          max={44}
+          step="0.5"
+          required
+        />
+      </div>
+
+      <div className="flex items-center gap-2 pt-4">
+        <button
+          type="submit"
+          className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded text-xs shadow-xs transition-colors"
+        >
+          Guardar Apoyo PIE
+        </button>
+        <button
+          type="button"
+          onClick={onCerrar}
+          className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
+        >
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+});
+
+// ============================================================================
+// Componente Principal: DocenteAsignacionPanel
+// ============================================================================
+
+export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
+  docente,
+  colegio,
+  cursos,
+  asignaciones,
+  onGuardarAsignacion,
+  onEliminarAsignacion
+}) => {
+  const [formActivo, setFormActivo] = useState<TipoFormularioActivo>(null);
 
   const asignacionesDocente = asignaciones.filter(
     a => a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente)
@@ -180,246 +468,37 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
         </div>
       </div>
 
-      {/* 1. Formulario Rápido Asignatura Regular / Taller */}
-      {formActivo === 'REGULAR' && (
-        <form onSubmit={handleGuardarRegular} className="p-3 bg-white border border-orange-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Asignatura</label>
-            <input
-              type="text"
-              value={regNombre}
-              onChange={(e) => setRegNombre(e.target.value)}
-              className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-medium focus:ring-1 focus:ring-orange-500 focus:outline-none"
-              placeholder="Ej: Matemática"
-              required
-            />
-          </div>
-          <div className="min-w-[180px]">
-            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Curso o Modalidad</label>
-            <select
-              value={regCursoId}
-              onChange={(e) => setRegCursoId(e.target.value)}
-              className="w-full px-2 py-1 border border-slate-200 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-orange-500 focus:outline-none"
-            >
-              <option value="TRANSVERSAL">🌟 Taller Institucional / Transversal (Sin Curso)</option>
-              {cursos.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.nivel} {c.letra} ({c.regimen})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="w-20">
-            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Horas Aula</label>
-            <input
-              type="number"
-              value={regHoras}
-              onChange={(e) => setRegHoras(Number(e.target.value))}
-              className="w-full px-2 py-1 border border-slate-200 rounded text-xs text-center font-bold focus:ring-1 focus:ring-orange-500 focus:outline-none"
-              min={1}
-              max={44}
-              required
-            />
-          </div>
-          <div className="flex items-center gap-1.5 pt-4">
-            <label className="flex items-center gap-1 cursor-pointer text-[11px] font-semibold text-slate-700">
-              <input
-                type="checkbox"
-                checked={regEsTallerSep}
-                onChange={(e) => setRegEsTallerSep(e.target.checked)}
-              />
-              <span>Taller Extracurricular SEP</span>
-            </label>
-          </div>
-          <div className="flex items-center gap-2 pt-4">
-            <button
-              type="submit"
-              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition-colors"
-            >
-              Guardar
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormActivo(null)}
-              className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
+      {/* 1. Formulario Rápido Asignatura Regular / Taller Aislado */}
+      {formActivo === 'REGULAR' && onGuardarAsignacion && (
+        <FormAsignarRegular
+          docente={docente}
+          colegio={colegio}
+          cursos={cursos}
+          onGuardar={onGuardarAsignacion}
+          onCerrar={() => setFormActivo(null)}
+        />
       )}
 
-      {/* 2. Formulario Rápido Co-Docencia / Apoyo Aula */}
-      {formActivo === 'CO_DOCENCIA' && (
-        <form onSubmit={handleGuardarCoDocencia} className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
-          <div className="min-w-[180px]">
-            <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Curso Receptor del Apoyo</label>
-            <select
-              value={coDocCursoId}
-              onChange={(e) => setCoDocCursoId(e.target.value)}
-              className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-              required
-            >
-              {cursos.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.nivel} {c.letra} ({c.regimen})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1 min-w-[140px]">
-            <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Asignatura</label>
-            <input
-              type="text"
-              value={coDocAsignatura}
-              onChange={(e) => setCoDocAsignatura(e.target.value)}
-              className="w-full px-2 py-1 border border-indigo-300 rounded text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-              placeholder="Ej: Matemática"
-              required
-            />
-          </div>
-          <div className="min-w-[180px]">
-            <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Modalidad de Apoyo</label>
-            <select
-              value={coDocTipo}
-              onChange={(e) => setCoDocTipo(e.target.value as any)}
-              className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-            >
-              <option value="CO_DOCENCIA">🤝 Co-Docencia en Aula</option>
-              <option value="AGRUPACION_FLEXIBLE">👥 Agrupación Flexible (Separación)</option>
-              <option value="REFUERZO_AULA">💡 Refuerzo Pedagógico en Aula</option>
-              <option value="APOYO_DOCENTE">🛡️ Apoyo Docente Adicional</option>
-            </select>
-          </div>
-          <div className="w-20">
-            <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Horas Aula</label>
-            <input
-              type="number"
-              value={coDocHoras}
-              onChange={(e) => setCoDocHoras(Number(e.target.value))}
-              className="w-full px-2 py-1 border border-indigo-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-              min={1}
-              max={44}
-              required
-            />
-          </div>
-          <div className="min-w-[140px]">
-            <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Financiamiento</label>
-            <select
-              value={coDocFinanciamiento}
-              onChange={(e) => setCoDocFinanciamiento(e.target.value as any)}
-              className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-            >
-              <option value="SEP">Subvención SEP (No suma plan)</option>
-              <option value="SUB_GEN">Subvención General</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2 pt-4">
-            <button
-              type="submit"
-              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-xs shadow-xs transition-colors"
-            >
-              Guardar Co-Docencia
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormActivo(null)}
-              className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
+      {/* 2. Formulario Rápido Co-Docencia / Apoyo Aula Aislado */}
+      {formActivo === 'CO_DOCENCIA' && onGuardarAsignacion && (
+        <FormAsignarCoDocencia
+          docente={docente}
+          colegio={colegio}
+          cursos={cursos}
+          onGuardar={onGuardarAsignacion}
+          onCerrar={() => setFormActivo(null)}
+        />
       )}
 
-      {/* 3. Formulario Rápido Apoyo PIE (Decreto 170) para Docentes Diferenciales / PAE */}
-      {formActivo === 'PIE' && (
-        <form onSubmit={handleGuardarPie} className="p-3 bg-purple-50 border border-purple-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
-          <div className="min-w-[180px]">
-            <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Curso Receptor PIE</label>
-            <select
-              value={pieCursoId}
-              onChange={(e) => setPieCursoId(e.target.value)}
-              className="w-full px-2 py-1 border border-purple-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-purple-500 focus:outline-none"
-              required
-            >
-              {cursos.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.nivel} {c.letra} ({c.regimen})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="min-w-[200px]">
-            <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Modalidad de Apoyo PIE (Dec. 170)</label>
-            <select
-              value={pieTipo}
-              onChange={(e) => {
-                const val = e.target.value as any;
-                setPieTipo(val);
-                if (val.includes('Colaborativo')) {
-                  setPieHoras(3);
-                  setPieAsignatura('Trabajo Colaborativo / Co-Planificación PIE Art. 86');
-                } else if (val.includes('Recursos')) {
-                  setPieHoras(4);
-                  setPieAsignatura('Apoyo PIE - Aula de Recursos');
-                } else {
-                  setPieHoras(6);
-                  setPieAsignatura('Apoyo PIE - Co-docencia Aula Común');
-                }
-              }}
-              className="w-full px-2 py-1 border border-purple-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-purple-500 focus:outline-none"
-            >
-              <option value="Co-Docencia en Aula Regular">Co-Docencia en Aula Regular (Común)</option>
-              <option value="Aula de Recursos / Refuerzo Especializado">Aula de Recursos (Refuerzo Especializado)</option>
-              <option value="Trabajo Colaborativo / Co-Planificación Art. 86">Trabajo Colaborativo Art. 86 (3h cron.)</option>
-              <option value="Apoyo Multidisciplinario / Clínico PAE">Apoyo Multidisciplinario / Clínico PAE</option>
-            </select>
-          </div>
-
-          <div className="flex-1 min-w-[160px]">
-            <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Descripción / Asignatura</label>
-            <input
-              type="text"
-              value={pieAsignatura}
-              onChange={(e) => setPieAsignatura(e.target.value)}
-              className="w-full px-2 py-1 border border-purple-300 rounded text-xs font-medium focus:ring-1 focus:ring-purple-500 focus:outline-none"
-              placeholder="Ej: Apoyo PIE Matemática"
-              required
-            />
-          </div>
-
-          <div className="w-24">
-            <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Horas Cron.</label>
-            <input
-              type="number"
-              value={pieHoras}
-              onChange={(e) => setPieHoras(Number(e.target.value))}
-              className="w-full px-2 py-1 border border-purple-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-purple-500 focus:outline-none"
-              min={1}
-              max={44}
-              step="0.5"
-              required
-            />
-          </div>
-
-          <div className="flex items-center gap-2 pt-4">
-            <button
-              type="submit"
-              className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded text-xs shadow-xs transition-colors"
-            >
-              Guardar Apoyo PIE
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormActivo(null)}
-              className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
+      {/* 3. Formulario Rápido Apoyo PIE Aislado */}
+      {formActivo === 'PIE' && onGuardarAsignacion && (
+        <FormAsignarPie
+          docente={docente}
+          colegio={colegio}
+          cursos={cursos}
+          onGuardar={onGuardarAsignacion}
+          onCerrar={() => setFormActivo(null)}
+        />
       )}
 
       {/* Lista de Asignaciones Actuales */}
