@@ -70,17 +70,36 @@ describe('Motor MINEDUC - B�squeda Inversa y Auditoría Multitramo', () => {
     expect(res.estadoSaldo).toBe('DEFICIT');
   });
 
-  it('detecta infracción legal por exceso lectivo (35 HA en 40h contrato)', () => {
+  it('detecta infracción legal por exceso lectivo real sobre tabla (36 HA en 40h contrato)', () => {
     const res = calcularAuditoriaDocenteMultitramo({
-      horasAula65_35: 35,
+      horasAula65_35: 36, // excede las 35 HA oficiales de 40h
       horasAula60_40: 0,
       horasPieSepCronologicas: 0,
       horasContratoReal: 40
     });
 
     expect(res.esInfractorExcesoLectivo).toBe(true);
-    expect(res.porcentajeLectivoReal).toBe(65.6);
-    expect(res.porcentajeLimitePonderado).toBe(65.0);
+    expect(res.porcentajeLectivoReal).toBe(67.5);
+    expect(res.porcentajeLimitePonderado).toBe(65.6);
+  });
+
+  it('audita caso de 32h en 65/35 con 28 HA (Ángela Vaccaro) y valida cumplimiento conforme a tabla oficial', () => {
+    const res = calcularAuditoriaDocenteMultitramo({
+      horasAula65_35: 28, // exactamente el tope oficial de 32h en tabla
+      horasAula60_40: 0,
+      horasPieCronologicas: 3, // 3h PIE
+      horasContratoReal: 35    // 32h regular + 3h PIE
+    });
+
+    expect(res.req65_35).toBe(32);
+    expect(res.horasPie).toBe(3);
+    expect(res.contratoCalculadoTotal).toBe(35);
+    expect(res.contratoRegularBase).toBe(32);
+    expect(res.saldoHoras).toBe(0);
+    expect(res.estadoSaldo).toBe('EXACTO');
+    expect(res.esInfractorExcesoLectivo).toBe(false); // CUMPLE legalmente
+    expect(res.minutosLectivosAula).toBe(28 * 45); // 1260 mins
+    expect(res.minutosLimitePermitido).toBe(1260); // 1260 mins según tabla
   });
 
   it('resuelve correctamente la fila inferior ante horas lectivas duplicadas (ej. 35 HA -> 40h contrato)', () => {
@@ -132,6 +151,6 @@ describe('Motor MINEDUC - B�squeda Inversa y Auditoría Multitramo', () => {
     // 27 HA (20h 15m) en 36h base es 56.3% <= 65% legal -> CUMPLE sin infracción
     expect(res.esInfractorExcesoLectivo).toBe(false);
     expect(res.porcentajeLectivoReal).toBe(56.3);
-    expect(res.porcentajeLimitePonderado).toBe(65.0);
+    expect(res.porcentajeLimitePonderado).toBe(64.6);
   });
 });

@@ -153,9 +153,9 @@ export function calcularAuditoriaDocenteMultitramo(
 
   const hnlPlanificacion40 = Math.round(totalHnlMins * 0.40);
 
-  // 4. Auditoría de límites y exceso lectivo ponderado
+  // 4. Auditoría de límites y exceso lectivo ponderado según tablas oficiales MINEDUC
   const minutosLectivosAula = (l65 + l60) * 45;
-  const minutosLimitePermitido = (c65 * 0.65 + c60 * 0.60) * 60;
+  const minutosLimitePermitido = totalLectivaCronMins;
 
   let esInfractor = false;
   let limitePonderadoPct = 0;
