@@ -36,6 +36,7 @@ import {
 import { calcularJornadaMinutos, validarSobreasignacionDocente, calcularAuditoriaDocenteMultitramo, buscarContratoMinimoPorTabla } from '@slep/mineduc-engine';
 import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalculationService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
+import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
 
 interface DocentesDotacionViewProps {
   colegio: Establecimiento | null;
@@ -50,32 +51,6 @@ interface DocentesDotacionViewProps {
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
 }
-
-const ESTAMENTOS: { id: EstamentoDocente; label: string }[] = [
-  { id: 'DOCENTE_AULA', label: 'Docente de Aula Regular' },
-  { id: 'DOCENTE_DIFERENCIAL', label: 'Docente Educación Diferencial (PIE)' },
-  { id: 'PROFESIONAL_PAE', label: 'Profesional Asistente PAE (Fono/Psico/TO)' },
-  { id: 'TECNICO_ESPECIAL', label: 'Técnico en Educación Especial' },
-  { id: 'DIRECTIVO', label: 'Directivo (Director / Inspector / UTP)' },
-  { id: 'TECNICO_PEDAGOGICO', label: 'Técnico Pedagógico' },
-  { id: 'COORDINADOR_CRA', label: 'Coordinador CRA' }
-];
-
-const TIPOS_FUNCIONES_LABELS: Record<TipoFuncionNoAula, { label: string; defaultNombre: string; badgeColor: string }> = {
-  DIRECTIVA: { label: 'Gestión Directiva (Dirección / Subdirección)', defaultNombre: 'Dirección / Subdirección', badgeColor: 'bg-purple-100 text-purple-800 border-purple-200' },
-  INSPECTORIA: { label: 'Inspectoría General', defaultNombre: 'Inspectoría General', badgeColor: 'bg-purple-100 text-purple-800 border-purple-200' },
-  UTP: { label: 'Jefatura Técnico-Pedagógica (UTP)', defaultNombre: 'Jefatura UTP', badgeColor: 'bg-blue-100 text-blue-800 border-blue-200' },
-  COORDINACION: { label: 'Coordinación Pedagógica UTP', defaultNombre: 'Coordinación UTP', badgeColor: 'bg-blue-100 text-blue-800 border-blue-200' },
-  CONVIVENCIA: { label: 'Encargado Convivencia Escolar', defaultNombre: 'Convivencia Escolar', badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
-  CRA: { label: 'Coordinación CRA (Biblioteca)', defaultNombre: 'Coordinador CRA', badgeColor: 'bg-amber-100 text-amber-800 border-amber-200' },
-  ENLACES: { label: 'Enlaces / Informática Educativa', defaultNombre: 'Coordinador Enlaces / TIC', badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
-  EXTRAESCOLAR: { label: 'Actividades Extraescolares / ACLE', defaultNombre: 'Encargado Extraescolar', badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  EVALUACION: { label: 'Evaluador Pedagógico', defaultNombre: 'Evaluador Pedagógico', badgeColor: 'bg-blue-100 text-blue-800 border-blue-200' },
-  ORIENTACION: { label: 'Orientación Educacional', defaultNombre: 'Orientador Educacional', badgeColor: 'bg-teal-100 text-teal-800 border-teal-200' },
-  GREMIAL: { label: 'Horas Gremiales / Dirigencia Docente', defaultNombre: 'Horas Gremiales', badgeColor: 'bg-rose-100 text-rose-800 border-rose-200' },
-  ADMINISTRATIVA: { label: 'Función Administrativa / Apoyo Institucional', defaultNombre: 'Apoyo Administrativo', badgeColor: 'bg-slate-100 text-slate-800 border-slate-200' },
-  OTRA: { label: 'Otra Función Fuera de Aula', defaultNombre: 'Función No Aula', badgeColor: 'bg-slate-100 text-slate-800 border-slate-200' }
-};
 
 export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   colegio,
@@ -105,41 +80,6 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const [filtroEstamento, setFiltroEstamento] = useState<string>('TODOS');
   const [filtroEstadoCarga, setFiltroEstadoCarga] = useState<'TODOS' | 'SOBREASIGNADOS' | 'HOLGURA' | 'EXACTO'>('TODOS');
 
-  const [run, setRun] = useState('');
-  const [nombres, setNombres] = useState('');
-  const [apellidos, setApellidos] = useState('');
-  const [titulo, setTitulo] = useState('');
-  const [calidadJuridica, setCalidadJuridica] = useState<CalidadJuridicaDocente>('TITULAR');
-  const [estamento, setEstamento] = useState<EstamentoDocente>('DOCENTE_AULA');
-  const [horasContrato, setHorasContrato] = useState(44);
-  const [asignaturaPrincipal, setAsignaturaPrincipal] = useState('Lenguaje y Comunicación');
-  const [aplicaArticulo69, setAplicaArticulo69] = useState(false);
-
-  // Múltiples Funciones No Aula / Administrativas
-  const [funcionesNoAula, setFuncionesNoAula] = useState<FuncionNoAulaDocente[]>([]);
-  const [nuevaFuncionTipo, setNuevaFuncionTipo] = useState<TipoFuncionNoAula>('COORDINACION');
-  const [nuevaFuncionNombre, setNuevaFuncionNombre] = useState('');
-  const [nuevaFuncionHoras, setNuevaFuncionHoras] = useState<number>(2);
-  const [nuevaFuncionFinanciamiento, setNuevaFuncionFinanciamiento] = useState<FuenteFinanciamientoFuncion>('SUBVENCION_GENERAL');
-
-  const [horasDirectivas, setHorasDirectivas] = useState(0);
-  const [horasInspectorGeneral, setHorasInspectorGeneral] = useState(0);
-  const [horasTecnicoPedagogicas, setHorasTecnicoPedagogicas] = useState(0);
-  const [horasCoordinacion, setHorasCoordinacion] = useState(0);
-  const [tipoCoordinacion, setTipoCoordinacion] = useState('');
-
-  // Fuentes de Financiamiento desglosadas
-  const [horasSubvGeneralTitular, setHorasSubvGeneralTitular] = useState<number>(44);
-  const [horasSubvGeneralContrata, setHorasSubvGeneralContrata] = useState<number>(0);
-  const [horasSepTitular, setHorasSepTitular] = useState<number>(0);
-  const [horasSepContrata, setHorasSepContrata] = useState<number>(0);
-  const [horasPieTitular, setHorasPieTitular] = useState<number>(0);
-  const [horasPieContrata, setHorasPieContrata] = useState<number>(0);
-
-  // Funciones exentas de proporción
-  const [horasTallerSep, setHorasTallerSep] = useState<number>(0);
-  const [horasTrabajoColaborativo, setHorasTrabajoColaborativo] = useState<number>(0);
-
   if (!colegio) {
     return (
       <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-500">
@@ -161,179 +101,12 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
   const abrirModalNuevo = () => {
     setEditingDoc(null);
-    setRun('');
-    setNombres('');
-    setApellidos('');
-    setTitulo('');
-    setCalidadJuridica('TITULAR');
-    setEstamento('DOCENTE_AULA');
-    setHorasContrato(44);
-    setFuncionesNoAula([]);
-    setNuevaFuncionTipo('COORDINACION');
-    setNuevaFuncionNombre('');
-    setNuevaFuncionHoras(2);
-    setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
-    setHorasDirectivas(0);
-    setHorasInspectorGeneral(0);
-    setHorasTecnicoPedagogicas(0);
-    setHorasCoordinacion(0);
-    setTipoCoordinacion('');
-    setHorasTallerSep(0);
-    setHorasTrabajoColaborativo(0);
-    setAsignaturaPrincipal('Lenguaje y Comunicación');
-    setAplicaArticulo69(false);
-    setHorasSubvGeneralTitular(44);
-    setHorasSubvGeneralContrata(0);
-    setHorasSepTitular(0);
-    setHorasSepContrata(0);
-    setHorasPieTitular(0);
-    setHorasPieContrata(0);
     setModalOpen(true);
   };
 
   const abrirModalEditar = (d: Docente) => {
     setEditingDoc(d);
-    setRun(d.run);
-    setNombres(d.nombres);
-    setApellidos(d.apellidos);
-    setTitulo(d.titulo || '');
-    setCalidadJuridica(d.calidadJuridica);
-    setEstamento(d.estamento);
-    setHorasContrato(d.horasContrato);
-    
-    // Cargar o migrar funciones no aula dinámicas
-    if (d.funcionesNoAula && d.funcionesNoAula.length > 0) {
-      setFuncionesNoAula([...d.funcionesNoAula]);
-    } else {
-      const legacyList: FuncionNoAulaDocente[] = [];
-      if (d.horasDirectivas) legacyList.push({ id: `f-${Date.now()}-1`, tipo: 'DIRECTIVA', nombre: 'Gestión Directiva (Dirección/Subdirección)', horas: d.horasDirectivas, financiamiento: 'SUBVENCION_GENERAL' });
-      if (d.horasInspectorGeneral) legacyList.push({ id: `f-${Date.now()}-2`, tipo: 'INSPECTORIA', nombre: 'Inspectoría General', horas: d.horasInspectorGeneral, financiamiento: 'SUBVENCION_GENERAL' });
-      if (d.horasTecnicoPedagogicas) legacyList.push({ id: `f-${Date.now()}-3`, tipo: 'UTP', nombre: 'Jefatura Técnico-Pedagógica (UTP)', horas: d.horasTecnicoPedagogicas, financiamiento: 'SUBVENCION_GENERAL' });
-      if (d.horasCoordinacion) legacyList.push({ id: `f-${Date.now()}-4`, tipo: 'COORDINACION', nombre: d.tipoCoordinacion ? `Coordinación UTP (${d.tipoCoordinacion})` : 'Coordinación Pedagógica UTP', horas: d.horasCoordinacion, financiamiento: 'SUBVENCION_GENERAL' });
-      setFuncionesNoAula(legacyList);
-    }
-
-    setNuevaFuncionTipo('COORDINACION');
-    setNuevaFuncionNombre('');
-    setNuevaFuncionHoras(2);
-    setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
-
-    setHorasDirectivas(d.horasDirectivas || 0);
-    setHorasInspectorGeneral(d.horasInspectorGeneral || 0);
-    setHorasTecnicoPedagogicas(d.horasTecnicoPedagogicas || 0);
-    setHorasCoordinacion(d.horasCoordinacion || 0);
-    setTipoCoordinacion(d.tipoCoordinacion || '');
-    setHorasTallerSep(d.horasTallerSep || 0);
-    setHorasTrabajoColaborativo(d.horasTrabajoColaborativo || 0);
-    setAsignaturaPrincipal(d.asignaturaPrincipal || '');
-    setAplicaArticulo69(Boolean(d.aplicaArticulo69));
-
-    // Si ya tiene financiamiento guardado
-    let subTit = d.horasSubvencionGeneralTitular || 0;
-    let subCon = d.horasSubvencionGeneralContrata || 0;
-    let sepTit = d.horasSepTitular || 0;
-    let sepCon = d.horasSepContrata || 0;
-    let pieTit = d.horasPieTitular || 0;
-    let pieCon = d.horasPieContrata || 0;
-
-    const suma = subTit + subCon + sepTit + sepCon + pieTit + pieCon;
-    if (suma === 0 && d.horasContrato > 0) {
-      if (d.calidadJuridica === 'TITULAR') {
-        subTit = d.horasContrato;
-      } else {
-        subCon = d.horasContrato;
-      }
-    }
-
-    setHorasSubvGeneralTitular(subTit);
-    setHorasSubvGeneralContrata(subCon);
-    setHorasSepTitular(sepTit);
-    setHorasSepContrata(sepCon);
-    setHorasPieTitular(pieTit);
-    setHorasPieContrata(pieCon);
-
     setModalOpen(true);
-  };
-
-  const agregarFuncionNoAula = () => {
-    if (!nuevaFuncionHoras || nuevaFuncionHoras <= 0) return;
-    const defaultInfo = TIPOS_FUNCIONES_LABELS[nuevaFuncionTipo];
-    const nombreFinal = nuevaFuncionNombre.trim() || defaultInfo.defaultNombre;
-    const item: FuncionNoAulaDocente = {
-      id: `func-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      tipo: nuevaFuncionTipo,
-      nombre: nombreFinal,
-      horas: Number(nuevaFuncionHoras),
-      financiamiento: nuevaFuncionFinanciamiento
-    };
-    setFuncionesNoAula(prev => [...prev, item]);
-    setNuevaFuncionNombre('');
-    setNuevaFuncionHoras(2);
-    setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
-  };
-
-  const eliminarFuncionNoAula = (id: string) => {
-    setFuncionesNoAula(prev => prev.filter(f => f.id !== id));
-  };
-
-  const totalHorasFuncionesNoAula = useMemo(() => {
-    return funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0);
-  }, [funcionesNoAula]);
-
-  const sumaFinanciamiento = 
-    horasSubvGeneralTitular + horasSubvGeneralContrata +
-    horasSepTitular + horasSepContrata +
-    horasPieTitular + horasPieContrata;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    let finalFunciones = [...funcionesNoAula];
-    // Auto-commit si el usuario escribió datos en la fila pero no presionó el botón "+" antes de Guardar Docente
-    if (nuevaFuncionHoras > 0 && nuevaFuncionNombre.trim()) {
-      finalFunciones.push({
-        id: `func-${Date.now()}-pending`,
-        tipo: nuevaFuncionTipo,
-        nombre: nuevaFuncionNombre.trim(),
-        horas: Number(nuevaFuncionHoras),
-        financiamiento: nuevaFuncionFinanciamiento
-      });
-    }
-
-    const dirHours = finalFunciones.filter(f => f.tipo === 'DIRECTIVA').reduce((s, f) => s + Number(f.horas || 0), 0);
-    const inspHours = finalFunciones.filter(f => f.tipo === 'INSPECTORIA').reduce((s, f) => s + Number(f.horas || 0), 0);
-    const utpHours = finalFunciones.filter(f => f.tipo === 'UTP' || f.tipo === 'EVALUACION' || f.tipo === 'ORIENTACION').reduce((s, f) => s + Number(f.horas || 0), 0);
-    const coordHours = finalFunciones.filter(f => f.tipo === 'COORDINACION' || f.tipo === 'CONVIVENCIA' || f.tipo === 'CRA' || f.tipo === 'ENLACES' || f.tipo === 'EXTRAESCOLAR' || f.tipo === 'GREMIAL' || f.tipo === 'ADMINISTRATIVA' || f.tipo === 'OTRA').reduce((s, f) => s + Number(f.horas || 0), 0);
-
-    const doc: Docente = {
-      id: editingDoc ? editingDoc.id : `doc-${Date.now()}`,
-      rbd: colegio.rbd,
-      run: run.trim(),
-      nombres: nombres.trim(),
-      apellidos: apellidos.trim(),
-      titulo: titulo.trim() || undefined,
-      calidadJuridica,
-      estamento,
-      horasContrato: Number(horasContrato),
-      horasSubvencionGeneralTitular: Number(horasSubvGeneralTitular) || 0,
-      horasSubvencionGeneralContrata: Number(horasSubvGeneralContrata) || 0,
-      horasSepTitular: Number(horasSepTitular) || 0,
-      horasSepContrata: Number(horasSepContrata) || 0,
-      horasPieTitular: Number(horasPieTitular) || 0,
-      horasPieContrata: Number(horasPieContrata) || 0,
-      horasDirectivas: dirHours || Number(horasDirectivas) || 0,
-      horasInspectorGeneral: inspHours || Number(horasInspectorGeneral) || 0,
-      horasTecnicoPedagogicas: utpHours || Number(horasTecnicoPedagogicas) || 0,
-      horasCoordinacion: coordHours || Number(horasCoordinacion) || 0,
-      tipoCoordinacion: tipoCoordinacion.trim() || undefined,
-      funcionesNoAula: finalFunciones.length > 0 ? finalFunciones : undefined,
-      horasTallerSep: Number(horasTallerSep) || 0,
-      horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
-      asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,
-      aplicaArticulo69
-    };
-    onGuardarDocente(doc);
-    setModalOpen(false);
   };
 
   const verFichaDocente = (d: Docente) => {
@@ -343,138 +116,140 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     }
   };
 
-  // Resúmenes de sobreasignación considerando horas directivas, inspectoría, UTP, coordinaciones, taller SEP y trabajo colaborativo
-  const docentesAuditados = docentes.map(d => {
-    const asigs = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
-    const asigsCoDocencia = asigs.filter(a => (a.coDocenteId === d.id && a.tieneCoDocente) || a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE');
-    const asigsTallerSep = asigs.filter(a => a.docenteId === d.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP'));
-    const asigsTrabajoColab = asigs.filter(a => a.docenteId === d.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO'));
-    const asigsAulaRegular = asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a));
+  // Resúmenes de sobreasignación considerando horas directivas, inspectoría, UTP, coordinaciones, taller SEP y trabajo colaborativo (Memorizado)
+  const docentesAuditados = useMemo(() => {
+    return docentes.map(d => {
+      const asigs = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
+      const asigsCoDocencia = asigs.filter(a => (a.coDocenteId === d.id && a.tieneCoDocente) || a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE');
+      const asigsTallerSep = asigs.filter(a => a.docenteId === d.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP'));
+      const asigsTrabajoColab = asigs.filter(a => a.docenteId === d.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO'));
+      const asigsAulaRegular = asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a));
 
-    const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-    const pedCoDocencia = asigsCoDocencia.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-    const pedTallerSep = asigsTallerSep.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-    const pedTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-    const pedTotalAsignadas = pedAulaRegular + pedCoDocencia + pedTallerSep + pedTrabajoColab;
+      const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedCoDocencia = asigsCoDocencia.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedTallerSep = asigsTallerSep.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedTotalAsignadas = pedAulaRegular + pedCoDocencia + pedTallerSep + pedTrabajoColab;
 
-    const hDir = d.horasDirectivas || 0;
-    const hInsp = d.horasInspectorGeneral || 0;
-    const hTec = d.horasTecnicoPedagogicas || 0;
-    const hCoord = d.horasCoordinacion || 0;
-    const hCoordPie = d.horasCoordinacionPie || 0;
-    const hConv = d.horasConvivenciaEscolar || 0;
-    const hExtra = d.horasExtraescolar || 0;
-    const hTallerSepDoc = d.horasTallerSep || 0;
-    const hColabDoc = d.horasTrabajoColaborativo || 0;
+      const hDir = d.horasDirectivas || 0;
+      const hInsp = d.horasInspectorGeneral || 0;
+      const hTec = d.horasTecnicoPedagogicas || 0;
+      const hCoord = d.horasCoordinacion || 0;
+      const hCoordPie = d.horasCoordinacionPie || 0;
+      const hConv = d.horasConvivenciaEscolar || 0;
+      const hExtra = d.horasExtraescolar || 0;
+      const hTallerSepDoc = d.horasTallerSep || 0;
+      const hColabDoc = d.horasTrabajoColaborativo || 0;
 
-    const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
-    const pieCronologicas = Math.max(hColabDoc, pedTrabajoColab, hCoordPie, (d.estamento === 'DOCENTE_DIFERENCIAL' || ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 && pedAulaRegular === 0) ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : 0)));
+      const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
+      const pieCronologicas = Math.max(hColabDoc, pedTrabajoColab, hCoordPie, (d.estamento === 'DOCENTE_DIFERENCIAL' || ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 && pedAulaRegular === 0) ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : 0)));
 
-    const sumFuncionesNoAula = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
-      ? d.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-    const hInstNoAula = sumFuncionesNoAula > 0
-      ? sumFuncionesNoAula
-      : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
-    const hExentas = hInstNoAula + sepExentas + pieCronologicas;
-    const horasParaDocencia = Math.max(0, d.horasContrato - hExentas);
-    const esExento = horasParaDocencia === 0;
+      const sumFuncionesNoAula = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
+        ? d.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : 0;
+      const hInstNoAula = sumFuncionesNoAula > 0
+        ? sumFuncionesNoAula
+        : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
+      const hExentas = hInstNoAula + sepExentas + pieCronologicas;
+      const horasParaDocencia = Math.max(0, d.horasContrato - hExentas);
+      const esExento = horasParaDocencia === 0;
 
-    // La proporción Ley 20.903 solo aplica sobre horas de aula regular
-    const calculo = !esExento
-      ? calcularJornadaMinutos(horasParaDocencia, pedAulaRegular, regimenTabla, Boolean(d.aplicaArticulo69))
-      : {
-          horasContrato: 0,
-          minutosContratoTotales: 0,
-          horasPedagogicasDisponiblesMax: 0,
-          minutosLectivosDisponiblesMax: 0,
-          horasPedagogicasAsignadas: pedAulaRegular,
-          minutosLectivosAsignados: pedAulaRegular * 45,
-          horasPedagogicasVacantes: 0,
-          minutosLectivosVacantes: 0,
-          minutosRecreoAsignados: 0,
-          minutosNoLectivosCalculados: 0,
-          minutosUsadosTotales: 0,
-          esSobreasignado: pedAulaRegular > 0,
-          minutosSobreasignados: pedAulaRegular * 45,
-          cumple65_35: pedAulaRegular === 0,
-          aplicaArticulo69: Boolean(d.aplicaArticulo69),
-          minutosReduccionArticulo69: 0,
-          horasReduccionArticulo69: 0
-        };
+      // La proporción Ley 20.903 solo aplica sobre horas de aula regular
+      const calculo = !esExento
+        ? calcularJornadaMinutos(horasParaDocencia, pedAulaRegular, regimenTabla, Boolean(d.aplicaArticulo69))
+        : {
+            horasContrato: 0,
+            minutosContratoTotales: 0,
+            horasPedagogicasDisponiblesMax: 0,
+            minutosLectivosDisponiblesMax: 0,
+            horasPedagogicasAsignadas: pedAulaRegular,
+            minutosLectivosAsignados: pedAulaRegular * 45,
+            horasPedagogicasVacantes: 0,
+            minutosLectivosVacantes: 0,
+            minutosRecreoAsignados: 0,
+            minutosNoLectivosCalculados: 0,
+            minutosUsadosTotales: 0,
+            esSobreasignado: pedAulaRegular > 0,
+            minutosSobreasignados: pedAulaRegular * 45,
+            cumple65_35: pedAulaRegular === 0,
+            aplicaArticulo69: Boolean(d.aplicaArticulo69),
+            minutosReduccionArticulo69: 0,
+            horasReduccionArticulo69: 0
+          };
 
-    const valSobre = !esExento
-      ? validarSobreasignacionDocente(horasParaDocencia, pedAulaRegular, regimenProporcion)
-      : {
-          estaSobreasignado: pedAulaRegular > 0,
-          horasAsignadas: pedAulaRegular,
-          horasMaxLectivasPermitidas: 0,
-          excesoHoras: pedAulaRegular,
-          mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
-        };
+      const valSobre = !esExento
+        ? validarSobreasignacionDocente(horasParaDocencia, pedAulaRegular, regimenProporcion)
+        : {
+            estaSobreasignado: pedAulaRegular > 0,
+            horasAsignadas: pedAulaRegular,
+            horasMaxLectivasPermitidas: 0,
+            excesoHoras: pedAulaRegular,
+            mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
+          };
 
-    const ped65 = asigsAulaRegular
-      .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
-        return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
-      })
-      .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const ped65 = asigsAulaRegular
+        .filter(a => {
+          const c = cursos.find(x => x.id === a.cursoId);
+          return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
+        })
+        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-    const ped60 = asigsAulaRegular
-      .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
-        return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
-      })
-      .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const ped60 = asigsAulaRegular
+        .filter(a => {
+          const c = cursos.find(x => x.id === a.cursoId);
+          return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+        })
+        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-    const auditMulti = calcularAuditoriaDocenteMultitramo({
-      horasAula65_35: ped65,
-      horasAula60_40: ped60,
-      horasPieCronologicas: pieCronologicas,
-      horasTallerSepExento: sepExentas,
-      horasPieSepCronologicas: pieCronologicas,
-      horasNoAulaInstitucionales: hInstNoAula,
-      horasContratoReal: d.horasContrato,
-      aplicaArticulo69: Boolean(d.aplicaArticulo69)
+      const auditMulti = calcularAuditoriaDocenteMultitramo({
+        horasAula65_35: ped65,
+        horasAula60_40: ped60,
+        horasPieCronologicas: pieCronologicas,
+        horasTallerSepExento: sepExentas,
+        horasPieSepCronologicas: pieCronologicas,
+        horasNoAulaInstitucionales: hInstNoAula,
+        horasContratoReal: d.horasContrato,
+        aplicaArticulo69: Boolean(d.aplicaArticulo69)
+      });
+
+      const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
+
+      const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
+      const sepPieTotalDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0) + Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+      const reqSubvDoc = buscarContratoMinimoPorTabla(pedAulaRegular, regimenTabla);
+      const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
+      const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
+
+      return {
+        docente: d,
+        pedAsignadas: pedTotalAsignadas,
+        pedAulaRegular,
+        pedCoDocencia,
+        pedTallerSep,
+        pedTrabajoColab,
+        ped65,
+        ped60,
+        pieCronologicas,
+        sepExentas,
+        horasParaDocencia,
+        calculo,
+        valSobre,
+        auditMulti,
+        esExento,
+        hDir,
+        hInsp,
+        hTec,
+        hCoord,
+        hTallerSepDoc,
+        hColabDoc,
+        docTerritorial,
+        esImprocedenteFinanciamiento,
+        deficitFinanciamiento,
+        reqSubvDoc,
+        subTotalDoc
+      };
     });
-
-    const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
-
-    const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
-    const sepPieTotalDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0) + Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
-    const reqSubvDoc = buscarContratoMinimoPorTabla(pedAulaRegular, regimenTabla);
-    const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
-    const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
-
-    return {
-      docente: d,
-      pedAsignadas: pedTotalAsignadas,
-      pedAulaRegular,
-      pedCoDocencia,
-      pedTallerSep,
-      pedTrabajoColab,
-      ped65,
-      ped60,
-      pieCronologicas,
-      sepExentas,
-      horasParaDocencia,
-      calculo,
-      valSobre,
-      auditMulti,
-      esExento,
-      hDir,
-      hInsp,
-      hTec,
-      hCoord,
-      hTallerSepDoc,
-      hColabDoc,
-      docTerritorial,
-      esImprocedenteFinanciamiento,
-      deficitFinanciamiento,
-      reqSubvDoc,
-      subTotalDoc
-    };
-  });
+  }, [docentes, asignaciones, colegio, cursos, consolidadosTerritoriales, regimenTabla, regimenProporcion]);
 
   const sobreasignadosCount = docentesAuditados.filter(item => item.valSobre.estaSobreasignado).length;
 
@@ -1285,446 +1060,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         </div>
       </div>
 
-      {/* Modal Nuevo / Editar Docente con Desglose de Financiamiento */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 my-auto max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-              <Users className="w-5 h-5 text-orange-600" />
-              {editingDoc ? `Editar: ${editingDoc.nombres} ${editingDoc.apellidos}` : 'Registrar Docente en Dotación'}
-            </h3>
-
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">RUN *</label>
-                  <input
-                    type="text"
-                    required
-                    value={run}
-                    onChange={e => setRun(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                    placeholder="Ej: 12.345.678-9"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Horas Contrato Totales (1 a 44) *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="44"
-                    required
-                    value={horasContrato}
-                    onChange={e => {
-                      const val = parseInt(e.target.value) || 0;
-                      setHorasContrato(val);
-                      // Ajustar por defecto a subvención general si es nuevo
-                      if (!editingDoc) {
-                        if (calidadJuridica === 'TITULAR') {
-                          setHorasSubvGeneralTitular(val);
-                          setHorasSubvGeneralContrata(0);
-                        } else {
-                          setHorasSubvGeneralContrata(val);
-                          setHorasSubvGeneralTitular(0);
-                        }
-                      }
-                    }}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Nombres *</label>
-                  <input
-                    type="text"
-                    required
-                    value={nombres}
-                    onChange={e => setNombres(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Apellidos *</label>
-                  <input
-                    type="text"
-                    required
-                    value={apellidos}
-                    onChange={e => setApellidos(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Estamento *</label>
-                  <select
-                    value={estamento}
-                    onChange={e => setEstamento(e.target.value as EstamentoDocente)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                  >
-                    {ESTAMENTOS.map(est => (
-                      <option key={est.id} value={est.id}>{est.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Calidad Jurídica Predominante *</label>
-                  <select
-                    value={calidadJuridica}
-                    onChange={e => {
-                      const cal = e.target.value as CalidadJuridicaDocente;
-                      setCalidadJuridica(cal);
-                    }}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                  >
-                    <option value="TITULAR">Titular</option>
-                    <option value="CONTRATA">Contrata</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* SECCIÓN DESGLOSE FUENTES DE FINANCIAMIENTO */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
-                    <Coins className="w-4 h-4 text-orange-600" />
-                    Desglose por Fuentes de Financiamiento (Horas)
-                  </span>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                    sumaFinanciamiento === horasContrato 
-                      ? 'bg-emerald-100 text-emerald-800' 
-                      : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    Suma: {sumaFinanciamiento} / {horasContrato} hrs
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  {/* Subvención General */}
-                  <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-2">
-                    <span className="font-bold text-slate-700 block text-[11px]">Subvención General</span>
-                    <div>
-                      <label className="block text-[10px] text-slate-500">Titular (hrs):</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="44"
-                        value={horasSubvGeneralTitular}
-                        onChange={e => setHorasSubvGeneralTitular(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-500">Contrata (hrs):</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="44"
-                        value={horasSubvGeneralContrata}
-                        onChange={e => setHorasSubvGeneralContrata(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* SEP */}
-                  <div className="bg-purple-50/50 p-2.5 rounded-lg border border-purple-100 space-y-2">
-                    <span className="font-bold text-purple-900 block text-[11px]">SEP (Ley 20.248)</span>
-                    <div>
-                      <label className="block text-[10px] text-purple-700">Titular (hrs):</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="44"
-                        value={horasSepTitular}
-                        onChange={e => setHorasSepTitular(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-purple-700">Contrata (hrs):</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="44"
-                        value={horasSepContrata}
-                        onChange={e => setHorasSepContrata(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* PIE */}
-                  <div className="bg-blue-50/50 p-2.5 rounded-lg border border-blue-100 space-y-2">
-                    <span className="font-bold text-blue-900 block text-[11px]">PIE (Dec. 170)</span>
-                    <div>
-                      <label className="block text-[10px] text-blue-700">Titular (hrs):</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="44"
-                        value={horasPieTitular}
-                        onChange={e => setHorasPieTitular(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-blue-700">Contrata (hrs):</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="44"
-                        value={horasPieContrata}
-                        onChange={e => setHorasPieContrata(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 border rounded text-xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {sumaFinanciamiento !== horasContrato && (
-                  <p className="text-[11px] text-amber-700 font-medium">
-                    ⚠️ La suma de las horas por fuente ({sumaFinanciamiento}h) difiere de las horas totales de contrato ({horasContrato}h).
-                  </p>
-                )}
-              </div>
-
-              {/* SECCIÓN HORAS INSTITUCIONALES / ADMINISTRATIVAS FUERA DE AULA */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                      <ShieldAlert className="w-4 h-4 text-purple-600" />
-                      Funciones Fuera de Aula / Administrativas (Exentas de Proporción Aula)
-                    </span>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      Permite registrar múltiples funciones (Directivas, Inspectoría, UTP, Coordinaciones CRA/Enlaces/Convivencia, Horas Gremiales, Apoyo Administrativo, etc.). No llevan cálculo de proporción 65/35 o 60/40.
-                    </p>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
-                    Total: {totalHorasFuncionesNoAula} hrs
-                  </span>
-                </div>
-
-                {/* Lista de funciones ya agregadas */}
-                {funcionesNoAula.length > 0 ? (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {funcionesNoAula.map(f => {
-                      const meta = TIPOS_FUNCIONES_LABELS[f.tipo] || { label: f.tipo, defaultNombre: f.nombre, badgeColor: 'bg-slate-100 text-slate-800 border-slate-200' };
-                      const metaFinanc = f.financiamiento === 'SEP'
-                        ? { label: 'SEP', badgeColor: 'bg-purple-100 text-purple-800 border-purple-200' }
-                        : f.financiamiento === 'PIE'
-                        ? { label: 'PIE', badgeColor: 'bg-blue-100 text-blue-800 border-blue-200' }
-                        : { label: 'Subv. Gen', badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
-
-                      return (
-                        <div key={f.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 text-xs shadow-sm">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${meta.badgeColor}`}>
-                              {f.tipo}
-                            </span>
-                            <span className="font-semibold text-slate-800">{f.nombre}</span>
-                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${metaFinanc.badgeColor}`}>
-                              {metaFinanc.label}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <strong className="text-purple-900 font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-100">{f.horas} hrs</strong>
-                            <button
-                              type="button"
-                              onClick={() => eliminarFuncionNoAula(f.id)}
-                              className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition-colors"
-                              title="Eliminar función"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center py-2.5 px-3 bg-white rounded-lg border border-dashed border-slate-300 text-slate-400 text-xs">
-                    Sin funciones fuera de aula agregadas. El docente tendrá sus horas disponibles para aula regular.
-                  </div>
-                )}
-
-                {/* Formulario para agregar una nueva función */}
-                <div className="bg-white p-3 rounded-lg border border-purple-100 space-y-2">
-                  <span className="font-bold text-purple-950 block text-[11px] flex items-center gap-1">
-                    <Plus className="w-3.5 h-3.5 text-purple-600" />
-                    Agregar Nueva Función Fuera de Aula / Administrativa:
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                    <div className="sm:col-span-3">
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Tipo / Categoría</label>
-                      <select
-                        value={nuevaFuncionTipo}
-                        onChange={e => {
-                          const t = e.target.value as TipoFuncionNoAula;
-                          setNuevaFuncionTipo(t);
-                          if (!nuevaFuncionNombre) {
-                            setNuevaFuncionNombre(TIPOS_FUNCIONES_LABELS[t]?.defaultNombre || '');
-                          }
-                        }}
-                        className="w-full px-2 py-1.5 border rounded-lg text-xs bg-white focus:ring-2 focus:ring-purple-400 focus:outline-none"
-                      >
-                        {Object.entries(TIPOS_FUNCIONES_LABELS).map(([key, val]) => (
-                          <option key={key} value={key}>{val.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="sm:col-span-4">
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Nombre / Descripción</label>
-                      <input
-                        type="text"
-                        value={nuevaFuncionNombre}
-                        onChange={e => setNuevaFuncionNombre(e.target.value)}
-                        placeholder="Ej: Encargado Convivencia Escolar"
-                        className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-400 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-3">
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Financiamiento</label>
-                      <select
-                        value={nuevaFuncionFinanciamiento}
-                        onChange={e => setNuevaFuncionFinanciamiento(e.target.value as FuenteFinanciamientoFuncion)}
-                        className="w-full px-2 py-1.5 border rounded-lg text-xs bg-white focus:ring-2 focus:ring-purple-400 focus:outline-none font-medium"
-                      >
-                        <option value="SUBVENCION_GENERAL">Subvención General</option>
-                        <option value="SEP">SEP (Ley 20.248)</option>
-                        <option value="PIE">PIE (Dec. 170)</option>
-                      </select>
-                    </div>
-
-                    <div className="sm:col-span-1">
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Horas</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max={horasContrato}
-                        value={nuevaFuncionHoras}
-                        onChange={e => setNuevaFuncionHoras(parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-purple-400 focus:outline-none font-semibold text-center"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-1 flex items-end">
-                      <button
-                        type="button"
-                        onClick={agregarFuncionNoAula}
-                        className="w-full h-[30px] bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center justify-center shadow-sm transition-colors text-xs font-bold"
-                        title="Añadir función a la lista"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bloque Talleres SEP y Trabajo Colaborativo (Exentos) */}
-                <div className="bg-white p-3 rounded-lg border border-emerald-100 space-y-2">
-                  <span className="font-bold text-emerald-900 block text-[11px]">
-                    Talleres SEP y Trabajo Colaborativo (Apoyo Directo Exento)
-                  </span>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">
-                        Horas Taller SEP (hrs)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max={horasContrato}
-                        value={horasTallerSep}
-                        onChange={e => setHorasTallerSep(parseInt(e.target.value) || 0)}
-                        className="w-full px-2.5 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-emerald-400 focus:outline-none"
-                      />
-                      <span className="text-[10px] text-slate-400">Refuerzo SEP fuera de plan regular</span>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">
-                        Trabajo Colaborativo Art. 86 (hrs)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max={horasContrato}
-                        value={horasTrabajoColaborativo}
-                        onChange={e => setHorasTrabajoColaborativo(parseInt(e.target.value) || 0)}
-                        className="w-full px-2.5 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-emerald-400 focus:outline-none"
-                      />
-                      <span className="text-[10px] text-slate-400">Co-planificación Dec. 170</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-2 bg-purple-50/50 rounded-lg border border-purple-100 flex items-center justify-between text-[11px] text-slate-600">
-                  <span>Horas disponibles para docencia lectiva de aula:</span>
-                  <strong className="text-purple-900 font-bold">
-                    {Math.max(0, horasContrato - totalHorasFuncionesNoAula - horasTallerSep - horasTrabajoColaborativo)} hrs
-                  </strong>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Asignatura Principal de Desempeño</label>
-                <input
-                  type="text"
-                  value={asignaturaPrincipal}
-                  onChange={e => setAsignaturaPrincipal(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                  placeholder="Ej: Lenguaje y Comunicación, Matemática, etc."
-                />
-              </div>
-
-              {/* Bloque Artículo 69 */}
-              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl space-y-1.5">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="art69"
-                    checked={aplicaArticulo69}
-                    onChange={e => setAplicaArticulo69(e.target.checked)}
-                    className="w-4 h-4 rounded text-orange-600 focus:ring-orange-500 border-amber-300"
-                  />
-                  <label htmlFor="art69" className="text-xs font-bold text-amber-900 flex items-center gap-1.5 cursor-pointer">
-                    <Scale className="w-4 h-4 text-amber-700" />
-                    Aplica Artículo 69 (Reducción voluntaria de aula por 30+ años de docencia)
-                  </label>
-                </div>
-                <p className="text-[11px] text-amber-800 leading-relaxed pl-6">
-                  Permite ejercer un <strong>máximo de 24 horas cronológicas de aula (32 Horas Aula)</strong>. La diferencia de horas con respecto a la tabla oficial MINEDUC se <strong>asigna automáticamente a sus horas no lectivas</strong> para labores pedagógicas.
-                </p>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4 border-t">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50 transition-colors font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold shadow-sm transition-colors"
-                >
-                  {editingDoc ? 'Guardar Cambios' : 'Registrar Docente'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Modal Nuevo / Editar Docente con Desglose de Financiamiento (Aislado y Optimizado) */}
+      <DocenteFormModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onGuardarDocente={onGuardarDocente}
+        editingDoc={editingDoc}
+        rbd={colegio.rbd}
+      />
 
       {/* Modal Ficha 360° del Docente */}
       <DocenteFichaDetalleModal
