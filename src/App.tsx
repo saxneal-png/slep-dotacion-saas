@@ -13,6 +13,7 @@ import { ConsolidadorMasterView } from './views/ConsolidadorMasterView';
 import { SigeIngestaView } from './views/SigeIngestaView';
 import { ColegioWorkspaceView } from './views/ColegioWorkspaceView';
 import { AnalizadorDotacionView } from './views/AnalizadorDotacionView';
+import { EstadisticasView } from './views/EstadisticasView';
 
 import {
   Establecimiento,
@@ -43,6 +44,7 @@ import {
   guardarAsignacion,
   eliminarAsignacion,
   exportarCarteraCompleta,
+  exportarDotacionEstablecimiento,
   importarCartera,
   exportarBaseDatosSqlite,
   importarBaseDatosSqlite,
@@ -311,14 +313,38 @@ export const App: React.FC = () => {
     }
   };
 
-  // Importar Cartera .slep
+  // Exportar Dotación de un Establecimiento (.slep individual para el Asesor)
+  const handleExportarDotacionColegio = async (est: Establecimiento, periodo: number = periodoActivo) => {
+    try {
+      const data = await exportarDotacionEstablecimiento(
+        est.rbd,
+        periodo,
+        est.asesorUatp || 'Asesor UATP',
+        'uatp@slepvallediguillin.cl'
+      );
+      const jsonStr = JSON.stringify(data, null, 2);
+      const filename = `Dotacion_${est.nombre.replace(/\s+/g, '_')}_RBD${est.rbd}_${periodo}.slep`;
+      const guardado = await guardarArchivoNativoOEnNavegador(
+        jsonStr,
+        filename,
+        'application/json',
+        [{ name: 'Archivos Dotación SLEP', extensions: ['slep', 'json'] }]
+      );
+      if (guardado) mostrarMensaje(`Dotación de ${est.nombre} (${periodo}) exportada con éxito.`);
+    } catch (e: any) {
+      mostrarMensaje(`Error al exportar dotación: ${e.message || e}`, 'error');
+    }
+  };
+
+  // Importar Cartera .slep o Dotación Individual de Asesor
   const handleImportarCarteraSlep = async (file: File) => {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const res = await importarCartera(parsed);
       await cargarDatos();
-      mostrarMensaje(`Cartera importada: ${res.importados} establecimientos incorporados.`);
+      const nombresInfo = res.colegiosNombres?.length ? `: ${res.colegiosNombres.join(', ')}` : '';
+      mostrarMensaje(`Dotación importada con éxito (${res.importados} establecimiento/s${nombresInfo}).`);
     } catch (e: any) {
       mostrarMensaje(`Error al importar archivo: ${e.message || e}`, 'error');
     }
@@ -510,6 +536,7 @@ export const App: React.FC = () => {
             onImportarSqlite={handleImportarSqlite}
             periodoActivo={periodoActivo}
             onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
+            onExportarDotacionColegio={handleExportarDotacionColegio}
           />
         )}
 
@@ -540,6 +567,7 @@ export const App: React.FC = () => {
               onTogglePeriodo={handleTogglePeriodo}
               onRefreshData={() => cargarDatos(periodoActivo)}
               onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
+              onExportarDotacionColegio={handleExportarDotacionColegio}
             />
           ) : (
             <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-center max-w-md mx-auto my-12 animate-in fade-in">
@@ -631,6 +659,23 @@ export const App: React.FC = () => {
             asignaciones={todasLasAsignaciones}
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onExportarExcel={handleExportarExcel}
+          />
+        )}
+
+        {vistaActiva === 'estadisticas' && (
+          <EstadisticasView
+            colegios={colegios}
+            colegioActivo={colegioActivo}
+            onSelectColegio={handleSelectColegio}
+            todosLosCursos={todosLosCursos}
+            todosLosDocentes={todosLosDocentes}
+            todasLasAsignaciones={todasLasAsignaciones}
+            periodoActivo={periodoActivo}
+            onNavegarColegio={(est) => {
+              handleSelectColegio(est);
+              setVistaActiva('workflow');
+            }}
+            onExportarExcelGlobal={handleExportarExcel}
           />
         )}
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database, FileSpreadsheet, Eraser } from 'lucide-react';
+import { Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database, FileSpreadsheet, Eraser, Search, RotateCcw, X } from 'lucide-react';
 import { Establecimiento, ComunaValleDiguillin, RegimenJornada } from '../types';
 
 interface CarteraViewProps {
@@ -16,6 +16,7 @@ interface CarteraViewProps {
   onImportarSqlite: (file: File) => void;
   periodoActivo?: number;
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void>;
+  onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
 }
 
 const COMUNAS: ComunaValleDiguillin[] = [
@@ -41,23 +42,48 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
   onExportarSqlite,
   onImportarSqlite,
   periodoActivo = 2026,
-  onLimpiarDotacionColegio
+  onLimpiarDotacionColegio,
+  onExportarDotacionColegio
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEst, setEditingEst] = useState<Establecimiento | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedComunaFilter, setSelectedComunaFilter] = useState<string>('ALL');
+  const [selectedRegimenFilter, setSelectedRegimenFilter] = useState<string>('ALL');
+  const [selectedProporcionFilter, setSelectedProporcionFilter] = useState<string>('ALL');
+  const [selectedOrden, setSelectedOrden] = useState<string>('NOMBRE_ASC');
+
+  const hayFiltrosActivos = searchTerm !== '' || selectedComunaFilter !== 'ALL' || selectedRegimenFilter !== 'ALL' || selectedProporcionFilter !== 'ALL';
+
+  const limpiarFiltros = () => {
+    setSearchTerm('');
+    setSelectedComunaFilter('ALL');
+    setSelectedRegimenFilter('ALL');
+    setSelectedProporcionFilter('ALL');
+    setSelectedOrden('NOMBRE_ASC');
+  };
 
   const filteredColegios = colegios.filter((c) => {
     if (selectedComunaFilter !== 'ALL' && c.comuna !== selectedComunaFilter) return false;
+    if (selectedRegimenFilter !== 'ALL' && c.regimen !== selectedRegimenFilter) return false;
+    if (selectedProporcionFilter === '60_40' && c.porcentajePrioritarios < 80) return false;
+    if (selectedProporcionFilter === '65_35' && c.porcentajePrioritarios >= 80) return false;
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
     return (
       c.nombre.toLowerCase().includes(q) ||
       c.rbd.toLowerCase().includes(q) ||
-      (c.comuna && c.comuna.toLowerCase().includes(q))
+      (c.comuna && c.comuna.toLowerCase().includes(q)) ||
+      (c.director && c.director.toLowerCase().includes(q)) ||
+      (c.asesorUatp && c.asesorUatp.toLowerCase().includes(q))
     );
+  }).sort((a, b) => {
+    if (selectedOrden === 'NOMBRE_ASC') return a.nombre.localeCompare(b.nombre);
+    if (selectedOrden === 'NOMBRE_DESC') return b.nombre.localeCompare(a.nombre);
+    if (selectedOrden === 'RBD_ASC') return Number(a.rbd) - Number(b.rbd);
+    if (selectedOrden === 'COMUNA_ASC') return a.comuna.localeCompare(b.comuna);
+    return 0;
   });
 
   const [formRbd, setFormRbd] = useState('');
@@ -215,37 +241,118 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
         </div>
       </div>
 
-      {/* Barra de Búsqueda y Filtro por Comuna */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-center gap-3">
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1">
-            <Building2 className="w-3.5 h-3.5 text-slate-400" /> Comuna:
-          </span>
-          <select
-            value={selectedComunaFilter}
-            onChange={(e) => setSelectedComunaFilter(e.target.value)}
-            className="text-xs font-semibold bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-slate-700 focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="ALL">Todas las Comunas ({colegios.length})</option>
-            {COMUNAS.map((com) => {
-              const count = colegios.filter((c) => c.comuna === com).length;
-              return (
-                <option key={com} value={com}>
-                  {com} ({count})
-                </option>
-              );
-            })}
-          </select>
+      {/* Barra de Filtros Multifactor y Búsqueda Optimizada */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          {/* 1. Comuna */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+              <Building2 className="w-3 h-3 text-slate-400" /> Comuna
+            </label>
+            <select
+              value={selectedComunaFilter}
+              onChange={(e) => setSelectedComunaFilter(e.target.value)}
+              className="w-full text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:ring-2 focus:ring-orange-500 focus:bg-white"
+            >
+              <option value="ALL">Todas las Comunas ({colegios.length})</option>
+              {COMUNAS.map((com) => {
+                const count = colegios.filter((c) => c.comuna === com).length;
+                return (
+                  <option key={com} value={com}>
+                    {com} ({count})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* 2. Régimen Jornada */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+              <School className="w-3 h-3 text-slate-400" /> Régimen Jornada
+            </label>
+            <select
+              value={selectedRegimenFilter}
+              onChange={(e) => setSelectedRegimenFilter(e.target.value)}
+              className="w-full text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:ring-2 focus:ring-orange-500 focus:bg-white"
+            >
+              <option value="ALL">Todos los Regímenes</option>
+              <option value="JEC">Solo JEC</option>
+              <option value="No JEC">Solo No JEC</option>
+              <option value="Mixto">Mixto</option>
+            </select>
+          </div>
+
+          {/* 3. Tramo Proporción Ley 20.903 */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Tramo Ley 20.903
+            </label>
+            <select
+              value={selectedProporcionFilter}
+              onChange={(e) => setSelectedProporcionFilter(e.target.value)}
+              className="w-full text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:ring-2 focus:ring-orange-500 focus:bg-white"
+            >
+              <option value="ALL">Todos los Tramos</option>
+              <option value="60_40">Régimen 60/40 (≥80% Prioritarios)</option>
+              <option value="65_35">Régimen 65/35 (&lt;80% Prioritarios)</option>
+            </select>
+          </div>
+
+          {/* 4. Ordenamiento */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Ordenar por
+            </label>
+            <select
+              value={selectedOrden}
+              onChange={(e) => setSelectedOrden(e.target.value)}
+              className="w-full text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:ring-2 focus:ring-orange-500 focus:bg-white"
+            >
+              <option value="NOMBRE_ASC">Nombre (A → Z)</option>
+              <option value="NOMBRE_DESC">Nombre (Z → A)</option>
+              <option value="RBD_ASC">RBD (Ascendente)</option>
+              <option value="COMUNA_ASC">Comuna (A → Z)</option>
+            </select>
+          </div>
         </div>
 
-        <div className="relative w-full md:w-80">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por RBD, nombre o comuna..."
-            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
-          />
+        {/* Buscador de texto y barra de estado de filtros */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
+          <div className="relative w-full sm:w-96">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar por RBD, nombre, director o asesor..."
+              className="w-full pl-8 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white"
+            />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-slate-500 w-full sm:w-auto justify-between sm:justify-end">
+            <span>
+              Mostrando <strong className="text-slate-800">{filteredColegios.length}</strong> de {colegios.length} escuelas
+            </span>
+            {hayFiltrosActivos && (
+              <button
+                onClick={limpiarFiltros}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors"
+                title="Limpiar todos los filtros aplicados"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Restablecer</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -337,6 +444,16 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1">
+                  {onExportarDotacionColegio && (
+                    <button
+                      onClick={() => onExportarDotacionColegio(est, periodoActivo)}
+                      className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded"
+                      title={`Exportar archivo .slep exclusivo con la dotación de ${est.nombre} (Periodo ${periodoActivo})`}
+                    >
+                      <FileDown className="w-4 h-4" />
+                    </button>
+                  )}
+
                   {onLimpiarDotacionColegio && (
                     <button
                       onClick={async () => {

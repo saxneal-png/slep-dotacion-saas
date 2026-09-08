@@ -954,6 +954,40 @@ export async function eliminarAsignacion(id: string): Promise<void> {
   persistDb();
 }
 
+export async function exportarDotacionEstablecimiento(
+  rbd: string,
+  periodo: number = 2026,
+  asesorNombre: string = 'Asesor UATP',
+  asesorEmail: string = 'uatp@slepvallediguillin.cl'
+): Promise<any> {
+  const est = await obtenerEstablecimientoPorRbd(rbd);
+  if (!est) {
+    throw new Error(`No se encontró el establecimiento con RBD ${rbd} para exportar.`);
+  }
+
+  const salas = await listarSalas(rbd);
+  const cursos = await listarCursos(rbd, periodo);
+  const docentes = await listarDocentes(rbd, periodo);
+  const asignaciones = await listarAsignaciones(rbd, periodo);
+
+  return {
+    tipo: 'DOTACION_ESTABLECIMIENTO',
+    version: '1.2.0',
+    fechaExportacion: new Date().toISOString(),
+    periodo,
+    rbd,
+    asesor: {
+      nombre: asesorNombre || est.asesorUatp || 'Asesor UATP',
+      email: asesorEmail || 'uatp@slepvallediguillin.cl'
+    },
+    establecimiento: est,
+    salas,
+    cursos,
+    docentes,
+    asignaciones
+  };
+}
+
 export async function exportarCarteraCompleta(asesorNombre: string, asesorEmail: string): Promise<any> {
   const establecimientos = await listarEstablecimientos();
   const db = await getDb();
@@ -975,7 +1009,8 @@ export async function exportarCarteraCompleta(asesorNombre: string, asesorEmail:
   const asignaciones = await listarTodasLasAsignaciones();
 
   return {
-    version: '1.1.0',
+    tipo: 'CARTERA_TERRITORIAL',
+    version: '1.2.0',
     fechaExportacion: new Date().toISOString(),
     asesor: { nombre: asesorNombre, email: asesorEmail },
     establecimientos,
@@ -986,61 +1021,154 @@ export async function exportarCarteraCompleta(asesorNombre: string, asesorEmail:
   };
 }
 
-export async function importarCartera(data: any): Promise<{ importados: number; errores: string[] }> {
+export async function importarCartera(data: any): Promise<{
+  importados: number;
+  colegiosNombres: string[];
+  tipo: string;
+  errores: string[];
+}> {
   const errores: string[] = [];
-  if (!data || !data.establecimientos) {
-    throw new Error('Archivo de cartera inválido o corrupto.');
+  if (!data) {
+    throw new Error('Archivo de dotación vacío o inválido.');
   }
 
-  for (const est of data.establecimientos) {
+  // CASO 1: Archivo de dotación individual de un establecimiento exportado por un asesor
+  if (data.tipo === 'DOTACION_ESTABLECIMIENTO' || (data.establecimiento && !data.establecimientos)) {
+    const est: Establecimiento = data.establecimiento;
+    if (!est || !est.rbd) {
+      throw new Error('El archivo no contiene un establecimiento válido.');
+    }
+
+    const periodo = Number(data.periodo) || 2026;
+
+    // 1. Guardar o actualizar la ficha del establecimiento
     try {
       await guardarEstablecimiento(est);
     } catch (e: any) {
-      errores.push(`Error en establecimiento ${est.rbd}: ${e.message}`);
+      errores.push(`Error en establecimiento ${est.nombre} (${est.rbd}): ${e.message}`);
     }
-  }
 
-  if (data.salas) {
-    for (const sala of data.salas) {
-      try {
-        await guardarSala(sala);
-      } catch (e: any) {
-        errores.push(`Error en sala ${sala.nombreSala}: ${e.message}`);
+    // 2. Limpiar dotación anterior de este establecimiento en este periodo específico para evitar duplicaciones
+    try {
+      await borrarDotacionPeriodo(periodo, est.rbd);
+    } catch (e: any) {
+      console.warn('Error al limpiar periodo previo:', e);
+    }
+
+    // 3. Guardar salas
+    if (Array.isArray(data.salas)) {
+      for (const sala of data.salas) {
+        try {
+          await guardarSala({ ...sala, rbd: est.rbd });
+        } catch (e: any) {
+          errores.push(`Error en sala ${sala.nombreSala}: ${e.message}`);
+        }
       }
     }
-  }
 
-  if (data.cursos) {
-    for (const curso of data.cursos) {
-      try {
-        await guardarCurso(curso);
-      } catch (e: any) {
-        errores.push(`Error en curso ${curso.nivel} ${curso.letra}: ${e.message}`);
+    // 4. Guardar cursos
+    if (Array.isArray(data.cursos)) {
+      for (const curso of data.cursos) {
+        try {
+          await guardarCurso({ ...curso, rbd: est.rbd, periodo });
+        } catch (e: any) {
+          errores.push(`Error en curso ${curso.nivel} ${curso.letra}: ${e.message}`);
+        }
       }
     }
-  }
 
-  if (data.docentes) {
-    for (const doc of data.docentes) {
-      try {
-        await guardarDocente(doc);
-      } catch (e: any) {
-        errores.push(`Error en docente ${doc.run}: ${e.message}`);
+    // 5. Guardar docentes
+    if (Array.isArray(data.docentes)) {
+      for (const doc of data.docentes) {
+        try {
+          await guardarDocente({ ...doc, rbd: est.rbd, periodo });
+        } catch (e: any) {
+          errores.push(`Error en docente ${doc.run}: ${e.message}`);
+        }
       }
     }
-  }
 
-  if (data.asignaciones) {
-    for (const asig of data.asignaciones) {
-      try {
-        await guardarAsignacion(asig);
-      } catch (e: any) {
-        errores.push(`Error en asignación: ${e.message}`);
+    // 6. Guardar asignaciones
+    if (Array.isArray(data.asignaciones)) {
+      for (const asig of data.asignaciones) {
+        try {
+          await guardarAsignacion({ ...asig, rbd: est.rbd, periodo });
+        } catch (e: any) {
+          errores.push(`Error en asignación: ${e.message}`);
+        }
       }
     }
+
+    return {
+      importados: 1,
+      colegiosNombres: [est.nombre],
+      tipo: 'DOTACION_ESTABLECIMIENTO',
+      errores
+    };
   }
 
-  return { importados: (data.establecimientos?.length || 0), errores };
+  // CASO 2: Archivo de cartera territorial completa
+  if (Array.isArray(data.establecimientos)) {
+    const colegiosNombres: string[] = [];
+
+    for (const est of data.establecimientos) {
+      try {
+        await guardarEstablecimiento(est);
+        colegiosNombres.push(est.nombre);
+      } catch (e: any) {
+        errores.push(`Error en establecimiento ${est.rbd}: ${e.message}`);
+      }
+    }
+
+    if (Array.isArray(data.salas)) {
+      for (const sala of data.salas) {
+        try {
+          await guardarSala(sala);
+        } catch (e: any) {
+          errores.push(`Error en sala ${sala.nombreSala}: ${e.message}`);
+        }
+      }
+    }
+
+    if (Array.isArray(data.cursos)) {
+      for (const curso of data.cursos) {
+        try {
+          await guardarCurso(curso);
+        } catch (e: any) {
+          errores.push(`Error en curso ${curso.nivel} ${curso.letra}: ${e.message}`);
+        }
+      }
+    }
+
+    if (Array.isArray(data.docentes)) {
+      for (const doc of data.docentes) {
+        try {
+          await guardarDocente(doc);
+        } catch (e: any) {
+          errores.push(`Error en docente ${doc.run}: ${e.message}`);
+        }
+      }
+    }
+
+    if (Array.isArray(data.asignaciones)) {
+      for (const asig of data.asignaciones) {
+        try {
+          await guardarAsignacion(asig);
+        } catch (e: any) {
+          errores.push(`Error en asignación: ${e.message}`);
+        }
+      }
+    }
+
+    return {
+      importados: data.establecimientos.length,
+      colegiosNombres,
+      tipo: 'CARTERA_TERRITORIAL',
+      errores
+    };
+  }
+
+  throw new Error('El archivo no contiene un formato reconocido de dotación (.slep o .json).');
 }
 
 const MAPA_PROMOCION_NIVELES: Record<string, string> = {

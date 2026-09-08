@@ -398,10 +398,18 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                             Funciones Fuera de Aula / Administrativas (Exentas de Proporción Ley 20.903)
                           </span>
                           <span className="text-[10px] bg-purple-200/80 text-purple-800 px-2 py-0.5 rounded-full font-bold">
-                            Total: {(c.funcionesNoAula || c.docente?.funcionesNoAula || []).length > 0
-                              ? (c.funcionesNoAula || c.docente?.funcionesNoAula || []).reduce((acc: number, f: any) => acc + (f.horas || 0), 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)
-                              : (c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0)
-                            } hrs
+                            Total: {(() => {
+                              const funcs = c.funcionesNoAula || c.docente?.funcionesNoAula || [];
+                              if (funcs.length > 0) {
+                                const totFuncs = funcs.reduce((acc: number, f: any) => acc + (Number(f.horas) || 0), 0);
+                                const funcsSep = funcs.filter((f: any) => /sep/i.test(f.financiamiento || '') || f.tipo === 'COORDINACION_SEP').reduce((acc: number, f: any) => acc + (Number(f.horas) || 0), 0);
+                                const funcsPie = funcs.filter((f: any) => /pie/i.test(f.financiamiento || '') || f.tipo === 'COORDINACION_PIE' || (f.nombre && /pie/i.test(f.nombre))).reduce((acc: number, f: any) => acc + (Number(f.horas) || 0), 0);
+                                const extraSep = Math.max(0, (c.horasTallerSep || c.horasTallerSepExento || 0) - funcsSep);
+                                const extraPie = Math.max(0, (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0) - funcsPie);
+                                return totFuncs + extraSep + extraPie;
+                              }
+                              return (c.horasDirectivas || 0) + (c.horasInspectorGeneral || 0) + (c.horasTecnicoPedagogicas || 0) + (c.horasCoordinacion || 0) + (c.horasTallerSep || c.horasTallerSepExento || 0) + (c.horasTrabajoColaborativo || c.horasPieCronologicas || 0);
+                            })()} hrs
                           </span>
                         </div>
 

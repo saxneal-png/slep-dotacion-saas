@@ -23,22 +23,29 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
   onCrearNuevoColegio
 }) => {
   const [query, setQuery] = useState('');
+  const [selectedComuna, setSelectedComuna] = useState<string>('ALL');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setQuery('');
+      setSelectedComuna('ALL');
       setSelectedIndex(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isOpen]);
 
-  const filteredColegios = colegios.filter(c =>
-    c.nombre.toLowerCase().includes(query.toLowerCase()) ||
-    c.rbd.toString().includes(query) ||
-    (c.comuna && c.comuna.toLowerCase().includes(query.toLowerCase()))
-  );
+  const filteredColegios = colegios.filter(c => {
+    if (selectedComuna !== 'ALL' && c.comuna !== selectedComuna) return false;
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return (
+      c.nombre.toLowerCase().includes(q) ||
+      c.rbd.toString().includes(q) ||
+      (c.comuna && c.comuna.toLowerCase().includes(q))
+    );
+  });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -97,6 +104,28 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Chips de Filtro Rápido por Comuna */}
+        <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border-b border-slate-100 overflow-x-auto text-[11px]">
+          <span className="text-slate-400 font-bold shrink-0">Comuna:</span>
+          {['ALL', 'Bulnes', 'Chillán', 'Chillán Viejo', 'El Carmen', 'Pemuco', 'San Ignacio', 'Yungay'].map(com => (
+            <button
+              key={com}
+              type="button"
+              onClick={() => {
+                setSelectedComuna(com);
+                setSelectedIndex(0);
+              }}
+              className={`px-2 py-0.5 rounded-md font-semibold shrink-0 transition-colors ${
+                selectedComuna === com
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              {com === 'ALL' ? 'Todas' : com}
+            </button>
+          ))}
         </div>
 
         {/* Lista de Establecimientos */}

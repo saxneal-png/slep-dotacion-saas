@@ -177,4 +177,29 @@ describe('Motor MINEDUC - B�squeda Inversa y Auditoría Multitramo', () => {
     expect(res.minutosLectivosAula).toBe(32 * 45); // 1440 mins
     expect(res.minutosLimitePermitido).toBe(1440); // 1440 mins según tabla oficial de 37h
   });
+
+  it('audita caso real de Docente PIE 39h (11h apoyo aula + 28h coordinación PIE) con resultado EXACTO', () => {
+    // Caso reportado: Docente PIE de 39h contrata, 11h apoyo co-docencia / colaboración en aula,
+    // y 28h de Coordinadora PIE de primer ciclo (función no aula financiada con PIE).
+    // El requerimiento debe ser exactamente 39h (no 67h).
+    const res = calcularAuditoriaDocenteMultitramo({
+      horasAula65_35: 0, // No imparte aula regular (su apoyo es PIE)
+      horasAula60_40: 0,
+      horasPieCronologicas: 39, // 11h apoyo + 28h coordinación PIE cubiertas por su contrato PIE
+      horasTallerSepExento: 0,
+      horasNoAulaInstitucionales: 0, // La coordinación PIE ya está en horasPieCronologicas
+      horasContratoReal: 39
+    });
+
+    expect(res.req65_35).toBe(0);
+    expect(res.req60_40).toBe(0);
+    expect(res.horasPie).toBe(39);
+    expect(res.horasNoAula).toBe(0);
+    expect(res.contratoCalculadoTotal).toBe(39);
+    expect(res.contratoRealTotal).toBe(39);
+    expect(res.saldoHoras).toBe(0);
+    expect(res.horasVacantes).toBe(0);
+    expect(res.estadoSaldo).toBe('EXACTO');
+    expect(res.esInfractorExcesoLectivo).toBe(false);
+  });
 });

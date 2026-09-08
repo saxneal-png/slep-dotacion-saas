@@ -297,4 +297,193 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     // Horas netas de docencia afectas: 44 - 20 = 24 hrs.
     expect(contrato.horasDocenciaNeta).toBe(24);
   });
+
+  it('audita caso real de Docente PIE con 39h contrata (11h apoyo aula + 28h Coordinadora PIE): calcula 39h exactas sin inflación', () => {
+    // Caso de usuario:
+    // Docente diferencial con contrato de 39h PIE contrata (0 Subv. Gen, 0 SEP)
+    // 11h de apoyo en aula (co-docencia PIE)
+    // 28h como Coordinadora PIE de primer ciclo (registrada en funcionesNoAula con financiamiento PIE)
+    const docPie39: Docente = {
+      id: 'doc-pie-39',
+      rbd: '9999',
+      run: '17.888.999-0',
+      nombres: 'Claudia',
+      apellidos: 'Morales',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      horasContrato: 39,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasPieTitular: 0,
+      horasPieContrata: 39,
+      funcionesNoAula: [
+        {
+          id: 'func-coord-pie',
+          tipo: 'COORDINACION_PIE',
+          nombre: 'Coordinadora PIE de primer Ciclo',
+          horas: 28,
+          financiamiento: 'PIE'
+        }
+      ]
+    };
+
+    const asigPie11: AsignacionHoraria[] = [
+      {
+        id: 'asig-pie-11',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-pie-39',
+        asignatura: 'Apoyo Especializado PIE Matemática',
+        horasPedagogicasAula: 11,
+        horasCronologicasPie: 11,
+        esCoDocencia: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      }
+    ];
+
+    // 1. Diagnóstico del colegio
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docPie39], asigPie11);
+    const estDoc = diag.estadoDocentes[0];
+
+    expect(estDoc.horasAulaRegular).toBe(0); // Co-docencia no es aula regular
+    expect(estDoc.horasCoDocencia).toBe(11);
+    expect(estDoc.horasExentas).toBe(39); // 28h coord PIE + 11h apoyo = 39h
+    expect(estDoc.horasDocenciaAfecta).toBe(0);
+    expect(estDoc.estaSobreasignado).toBe(false);
+    expect(estDoc.horasVacantes).toBe(0); // 39h contrato - 39h carga = 0
+
+    // 2. Consolidado territorial multitramo
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docPie39], asigPie11);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.contratoCalculadoTotal).toBe(39); // NO 67h!
+    expect(contrato.fuentesFinanciamiento.total).toBe(39);
+    expect(contrato.saldoHoras).toBe(0);
+    expect(contrato.estadoSaldo).toBe('EXACTO');
+    expect(contrato.esInfractorExcesoLectivo).toBe(false);
+  });
+
+  it('audita caso real de Natalia Bórquez Barría (15 HA / 11h cronológicas apoyo PIE + 28h Coordinadora PIE): calcula 39h exactas', () => {
+    // Natalia Bórquez Barría:
+    // DOCENTE DIFERENCIAL, TITULAR 39 hrs.
+    // 1 función no aula de 28h (Coordinadora PIE).
+    // Asignación PIE con 15 HA pedagógicas (equivalente a 11h cronológicas).
+    const docNatalia: Docente = {
+      id: 'doc-natalia-borquez',
+      rbd: '9999',
+      run: '18.281.913-1',
+      nombres: 'Natalia',
+      apellidos: 'Bórquez Barría',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      horasContrato: 39,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasPieTitular: 39,
+      horasPieContrata: 0,
+      funcionesNoAula: [
+        {
+          id: 'func-coord-natalia',
+          tipo: 'COORDINACION_PIE',
+          nombre: 'Coordinadora PIE Primer Ciclo',
+          horas: 28,
+          financiamiento: 'PIE'
+        }
+      ]
+    };
+
+    const asigNatalia: AsignacionHoraria[] = [
+      {
+        id: 'asig-natalia-apoyo',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-natalia-borquez',
+        asignatura: 'Apoyo PIE - Co-docencia Aula Común',
+        horasPedagogicasAula: 15, // 15 HA pedagógicas = 11h cronológicas
+        horasCronologicasPie: 11,
+        esCoDocencia: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      }
+    ];
+
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docNatalia], asigNatalia);
+    const estDoc = diag.estadoDocentes[0];
+    expect(estDoc.horasExentas).toBe(39);
+    expect(estDoc.horasVacantes).toBe(0);
+    expect(estDoc.estaSobreasignado).toBe(false);
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docNatalia], asigNatalia);
+    const contrato = consolidado[0].contratos[0];
+    expect(contrato.contratoCalculadoTotal).toBe(39); // 39h exactas, NO 43h!
+    expect(contrato.saldoHoras).toBe(0);
+    expect(contrato.estadoSaldo).toBe('EXACTO');
+  });
+
+  it('audita correctamente el caso Ortiz Ortiz Castro Marianela con 36 horas de contrato (32 HA Co-Docencia SEP + 4 HA Talleres)', () => {
+    const colegioVulnerable: Establecimiento = {
+      ...colegio,
+      porcentajePrioritarios: 85 // Escuela vulnerable (>80% prioritarios)
+    };
+
+    const docMarianela: Docente = {
+      id: 'doc-marianela',
+      rbd: '9999',
+      run: '12.345.678-9',
+      nombres: 'Marianela',
+      apellidos: 'Ortiz Ortiz Castro',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 36,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 4,
+      horasSepTitular: 0,
+      horasSepContrata: 32,
+      horasPieTitular: 0,
+      horasPieContrata: 0
+    };
+
+    const asigsMarianela: AsignacionHoraria[] = [
+      {
+        id: 'asig-aele',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-marianela',
+        asignatura: 'Taller AELE',
+        horasPedagogicasAula: 2,
+        esTallerJec: true
+      },
+      {
+        id: 'asig-extension',
+        rbd: '9999',
+        cursoId: 'TRANSVERSAL',
+        docenteId: 'doc-marianela',
+        asignatura: 'Taller Extensión Horaria',
+        horasPedagogicasAula: 2
+      },
+      {
+        id: 'asig-codoc-sep',
+        rbd: '9999',
+        cursoId: 'TRANSVERSAL',
+        docenteId: 'doc-marianela',
+        asignatura: 'Co-docencia',
+        horasPedagogicasAula: 32,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegioVulnerable], [docMarianela], asigsMarianela, cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    // Debe dar exactamente 36 horas calculadas (4h base de los talleres + 32h Co-docencia SEP), NO 28h!
+    expect(contrato.contratoCalculadoTotal).toBe(36);
+    expect(contrato.saldoHoras).toBe(0);
+    expect(contrato.estadoSaldo).toBe('EXACTO');
+    expect(contrato.esInfractorExcesoLectivo).toBe(false);
+  });
 });

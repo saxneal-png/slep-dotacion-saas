@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Building2, FileSpreadsheet, Layers, ClipboardCheck, ChevronDown,
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
-  Database, Search, ShieldCheck, Sparkles
+  Database, Search, ShieldCheck, Sparkles, BarChart3
 } from 'lucide-react';
 import { Establecimiento } from '../types';
 
@@ -112,6 +112,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <ClipboardCheck className="w-3.5 h-3.5" />
               <span>Espacio Escolar</span>
+            </button>
+
+            <button
+              onClick={() => onSelectVista('estadisticas')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                vistaActiva === 'estadisticas'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-orange-400" />
+              <span>Estadísticas</span>
             </button>
 
             <button

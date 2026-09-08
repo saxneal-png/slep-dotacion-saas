@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Scale, Users, BookOpen, Clock, ShieldCheck, LayoutGrid,
   FileSpreadsheet, Printer, ArrowRightLeft, FileUp, Sparkles,
-  Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2
+  Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2, ShieldAlert
 } from 'lucide-react';
 import {
   Establecimiento,
@@ -19,6 +19,8 @@ import { PieAuditorView } from './PieAuditorView';
 import { SalasSaeView } from './SalasSaeView';
 import { MatrizExcelImportModal } from '../components/MatrizExcelImportModal';
 import { ComparadorPeriodosModal } from '../components/ComparadorPeriodosModal';
+import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
+import { FileDown } from 'lucide-react';
 
 interface ColegioWorkspaceViewProps {
   colegio: Establecimiento;
@@ -45,6 +47,7 @@ interface ColegioWorkspaceViewProps {
   onTogglePeriodo?: (p: number) => void;
   onRefreshData?: () => void;
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void> | void;
+  onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
 }
 
 export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
@@ -71,27 +74,18 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   periodoActivo = 2026,
   onTogglePeriodo,
   onRefreshData,
-  onLimpiarDotacionColegio
+  onLimpiarDotacionColegio,
+  onExportarDotacionColegio
 }) => {
   const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'cursos' | 'pie' | 'salas'>('balanza');
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
-  const [limpiandoDotacion, setLimpiandoDotacion] = useState(false);
+  const [modalVaciarSeguroAbierto, setModalVaciarSeguroAbierto] = useState(false);
+  const [menuAvanzadoAbierto, setMenuAvanzadoAbierto] = useState(false);
 
-  const handleLimpiarDotacionColegio = async () => {
-    const confirmacion = window.confirm(
-      `¿Estás seguro de que deseas vaciar toda la dotación de "${colegio.nombre}" para el Periodo ${periodoActivo}?\n\n` +
-      `• Se eliminarán ${cursos.length} cursos, ${docentes.length} docentes y ${asignaciones.length} asignaciones horarias.\n` +
-      `• El establecimiento (RBD ${colegio.rbd}) y su infraestructura permanecerán intactos en la cartera.`
-    );
-    if (!confirmacion) return;
+  const handleEjecutarVaciarDotacion = async () => {
     if (onLimpiarDotacionColegio) {
-      setLimpiandoDotacion(true);
-      try {
-        await onLimpiarDotacionColegio(periodoActivo, colegio.rbd);
-      } finally {
-        setLimpiandoDotacion(false);
-      }
+      await onLimpiarDotacionColegio(periodoActivo, colegio.rbd);
     }
   };
 
@@ -175,6 +169,19 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             </button>
 
             <button
+              onClick={() => {
+                if (onExportarDotacionColegio) {
+                  onExportarDotacionColegio(colegio, periodoActivo);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all border border-indigo-200"
+              title={`Exportar archivo .slep exclusivo con la dotación de ${colegio.nombre} para enviar al consolidador territorial`}
+            >
+              <FileDown className="w-4 h-4 text-indigo-600" />
+              <span>Exportar Dotación (.slep)</span>
+            </button>
+
+            <button
               onClick={() => window.print()}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
               title="Imprimir informe oficial de dotación"
@@ -193,13 +200,12 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 
             {onLimpiarDotacionColegio && (
               <button
-                onClick={handleLimpiarDotacionColegio}
-                disabled={limpiandoDotacion}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-bold transition-all border border-red-200"
-                title={`Vaciar dotación (cursos, docentes y asignaciones) de ${colegio.nombre} para el periodo ${periodoActivo}`}
+                onClick={() => setModalVaciarSeguroAbierto(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-700 rounded-xl text-xs font-semibold transition-all border border-slate-200 hover:border-red-200"
+                title={`Zona de Seguridad: Vaciar dotación de ${colegio.nombre} periodo ${periodoActivo}`}
               >
-                <Trash2 className="w-4 h-4 text-red-600" />
-                <span>{limpiandoDotacion ? 'Vaciando...' : `Vaciar Dotación ${periodoActivo}`}</span>
+                <ShieldAlert className="w-3.5 h-3.5 text-slate-400 hover:text-red-600" />
+                <span>Vaciar Dotación</span>
               </button>
             )}
           </div>
@@ -382,6 +388,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         onPeriodoActualizado={() => {
           if (onRefreshData) onRefreshData();
         }}
+      />
+
+      <ConfirmarVaciarDotacionModal
+        isOpen={modalVaciarSeguroAbierto}
+        onClose={() => setModalVaciarSeguroAbierto(false)}
+        colegio={colegio}
+        periodoActivo={periodoActivo}
+        cursosCount={cursos.length}
+        docentesCount={docentes.length}
+        asignacionesCount={asignaciones.length}
+        onConfirmarVaciar={handleEjecutarVaciarDotacion}
       />
     </div>
   );

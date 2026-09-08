@@ -37,6 +37,7 @@ import { calcularJornadaMinutos, validarSobreasignacionDocente, calcularAuditori
 import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalculationService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
+import { DocenteAsignacionPanel } from '../components/DocenteAsignacionPanel';
 
 interface DocentesDotacionViewProps {
   colegio: Establecimiento | null;
@@ -69,16 +70,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const [editingDoc, setEditingDoc] = useState<Docente | null>(null);
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
   const [expandedDocenteId, setExpandedDocenteId] = useState<string | null>(null);
-  const [nuevaAsigDocenteId, setNuevaAsigDocenteId] = useState<string | null>(null);
-  const [nuevaAsigCursoId, setNuevaAsigCursoId] = useState<string>(cursos[0]?.id || 'TRANSVERSAL');
-  const [nuevaAsigNombre, setNuevaAsigNombre] = useState<string>('Lenguaje y Comunicación');
-  const [nuevaAsigHoras, setNuevaAsigHoras] = useState<number>(4);
-  const [nuevaAsigEsTallerSep, setNuevaAsigEsTallerSep] = useState<boolean>(false);
 
   // Filtros de búsqueda de docentes
   const [busquedaDocente, setBusquedaDocente] = useState('');
   const [filtroEstamento, setFiltroEstamento] = useState<string>('TODOS');
   const [filtroEstadoCarga, setFiltroEstadoCarga] = useState<'TODOS' | 'SOBREASIGNADOS' | 'HOLGURA' | 'EXACTO'>('TODOS');
+  const [filtroCalidad, setFiltroCalidad] = useState<'TODOS' | 'TITULAR' | 'CONTRATA'>('TODOS');
+  const [filtroFinanciamiento, setFiltroFinanciamiento] = useState<'TODOS' | 'SUBV_GRAL' | 'SEP' | 'PIE'>('TODOS');
+  const [filtroMultiEscuela, setFiltroMultiEscuela] = useState<boolean>(false);
+  const [ordenDocentes, setOrdenDocentes] = useState<'APELLIDOS_ASC' | 'HORAS_DESC' | 'HORAS_ASC' | 'VACANTES_DESC'>('APELLIDOS_ASC');
 
   if (!colegio) {
     return (
@@ -121,15 +121,34 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     return docentes.map(d => {
       const asigs = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
       const asigsCoDocencia = asigs.filter(a => (a.coDocenteId === d.id && a.tieneCoDocente) || a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE');
-      const asigsTallerSep = asigs.filter(a => a.docenteId === d.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP'));
+      const asigsTallerSep = asigs.filter(a => a.docenteId === d.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a));
       const asigsTrabajoColab = asigs.filter(a => a.docenteId === d.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO'));
-      const asigsAulaRegular = asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a));
+
+      const asigsCoDocenciaPie = asigsCoDocencia.filter(a => 
+        Boolean(a.horasCronologicasPie) || 
+        (a.tipoApoyo && /pie/i.test(a.tipoApoyo)) || 
+        d.estamento === 'DOCENTE_DIFERENCIAL' || 
+        (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0) > 0 && Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0) === 0)
+      );
+      const asigsCoDocenciaSep = asigsCoDocencia.filter(a => 
+        !asigsCoDocenciaPie.includes(a) && 
+        Boolean(a.esTallerSep || a.tipoApoyo === 'TALLER_SEP')
+      );
+      const asigsCoDocenciaSubvGen = asigsCoDocencia.filter(a => 
+        !asigsCoDocenciaPie.includes(a) && 
+        !asigsCoDocenciaSep.includes(a)
+      );
+
+      const asigsAulaRegular = [
+        ...asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a)),
+        ...asigsCoDocenciaSubvGen
+      ];
 
       const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
       const pedCoDocencia = asigsCoDocencia.reduce((s, a) => s + a.horasPedagogicasAula, 0);
       const pedTallerSep = asigsTallerSep.reduce((s, a) => s + a.horasPedagogicasAula, 0);
       const pedTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedTotalAsignadas = pedAulaRegular + pedCoDocencia + pedTallerSep + pedTrabajoColab;
+      const pedTotalAsignadas = asigs.reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
       const hDir = d.horasDirectivas || 0;
       const hInsp = d.horasInspectorGeneral || 0;
@@ -141,15 +160,64 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const hTallerSepDoc = d.horasTallerSep || 0;
       const hColabDoc = d.horasTrabajoColaborativo || 0;
 
-      const sepExentas = Math.max(hTallerSepDoc, pedTallerSep);
-      const pieCronologicas = Math.max(hColabDoc, pedTrabajoColab, hCoordPie, (d.estamento === 'DOCENTE_DIFERENCIAL' || ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 && pedAulaRegular === 0) ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : ((Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0 ? (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) : 0)));
+      const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
+      const contratoSepDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
+      const contratoPieDoc = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+
+      const isPieDoc = d.estamento === 'DOCENTE_DIFERENCIAL' || (contratoPieDoc > 0 && subTotalDoc === 0);
+      const isSepDoc = contratoSepDoc > 0 && contratoPieDoc === 0 && subTotalDoc === 0;
+
+      const isSepFin = (f: any) => {
+        if (f.financiamiento && /sep/i.test(f.financiamiento)) return true;
+        if (f.tipo === 'COORDINACION_SEP') return true;
+        return false;
+      };
+
+      const isPieFin = (f: any) => {
+        if (f.financiamiento && /pie/i.test(f.financiamiento)) return true;
+        if (f.tipo === 'COORDINACION_PIE') return true;
+        if (f.nombre && /\bpie\b/i.test(f.nombre)) return true;
+        if (isPieDoc && (!f.financiamiento || f.financiamiento === 'PIE')) return true;
+        return false;
+      };
 
       const sumFuncionesNoAula = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
         ? d.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
         : 0;
-      const hInstNoAula = sumFuncionesNoAula > 0
-        ? sumFuncionesNoAula
+      const sumFuncionesNoAulaSep = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
+        ? d.funcionesNoAula.filter(f => isSepFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : 0;
+      const sumFuncionesNoAulaPie = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
+        ? d.funcionesNoAula.filter(f => isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : 0;
+      const sumFuncionesNoAulaSubvGen = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
+        ? d.funcionesNoAula.filter(f => !isSepFin(f) && !isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
+
+      const cronTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const cronCoDocenciaPie = asigsCoDocenciaPie.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const cronCoDocenciaSep = asigsCoDocenciaSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+
+      const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
+      const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
+
+      const sepExentas = isSepDoc
+        ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+        : Math.max(hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep);
+
+      const pieCronologicas = isPieDoc
+        ? Math.max(
+            contratoPieDoc,
+            hColabDoc + hCoordPie,
+            cronApoyoPie + sumFuncionesNoAulaPie
+          )
+        : Math.max(
+            hColabDoc + hCoordPie,
+            cronApoyoPie + sumFuncionesNoAulaPie
+          );
+
+      const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
       const horasParaDocencia = Math.max(0, d.horasContrato - hExentas);
       const esExento = horasParaDocencia === 0;
@@ -214,8 +282,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
       const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
-      const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
-      const sepPieTotalDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0) + Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+      const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
       const reqSubvDoc = buscarContratoMinimoPorTabla(pedAulaRegular, regimenTabla);
       const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
       const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
@@ -253,9 +320,21 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
   const sobreasignadosCount = docentesAuditados.filter(item => item.valSobre.estaSobreasignado).length;
 
+  const hayFiltrosDocenteActivos = busquedaDocente !== '' || filtroEstamento !== 'TODOS' || filtroEstadoCarga !== 'TODOS' || filtroCalidad !== 'TODOS' || filtroFinanciamiento !== 'TODOS' || filtroMultiEscuela;
+
+  const limpiarFiltrosDocentes = () => {
+    setBusquedaDocente('');
+    setFiltroEstamento('TODOS');
+    setFiltroEstadoCarga('TODOS');
+    setFiltroCalidad('TODOS');
+    setFiltroFinanciamiento('TODOS');
+    setFiltroMultiEscuela(false);
+    setOrdenDocentes('APELLIDOS_ASC');
+  };
+
   // Filtrado de docentes para búsqueda rápida
   const docentesFiltrados = useMemo(() => {
-    return docentesAuditados.filter(({ docente: d, auditMulti, valSobre, esImprocedenteFinanciamiento }) => {
+    return docentesAuditados.filter(({ docente: d, auditMulti, valSobre, esImprocedenteFinanciamiento, docTerritorial }) => {
       const q = busquedaDocente.toLowerCase().trim();
       const matchTexto = q === '' ||
         `${d.nombres} ${d.apellidos}`.toLowerCase().includes(q) ||
@@ -264,6 +343,18 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         (d.titulo || '').toLowerCase().includes(q);
 
       const matchEstamento = filtroEstamento === 'TODOS' || d.estamento === filtroEstamento;
+      const matchCalidad = filtroCalidad === 'TODOS' || d.calidadJuridica === filtroCalidad;
+
+      let matchFinanciamiento = true;
+      if (filtroFinanciamiento === 'SUBV_GRAL') {
+        matchFinanciamiento = (d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0) > 0;
+      } else if (filtroFinanciamiento === 'SEP') {
+        matchFinanciamiento = (d.horasSepTitular || 0) + (d.horasSepContrata || 0) + (d.horasTallerSep || 0) > 0;
+      } else if (filtroFinanciamiento === 'PIE') {
+        matchFinanciamiento = (d.horasPieTitular || 0) + (d.horasPieContrata || 0) + (d.horasCoordinacionPie || 0) > 0;
+      }
+
+      const matchMulti = !filtroMultiEscuela || (docTerritorial && docTerritorial.contratos.length > 1);
 
       let matchEstado = true;
       if (filtroEstadoCarga === 'SOBREASIGNADOS') {
@@ -274,9 +365,19 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         matchEstado = auditMulti.estadoSaldo === 'EXACTO';
       }
 
-      return matchTexto && matchEstamento && matchEstado;
+      return matchTexto && matchEstamento && matchCalidad && matchFinanciamiento && matchMulti && matchEstado;
+    }).sort((a, b) => {
+      if (ordenDocentes === 'APELLIDOS_ASC') {
+        const apeA = `${a.docente.apellidos} ${a.docente.nombres}`.toLowerCase();
+        const apeB = `${b.docente.apellidos} ${b.docente.nombres}`.toLowerCase();
+        return apeA.localeCompare(apeB);
+      }
+      if (ordenDocentes === 'HORAS_DESC') return b.docente.horasContrato - a.docente.horasContrato;
+      if (ordenDocentes === 'HORAS_ASC') return a.docente.horasContrato - b.docente.horasContrato;
+      if (ordenDocentes === 'VACANTES_DESC') return (b.calculo?.horasPedagogicasVacantes || 0) - (a.calculo?.horasPedagogicasVacantes || 0);
+      return 0;
     });
-  }, [docentesAuditados, busquedaDocente, filtroEstamento, filtroEstadoCarga]);
+  }, [docentesAuditados, busquedaDocente, filtroEstamento, filtroEstadoCarga, filtroCalidad, filtroFinanciamiento, filtroMultiEscuela, ordenDocentes]);
 
   return (
     <div className="space-y-6">
@@ -307,98 +408,6 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             <Plus className="w-4 h-4" />
             <span>Nuevo Docente</span>
           </button>
-        </div>
-      </div>
-
-      {/* Barra de Búsqueda y Filtros Rápidos de Nómina */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex-1 flex items-center gap-2 relative">
-          <Search className="w-4 h-4 text-orange-500 absolute left-3 pointer-events-none" />
-          <input
-            type="text"
-            value={busquedaDocente}
-            onChange={(e) => setBusquedaDocente(e.target.value)}
-            placeholder="🔍 Buscar docente por nombre, apellido, RUN, título o asignatura..."
-            className="w-full pl-9 pr-8 py-2.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none placeholder-slate-400 font-medium shadow-xs"
-          />
-          {busquedaDocente && (
-            <button
-              onClick={() => setBusquedaDocente('')}
-              className="absolute right-2.5 text-slate-400 hover:text-slate-600 p-0.5"
-              title="Limpiar búsqueda"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={filtroEstamento}
-              onChange={(e) => setFiltroEstamento(e.target.value)}
-              className="px-2.5 py-2 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="TODOS">Todos los Estamentos ({docentes.length})</option>
-              {ESTAMENTOS.map(est => (
-                <option key={est.id} value={est.id}>
-                  {est.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('TODOS')}
-              className={`px-2.5 py-1.5 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'TODOS'
-                  ? 'bg-slate-800 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('SOBREASIGNADOS')}
-              className={`px-2.5 py-1.5 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'SOBREASIGNADOS'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'text-rose-700 hover:bg-rose-50'
-              }`}
-            >
-              Alertas ({sobreasignadosCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('HOLGURA')}
-              className={`px-2.5 py-1.5 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'HOLGURA'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-emerald-700 hover:bg-emerald-50'
-              }`}
-            >
-              Holgura
-            </button>
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('EXACTO')}
-              className={`px-2.5 py-1.5 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'EXACTO'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-blue-700 hover:bg-blue-50'
-              }`}
-            >
-              Exacto
-            </button>
-          </div>
-
-          <span className="text-[11px] font-bold text-slate-700 bg-orange-50 border border-orange-200 px-2.5 py-1.5 rounded-lg">
-            {docentesFiltrados.length} de {docentes.length} docentes
-          </span>
         </div>
       </div>
 
@@ -532,34 +541,17 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       )}
 
       {/* Barra de Búsqueda y Filtros de Docentes */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex-1 flex items-center gap-2 relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-          <input
-            type="text"
-            value={busquedaDocente}
-            onChange={(e) => setBusquedaDocente(e.target.value)}
-            placeholder="Buscar docente por nombre, RUN, título o asignatura..."
-            className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none placeholder-slate-400 font-medium"
-          />
-          {busquedaDocente && (
-            <button
-              onClick={() => setBusquedaDocente('')}
-              className="absolute right-2.5 text-slate-400 hover:text-slate-600 p-0.5"
-              title="Limpiar búsqueda"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+          {/* 1. Estamento */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Estamento
+            </label>
             <select
               value={filtroEstamento}
               onChange={(e) => setFiltroEstamento(e.target.value)}
-              className="px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="TODOS">Todos los Estamentos ({docentes.length})</option>
               {ESTAMENTOS.map(est => (
@@ -570,56 +562,157 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             </select>
           </div>
 
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('TODOS')}
-              className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'TODOS'
-                  ? 'bg-slate-800 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+          {/* 2. Calidad Jurídica */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Calidad Jurídica
+            </label>
+            <select
+              value={filtroCalidad}
+              onChange={(e) => setFiltroCalidad(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
-              Todos
-            </button>
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('SOBREASIGNADOS')}
-              className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'SOBREASIGNADOS'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'text-rose-700 hover:bg-rose-50'
-              }`}
-            >
-              Alertas ({sobreasignadosCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('HOLGURA')}
-              className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'HOLGURA'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-emerald-700 hover:bg-emerald-50'
-              }`}
-            >
-              Holgura
-            </button>
-            <button
-              type="button"
-              onClick={() => setFiltroEstadoCarga('EXACTO')}
-              className={`px-2.5 py-1 rounded-md font-bold transition-all ${
-                filtroEstadoCarga === 'EXACTO'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-blue-700 hover:bg-blue-50'
-              }`}
-            >
-              Exacto
-            </button>
+              <option value="TODOS">Titulares y Contratas</option>
+              <option value="TITULAR">Solo Titulares</option>
+              <option value="CONTRATA">Solo Contratas</option>
+            </select>
           </div>
 
-          <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
-            {docentesFiltrados.length} de {docentes.length}
-          </span>
+          {/* 3. Fuente de Financiamiento */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Financiamiento
+            </label>
+            <select
+              value={filtroFinanciamiento}
+              onChange={(e) => setFiltroFinanciamiento(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="TODOS">Cualquier Fuente</option>
+              <option value="SUBV_GRAL">Con Subv. General</option>
+              <option value="SEP">Con Horas SEP</option>
+              <option value="PIE">Con Horas PIE</option>
+            </select>
+          </div>
+
+          {/* 4. Ordenamiento */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Ordenar por
+            </label>
+            <select
+              value={ordenDocentes}
+              onChange={(e) => setOrdenDocentes(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="APELLIDOS_ASC">Apellidos (A → Z)</option>
+              <option value="HORAS_DESC">Horas Contrato (Mayor → Menor)</option>
+              <option value="HORAS_ASC">Horas Contrato (Menor → Mayor)</option>
+              <option value="VACANTES_DESC">Horas Vacantes Disponibles</option>
+            </select>
+          </div>
+
+          {/* 5. Filtro Multi-Escuela */}
+          <div className="flex flex-col justify-end">
+            <button
+              type="button"
+              onClick={() => setFiltroMultiEscuela(!filtroMultiEscuela)}
+              className={`w-full py-1.5 px-2.5 text-xs font-bold rounded-lg border transition-all flex items-center justify-center gap-1.5 ${
+                filtroMultiEscuela
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Multi-Escuela</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Barra de búsqueda de texto y estados rápidos */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+            <input
+              type="text"
+              value={busquedaDocente}
+              onChange={(e) => setBusquedaDocente(e.target.value)}
+              placeholder="Buscar docente por nombre, RUN, título o asignatura..."
+              className="w-full pl-9 pr-8 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none placeholder-slate-400 font-medium bg-slate-50 focus:bg-white"
+            />
+            {busquedaDocente && (
+              <button
+                onClick={() => setBusquedaDocente('')}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 p-0.5"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setFiltroEstadoCarga('TODOS')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                  filtroEstadoCarga === 'TODOS'
+                    ? 'bg-slate-800 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setFiltroEstadoCarga('SOBREASIGNADOS')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                  filtroEstadoCarga === 'SOBREASIGNADOS'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-rose-700 hover:bg-rose-50'
+                }`}
+              >
+                Alertas ({sobreasignadosCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFiltroEstadoCarga('HOLGURA')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                  filtroEstadoCarga === 'HOLGURA'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-emerald-700 hover:bg-emerald-50'
+                }`}
+              >
+                Holgura
+              </button>
+              <button
+                type="button"
+                onClick={() => setFiltroEstadoCarga('EXACTO')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                  filtroEstadoCarga === 'EXACTO'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-blue-700 hover:bg-blue-50'
+                }`}
+              >
+                Exacto
+              </button>
+            </div>
+
+            <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+              {docentesFiltrados.length} de {docentes.length}
+            </span>
+
+            {hayFiltrosDocenteActivos && (
+              <button
+                onClick={limpiarFiltrosDocentes}
+                className="px-2.5 py-1 text-[11px] font-bold text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
+                title="Restablecer todos los filtros"
+              >
+                Restablecer
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -835,220 +928,16 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                     </td>
                   </tr>
                   {expandedDocenteId === d.id && (
-                    <tr key={`exp-${d.id}`} className="bg-slate-50/90 border-b border-slate-200">
-                      <td colSpan={11} className="p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <Layers className="w-4 h-4 text-orange-600" />
-                            <span>Carga Horaria & Asignaciones de {d.nombres} {d.apellidos}</span>
-                          </h4>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNuevaAsigDocenteId(d.id);
-                              setNuevaAsigCursoId(cursos[0]?.id || '');
-                            }}
-                            className="px-2.5 py-1 text-[11px] font-bold bg-orange-600 hover:bg-orange-700 text-white rounded-md flex items-center gap-1 shadow-xs"
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>Asignar Nueva Asignatura / Curso</span>
-                          </button>
-                        </div>
-
-                        {/* Formulario rápida nueva asignación */}
-                        {nuevaAsigDocenteId === d.id && (
-                          <div className="p-3 bg-white border border-orange-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
-                            <div className="flex-1 min-w-[150px]">
-                              <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Asignatura</label>
-                              <input
-                                type="text"
-                                value={nuevaAsigNombre}
-                                onChange={(e) => setNuevaAsigNombre(e.target.value)}
-                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-medium"
-                                placeholder="Ej: Matemática"
-                              />
-                            </div>
-                            <div className="min-w-[180px]">
-                              <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Curso o Modalidad</label>
-                              <select
-                                value={nuevaAsigCursoId}
-                                onChange={(e) => setNuevaAsigCursoId(e.target.value)}
-                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs bg-white font-medium"
-                              >
-                                <option value="TRANSVERSAL">🌟 Taller Institucional / Transversal (Sin Curso)</option>
-                                {cursos.map(c => (
-                                  <option key={c.id} value={c.id}>
-                                    {c.nivel} {c.letra} ({c.regimen})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="w-20">
-                              <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Horas Aula</label>
-                              <input
-                                type="number"
-                                value={nuevaAsigHoras}
-                                onChange={(e) => setNuevaAsigHoras(Number(e.target.value))}
-                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs text-center font-bold"
-                                min={1}
-                                max={44}
-                              />
-                            </div>
-                            <div className="flex items-center gap-1.5 pt-4">
-                              <label className="flex items-center gap-1 cursor-pointer text-[11px] font-semibold text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  checked={nuevaAsigEsTallerSep}
-                                  onChange={(e) => setNuevaAsigEsTallerSep(e.target.checked)}
-                                />
-                                <span>Taller Extracurricular SEP</span>
-                              </label>
-                            </div>
-                            <div className="flex items-center gap-2 pt-4">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (!nuevaAsigNombre.trim() || !nuevaAsigCursoId) return;
-                                  const newAsig: AsignacionHoraria = {
-                                    id: `asig-${Date.now()}`,
-                                    rbd: colegio.rbd,
-                                    periodo: d.periodo || 2026,
-                                    cursoId: nuevaAsigCursoId,
-                                    docenteId: d.id,
-                                    asignatura: nuevaAsigNombre.trim(),
-                                    horasPedagogicasAula: Number(nuevaAsigHoras),
-                                    esTallerJec: /taller/i.test(nuevaAsigNombre),
-                                    esTallerSep: nuevaAsigEsTallerSep,
-                                    esProporcionDocente: false
-                                  };
-                                  if (onGuardarAsignacion) await onGuardarAsignacion(newAsig);
-                                  setNuevaAsigDocenteId(null);
-                                }}
-                                className="px-3 py-1 bg-emerald-600 text-white font-bold rounded hover:bg-emerald-700 text-xs"
-                              >
-                                Guardar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setNuevaAsigDocenteId(null)}
-                                className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
-                              >
-                                Cancelar
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Lista de Asignaciones Actuales */}
-                        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
-                          <table className="w-full text-xs text-left">
-                            <thead className="bg-slate-100 text-slate-600 font-semibold text-[10px] border-b">
-                              <tr>
-                                <th className="px-3 py-2">Asignatura</th>
-                                <th className="px-3 py-2">Curso / Nivel</th>
-                                <th className="px-3 py-2 text-center">Horas Pedagógicas</th>
-                                <th className="px-3 py-2 text-center">Tipo</th>
-                                <th className="px-3 py-2 text-center">Acciones</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {asignaciones.filter(a => a.docenteId === d.id).map(a => {
-                                return (
-                                  <tr key={a.id} className="hover:bg-slate-50">
-                                    <td className="px-3 py-2 font-semibold text-slate-800">
-                                      <input
-                                        type="text"
-                                        defaultValue={a.asignatura}
-                                        onBlur={async (e) => {
-                                          const val = e.target.value.trim();
-                                          if (val && val !== a.asignatura && onGuardarAsignacion) {
-                                            await onGuardarAsignacion({ ...a, asignatura: val });
-                                          }
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                        }}
-                                        className="bg-transparent hover:bg-slate-100 focus:bg-white border-b border-transparent focus:border-orange-500 px-1 py-0.5 text-xs font-semibold text-slate-800 rounded outline-none w-full"
-                                      />
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      <select
-                                        value={a.cursoId || 'TRANSVERSAL'}
-                                        onChange={async (e) => {
-                                          if (onGuardarAsignacion) {
-                                            await onGuardarAsignacion({ ...a, cursoId: e.target.value });
-                                          }
-                                        }}
-                                        className="bg-transparent hover:bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-xs font-medium text-slate-700"
-                                      >
-                                        <option value="TRANSVERSAL">🌟 Taller Transversal (Sin Curso)</option>
-                                        {cursos.map(c => (
-                                          <option key={c.id} value={c.id}>
-                                            {c.nivel} {c.letra} ({c.regimen})
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </td>
-                                    <td className="px-3 py-2 text-center font-bold text-slate-800">
-                                      <input
-                                        type="number"
-                                        defaultValue={a.horasPedagogicasAula}
-                                        min={1}
-                                        max={44}
-                                        onBlur={async (e) => {
-                                          const h = Number(e.target.value);
-                                          if (h > 0 && h !== a.horasPedagogicasAula && onGuardarAsignacion) {
-                                            await onGuardarAsignacion({ ...a, horasPedagogicasAula: h });
-                                          }
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                        }}
-                                        className="w-16 text-center font-black bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-1 py-0.5 text-xs"
-                                      />
-                                    </td>
-                                    <td className="px-3 py-2 text-center">
-                                      {(a.cursoId === 'TRANSVERSAL' || !a.cursoId || a.cursoId === 'SIN_CURSO') ? (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                          🌟 Taller Transversal
-                                        </span>
-                                      ) : a.esTallerSep ? (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                          SEP Extracurricular
-                                        </span>
-                                      ) : (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
-                                          Plan Regular
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          if (confirm(`¿Eliminar la asignación de ${a.asignatura}?`)) {
-                                            if (onEliminarAsignacion) await onEliminarAsignacion(a.id);
-                                          }
-                                        }}
-                                        className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-                                        title="Eliminar asignación"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                              {asignaciones.filter(a => a.docenteId === d.id).length === 0 && (
-                                <tr>
-                                  <td colSpan={5} className="p-3 text-center text-slate-400 italic">
-                                    Este docente no tiene asignaturas ni cursos asignados actualmente.
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
+                    <tr key={`exp-${d.id}`} className="bg-slate-50/95 border-b border-slate-200">
+                      <td colSpan={11} className="p-4">
+                        <DocenteAsignacionPanel
+                          docente={d}
+                          colegio={colegio}
+                          cursos={cursos}
+                          asignaciones={asignaciones}
+                          onGuardarAsignacion={onGuardarAsignacion}
+                          onEliminarAsignacion={onEliminarAsignacion}
+                        />
                       </td>
                     </tr>
                   )}

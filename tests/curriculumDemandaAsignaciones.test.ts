@@ -249,4 +249,98 @@ describe('Asignación de Docencia y Apoyo PIE por Curso (Decreto 170 / Ord. 2398
     expect(filtrar('inexistente')).toHaveLength(0);
     expect(filtrar('', 'DOCENTE_DIFERENCIAL')).toHaveLength(1);
   });
+
+  it('asegura que la co-docencia (financiada por SEP o Subvención General) no suma a las horas del plan de estudio del curso', () => {
+    // Helper de discriminación idéntico al de CurriculumDemandaView
+    const esApoyoPieLocal = (a: AsignacionHoraria) => {
+      return (
+        a.tipoApoyo === 'APOYO_PIE' ||
+        a.tipoApoyo === 'DUPLA_PSICOSOCIAL' ||
+        (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
+        (a.asignatura && a.asignatura.toLowerCase().includes('pie'))
+      );
+    };
+
+    const esCoDocenciaNoPieLocal = (a: AsignacionHoraria) => {
+      if (esApoyoPieLocal(a)) return false;
+      return (
+        a.esCoDocencia === true ||
+        a.esAgrupacionFlexible === true ||
+        a.tipoApoyo === 'CO_DOCENCIA' ||
+        a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
+        a.tipoApoyo === 'REFUERZO_AULA' ||
+        a.tipoApoyo === 'APOYO_DOCENTE' ||
+        (a.tipoApoyo && /agrupaci|co.*docenc|codocenc|refuerzo/i.test(a.tipoApoyo)) ||
+        (a.asignatura && /agrupaci/i.test(a.asignatura)) ||
+        (a.asignatura && /co.*docenc|codocenc/i.test(a.asignatura) && !a.asignatura.toLowerCase().includes('pie'))
+      );
+    };
+
+    const asignacionesCurso: AsignacionHoraria[] = [
+      {
+        id: 'asig-reg-1',
+        rbd: '1234',
+        cursoId: 'curso-1',
+        docenteId: 'doc-1',
+        asignatura: 'Lenguaje y Comunicación',
+        horasPedagogicasAula: 8,
+        esCoDocencia: false
+      },
+      {
+        id: 'asig-reg-2',
+        rbd: '1234',
+        cursoId: 'curso-1',
+        docenteId: 'doc-2',
+        asignatura: 'Matemática',
+        horasPedagogicasAula: 6,
+        esCoDocencia: false
+      },
+      // Co-Docencia financiada con SEP
+      {
+        id: 'asig-codoc-sep',
+        rbd: '1234',
+        cursoId: 'curso-1',
+        docenteId: 'doc-3',
+        asignatura: 'Matemática (Co-Docencia SEP)',
+        horasPedagogicasAula: 6,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      },
+      // Co-Docencia financiada con Subvención General
+      {
+        id: 'asig-codoc-subgen',
+        rbd: '1234',
+        cursoId: 'curso-1',
+        docenteId: 'doc-4',
+        asignatura: 'Lenguaje (Agrupación Flexible Subv. General)',
+        horasPedagogicasAula: 4,
+        esCoDocencia: true,
+        esAgrupacionFlexible: true,
+        esTallerSep: false,
+        tipoApoyo: 'AGRUPACION_FLEXIBLE'
+      }
+    ];
+
+    // Filtrar asignaciones del plan regular (las que suman a los 38h/30h del curso)
+    const asigsPlanRegular = asignacionesCurso.filter(
+      a => !esApoyoPieLocal(a) &&
+           !esCoDocenciaNoPieLocal(a) &&
+           !a.esTallerSep &&
+           a.tipoApoyo !== 'TALLER_SEP'
+    );
+
+    // Las asignaciones que suman al plan solo deben ser las 2 regulares (14 HA)
+    expect(asigsPlanRegular).toHaveLength(2);
+    expect(asigsPlanRegular.map(a => a.id)).toEqual(['asig-reg-1', 'asig-reg-2']);
+    const horasPlanCubiertas = asigsPlanRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+    expect(horasPlanCubiertas).toBe(14); // 8 + 6
+
+    // Las co-docencias se identifican independientemente de su fuente de financiamiento
+    const asigsCoDoc = asignacionesCurso.filter(a => esCoDocenciaNoPieLocal(a));
+    expect(asigsCoDoc).toHaveLength(2);
+    const totalHorasCoDoc = asigsCoDoc.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+    expect(totalHorasCoDoc).toBe(10); // 6 (SEP) + 4 (Subv General)
+  });
 });
+

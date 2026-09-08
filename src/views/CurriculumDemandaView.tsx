@@ -72,6 +72,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [cursoSeleccionadoPlan, setCursoSeleccionadoPlan] = useState<string>(cursos[0]?.id || '');
   const [tabCurso, setTabCurso] = useState<'docencia' | 'codocencia' | 'pie' | 'malla'>('docencia');
   const [busquedaCurso, setBusquedaCurso] = useState('');
+  const [filtroCicloCurso, setFiltroCicloCurso] = useState<'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP'>('TODOS');
+  const [filtroRegimenCurso, setFiltroRegimenCurso] = useState<'TODOS' | 'JEC' | 'No JEC'>('TODOS');
+  const [filtroCoberturaCurso, setFiltroCoberturaCurso] = useState<'TODOS' | 'COMPLETO' | 'DEFICIT' | 'SOBRE'>('TODOS');
 
   // Modal Docencia Regular
   const [modalDocenciaOpen, setModalDocenciaOpen] = useState(false);
@@ -122,7 +125,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     );
   };
 
-  // Helper para discriminar Co-Docencia no PIE / Agrupaciones Flexibles
+  // Helper para discriminar Co-Docencia no PIE / Agrupaciones Flexibles (independiente de su fuente de financiamiento)
   const esCoDocenciaNoPie = (a: AsignacionHoraria) => {
     if (esApoyoPie(a)) return false;
     return (
@@ -132,9 +135,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
       a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
       a.tipoApoyo === 'REFUERZO_AULA' ||
       a.tipoApoyo === 'APOYO_DOCENTE' ||
-      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('agrupaci')) ||
-      (a.asignatura && a.asignatura.toLowerCase().includes('agrupaci')) ||
-      (a.asignatura && a.asignatura.toLowerCase().includes('co-docenc') && !a.asignatura.toLowerCase().includes('pie'))
+      (a.tipoApoyo && /agrupaci|co.*docenc|codocenc|refuerzo|apoyo.*doc/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /agrupaci/i.test(a.asignatura)) ||
+      (a.asignatura && /co.*docenc|codocenc|docenc.*compartida/i.test(a.asignatura) && !a.asignatura.toLowerCase().includes('pie'))
     );
   };
 
@@ -525,10 +528,48 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     alert(`¡Asignación Inteligente Jidoka Completada! Se generaron ${asignadasCount} asignaciones PIE para ${cursoActivo.nivel} ${cursoActivo.letra}.`);
   };
 
-  // Cursos filtrados por búsqueda
-  const cursosFiltrados = cursos.filter(c =>
-    `${c.nivel} ${c.letra}`.toLowerCase().includes(busquedaCurso.toLowerCase())
-  );
+  const hayFiltrosCursoActivos = busquedaCurso !== '' || filtroCicloCurso !== 'TODOS' || filtroRegimenCurso !== 'TODOS' || filtroCoberturaCurso !== 'TODOS';
+
+  const limpiarFiltrosCurso = () => {
+    setBusquedaCurso('');
+    setFiltroCicloCurso('TODOS');
+    setFiltroRegimenCurso('TODOS');
+    setFiltroCoberturaCurso('TODOS');
+  };
+
+  // Cursos filtrados por búsqueda y filtros de ciclo / régimen / cobertura
+  const cursosFiltrados = cursos.filter(c => {
+    const q = busquedaCurso.toLowerCase().trim();
+    const matchTexto = q === '' || `${c.nivel} ${c.letra}`.toLowerCase().includes(q);
+
+    let matchCiclo = true;
+    const n = c.nivel.toLowerCase();
+    if (filtroCicloCurso === 'PARVULARIA') {
+      matchCiclo = n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || n.includes('párv') || n.includes('parv');
+    } else if (filtroCicloCurso === 'BASICA') {
+      matchCiclo = n.includes('básico') || n.includes('basico') || n.includes('básica') || n.includes('basica');
+    } else if (filtroCicloCurso === 'MEDIA_HC') {
+      matchCiclo = (n.includes('medio') || n.includes('media')) && !n.includes('tp') && !n.includes('técnico') && !n.includes('tecnico');
+    } else if (filtroCicloCurso === 'MEDIA_TP') {
+      matchCiclo = n.includes('tp') || n.includes('técnico') || n.includes('tecnico') || n.includes('profesional');
+    }
+
+    const matchRegimen = filtroRegimenCurso === 'TODOS' || c.regimen === filtroRegimenCurso;
+
+    let matchCobertura = true;
+    if (filtroCoberturaCurso !== 'TODOS') {
+      const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
+      const hrsPlan = plan ? plan.totalHorasPlan : (c.regimen === 'JEC' ? 38 : 30);
+      const asigsDoc = asignaciones.filter(a => a.cursoId === c.id && !esApoyoPie(a));
+      const totDocAsig = asigsDoc.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
+
+      if (filtroCoberturaCurso === 'COMPLETO') matchCobertura = totDocAsig === hrsPlan;
+      else if (filtroCoberturaCurso === 'DEFICIT') matchCobertura = totDocAsig < hrsPlan;
+      else if (filtroCoberturaCurso === 'SOBRE') matchCobertura = totDocAsig > hrsPlan;
+    }
+
+    return matchTexto && matchCiclo && matchRegimen && matchCobertura;
+  });
 
   return (
     <div className="space-y-6">
@@ -578,16 +619,81 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
               <Layers className="w-4 h-4 text-slate-600" />
               Cursos Proyectados ({cursos.length})
             </h3>
+            <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">
+              {cursosFiltrados.length} visibles
+            </span>
           </div>
 
-          {/* Buscador de cursos */}
-          <input
-            type="text"
-            placeholder="Filtrar cursos..."
-            value={busquedaCurso}
-            onChange={e => setBusquedaCurso(e.target.value)}
-            className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-          />
+          {/* Panel de Filtros de Cursos */}
+          <div className="space-y-2 bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/80">
+            {/* Buscador de cursos */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Buscar curso (ej: 1° Básico, 4° Medio)..."
+                value={busquedaCurso}
+                onChange={e => setBusquedaCurso(e.target.value)}
+                className="w-full px-3 pr-7 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:bg-white focus:outline-none"
+              />
+              {busquedaCurso && (
+                <button
+                  onClick={() => setBusquedaCurso('')}
+                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+              {/* Ciclo */}
+              <select
+                value={filtroCicloCurso}
+                onChange={(e) => setFiltroCicloCurso(e.target.value as any)}
+                className="w-full px-2 py-1 text-[11px] font-semibold border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="TODOS">Todos los Ciclos</option>
+                <option value="PARVULARIA">Parvularia</option>
+                <option value="BASICA">Básica (1°-8°)</option>
+                <option value="MEDIA_HC">Media HC</option>
+                <option value="MEDIA_TP">Media TP</option>
+              </select>
+
+              {/* Régimen */}
+              <select
+                value={filtroRegimenCurso}
+                onChange={(e) => setFiltroRegimenCurso(e.target.value as any)}
+                className="w-full px-2 py-1 text-[11px] font-semibold border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="TODOS">JEC y No JEC</option>
+                <option value="JEC">Solo JEC</option>
+                <option value="No JEC">Solo No JEC</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-1.5 pt-1">
+              <select
+                value={filtroCoberturaCurso}
+                onChange={(e) => setFiltroCoberturaCurso(e.target.value as any)}
+                className="w-full px-2 py-1 text-[11px] font-semibold border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="TODOS">Todas las Coberturas</option>
+                <option value="COMPLETO">100% Cubierto</option>
+                <option value="DEFICIT">Con Horas Faltantes</option>
+                <option value="SOBRE">Con Sobreasignación</option>
+              </select>
+
+              {hayFiltrosCursoActivos && (
+                <button
+                  onClick={limpiarFiltrosCurso}
+                  className="shrink-0 px-2 py-1 text-[10px] font-bold text-orange-700 bg-orange-100/70 hover:bg-orange-200/80 rounded-md transition-colors"
+                  title="Restablecer filtros"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
             {/* Card especial: Talleres Transversales / Institucionales */}
@@ -1902,7 +2008,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 <input
                   type="number"
                   min="1"
-                  max="20"
+                  max="44"
                   required
                   value={docenciaHoras}
                   onChange={e => setDocenciaHoras(parseInt(e.target.value) || 0)}
@@ -2091,7 +2197,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   <input
                     type="number"
                     min="1"
-                    max="20"
+                    max="44"
                     required
                     value={coDocHoras}
                     onChange={e => setCoDocHoras(parseInt(e.target.value) || 0)}
