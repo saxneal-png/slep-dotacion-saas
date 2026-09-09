@@ -179,4 +179,99 @@ describe('excelMatrizDotacionService', () => {
     expect(tieneBannerSeccion2).toBe(true);
     expect(tieneDocenteSeccion2).toBe(true);
   });
+
+  it('calcula las proporciones con horas cerradas exactas para docentes con contratos mixtos', async () => {
+    const establecimiento: Establecimiento = {
+      id: 'est-3641',
+      rbd: '3641',
+      nombre: 'Escuela República de México',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 75,
+      director: 'Director Prueba',
+      asesorUatp: 'Asesor UATP'
+    };
+
+    const cursos: CursoSae[] = [
+      { id: 'c-1a', rbd: '3641', nivel: '1° Básico', letra: 'A', regimen: 'JEC', cupoSae: 30, matriculaProyectada: 30, alumnosNeet: 0, alumnosNeep: 0 }
+    ];
+
+    // Docente: 43 hrs contrato (40 SubGral, 3 PIE) con 34 HA asignadas
+    const docenteAlonzo: Docente = {
+      id: 'doc-alonzo',
+      rbd: '3641',
+      run: '23.455.981-8',
+      nombres: 'Josefina',
+      apellidos: 'Alonzo Gómez',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 43,
+      horasSubvencionGeneralTitular: 40,
+      horasPieContrata: 3
+    };
+
+    const asignaciones: AsignacionHoraria[] = [
+      { id: 'a-1', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Lenguaje y Comunicación', horasPedagogicasAula: 8 },
+      { id: 'a-2', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Matemática', horasPedagogicasAula: 6 },
+      { id: 'a-3', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Historia', horasPedagogicasAula: 3 },
+      { id: 'a-4', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Ciencias Naturales', horasPedagogicasAula: 3 },
+      { id: 'a-5', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Artes Visuales', horasPedagogicasAula: 2 },
+      { id: 'a-6', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Tecnología', horasPedagogicasAula: 1 },
+      { id: 'a-7', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Música', horasPedagogicasAula: 6 },
+      { id: 'a-8', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Orientación', horasPedagogicasAula: 1 },
+      { id: 'a-9', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Taller socioemocional', horasPedagogicasAula: 2 },
+      { id: 'a-10', rbd: '3641', cursoId: 'c-1a', docenteId: 'doc-alonzo', asignatura: 'Taller AELE', horasPedagogicasAula: 2 }
+    ];
+
+    const buffer = await generarExcelMatrizDotacionColegio(
+      establecimiento,
+      [docenteAlonzo],
+      cursos,
+      asignaciones
+    );
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as any);
+    const ws = wb.worksheets[0];
+
+    // Buscar la fila Total del docente
+    let filaTotalDocente: ExcelJS.Row | null = null;
+    ws.eachRow((row) => {
+      if (row.getCell(1).value === 'Total') {
+        filaTotalDocente = row;
+      }
+    });
+
+    expect(filaTotalDocente).not.toBeNull();
+    const colTotalHa = 11; // 1 curso -> col 10 es 1A, col 11 es TOTAL HA*
+    const colSubGral = 12;
+    const colSep = 13;
+    const colPie = 14;
+    const colTotalHc = 15;
+
+    // TOTAL HA* debe ser 34
+    expect(filaTotalDocente!.getCell(colTotalHa).value).toEqual({
+      formula: 'SUM(K3:K12)'
+    });
+
+    const getHoras = (cellVal: any): number => {
+      const res = cellVal?.result !== undefined ? cellVal.result : cellVal;
+      if (typeof res === 'number') return res * 24;
+      if (res instanceof Date) {
+        // ExcelJS interpreta números > 1 con formato de fecha/hora como fecha desde epoch 1899-12-30
+        const epoch = new Date(Date.UTC(1899, 11, 30, 0, 0, 0)).getTime();
+        return (res.getTime() - epoch) / (1000 * 60 * 60);
+      }
+      return 0;
+    };
+
+    // SubGral Total debe ser 40 hrs exactas cerradas
+    expect(getHoras(filaTotalDocente!.getCell(colSubGral).value)).toBeCloseTo(40, 1);
+
+    // PIE Total debe ser 3 hrs exactas cerradas
+    expect(getHoras(filaTotalDocente!.getCell(colPie).value)).toBeCloseTo(3, 1);
+
+    // TOTAL HC debe ser 43 hrs exactas cerradas del contrato
+    expect(getHoras(filaTotalDocente!.getCell(colTotalHc).value)).toBeCloseTo(43, 1);
+  });
 });
