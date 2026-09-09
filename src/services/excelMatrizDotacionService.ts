@@ -1,6 +1,12 @@
 import ExcelJS from 'exceljs';
 import { Establecimiento, Docente, CursoSae, AsignacionHoraria } from '../types';
-import { obtenerTramoMineduc, RAW_65_35, RAW_60_40, parseHHMMToMinutes } from '@slep/mineduc-engine';
+import {
+  calcularJornadaMinutos,
+  obtenerTramoMineduc,
+  RAW_65_35,
+  RAW_60_40,
+  parseHHMMToMinutes
+} from '@slep/mineduc-engine';
 import { normalizeText } from './analizador/classifier';
 import {
   clasificarDocentesConGemini,
@@ -603,11 +609,18 @@ export async function generarExcelMatrizDotacionColegio(
       currentRowIdx++;
     }
 
-    // Ley 20.903 — Recreo y Horas No Lectivas calculadas con precisión exacta
-    // para que la suma en Subvención General sea SIEMPRE igual a subGralContrato
-    const totalMinutosAulaAsignados = totalHaDocente * 45;
-    const { recreoMinutos } = obtenerMinutosRecreoYHnl(subGralContrato, es6040);
-    const hnlMinutos = Math.max(0, (subGralContrato * 60) - totalMinutosAulaAsignados - recreoMinutos);
+    // Ley 20.903 — Proporción calculada sobre la base de las Horas Aula efectivamente asignadas,
+    // utilizando directamente el motor oficial de cálculo de la aplicación (@slep/mineduc-engine).
+    const calculoJornada = calcularJornadaMinutos(
+      subGralContrato,
+      totalHaDocente,
+      es6040 ? '60_40' : '65_35',
+      Boolean(docente.aplicaArticulo69)
+    );
+
+    const recreoMinutos = calculoJornada.minutosRecreoAsignados;
+    // Las Horas No Lectivas completan con precisión matemática la jornada de Subvención General:
+    const hnlMinutos = Math.max(0, (subGralContrato * 60) - (totalHaDocente * 45) - recreoMinutos);
 
     // Fila Recreo
     const rowRecreo = ws.getRow(currentRowIdx);
