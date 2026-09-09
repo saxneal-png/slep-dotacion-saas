@@ -120,7 +120,7 @@ export function clasificarDocentesEnSecciones(
   const seccion2: Docente[] = [];
 
   for (const doc of docentes) {
-    const asigsDoc = asignaciones.filter(a => a.docenteId === doc.id || a.docenteId === doc.run || a.docenteRun === doc.run);
+    const asigsDoc = asignaciones.filter(a => a.docenteId === doc.id || a.docenteId === doc.run || (a as any).docenteRun === doc.run);
 
     const esDirectivoOTecnico = doc.estamento === 'DIRECTIVO' ||
       doc.estamento === 'TECNICO_PEDAGOGICO' ||
@@ -408,7 +408,7 @@ export async function generarExcelMatrizDotacionColegio(
 
     // Asignaciones del docente
     const asigsDocente = asignaciones.filter(
-      a => a.rbd === establecimiento.rbd && (a.docenteId === docente.id || a.docenteId === docente.run || a.docenteRun === docente.run)
+      a => a.rbd === establecimiento.rbd && (a.docenteId === docente.id || a.docenteId === docente.run || (a as any).docenteRun === docente.run)
     );
 
     const asignaturasMap = new Map<string, Map<string, number>>();
@@ -744,7 +744,7 @@ export async function generarExcelMatrizDotacionColegio(
 
       // Desglose de funciones de la Sección 2 (Co-docencia, PIE Recursos, Talleres SEP/Extensión, Directivos)
       const asigsDocente = asignaciones.filter(
-        a => a.rbd === establecimiento.rbd && (a.docenteId === docente.id || a.docenteId === docente.run || a.docenteRun === docente.run)
+        a => a.rbd === establecimiento.rbd && (a.docenteId === docente.id || a.docenteId === docente.run || (a as any).docenteRun === docente.run)
       );
 
       // 1. Asignaciones registradas
