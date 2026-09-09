@@ -245,4 +245,34 @@ describe('Motor MINEDUC - B�squeda Inversa y Auditoría Multitramo', () => {
     expect(res.estadoSaldo).toBe('EXACTO');
     expect(res.esInfractorExcesoLectivo).toBe(false);
   });
+
+  it('audita caso real de Josefina Alonzo (34 HA en 65/35 + 3h PIE con contrato de 43h y 1h libre)', () => {
+    // Caso reportado: Docente con 34 HA aula regular (65/35), 3h PIE y 43h de contrato real
+    // 34 HA en 65/35 requiere jornada de 39h: 25h 30m lectivas (1.530m), 2h 40m recreo (160m), 10h 50m HNL (650m)
+    // Con 3h PIE, el contrato calculado requerido es 39 + 3 = 42h
+    // Contrato real 43h tiene holgura de +1h libre
+    // Los minutos normativos de recreo y HNL deben corresponder estrictamente a las 34 HA impartidas (2h 40m y 10h 50m), no a 35 HA
+    const res = calcularAuditoriaDocenteMultitramo({
+      horasAula65_35: 34,
+      horasAula60_40: 0,
+      horasPieCronologicas: 3,
+      horasContratoReal: 43
+    });
+
+    expect(res.req65_35).toBe(39);
+    expect(res.horasPie).toBe(3);
+    expect(res.contratoCalculadoTotal).toBe(42);
+    expect(res.contratoRealTotal).toBe(43);
+    expect(res.saldoHoras).toBe(1); // +1h libre
+    expect(res.estadoSaldo).toBe('HOLGURA');
+    expect(res.esInfractorExcesoLectivo).toBe(false);
+
+    // Minutos correspondientes a 34 HA
+    expect(res.minutosLectivosAula).toBe(1530); // 34 HA * 45 = 25h 30m
+    expect(res.minutosRecreoTotal).toBe(160); // 2h 40m (NO 2h 44m de 35 HA)
+    expect(res.minutosHnlTotal).toBe(650); // 10h 50m (NO 11h 1m de 35 HA)
+    expect(res.minutosHnlPlanificacion40).toBe(260); // 650 * 0.40 = 260m = 4h 20m (NO 4h 24m)
+    expect(res.detalle65_35.recreoTexto).toBe('2 h 40 m');
+    expect(res.detalle65_35.hnlTexto).toBe('10 h 50 m');
+  });
 });

@@ -142,35 +142,30 @@ export function calcularAuditoriaDocenteMultitramo(
     }
   }
 
-  // 3. Consultar y acumular minutos oficiales de la base de datos de tablas MINEDUC
-  let totalRecreoMins = 0;
-  let totalHnlMins = 0;
-  let totalLectivaCronMins = 0;
+  // 3. Consultar y acumular minutos oficiales correspondientes a la carga lectiva asignada
+  let totalRecreoMins = detalle65.recreoMinutos + detalle60.recreoMinutos;
+  let totalHnlMins = detalle65.hnlMinutos + detalle60.hnlMinutos;
+  let totalLectivaCronMins = detalle65.lectivasMinutos + detalle60.lectivasMinutos;
 
   const clampJornada = (val: number) => Math.min(44, Math.max(1, val));
 
-  if (contratoReal === 0 || cReg === reqTotalReg) {
-    // Cálculo exacto considerando por separado las proporciones de aula asignadas y luego sumando
-    totalRecreoMins = detalle65.recreoMinutos + detalle60.recreoMinutos;
-    totalHnlMins = detalle65.hnlMinutos + detalle60.hnlMinutos;
-    totalLectivaCronMins = detalle65.lectivasMinutos + detalle60.lectivasMinutos;
-  } else {
+  // Límite legal permitido en minutos cronológicos de docencia de aula según la jornada contractual
+  let minutosLimitePermitido = 0;
+  if (cReg > 0) {
     if (c65 > 0) {
       const entry65 = RAW_65_35.find(e => e.jornada === clampJornada(c65));
       if (entry65) {
-        totalRecreoMins += parseHHMMToMinutes(entry65.recreo);
-        totalHnlMins += parseHHMMToMinutes(entry65.hnl);
-        totalLectivaCronMins += parseHHMMToMinutes(entry65.lectivas);
+        minutosLimitePermitido += parseHHMMToMinutes(entry65.lectivas);
       }
     }
     if (c60 > 0) {
       const entry60 = RAW_60_40.find(e => e.jornada === clampJornada(c60));
       if (entry60) {
-        totalRecreoMins += parseHHMMToMinutes(entry60.recreo);
-        totalHnlMins += parseHHMMToMinutes(entry60.hnl);
-        totalLectivaCronMins += parseHHMMToMinutes(entry60.lectivas);
+        minutosLimitePermitido += parseHHMMToMinutes(entry60.lectivas);
       }
     }
+  } else {
+    minutosLimitePermitido = totalLectivaCronMins;
   }
 
   // Aplicación de reducción voluntaria Artículo 69 (máximo 24h cronológicas aula = 1.440 mins)
@@ -180,12 +175,14 @@ export function calcularAuditoriaDocenteMultitramo(
     totalLectivaCronMins = 1440;
     totalHnlMins += reduccionArt69Mins;
   }
+  if (params.aplicaArticulo69 && minutosLimitePermitido > 1440) {
+    minutosLimitePermitido = 1440;
+  }
 
   const hnlPlanificacion40 = Math.round(totalHnlMins * 0.40);
 
   // 4. Auditoría de límites y exceso lectivo ponderado según tablas oficiales MINEDUC
   const minutosLectivosAula = (l65 + l60) * 45;
-  const minutosLimitePermitido = totalLectivaCronMins;
 
   let esInfractor = false;
   let limitePonderadoPct = 0;
