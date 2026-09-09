@@ -5,6 +5,7 @@ import {
   obtenerEtiquetaCortaCurso,
   ordenarCursosEstablecimiento,
   clasificarDocentesEnSecciones,
+  generarVeredictoAuditoria,
   getColumnLetter
 } from '../src/services/excelMatrizDotacionService';
 import { Establecimiento, Docente, CursoSae, AsignacionHoraria } from '../src/types';
@@ -16,6 +17,28 @@ describe('excelMatrizDotacionService', () => {
     expect(getColumnLetter(26)).toBe('Z');
     expect(getColumnLetter(27)).toBe('AA');
     expect(getColumnLetter(28)).toBe('AB');
+  });
+
+  it('evalúa correctamente los veredictos de auditoría contractual', () => {
+    // 1. Caso cuadrado exacto
+    const cuadrado = generarVeredictoAuditoria(44, 44, 44);
+    expect(cuadrado.texto).toContain('✓ Dotación cuadrada');
+    expect(cuadrado.esAlerta).toBe(false);
+
+    // 2. Caso con holgura (horas vacantes)
+    const holgura = generarVeredictoAuditoria(43, 42, 39);
+    expect(holgura.texto).toContain('⚠ Holgura: Realiza 42h de 43h (1h vacantes)');
+    expect(holgura.esAlerta).toBe(true);
+
+    // 3. Caso sobreasignado
+    const sobre = generarVeredictoAuditoria(30, 35, 35);
+    expect(sobre.texto).toContain('🚨 Sobreasignado: Asignadas 35h para 30h (+5h exceso)');
+    expect(sobre.esAlerta).toBe(true);
+
+    // 4. Caso con Art. 69 e IA
+    const art69 = generarVeredictoAuditoria(44, 44, 44, true, 'Observación Gemini');
+    expect(art69.texto).toContain('Art. 69');
+    expect(art69.texto).toContain('[IA] Observación Gemini');
   });
 
   it('obtiene etiquetas cortas estándar para cursos chilenos', () => {
@@ -180,7 +203,7 @@ describe('excelMatrizDotacionService', () => {
     expect(tieneDocenteSeccion2).toBe(true);
   });
 
-  it('calcula las proporciones con horas cerradas exactas para docentes con contratos mixtos', async () => {
+  it('calcula las proporciones normativas basadas en horas aula y refleja holguras en la auditoría', async () => {
     const establecimiento: Establecimiento = {
       id: 'est-3641',
       rbd: '3641',
@@ -197,6 +220,8 @@ describe('excelMatrizDotacionService', () => {
     ];
 
     // Docente: 43 hrs contrato (40 SubGral, 3 PIE) con 34 HA asignadas
+    // 34 HA según tabla oficial MINEDUC 65/35 -> 39h requeridas (25:30 aula + 2:40 recreo + 10:50 HNL)
+    // Carga efectiva = 39h SubGral + 3h PIE = 42h. Holgura = 43 - 42 = 1h vacante.
     const docenteAlonzo: Docente = {
       id: 'doc-alonzo',
       rbd: '3641',
@@ -236,18 +261,25 @@ describe('excelMatrizDotacionService', () => {
 
     // Buscar la fila Total del docente
     let filaTotalDocente: ExcelJS.Row | null = null;
+    let filaMaestraDocente: ExcelJS.Row | null = null;
     ws.eachRow((row) => {
       if (row.getCell(1).value === 'Total') {
         filaTotalDocente = row;
       }
+      if (String(row.getCell(1).value || '').includes('Alonzo Gómez')) {
+        filaMaestraDocente = row;
+      }
     });
 
     expect(filaTotalDocente).not.toBeNull();
+    expect(filaMaestraDocente).not.toBeNull();
+
     const colTotalHa = 11; // 1 curso -> col 10 es 1A, col 11 es TOTAL HA*
     const colSubGral = 12;
     const colSep = 13;
     const colPie = 14;
     const colTotalHc = 15;
+    const colObservaciones = 16;
 
     // TOTAL HA* debe ser 34
     expect(filaTotalDocente!.getCell(colTotalHa).value).toEqual({
@@ -265,13 +297,17 @@ describe('excelMatrizDotacionService', () => {
       return 0;
     };
 
-    // SubGral Total debe ser 40 hrs exactas cerradas
-    expect(getHoras(filaTotalDocente!.getCell(colSubGral).value)).toBeCloseTo(40, 1);
+    // SubGral Total normativo para 34 HA es 39 hrs exactas cerradas
+    expect(getHoras(filaTotalDocente!.getCell(colSubGral).value)).toBeCloseTo(39, 1);
 
     // PIE Total debe ser 3 hrs exactas cerradas
     expect(getHoras(filaTotalDocente!.getCell(colPie).value)).toBeCloseTo(3, 1);
 
-    // TOTAL HC debe ser 43 hrs exactas cerradas del contrato
-    expect(getHoras(filaTotalDocente!.getCell(colTotalHc).value)).toBeCloseTo(43, 1);
+    // TOTAL HC ejecutado debe ser 42 hrs exactas cerradas (39 + 3)
+    expect(getHoras(filaTotalDocente!.getCell(colTotalHc).value)).toBeCloseTo(42, 1);
+
+    // La columna de auditoría en la fila maestra del docente debe evidenciar la holgura de 1h
+    const obsVal = String(filaMaestraDocente!.getCell(colObservaciones).value);
+    expect(obsVal).toContain('⚠ Holgura: Realiza 42h de 43h (1h vacantes)');
   });
 });

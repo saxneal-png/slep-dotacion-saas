@@ -3,6 +3,7 @@ import { Establecimiento, Docente, CursoSae, AsignacionHoraria } from '../types'
 import {
   calcularJornadaMinutos,
   obtenerTramoMineduc,
+  buscarDetallePorHorasAula,
   RAW_65_35,
   RAW_60_40,
   parseHHMMToMinutes
@@ -13,6 +14,49 @@ import {
   generarObservacionesConGemini,
   GeminiExportOptions,
 } from './geminiExportAssistant';
+
+/**
+ * Genera el veredicto de auditoría comparando las horas contractuales con la carga efectiva real ejecutada.
+ */
+export function generarVeredictoAuditoria(
+  contratoReal: number,
+  cargaEfectivaTotal: number,
+  jornadaAulaRequerida: number,
+  aplicaArticulo69?: boolean,
+  geminiObs?: string
+): { texto: string; colorHex: string; esAlerta: boolean } {
+  const diff = Math.round((contratoReal - cargaEfectivaTotal) * 100) / 100;
+  let veredicto = '';
+  let colorHex = '047857'; // Verde institucional
+  let esAlerta = false;
+
+  if (cargaEfectivaTotal === 0 && contratoReal > 0) {
+    veredicto = `⚠ Sin carga horaria asignada (${contratoReal}h vacantes)`;
+    colorHex = 'D97706'; // Ámbar
+    esAlerta = true;
+  } else if (Math.abs(diff) < 0.05) {
+    veredicto = `✓ Dotación cuadrada: ${contratoReal}h contrato = ${cargaEfectivaTotal}h ejecutadas`;
+    colorHex = '047857'; // Verde oscuro
+  } else if (diff > 0) {
+    veredicto = `⚠ Holgura: Realiza ${cargaEfectivaTotal}h de ${contratoReal}h (${diff}h vacantes)`;
+    colorHex = 'D97706'; // Ámbar
+    esAlerta = true;
+  } else {
+    veredicto = `🚨 Sobreasignado: Asignadas ${cargaEfectivaTotal}h para ${contratoReal}h (+${Math.abs(diff)}h exceso)`;
+    colorHex = 'DC2626'; // Rojo
+    esAlerta = true;
+  }
+
+  if (aplicaArticulo69) {
+    veredicto += ' | Art. 69 (tope 24h aula)';
+  }
+
+  if (geminiObs) {
+    veredicto += ` | [IA] ${geminiObs}`;
+  }
+
+  return { texto: veredicto, colorHex, esAlerta };
+}
 
 /**
  * Convierte un índice numérico de columna (1-based: 1=A, 2=B, etc.) a letra Excel (A, B, ..., Z, AA, AB, ...)
@@ -471,20 +515,6 @@ export async function generarExcelMatrizDotacionColegio(
     masterRow.getCell(colIndexCttaPie).alignment = { horizontal: 'center', vertical: 'middle' };
     masterRow.getCell(colIndexCttaPie).font = { name: 'Calibri', size: 9 };
 
-    if (docente.aplicaArticulo69) {
-      const obsGemini = geminiObservacionesMap.get(docente.id);
-      masterRow.getCell(colIndexObservaciones).value = obsGemini
-        ? `[IA] ${obsGemini}`
-        : 'Ley reducción horaria: 24 de 30 en aula (Art. 69)';
-      masterRow.getCell(colIndexObservaciones).font = { name: 'Calibri', size: 8.5, italic: true, color: { argb: '2563EB' } };
-    } else {
-      const obsGemini = geminiObservacionesMap.get(docente.id);
-      if (obsGemini) {
-        masterRow.getCell(colIndexObservaciones).value = `[IA] ${obsGemini}`;
-        masterRow.getCell(colIndexObservaciones).font = { name: 'Calibri', size: 8.5, italic: true, color: { argb: '0F766E' } };
-      }
-    }
-
     for (let c = 1; c <= totalColumnas; c++) {
       masterRow.getCell(c).border = borderThin;
     }
@@ -609,48 +639,52 @@ export async function generarExcelMatrizDotacionColegio(
       currentRowIdx++;
     }
 
-    // Ley 20.903 — Proporción calculada sobre la base de las Horas Aula efectivamente asignadas,
-    // utilizando directamente el motor oficial de cálculo de la aplicación (@slep/mineduc-engine).
-    const calculoJornada = calcularJornadaMinutos(
-      subGralContrato,
+    // Ley 20.903 — Proporción calculada estrictamente sobre la base de las Horas Aula (HA)
+    // efectivamente asignadas según el motor oficial de cálculo (@slep/mineduc-engine).
+    const detalleAula = buscarDetallePorHorasAula(
       totalHaDocente,
-      es6040 ? '60_40' : '65_35',
-      Boolean(docente.aplicaArticulo69)
+      es6040 ? '60_40' : '65_35'
     );
 
-    const recreoMinutos = calculoJornada.minutosRecreoAsignados;
-    // Las Horas No Lectivas completan con precisión matemática la jornada de Subvención General:
-    const hnlMinutos = Math.max(0, (subGralContrato * 60) - (totalHaDocente * 45) - recreoMinutos);
+    const jornadaAulaRequerida = detalleAula.jornada;
+    let recreoMinutos = detalleAula.recreoMinutos;
+    let hnlMinutos = detalleAula.hnlMinutos;
+
+    // Aplicación del Artículo 69 (tope de 24 horas cronológicas = 32 HA lectivas)
+    if (docente.aplicaArticulo69 && totalHaDocente > 32) {
+      const minutosExcesoAula = (totalHaDocente - 32) * 45;
+      hnlMinutos += minutosExcesoAula;
+    }
 
     // Fila Recreo
-    const rowRecreo = ws.getRow(currentRowIdx);
-    rowRecreo.height = 17;
-    rowRecreo.getCell(colIndexDocente).value = es6040 ? 'Recreo 60/40' : 'Recreo 65/35';
-    rowRecreo.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
-    rowRecreo.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
-    if (subGralContrato > 0 && recreoMinutos > 0) {
+    if (jornadaAulaRequerida > 0 && recreoMinutos > 0) {
+      const rowRecreo = ws.getRow(currentRowIdx);
+      rowRecreo.height = 17;
+      rowRecreo.getCell(colIndexDocente).value = es6040 ? 'Recreo 60/40' : 'Recreo 65/35';
+      rowRecreo.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+      rowRecreo.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
       rowRecreo.getCell(colIndexTotalHcSubGral).value = recreoMinutos / 1440;
       rowRecreo.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
       rowRecreo.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
       rowRecreo.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9 };
+      for (let c = 1; c <= totalColumnas; c++) rowRecreo.getCell(c).border = borderThin;
+      currentRowIdx++;
     }
-    for (let c = 1; c <= totalColumnas; c++) rowRecreo.getCell(c).border = borderThin;
-    currentRowIdx++;
 
     // Fila Horas No Lectivas
-    const rowHnl = ws.getRow(currentRowIdx);
-    rowHnl.height = 17;
-    rowHnl.getCell(colIndexDocente).value = es6040 ? 'Horas no lectivas 60/40' : 'Horas no lectivas 65/35';
-    rowHnl.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
-    rowHnl.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
-    if (subGralContrato > 0 && hnlMinutos > 0) {
+    if (jornadaAulaRequerida > 0 && hnlMinutos > 0) {
+      const rowHnl = ws.getRow(currentRowIdx);
+      rowHnl.height = 17;
+      rowHnl.getCell(colIndexDocente).value = es6040 ? 'Horas no lectivas 60/40' : 'Horas no lectivas 65/35';
+      rowHnl.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+      rowHnl.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
       rowHnl.getCell(colIndexTotalHcSubGral).value = hnlMinutos / 1440;
       rowHnl.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
       rowHnl.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
       rowHnl.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9 };
+      for (let c = 1; c <= totalColumnas; c++) rowHnl.getCell(c).border = borderThin;
+      currentRowIdx++;
     }
-    for (let c = 1; c <= totalColumnas; c++) rowHnl.getCell(c).border = borderThin;
-    currentRowIdx++;
 
     const lastDetailRow = currentRowIdx - 1;
 
@@ -672,33 +706,42 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexTotalHa).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHa).font = { name: 'Calibri', size: 9, bold: true };
 
-    totalRow.getCell(colIndexTotalHcSubGral).value = {
-      formula: `SUM(${colSubGralLetter}${firstDetailRow}:${colSubGralLetter}${lastDetailRow})`,
-      result: subGralContrato / 24
-    };
+    const tieneFilasDetalle = lastDetailRow >= firstDetailRow;
+
+    totalRow.getCell(colIndexTotalHcSubGral).value = tieneFilasDetalle
+      ? {
+          formula: `SUM(${colSubGralLetter}${firstDetailRow}:${colSubGralLetter}${lastDetailRow})`,
+          result: jornadaAulaRequerida / 24
+        }
+      : 0;
     totalRow.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
     totalRow.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9, bold: true };
 
-    totalRow.getCell(colIndexTotalHcSubSep).value = {
-      formula: `SUM(${colSepLetter}${firstDetailRow}:${colSepLetter}${lastDetailRow})`,
-      result: sepContrato / 24
-    };
+    totalRow.getCell(colIndexTotalHcSubSep).value = tieneFilasDetalle
+      ? {
+          formula: `SUM(${colSepLetter}${firstDetailRow}:${colSepLetter}${lastDetailRow})`,
+          result: sepContrato / 24
+        }
+      : 0;
     totalRow.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
     totalRow.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9, bold: true };
 
-    totalRow.getCell(colIndexTotalHcSubPie).value = {
-      formula: `SUM(${colPieLetter}${firstDetailRow}:${colPieLetter}${lastDetailRow})`,
-      result: pieContrato / 24
-    };
+    totalRow.getCell(colIndexTotalHcSubPie).value = tieneFilasDetalle
+      ? {
+          formula: `SUM(${colPieLetter}${firstDetailRow}:${colPieLetter}${lastDetailRow})`,
+          result: pieContrato / 24
+        }
+      : 0;
     totalRow.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
     totalRow.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9, bold: true };
 
+    const cargaEfectivaTotal = jornadaAulaRequerida + sepContrato + pieContrato;
     totalRow.getCell(colIndexTotalHc).value = {
       formula: `SUM(${colSubGralLetter}${currentRowIdx}:${colPieLetter}${currentRowIdx})`,
-      result: (Number(docente.horasContrato) || (subGralContrato + sepContrato + pieContrato)) / 24
+      result: cargaEfectivaTotal / 24
     };
     totalRow.getCell(colIndexTotalHc).numFmt = '[h]:mm';
     totalRow.getCell(colIndexTotalHc).alignment = { horizontal: 'center', vertical: 'middle' };
@@ -707,6 +750,24 @@ export async function generarExcelMatrizDotacionColegio(
     for (let c = 1; c <= totalColumnas; c++) {
       totalRow.getCell(c).border = borderTotalRow;
     }
+
+    // Auditoría contractual explícita en la fila maestra del docente
+    const contratoReal = Number(docente.horasContrato || 0);
+    const veredicto = generarVeredictoAuditoria(
+      contratoReal,
+      cargaEfectivaTotal,
+      jornadaAulaRequerida,
+      Boolean(docente.aplicaArticulo69),
+      geminiObservacionesMap.get(docente.id)
+    );
+    masterRow.getCell(colIndexObservaciones).value = veredicto.texto;
+    masterRow.getCell(colIndexObservaciones).font = {
+      name: 'Calibri',
+      size: 8.5,
+      bold: veredicto.esAlerta,
+      color: { argb: veredicto.colorHex }
+    };
+    masterRow.getCell(colIndexObservaciones).alignment = { horizontal: 'left', vertical: 'middle' };
 
     currentRowIdx++;
   }
@@ -804,13 +865,6 @@ export async function generarExcelMatrizDotacionColegio(
       masterRow.getCell(colIndexCttaPie).value = docente.horasPieContrata || null;
       masterRow.getCell(colIndexCttaPie).alignment = { horizontal: 'center', vertical: 'middle' };
       masterRow.getCell(colIndexCttaPie).font = { name: 'Calibri', size: 9 };
-
-      // Observación de auditoría Gemini AI (si disponible)
-      const obsGeminiS2 = geminiObservacionesMap.get(docente.id);
-      if (obsGeminiS2) {
-        masterRow.getCell(colIndexObservaciones).value = `[IA] ${obsGeminiS2}`;
-        masterRow.getCell(colIndexObservaciones).font = { name: 'Calibri', size: 8.5, italic: true, color: { argb: '0F766E' } };
-      }
 
       for (let c = 1; c <= totalColumnas; c++) {
         masterRow.getCell(c).border = borderThin;
@@ -941,9 +995,10 @@ export async function generarExcelMatrizDotacionColegio(
       totalRowS2.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
       totalRowS2.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9, bold: true };
 
+      const cargaEfectivaTotalS2 = subGralContratoS2 + sepContratoS2 + pieContratoS2;
       totalRowS2.getCell(colIndexTotalHc).value = {
         formula: `SUM(${colSubGralLetter}${currentRowIdx}:${colPieLetter}${currentRowIdx})`,
-        result: (Number(docente.horasContrato) || (subGralContratoS2 + sepContratoS2 + pieContratoS2)) / 24
+        result: (Number(docente.horasContrato) || cargaEfectivaTotalS2) / 24
       };
       totalRowS2.getCell(colIndexTotalHc).numFmt = '[h]:mm';
       totalRowS2.getCell(colIndexTotalHc).alignment = { horizontal: 'center', vertical: 'middle' };
@@ -952,6 +1007,24 @@ export async function generarExcelMatrizDotacionColegio(
       for (let c = 1; c <= totalColumnas; c++) {
         totalRowS2.getCell(c).border = borderTotalRow;
       }
+
+      // Auditoría contractual explícita para Sección 2
+      const contratoRealS2 = Number(docente.horasContrato || 0);
+      const veredictoS2 = generarVeredictoAuditoria(
+        contratoRealS2,
+        cargaEfectivaTotalS2,
+        subGralContratoS2,
+        false,
+        geminiObservacionesMap.get(docente.id)
+      );
+      masterRow.getCell(colIndexObservaciones).value = veredictoS2.texto;
+      masterRow.getCell(colIndexObservaciones).font = {
+        name: 'Calibri',
+        size: 8.5,
+        bold: veredictoS2.esAlerta,
+        color: { argb: veredictoS2.colorHex }
+      };
+      masterRow.getCell(colIndexObservaciones).alignment = { horizontal: 'left', vertical: 'middle' };
 
       currentRowIdx++;
     }
