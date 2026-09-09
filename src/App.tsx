@@ -338,17 +338,32 @@ export const App: React.FC = () => {
   };
 
   // Exportar Matriz Oficial Excel por Escuela (Formato SLEP / [h]:mm)
+  // Si existe una API key de Gemini configurada en el Analizador, se usa para asistir la exportación.
   const handleExportarMatrizExcelColegio = async (est: Establecimiento, periodo: number = periodoActivo) => {
     try {
       const cursosColegio = todosLosCursos.filter(c => c.rbd === est.rbd && (c.periodo === undefined || c.periodo === periodo));
       const docentesColegio = todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodo));
       const asignacionesColegio = todasLasAsignaciones.filter(a => a.rbd === est.rbd && (a.periodo === undefined || a.periodo === periodo));
 
+      // Leer configuración de Gemini desde localStorage (la misma que usa el Analizador)
+      const geminiApiKey = localStorage.getItem('gemini_api_key') || '';
+      const geminiModel = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
+      const geminiAnalizarTodos = localStorage.getItem('gemini_export_analizar_todos') === 'true';
+
+      const geminiOptions = geminiApiKey
+        ? { apiKey: geminiApiKey, modelName: geminiModel, analizarTodos: geminiAnalizarTodos }
+        : undefined;
+
+      if (geminiOptions) {
+        mostrarMensaje(`🤖 Gemini AI activado — analizando dotación de ${est.nombre}...`);
+      }
+
       const bytes = await generarExcelMatrizDotacionColegio(
         est,
         docentesColegio,
         cursosColegio,
-        asignacionesColegio
+        asignacionesColegio,
+        geminiOptions
       );
 
       const nombreLimpio = est.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
@@ -360,7 +375,10 @@ export const App: React.FC = () => {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         [{ name: 'Planillas Microsoft Excel', extensions: ['xlsx'] }]
       );
-      if (guardado) mostrarMensaje(`Matriz de dotación Excel de ${est.nombre} exportada exitosamente.`);
+      if (guardado) {
+        const sufijo = geminiOptions ? ' (con análisis Gemini AI ✓)' : '';
+        mostrarMensaje(`Matriz de dotación Excel de ${est.nombre} exportada exitosamente${sufijo}.`);
+      }
     } catch (e: any) {
       console.error('Error al exportar matriz excel colegio:', e);
       mostrarMensaje(`Error al exportar matriz Excel: ${e.message || e}`, 'error');

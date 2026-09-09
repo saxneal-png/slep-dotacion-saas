@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Key, CheckCircle, AlertCircle, Loader2, Sparkles, ExternalLink, Cpu, Check, RefreshCw } from 'lucide-react';
+import { X, Key, CheckCircle, AlertCircle, Loader2, Sparkles, ExternalLink, Cpu, Check, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { GeminiModel } from '../../types/analizadorTypes';
 
 interface ApiKeyModalProps {
@@ -28,11 +28,15 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const [loadingModels, setLoadingModels] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [analizarTodos, setAnalizarTodos] = useState<boolean>(
+    () => localStorage.getItem('gemini_export_analizar_todos') === 'true'
+  );
 
   useEffect(() => {
     setKeyInput(apiKey);
     setCurrentModel(selectedModel || 'gemini-3.7-flash');
     setTestResult(null);
+    setAnalizarTodos(localStorage.getItem('gemini_export_analizar_todos') === 'true');
   }, [apiKey, selectedModel, isOpen]);
 
   if (!isOpen) return null;
@@ -138,7 +142,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const handleSave = () => {
     onSaveKey(keyInput.trim());
     onSelectModel(currentModel);
+    localStorage.setItem('gemini_export_analizar_todos', analizarTodos ? 'true' : 'false');
     onClose();
+  };
+
+  const handleToggleAnalizarTodos = () => {
+    const newVal = !analizarTodos;
+    setAnalizarTodos(newVal);
+    localStorage.setItem('gemini_export_analizar_todos', newVal ? 'true' : 'false');
   };
 
   return (
@@ -272,6 +283,41 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               })}
             </div>
           </div>
+
+          {/* Toggle: Asistente de Exportación Excel */}
+          <div className="border border-teal-200 rounded-xl bg-teal-50/50 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-teal-600" />
+              <span className="text-xs font-bold uppercase tracking-wider text-teal-800">Asistente de Exportación Excel</span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Al exportar la Matriz Excel de Dotación, Gemini puede analizar la información para clasificar correctamente
+              las secciones y generar observaciones de auditoría inteligentes por docente.
+            </p>
+            <button
+              onClick={handleToggleAnalizarTodos}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
+                analizarTodos
+                  ? 'border-teal-500 bg-teal-500 text-white'
+                  : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'
+              }`}
+            >
+              <div className="text-left">
+                <p className="text-xs font-bold">
+                  {analizarTodos ? '🤖 Analizar toda la dotación' : 'Analizar solo docentes ambiguos'}
+                </p>
+                <p className={`text-[10px] mt-0.5 ${analizarTodos ? 'text-teal-100' : 'text-slate-500'}`}>
+                  {analizarTodos
+                    ? 'Gemini revisa TODOS los docentes del colegio en cada exportación (más preciso, más tokens)'
+                    : 'Gemini interviene solo cuando la clasificación local no es concluyente (más rápido)'}
+                </p>
+              </div>
+              {analizarTodos
+                ? <ToggleRight className="w-8 h-8 text-white flex-shrink-0" />
+                : <ToggleLeft className="w-8 h-8 text-slate-400 flex-shrink-0" />}
+            </button>
+          </div>
+
         </div>
 
         {/* Modal Footer */}

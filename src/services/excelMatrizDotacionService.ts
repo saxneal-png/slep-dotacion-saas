@@ -2,6 +2,11 @@ import ExcelJS from 'exceljs';
 import { Establecimiento, Docente, CursoSae, AsignacionHoraria } from '../types';
 import { obtenerTramoMineduc, RAW_65_35, RAW_60_40, parseHHMMToMinutes } from '@slep/mineduc-engine';
 import { normalizeText } from './analizador/classifier';
+import {
+  clasificarDocentesConGemini,
+  generarObservacionesConGemini,
+  GeminiExportOptions,
+} from './geminiExportAssistant';
 
 /**
  * Convierte un índice numérico de columna (1-based: 1=A, 2=B, etc.) a letra Excel (A, B, ..., Z, AA, AB, ...)
@@ -108,10 +113,14 @@ export function obtenerMinutosRecreoYHnl(horasSubGral: number, es6040: boolean):
  * Clasifica a los docentes en dos apartados principales:
  * 1. Docentes con Plan de Estudio Regular (Aula troncal, asignaturas, párvulos).
  * 2. Docentes PIE, Codocentes, Talleristas de apoyo/extensión y Equipo Directivo/Gestión.
+ *
+ * Si se suministra un geminiMap (resultado de la IA), la clasificación de Gemini
+ * tiene prioridad cuando la confianza es ALTA o MEDIA.
  */
 export function clasificarDocentesEnSecciones(
   docentes: Docente[],
-  asignaciones: AsignacionHoraria[]
+  asignaciones: AsignacionHoraria[],
+  geminiMap?: Map<string, import('./geminiExportAssistant').GeminiSeccionResult>
 ): {
   seccion1_PlanEstudio: Docente[];
   seccion2_ApoyoYDirectivos: Docente[];
@@ -120,6 +129,18 @@ export function clasificarDocentesEnSecciones(
   const seccion2: Docente[] = [];
 
   for (const doc of docentes) {
+    // Si Gemini analizó a este docente con confianza ALTA o MEDIA, usar su resultado
+    const geminiResult = geminiMap?.get(doc.id);
+    if (geminiResult && (geminiResult.confianza === 'ALTA' || geminiResult.confianza === 'MEDIA')) {
+      if (geminiResult.seccion === 'SECCION_1') {
+        seccion1.push(doc);
+      } else {
+        seccion2.push(doc);
+      }
+      continue;
+    }
+
+    // Clasificación local como respaldo (o para confianza BAJA de Gemini)
     // La BD almacena el UUID interno del docente en docenteId (no el RUN).
     // Comparar únicamente por doc.id para garantizar la vinculación correcta.
     const asigsDoc = asignaciones.filter(a => a.docenteId === doc.id);
@@ -180,12 +201,17 @@ export function clasificarDocentesEnSecciones(
  * con formato fiel al modelo SLEP Valle Diguillín (Google Sheets oficial),
  * separando la Sección 1 (Plan de Estudio) de la Sección 2 (PIE, Codocentes, Talleristas y Directivos)
  * y formateando celdas horarias en [h]:mm.
+ *
+ * @param geminiOptions Opcional. Si se suministra una apiKey, Gemini AI clasifica las secciones
+ *                      y genera observaciones de auditoría inteligentes para cada docente.
+ *                      Si analizarTodos = true, analiza toda la dotación (no solo ambiguos).
  */
 export async function generarExcelMatrizDotacionColegio(
   establecimiento: Establecimiento,
   docentes: Docente[],
   cursos: CursoSae[],
-  asignaciones: AsignacionHoraria[]
+  asignaciones: AsignacionHoraria[],
+  geminiOptions?: GeminiExportOptions
 ): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SLEP Valle Diguillín - Sistema Consolidador de Dotación';
@@ -343,7 +369,51 @@ export async function generarExcelMatrizDotacionColegio(
 
   // Clasificar docentes en Sección 1 (Plan de Estudio) y Sección 2 (Apoyo, PIE, Codocentes, Talleristas, Directivos)
   const docentesColegio = docentes.filter(d => d.rbd === establecimiento.rbd);
-  const { seccion1_PlanEstudio, seccion2_ApoyoYDirectivos } = clasificarDocentesEnSecciones(docentesColegio, asignaciones);
+
+  // ===========================================================================
+  // ASISTENCIA GEMINI AI (opcional)
+  // Cuando se suministra apiKey + analizarTodos=true, Gemini analiza toda la
+  // dotación. Si analizarTodos=false (defecto), solo procesa docentes ambiguos.
+  // ===========================================================================
+  let geminiSeccionMap = new Map<string, import('./geminiExportAssistant').GeminiSeccionResult>();
+  let geminiObservacionesMap = new Map<string, string>();
+
+  if (geminiOptions?.apiKey) {
+    // Determinar qué docentes enviar a Gemini
+    let docentesParaGemini = docentesColegio;
+
+    if (!geminiOptions.analizarTodos) {
+      // Modo selectivo: solo docentes "ambiguos" (sin asignaciones claras o con estamento mixto)
+      docentesParaGemini = docentesColegio.filter(doc => {
+        const asigsDoc = asignaciones.filter(a => a.rbd === establecimiento.rbd && a.docenteId === doc.id);
+        const tieneAsigClaras = asigsDoc.some(a =>
+          !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo &&
+          Number(a.horasPedagogicasAula || 0) > 0
+        );
+        const esClaramenteAula = doc.estamento === 'DOCENTE_AULA' && tieneAsigClaras;
+        const esClaramentePie = doc.estamento === 'DOCENTE_DIFERENCIAL' &&
+          (Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0)) >= doc.horasContrato * 0.7;
+        const esClaramenteDirectivo = ['DIRECTIVO', 'TECNICO_PEDAGOGICO', 'COORDINADOR_CRA'].includes(doc.estamento);
+        // Es ambiguo si no cae claramente en ninguna categoría
+        return !esClaramenteAula && !esClaramentePie && !esClaramenteDirectivo;
+      });
+    }
+
+    // Ejecutar ambas llamadas en paralelo para minimizar latencia
+    const [seccionesIA, observacionesIA] = await Promise.all([
+      clasificarDocentesConGemini(docentesParaGemini, asignaciones, establecimiento, geminiOptions),
+      generarObservacionesConGemini(docentesColegio, asignaciones, establecimiento, geminiOptions),
+    ]);
+
+    geminiSeccionMap = seccionesIA;
+    geminiObservacionesMap = observacionesIA;
+  }
+
+  const { seccion1_PlanEstudio, seccion2_ApoyoYDirectivos } = clasificarDocentesEnSecciones(
+    docentesColegio,
+    asignaciones,
+    geminiSeccionMap
+  );
 
   // ===========================================================================
   // 1. SECCIÓN 1: DOCENTES DE PLAN DE ESTUDIO / AULA REGULAR
@@ -398,8 +468,17 @@ export async function generarExcelMatrizDotacionColegio(
     masterRow.getCell(colIndexCttaPie).font = { name: 'Calibri', size: 9 };
 
     if (docente.aplicaArticulo69) {
-      masterRow.getCell(colIndexObservaciones).value = 'Ley reducción horaria: 24 de 30 en aula (Art. 69)';
+      const obsGemini = geminiObservacionesMap.get(docente.id);
+      masterRow.getCell(colIndexObservaciones).value = obsGemini
+        ? `[IA] ${obsGemini}`
+        : 'Ley reducción horaria: 24 de 30 en aula (Art. 69)';
       masterRow.getCell(colIndexObservaciones).font = { name: 'Calibri', size: 8.5, italic: true, color: { argb: '2563EB' } };
+    } else {
+      const obsGemini = geminiObservacionesMap.get(docente.id);
+      if (obsGemini) {
+        masterRow.getCell(colIndexObservaciones).value = `[IA] ${obsGemini}`;
+        masterRow.getCell(colIndexObservaciones).font = { name: 'Calibri', size: 8.5, italic: true, color: { argb: '0F766E' } };
+      }
     }
 
     for (let c = 1; c <= totalColumnas; c++) {
@@ -713,6 +792,13 @@ export async function generarExcelMatrizDotacionColegio(
       masterRow.getCell(colIndexCttaPie).value = docente.horasPieContrata || null;
       masterRow.getCell(colIndexCttaPie).alignment = { horizontal: 'center', vertical: 'middle' };
       masterRow.getCell(colIndexCttaPie).font = { name: 'Calibri', size: 9 };
+
+      // Observación de auditoría Gemini AI (si disponible)
+      const obsGeminiS2 = geminiObservacionesMap.get(docente.id);
+      if (obsGeminiS2) {
+        masterRow.getCell(colIndexObservaciones).value = `[IA] ${obsGeminiS2}`;
+        masterRow.getCell(colIndexObservaciones).font = { name: 'Calibri', size: 8.5, italic: true, color: { argb: '0F766E' } };
+      }
 
       for (let c = 1; c <= totalColumnas; c++) {
         masterRow.getCell(c).border = borderThin;
