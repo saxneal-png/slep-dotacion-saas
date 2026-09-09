@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Key, CheckCircle, AlertCircle, Loader2, Sparkles, ExternalLink, Cpu, Check, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { GeminiModel } from '../../types/analizadorTypes';
+import { geminiFetch } from '../../services/geminiApiClient';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -55,7 +56,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     setTestResult(null);
 
     try {
-      const googleRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      const googleRes = await geminiFetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
       if (googleRes.ok) {
         const gData = await googleRes.json();
         if (gData.models && Array.isArray(gData.models)) {
@@ -108,7 +109,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     try {
       const modelToTest = currentModel || 'gemini-3.7-flash';
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToTest}:generateContent?key=${key}`;
-      const resp = await fetch(url, {
+      const resp = await geminiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, net } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
@@ -17,7 +17,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      webSecurity: true,
+      webSecurity: false, // Permite llamadas de red y carga de assets locales sin fricción de CORS
       allowRunningInsecureContent: false
     }
   });
@@ -77,6 +77,35 @@ ipcMain.handle('fs:readFile', async (_, filePath: string) => {
 });
 
 ipcMain.handle('app:getVersion', () => app.getVersion());
+
+ipcMain.handle('api:geminiRequest', async (_, url: string, options?: any) => {
+  try {
+    const fetchOptions: any = {
+      method: options?.method || 'GET',
+    };
+    if (options?.headers) {
+      fetchOptions.headers = options.headers;
+    }
+    if (options?.body) {
+      fetchOptions.body = options.body;
+    }
+
+    const resp = await net.fetch(url, fetchOptions);
+    const data = await resp.text();
+    return {
+      ok: resp.ok,
+      status: resp.status,
+      data
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      status: 0,
+      data: JSON.stringify({ error: { message: err?.message || 'Error de conexión de red' } }),
+      error: err?.message
+    };
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();

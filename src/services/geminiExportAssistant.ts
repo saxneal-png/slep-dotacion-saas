@@ -10,6 +10,7 @@
  */
 
 import { Docente, AsignacionHoraria, Establecimiento } from '../types';
+import { geminiFetch } from './geminiApiClient';
 
 /** Resultado de clasificación de sección por Gemini */
 export interface GeminiSeccionResult {
@@ -48,7 +49,7 @@ async function callGemini(
   for (const model of candidates) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const resp = await fetch(url, {
+      const resp = await geminiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

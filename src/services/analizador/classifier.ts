@@ -339,8 +339,9 @@ export async function callGeminiClassification(
 
   for (const m of candidateModels) {
     try {
+      const { geminiFetch } = await import('../geminiApiClient');
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`;
-      const resp = await fetch(url, {
+      const resp = await geminiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

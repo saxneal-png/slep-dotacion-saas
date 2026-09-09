@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('fs:writeFile', filePath, content),
   readFile: (filePath: string) =>
     ipcRenderer.invoke('fs:readFile', filePath),
+  geminiRequest: (url: string, options?: any) =>
+    ipcRenderer.invoke('api:geminiRequest', url, options),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   isDesktop: true
 });
