@@ -30,6 +30,19 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
     ]
   },
+  "multigrado_parvularia": {
+    nombre: "Multigrado Parvularia (NT1-NT2)",
+    regimen: {
+      JEC: { total: 28, libre: 4 },
+      No_JEC: { total: 22, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 8, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 10, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 6, No_JEC: 6 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
+    ]
+  },
   "1_4_basico": {
     nombre: "1° a 4° año de Educación Básica",
     regimen: {
@@ -108,6 +121,25 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 4 }
     ]
   },
+  "multigrado_basica": {
+    nombre: "Educación Básica Multigrado / Combinada",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 7, No_JEC: 7 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 3.5, No_JEC: 3.5 },
+      { nombre: "Ciencias Naturales", JEC: 3.5, No_JEC: 3 },
+      { nombre: "Artes Visuales y Música", JEC: 3, No_JEC: 2.5 },
+      { nombre: "Educación Física y Salud", JEC: 3, No_JEC: 2.5 },
+      { nombre: "Tecnología", JEC: 1.5, No_JEC: 1 },
+      { nombre: "Orientación", JEC: 1, No_JEC: 0.5 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2.5, No_JEC: 2 }
+    ]
+  },
   "1_2_medio": {
     nombre: "1° y 2° año de Educación Media",
     regimen: {
@@ -160,108 +192,162 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
         No_JEC: { total: 0, libre: 0 }
       }
     }
+  },
+  // ===========================================================================
+  // EDUCACIÓN DE PERSONAS JÓVENES Y ADULTAS (EPJA)
+  // ===========================================================================
+  "epja_basica_1_nivel": {
+    nombre: "EPJA Básica - 1° Nivel Básico (1° a 4° Básico)",
+    regimen: {
+      JEC: { total: 24, libre: 4 },
+      No_JEC: { total: 20, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua Castellana y Comunicación", JEC: 7, No_JEC: 6 },
+      { nombre: "Educación Matemática", JEC: 7, No_JEC: 6 },
+      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 4 },
+      { nombre: "Estudios Sociales", JEC: 3, No_JEC: 4 }
+    ]
+  },
+  "epja_basica_2_nivel": {
+    nombre: "EPJA Básica - 2° Nivel Básico (5° a 6° Básico)",
+    regimen: {
+      JEC: { total: 26, libre: 4 },
+      No_JEC: { total: 22, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 6 },
+      { nombre: "Educación Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
+      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "epja_basica_3_nivel": {
+    nombre: "EPJA Básica - 3° Nivel Básico (7° a 8° Básico)",
+    regimen: {
+      JEC: { total: 26, libre: 4 },
+      No_JEC: { total: 22, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 6 },
+      { nombre: "Educación Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
+      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "epja_media_hc_1_nivel": {
+    nombre: "EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)",
+    regimen: {
+      JEC: { total: 30, libre: 4 },
+      No_JEC: { total: 26, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 5 },
+      { nombre: "Educación Matemática", JEC: 6, No_JEC: 5 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
+      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 3, No_JEC: 3 },
+      { nombre: "Filosofía y Psicología / Formación Ciudadana", JEC: 2, No_JEC: 2 },
+      { nombre: "Convivencia Social y Formación Instrumental", JEC: 1, No_JEC: 3 }
+    ]
+  },
+  "epja_media_hc_2_nivel": {
+    nombre: "EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)",
+    regimen: {
+      JEC: { total: 30, libre: 4 },
+      No_JEC: { total: 26, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 5 },
+      { nombre: "Educación Matemática", JEC: 6, No_JEC: 5 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
+      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 3, No_JEC: 3 },
+      { nombre: "Filosofía y Psicología / Formación Ciudadana", JEC: 2, No_JEC: 2 },
+      { nombre: "Convivencia Social y Formación Instrumental", JEC: 1, No_JEC: 3 }
+    ]
+  },
+  "epja_media_tp_1_nivel": {
+    nombre: "EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)",
+    regimen: {
+      JEC: { total: 36, libre: 4 },
+      No_JEC: { total: 32, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua Castellana y Comunicación", JEC: 4, No_JEC: 4 },
+      { nombre: "Educación Matemática", JEC: 4, No_JEC: 4 },
+      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 },
+      { nombre: "Estudios Sociales", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Convivencia Social", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Diferenciada Técnico-Profesional", JEC: 14, No_JEC: 14 }
+    ]
+  },
+  "epja_media_tp_2_nivel": {
+    nombre: "EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)",
+    regimen: {
+      JEC: { total: 38, libre: 4 },
+      No_JEC: { total: 34, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua Castellana y Comunicación", JEC: 4, No_JEC: 4 },
+      { nombre: "Educación Matemática", JEC: 4, No_JEC: 4 },
+      { nombre: "Estudios Sociales", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Convivencia Social", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Diferenciada Técnico-Profesional", JEC: 19, No_JEC: 19 }
+    ]
   }
 };
 
 export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   const result: PlanEstudioNivel[] = [];
 
-  // 0. Educación Parvularia (NT1 y NT2)
-  const pParv = DATA_PLANES_ESTUDIO_MINEDUC["parvularia"];
-  result.push({
-    nivel: "Educación Parvularia (NT1 y NT2)",
-    regimen: "JEC",
-    horasObligatorias: pParv.regimen.JEC.total - pParv.regimen.JEC.libre,
-    horasLibreDisposicion: pParv.regimen.JEC.libre,
-    totalHorasPlan: pParv.regimen.JEC.total,
-    asignaturasBase: pParv.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.JEC }))
-  });
-  result.push({
-    nivel: "Educación Parvularia (NT1 y NT2)",
-    regimen: "No JEC",
-    horasObligatorias: pParv.regimen.No_JEC.total - pParv.regimen.No_JEC.libre,
-    horasLibreDisposicion: pParv.regimen.No_JEC.libre,
-    totalHorasPlan: pParv.regimen.No_JEC.total,
-    asignaturasBase: pParv.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.No_JEC }))
-  });
+  const addSimplePlan = (key: keyof typeof DATA_PLANES_ESTUDIO_MINEDUC, customNivelName?: string) => {
+    const item = DATA_PLANES_ESTUDIO_MINEDUC[key] as any;
+    if (!item || !item.regimen) return;
+    const nivelName = customNivelName || item.nombre;
 
-  // 1. 1° a 4° Básico
-  const p14 = DATA_PLANES_ESTUDIO_MINEDUC["1_4_basico"];
-  result.push({
-    nivel: "1° a 4° Básico",
-    regimen: "JEC",
-    horasObligatorias: p14.regimen.JEC.total - p14.regimen.JEC.libre,
-    horasLibreDisposicion: p14.regimen.JEC.libre,
-    totalHorasPlan: p14.regimen.JEC.total,
-    asignaturasBase: p14.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.JEC }))
-  });
-  result.push({
-    nivel: "1° a 4° Básico",
-    regimen: "No JEC",
-    horasObligatorias: p14.regimen.No_JEC.total - p14.regimen.No_JEC.libre,
-    horasLibreDisposicion: p14.regimen.No_JEC.libre,
-    totalHorasPlan: p14.regimen.No_JEC.total,
-    asignaturasBase: p14.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.No_JEC }))
-  });
+    if (item.regimen.JEC && item.regimen.JEC.total > 0) {
+      result.push({
+        nivel: nivelName,
+        regimen: "JEC",
+        horasObligatorias: item.regimen.JEC.total - (item.regimen.JEC.libre || 0),
+        horasLibreDisposicion: item.regimen.JEC.libre || 0,
+        totalHorasPlan: item.regimen.JEC.total,
+        asignaturasBase: item.asignaturas.map((a: any) => ({ nombre: a.nombre, horasSugeridas: a.JEC }))
+      });
+    }
 
-  // 2. 5° a 6° Básico
-  const p56 = DATA_PLANES_ESTUDIO_MINEDUC["5_6_basico"];
-  result.push({
-    nivel: "5° a 6° Básico",
-    regimen: "JEC",
-    horasObligatorias: p56.regimen.JEC.total - p56.regimen.JEC.libre,
-    horasLibreDisposicion: p56.regimen.JEC.libre,
-    totalHorasPlan: p56.regimen.JEC.total,
-    asignaturasBase: p56.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.JEC }))
-  });
-  result.push({
-    nivel: "5° a 6° Básico",
-    regimen: "No JEC",
-    horasObligatorias: p56.regimen.No_JEC.total - p56.regimen.No_JEC.libre,
-    horasLibreDisposicion: p56.regimen.No_JEC.libre,
-    totalHorasPlan: p56.regimen.No_JEC.total,
-    asignaturasBase: p56.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.No_JEC }))
-  });
+    if (item.regimen.No_JEC && item.regimen.No_JEC.total > 0) {
+      result.push({
+        nivel: nivelName,
+        regimen: "No JEC",
+        horasObligatorias: item.regimen.No_JEC.total - (item.regimen.No_JEC.libre || 0),
+        horasLibreDisposicion: item.regimen.No_JEC.libre || 0,
+        totalHorasPlan: item.regimen.No_JEC.total,
+        asignaturasBase: item.asignaturas.map((a: any) => ({ nombre: a.nombre, horasSugeridas: a.No_JEC }))
+      });
+    }
+  };
 
-  // 3. 7° a 8° Básico
-  const p78 = DATA_PLANES_ESTUDIO_MINEDUC["7_8_basico"];
-  result.push({
-    nivel: "7° a 8° Básico",
-    regimen: "JEC",
-    horasObligatorias: p78.regimen.JEC.total - p78.regimen.JEC.libre,
-    horasLibreDisposicion: p78.regimen.JEC.libre,
-    totalHorasPlan: p78.regimen.JEC.total,
-    asignaturasBase: p78.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.JEC }))
-  });
-  result.push({
-    nivel: "7° a 8° Básico",
-    regimen: "No JEC",
-    horasObligatorias: p78.regimen.No_JEC.total - p78.regimen.No_JEC.libre,
-    horasLibreDisposicion: p78.regimen.No_JEC.libre,
-    totalHorasPlan: p78.regimen.No_JEC.total,
-    asignaturasBase: p78.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.No_JEC }))
-  });
+  // 0. Parvularia
+  addSimplePlan("parvularia", "Educación Parvularia (NT1 y NT2)");
+  addSimplePlan("multigrado_parvularia", "Multigrado Parvularia (NT1-NT2)");
 
-  // 4. 1° y 2° Medio
-  const p12m = DATA_PLANES_ESTUDIO_MINEDUC["1_2_medio"];
-  result.push({
-    nivel: "1° y 2° Medio",
-    regimen: "JEC",
-    horasObligatorias: p12m.regimen.JEC.total - p12m.regimen.JEC.libre,
-    horasLibreDisposicion: p12m.regimen.JEC.libre,
-    totalHorasPlan: p12m.regimen.JEC.total,
-    asignaturasBase: p12m.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.JEC }))
-  });
-  result.push({
-    nivel: "1° y 2° Medio",
-    regimen: "No JEC",
-    horasObligatorias: p12m.regimen.No_JEC.total - p12m.regimen.No_JEC.libre,
-    horasLibreDisposicion: p12m.regimen.No_JEC.libre,
-    totalHorasPlan: p12m.regimen.No_JEC.total,
-    asignaturasBase: p12m.asignaturas.map(a => ({ nombre: a.nombre, horasSugeridas: a.No_JEC }))
-  });
+  // 1. Básica Regular
+  addSimplePlan("1_4_basico", "1° a 4° Básico");
+  addSimplePlan("5_6_basico", "5° a 6° Básico");
+  addSimplePlan("7_8_basico", "7° a 8° Básico");
+  addSimplePlan("7_8_basico_indigena", "7° a 8° año de Educación Básica - Con Sector Lengua Indígena");
+  addSimplePlan("multigrado_basica", "Educación Básica Multigrado / Combinada");
 
-  // 5. 3° y 4° Medio
+  // 2. Media 1° y 2°
+  addSimplePlan("1_2_medio", "1° y 2° Medio");
+
+  // 3. Media 3° y 4° Diferenciada
   const p34 = DATA_PLANES_ESTUDIO_MINEDUC["3_4_medio"];
   const general = p34.plan_comun_general;
   const electivo = p34.plan_comun_electivo;
@@ -296,6 +382,15 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
     }
   }
 
+  // 4. EPJA (Educación de Adultos)
+  addSimplePlan("epja_basica_1_nivel");
+  addSimplePlan("epja_basica_2_nivel");
+  addSimplePlan("epja_basica_3_nivel");
+  addSimplePlan("epja_media_hc_1_nivel");
+  addSimplePlan("epja_media_hc_2_nivel");
+  addSimplePlan("epja_media_tp_1_nivel");
+  addSimplePlan("epja_media_tp_2_nivel");
+
   return result;
 }
 
@@ -305,19 +400,57 @@ export const PLANES_MINEDUC: PlanEstudioNivel[] = getPlanesMineducConvertidos();
  * Obtiene el plan de estudios más adecuado según nombre de curso y régimen.
  */
 export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JEC' = 'JEC'): PlanEstudioNivel | null {
-  const c = cursoNombre.toLowerCase();
+  if (!cursoNombre) return null;
+  const c = cursoNombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
   let grupo = '';
 
-  if (c.includes('prekínder') || c.includes('prekinder') || c.includes('kínder') || c.includes('kinder') || c.includes('nt1') || c.includes('nt2') || c.includes('parvular')) {
+  // 1. EPJA - EDUCACIÓN DE ADULTOS
+  if (c.includes('adulto') || c.includes('epja') || c.includes('nivel basico') || c.includes('nivel medio')) {
+    if (c.includes('tp') || c.includes('tecnico') || c.includes('profesional')) {
+      if (c.includes('2') || c.includes('segundo') || c.includes('3') || c.includes('4')) {
+        grupo = "EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)";
+      } else {
+        grupo = "EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)";
+      }
+    } else if (c.includes('medio') || c.includes('hc') || c.includes('human')) {
+      if (c.includes('2') || c.includes('segundo') || c.includes('3') || c.includes('4')) {
+        grupo = "EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)";
+      } else {
+        grupo = "EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)";
+      }
+    } else if (c.includes('3') || c.includes('tercer') || c.includes('7') || c.includes('8')) {
+      grupo = "EPJA Básica - 3° Nivel Básico (7° a 8° Básico)";
+    } else if (c.includes('2') || c.includes('segundo') || c.includes('5') || c.includes('6')) {
+      grupo = "EPJA Básica - 2° Nivel Básico (5° a 6° Básico)";
+    } else {
+      grupo = "EPJA Básica - 1° Nivel Básico (1° a 4° Básico)";
+    }
+  }
+  // 2. CURSOS MULTIGRADO Y COMBINADOS
+  else if (c.includes('multigrado') || c.includes('combinado') || c.includes('comb')) {
+    if (c.includes('nt') || c.includes('kinder') || c.includes('parvular')) {
+      grupo = "Multigrado Parvularia (NT1-NT2)";
+    } else if (c.includes('medio')) {
+      grupo = "1° y 2° Medio";
+    } else {
+      grupo = "Educación Básica Multigrado / Combinada";
+    }
+  }
+  // 3. PARVULARIA REGULAR
+  else if (c.includes('prekinder') || c.includes('kinder') || c.includes('nt1') || c.includes('nt2') || c.includes('parvular')) {
     grupo = 'Educación Parvularia (NT1 y NT2)';
-  } else if (c.includes('1°') || c.includes('2°') || c.includes('3°') || c.includes('4°') ||
-      c.includes('1o') || c.includes('2o') || c.includes('3o') || c.includes('4o')) {
+  }
+  // 4. BÁSICA Y MEDIA REGULAR
+  else if (c.includes('1°') || c.includes('2°') || c.includes('3°') || c.includes('4°') ||
+      c.includes('1o') || c.includes('2o') || c.includes('3o') || c.includes('4o') ||
+      c.includes('1 ') || c.includes('2 ') || c.includes('3 ') || c.includes('4 ')) {
     if (c.includes('medio') || c.includes('secundaria')) {
-      if (c.includes('1°') || c.includes('2°') || c.includes('1o') || c.includes('2o')) {
+      if (c.includes('1°') || c.includes('2°') || c.includes('1o') || c.includes('2o') || c.includes('1 ') || c.includes('2 ')) {
         grupo = '1° y 2° Medio';
-      } else if (c.includes('tp') || c.includes('técnico') || c.includes('tecnico') || c.includes('profesional')) {
+      } else if (c.includes('tp') || c.includes('tecnico') || c.includes('profesional')) {
         grupo = '3° y 4° Medio (Técnico-Profesional)';
-      } else if (c.includes('artístic') || c.includes('artistic')) {
+      } else if (c.includes('artistic')) {
         grupo = '3° y 4° Medio (Artístico)';
       } else {
         grupo = '3° y 4° Medio (Humanístico-Científico)';
@@ -325,13 +458,17 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
     } else {
       grupo = '1° a 4° Básico';
     }
-  } else if (c.includes('5°') || c.includes('6°') || c.includes('5o') || c.includes('6o')) {
+  } else if (c.includes('5°') || c.includes('6°') || c.includes('5o') || c.includes('6o') || c.includes('5 ') || c.includes('6 ')) {
     grupo = '5° a 6° Básico';
-  } else if (c.includes('7°') || c.includes('8°') || c.includes('7o') || c.includes('8o')) {
+  } else if (c.includes('7°') || c.includes('8°') || c.includes('7o') || c.includes('8o') || c.includes('7 ') || c.includes('8 ')) {
     grupo = '7° a 8° Básico';
   }
 
   if (!grupo) return null;
 
-  return PLANES_MINEDUC.find(p => p.nivel === grupo && p.regimen === regimen) || null;
+  // Buscar coincidencia exacta por nivel y régimen; si no existe, retornar el primer régimen disponible para ese nivel
+  const match = PLANES_MINEDUC.find(p => p.nivel === grupo && p.regimen === regimen);
+  if (match) return match;
+
+  return PLANES_MINEDUC.find(p => p.nivel === grupo) || null;
 }

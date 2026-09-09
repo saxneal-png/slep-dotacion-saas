@@ -22,7 +22,7 @@ import { ComparadorPeriodosModal } from '../components/ComparadorPeriodosModal';
 import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
 import { FileDown } from 'lucide-react';
 
-interface ColegioWorkspaceViewProps {
+export interface ColegioWorkspaceViewProps {
   colegio: Establecimiento;
   salas: SalaInfraestructura[];
   cursos: CursoSae[];

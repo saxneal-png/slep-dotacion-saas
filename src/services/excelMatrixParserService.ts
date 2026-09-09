@@ -16,10 +16,43 @@ export function normalizarEncabezadoCurso(header: string): { nivel: string; letr
     return null;
   }
 
+  // 1. EPJA - Educación de Adultos
+  if (/(?:EPJA|ADULTO)/i.test(clean) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(clean)) {
+    const letraMatch = clean.match(/\b([A-Z])\b$/);
+    const letra = letraMatch ? letraMatch[1] : 'A';
+    if (/TP|T[EÉ]CNICO|PROFESIONAL/i.test(clean)) {
+      if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
+        return { nivel: 'EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)', letra, regimen: 'No JEC', esMultigrado: false };
+      }
+      return { nivel: 'EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)', letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/MEDIO|SECUNDARIA|HC|HUMAN/i.test(clean)) {
+      if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
+        return { nivel: 'EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)', letra, regimen: 'No JEC', esMultigrado: false };
+      }
+      return { nivel: 'EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)', letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/(?:3|TERCER|7|8)/i.test(clean)) {
+      return { nivel: 'EPJA Básica - 3° Nivel Básico (7° a 8° Básico)', letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/(?:2|SEGUNDO|5|6)/i.test(clean)) {
+      return { nivel: 'EPJA Básica - 2° Nivel Básico (5° a 6° Básico)', letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    return { nivel: 'EPJA Básica - 1° Nivel Básico (1° a 4° Básico)', letra, regimen: 'No JEC', esMultigrado: false };
+  }
+
+  // 2. Cursos Combinados
+  if (/COMBINAD/i.test(clean) || /COMB\b/i.test(clean)) {
+    return { nivel: `Curso Combinado ${raw}`, letra: 'U', regimen: 'JEC', esMultigrado: true };
+  }
+
+  // 3. Multigrado Parvularia NT1-NT2
   if (/^(?:NT1\s*[-/]\s*NT2|PRE-?K(?:INDER)?\s*[-/]\s*K(?:INDER)?)/i.test(clean)) {
     return { nivel: 'Multigrado NT1-NT2', letra: 'U', regimen: 'No JEC', esMultigrado: true };
   }
-  const multiBasicaMatch = clean.match(/^([1-8])°?\s*[-/]\s*([1-8])°?(?:\s*[-/]\s*([1-8])°?)?$/);
+
+  // 4. Multigrado Básica (ej: 1°-2° Básico, 1 a 6, 1-2-3-4)
+  const multiBasicaMatch = clean.match(/^([1-8])°?\s*[-/aA]\s*([1-8])°?(?:\s*[-/]\s*([1-8])°?)?(?:\s*B[AÁ]SICO)?$/i);
   if (multiBasicaMatch) {
     return { nivel: `Multigrado ${raw}`, letra: 'U', regimen: 'JEC', esMultigrado: true };
   }

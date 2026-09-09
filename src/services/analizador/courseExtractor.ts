@@ -20,6 +20,44 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
     return null;
   }
 
+  // EPJA - Educación de Adultos
+  if (/(?:EPJA|ADULTO)/i.test(clean) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(clean)) {
+    const letraMatch = clean.match(/\b([A-Z])\b$/);
+    const letra = letraMatch ? letraMatch[1] : 'A';
+    if (/TP|T[EÉ]CNICO|PROFESIONAL/i.test(clean)) {
+      if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
+        const nivel = 'EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)';
+        return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+      }
+      const nivel = 'EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)';
+      return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/MEDIO|SECUNDARIA|HC|HUMAN/i.test(clean)) {
+      if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
+        const nivel = 'EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)';
+        return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+      }
+      const nivel = 'EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)';
+      return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/(?:3|TERCER|7|8)/i.test(clean)) {
+      const nivel = 'EPJA Básica - 3° Nivel Básico (7° a 8° Básico)';
+      return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/(?:2|SEGUNDO|5|6)/i.test(clean)) {
+      const nivel = 'EPJA Básica - 2° Nivel Básico (5° a 6° Básico)';
+      return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    const nivel = 'EPJA Básica - 1° Nivel Básico (1° a 4° Básico)';
+    return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+  }
+
+  // Cursos Combinados
+  if (/COMBINAD/i.test(clean) || /COMB\b/i.test(clean)) {
+    const label = `Curso Combinado ${raw.trim()}`;
+    return { cursoCompleto: label, nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: true };
+  }
+
   // Multigrado Parvularia NT1-NT2 / Prekínder - Kínder
   if (/^(?:NT1\s*[-/]\s*NT2|PRE-?K(?:INDER)?\s*[-/]\s*K(?:INDER)?)/i.test(clean)) {
     return { cursoCompleto: 'Multigrado NT1-NT2', nivel: 'Multigrado NT1-NT2', letra: 'U', regimen: 'No JEC', esMultigrado: true };

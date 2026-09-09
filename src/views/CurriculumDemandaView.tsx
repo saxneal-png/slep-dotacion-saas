@@ -16,13 +16,20 @@ import {
   PLANES_MINEDUC,
   obtenerPlanPorCurso,
   calcularDemandaNormativaPieCurso,
-  autoAsignarHorasPieCursos
+  autoAsignarHorasPieCursos,
+  esModalidadAdultos,
+  esModalidadMultigradoOCombinado
 } from '@slep/mineduc-engine';
 import {
   ModalAsignarDocencia,
   ModalAsignarCoDocencia,
   ModalAsignarPie
 } from '../components/CurriculumAsignacionModals';
+import { CursoModalForm } from './curriculum/components/CursoModalForm';
+import { CursoNeeModal } from './curriculum/components/CursoNeeModal';
+import { MallaPlanPanel } from './curriculum/components/MallaPlanPanel';
+import { CurriculumStatsHeader } from './curriculum/components/CurriculumStatsHeader';
+import { CurriculumFilterBar } from './curriculum/components/CurriculumFilterBar';
 
 export interface CurriculumDemandaViewProps {
   colegio: Establecimiento | null;
@@ -36,12 +43,42 @@ export interface CurriculumDemandaViewProps {
   periodoActivo?: number;
 }
 
-const NIVELES_DISPONIBLES = [
+const NIVELES_REGULARES = [
+  'Pre-Kínder', 'Kínder',
   '1° Básico', '2° Básico', '3° Básico', '4° Básico',
   '5° Básico', '6° Básico', '7° Básico', '8° Básico',
   '1° Medio', '2° Medio',
   '3° Medio (Humanístico-Científico)', '4° Medio (Humanístico-Científico)',
   '3° Medio (Técnico-Profesional)', '4° Medio (Técnico-Profesional)'
+];
+
+const NIVELES_MULTIGRADO_PRESETS = [
+  'Multigrado NT1-NT2',
+  'Multigrado 1°-2° Básico',
+  'Multigrado 3°-4° Básico',
+  'Multigrado 5°-6° Básico',
+  'Multigrado 7°-8° Básico',
+  'Multigrado 1° a 6° Básico',
+  'Multigrado 1° a 8° Básico'
+];
+
+const NIVELES_EPJA_OFICIALES = [
+  { id: 'EPJA Básica - 1° Nivel Básico (1° a 4° Básico)', label: 'EPJA Básica - 1° Nivel (1° a 4° Básico - 20 HA)', horasDefecto: 20, ciclo: 'Básica Adultos' },
+  { id: 'EPJA Básica - 2° Nivel Básico (5° a 6° Básico)', label: 'EPJA Básica - 2° Nivel (5° a 6° Básico - 22 HA)', horasDefecto: 22, ciclo: 'Básica Adultos' },
+  { id: 'EPJA Básica - 3° Nivel Básico (7° a 8° Básico)', label: 'EPJA Básica - 3° Nivel (7° a 8° Básico - 22 HA)', horasDefecto: 22, ciclo: 'Básica Adultos' },
+  { id: 'EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)', label: 'EPJA Media HC - 1° Nivel (1° y 2° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
+  { id: 'EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)', label: 'EPJA Media HC - 2° Nivel (3° y 4° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
+  { id: 'EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)', label: 'EPJA Media TP - 1° Nivel (1° y 2° Medio TP - 32 HA)', horasDefecto: 32, ciclo: 'Media TP Adultos' },
+  { id: 'EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)', label: 'EPJA Media TP - 2° Nivel (3° y 4° Medio TP - 34 HA)', horasDefecto: 34, ciclo: 'Media TP Adultos' }
+];
+
+const GRADOS_COMBINABLES = [
+  'Pre-Kínder', 'Kínder',
+  '1° Básico', '2° Básico', '3° Básico', '4° Básico',
+  '5° Básico', '6° Básico', '7° Básico', '8° Básico',
+  '1° Medio', '2° Medio', '3° Medio', '4° Medio',
+  '1° Nivel Básico Adultos', '2° Nivel Básico Adultos', '3° Nivel Básico Adultos',
+  '1° Nivel Medio Adultos', '2° Nivel Medio Adultos'
 ];
 
 const TIPOS_APOYO_PIE = [
@@ -63,9 +100,12 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   onEliminarAsignacion,
   periodoActivo = 2026
 }) => {
-  // Modal de Curso
+  // Modal de Curso Avanzado
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
+  const [categoriaModalCurso, setCategoriaModalCurso] = useState<'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA'>('REGULAR');
   const [nivel, setNivel] = useState('1° Básico');
+  const [gradosCombinadosSeleccionados, setGradosCombinadosSeleccionados] = useState<string[]>(['1° Básico', '2° Básico']);
+  const [nombrePersonalizadoCombinado, setNombrePersonalizadoCombinado] = useState('');
   const [letra, setLetra] = useState('A');
   const [regimen, setRegimen] = useState<'JEC' | 'No JEC'>('JEC');
   const [regimenProporcionModal, setRegimenProporcionModal] = useState<'65_35' | '60_40'>('65_35');
@@ -78,7 +118,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [cursoSeleccionadoPlan, setCursoSeleccionadoPlan] = useState<string>(cursos[0]?.id || '');
   const [tabCurso, setTabCurso] = useState<'docencia' | 'codocencia' | 'pie' | 'malla'>('docencia');
   const [busquedaCurso, setBusquedaCurso] = useState('');
-  const [filtroCicloCurso, setFiltroCicloCurso] = useState<'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP'>('TODOS');
+  const [filtroCicloCurso, setFiltroCicloCurso] = useState<'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA'>('TODOS');
   const [filtroRegimenCurso, setFiltroRegimenCurso] = useState<'TODOS' | 'JEC' | 'No JEC'>('TODOS');
   const [filtroCoberturaCurso, setFiltroCoberturaCurso] = useState<'TODOS' | 'COMPLETO' | 'DEFICIT' | 'SOBRE'>('TODOS');
 
@@ -160,18 +200,43 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   const handleCrearCurso = (e: React.FormEvent) => {
     e.preventDefault();
+    let nivelFinal = nivel;
+    let esMulti = false;
+    let esComb = false;
+    let tipoMod: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' = 'REGULAR';
+
+    if (categoriaModalCurso === 'MULTIGRADO') {
+      esMulti = true;
+      tipoMod = 'MULTIGRADO';
+      nivelFinal = nivel;
+    } else if (categoriaModalCurso === 'COMBINADO') {
+      esComb = true;
+      tipoMod = 'COMBINADO';
+      nivelFinal = nombrePersonalizadoCombinado.trim() || `Curso Combinado (${gradosCombinadosSeleccionados.join(' - ')})`;
+    } else if (categoriaModalCurso === 'EPJA') {
+      esMulti = false;
+      nivelFinal = nivel;
+      if (nivel.includes('Media TP')) tipoMod = 'EPJA_MEDIA_TP';
+      else if (nivel.includes('Media HC')) tipoMod = 'EPJA_MEDIA_HC';
+      else tipoMod = 'EPJA_BASICA';
+    }
+
     const nuevo: CursoSae = {
       id: `curso-${Date.now()}`,
       rbd: colegio.rbd,
       periodo: periodoActivo,
-      nivel,
-      letra: letra.trim().toUpperCase(),
+      nivel: nivelFinal,
+      letra: letra.trim().toUpperCase() || 'U',
       regimen,
       regimenProporcion: regimenProporcionModal,
       cupoSae: Number(cupoSae),
       matriculaProyectada: Number(matriculaProyectada),
       alumnosNeet: Number(alumnosNeet),
-      alumnosNeep: Number(alumnosNeep)
+      alumnosNeep: Number(alumnosNeep),
+      esMultigrado: esMulti,
+      esCombinado: esComb,
+      tipoModalidad: tipoMod,
+      gradosCombinados: categoriaModalCurso === 'COMBINADO' ? gradosCombinadosSeleccionados : undefined
     };
     onGuardarCurso(nuevo);
     setModalCursoOpen(false);
@@ -442,13 +507,17 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     let matchCiclo = true;
     const n = c.nivel.toLowerCase();
     if (filtroCicloCurso === 'PARVULARIA') {
-      matchCiclo = n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || n.includes('párv') || n.includes('parv');
+      matchCiclo = (n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || n.includes('párv') || n.includes('parv')) && !esModalidadAdultos(c.nivel);
     } else if (filtroCicloCurso === 'BASICA') {
-      matchCiclo = n.includes('básico') || n.includes('basico') || n.includes('básica') || n.includes('basica');
+      matchCiclo = (n.includes('básico') || n.includes('basico') || n.includes('básica') || n.includes('basica')) && !esModalidadAdultos(c.nivel) && !c.esMultigrado && !c.esCombinado && !esModalidadMultigradoOCombinado(c.nivel);
     } else if (filtroCicloCurso === 'MEDIA_HC') {
-      matchCiclo = (n.includes('medio') || n.includes('media')) && !n.includes('tp') && !n.includes('técnico') && !n.includes('tecnico');
+      matchCiclo = (n.includes('medio') || n.includes('media')) && !n.includes('tp') && !n.includes('técnico') && !n.includes('tecnico') && !esModalidadAdultos(c.nivel);
     } else if (filtroCicloCurso === 'MEDIA_TP') {
-      matchCiclo = n.includes('tp') || n.includes('técnico') || n.includes('tecnico') || n.includes('profesional');
+      matchCiclo = (n.includes('tp') || n.includes('técnico') || n.includes('tecnico') || n.includes('profesional')) && !esModalidadAdultos(c.nivel);
+    } else if (filtroCicloCurso === 'MULTIGRADO_COMBINADO') {
+      matchCiclo = Boolean(c.esMultigrado || c.esCombinado || esModalidadMultigradoOCombinado(c.nivel));
+    } else if (filtroCicloCurso === 'EPJA') {
+      matchCiclo = Boolean(esModalidadAdultos(c.nivel) || c.tipoModalidad?.startsWith('EPJA'));
     }
 
     const matchRegimen = filtroRegimenCurso === 'TODOS' || c.regimen === filtroRegimenCurso;
@@ -475,13 +544,13 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         <div>
           <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-bold">
             <School className="w-3.5 h-3.5" />
-            Bases Curriculares Oficiales MINEDUC & Decreto 170
+            Bases Curriculares Oficiales MINEDUC, Multigrado, EPJA & Decreto 170
           </div>
           <h2 className="text-xl font-bold text-slate-800 mt-1">
             Planes de Estudio & Asignación Docente / PIE - {colegio.nombre}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Asigna asignaturas de la malla obligatoria y co-docencia de inclusión a cada curso con control normativo de horas en tiempo real.
+            Asigna asignaturas de la malla obligatoria, multigrado, EPJA y co-docencia de inclusión a cada curso con control normativo de horas en tiempo real.
           </p>
         </div>
 
@@ -499,7 +568,12 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
           </div>
 
           <button
-            onClick={() => setModalCursoOpen(true)}
+            onClick={() => {
+              setCategoriaModalCurso('REGULAR');
+              setNivel('1° Básico');
+              setRegimen('JEC');
+              setModalCursoOpen(true);
+            }}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -527,7 +601,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
             <div className="relative">
               <input
                 type="text"
-                placeholder="Buscar curso (ej: 1° Básico, 4° Medio)..."
+                placeholder="Buscar curso (ej: 1° Básico, Multigrado, EPJA)..."
                 value={busquedaCurso}
                 onChange={e => setBusquedaCurso(e.target.value)}
                 className="w-full px-3 pr-7 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:bg-white focus:outline-none"
@@ -550,10 +624,12 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 className="w-full px-2 py-1 text-[11px] font-semibold border border-slate-200 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-orange-500"
               >
                 <option value="TODOS">Todos los Ciclos</option>
-                <option value="PARVULARIA">Parvularia</option>
-                <option value="BASICA">Básica (1°-8°)</option>
-                <option value="MEDIA_HC">Media HC</option>
-                <option value="MEDIA_TP">Media TP</option>
+                <option value="PARVULARIA">Parvularia Regular</option>
+                <option value="BASICA">Básica Regular (1°-8°)</option>
+                <option value="MEDIA_HC">Media HC Regular</option>
+                <option value="MEDIA_TP">Media TP Regular</option>
+                <option value="MULTIGRADO_COMBINADO">Multigrado / Combinados</option>
+                <option value="EPJA">Adultos (EPJA)</option>
               </select>
 
               {/* Régimen */}
@@ -672,11 +748,26 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <div className="font-bold text-slate-800 flex flex-wrap items-center gap-1.5">
                           <span>{c.nivel} {c.letra}</span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-semibold">
                             {c.regimen}
                           </span>
+                          {c.esMultigrado || esModalidadMultigradoOCombinado(c.nivel) ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold border border-cyan-200">
+                              Multigrado
+                            </span>
+                          ) : null}
+                          {c.esCombinado ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 font-bold border border-purple-200">
+                              Combinado
+                            </span>
+                          ) : null}
+                          {esModalidadAdultos(c.nivel) || c.tipoModalidad?.startsWith('EPJA') ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 font-bold border border-indigo-200">
+                              EPJA
+                            </span>
+                          ) : null}
                         </div>
                         <div className="text-[10px] text-slate-500">
                           Matrícula: <strong className="text-slate-700">{c.matriculaProyectada}</strong> est. (Cupo {c.cupoSae})
@@ -1639,57 +1730,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 </div>
               )}
 
-              {/* ========================================================= */}
-              {/* SUBPESTAÑA 3: MALLA Y PLAN OFICIAL MINEDUC                */}
-              {/* ========================================================= */}
+              {/* SUBPESTAÑA 3: MALLA Y PLAN OFICIAL MINEDUC */}
               {tabCurso === 'malla' && (
-                <div className="space-y-4 pt-2">
-                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table className="w-full text-left text-xs text-slate-600">
-                      <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b">
-                        <tr>
-                          <th className="px-4 py-2.5">Subsector / Asignatura Oficial MINEDUC</th>
-                          <th className="px-4 py-2.5 text-center">Horas Semanales Sugeridas (HA)</th>
-                          <th className="px-4 py-2.5 text-center">Minutos Cronológicos</th>
-                          <th className="px-4 py-2.5 text-right">% del Plan</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {planActivo.asignaturasBase.map((asig, idx) => {
-                          const mins = asig.horasSugeridas * 45;
-                          const pct = Math.round((asig.horasSugeridas / planActivo.totalHorasPlan) * 100);
-
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50/80">
-                              <td className="px-4 py-2.5 font-medium text-slate-800 flex items-center gap-2">
-                                <BookOpen className="w-3.5 h-3.5 text-slate-400" />
-                                {asig.nombre}
-                              </td>
-                              <td className="px-4 py-2.5 text-center font-bold text-slate-700">
-                                {asig.horasSugeridas} HA
-                              </td>
-                              <td className="px-4 py-2.5 text-center text-slate-500">
-                                {Math.floor(mins / 60)}h {mins % 60}m
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-semibold text-slate-600">
-                                {pct}%
-                              </td>
-                            </tr>
-                          );
-                        })}
-
-                        {planActivo.horasLibreDisposicion > 0 && (
-                          <tr className="bg-amber-50/60 font-semibold text-amber-900">
-                            <td className="px-4 py-2.5">Horas de Libre Disposición (Proyecto Educativo Institucional)</td>
-                            <td className="px-4 py-2.5 text-center font-bold">{planActivo.horasLibreDisposicion} HA</td>
-                            <td className="px-4 py-2.5 text-center">{Math.floor(planActivo.horasLibreDisposicion * 45 / 60)}h {(planActivo.horasLibreDisposicion * 45) % 60}m</td>
-                            <td className="px-4 py-2.5 text-right">{Math.round((planActivo.horasLibreDisposicion / planActivo.totalHorasPlan) * 100)}%</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <MallaPlanPanel planActivo={planActivo} />
               )}
             </div>
           ) : (
@@ -1700,152 +1743,17 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         </div>
       </div>
 
-      {/* ========================================================= */}
-      {/* MODAL 1: AGREGAR CURSO                                    */}
-      {/* ========================================================= */}
-      {modalCursoOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-            <h3 className="text-base font-bold text-slate-800 mb-4">
-              Agregar Nuevo Curso / Sección
-            </h3>
+      {/* MODAL 1: AGREGAR CURSO (REGULAR, MULTIGRADO, COMBINADO, EPJA) */}
+      <CursoModalForm
+        isOpen={modalCursoOpen}
+        onClose={() => setModalCursoOpen(false)}
+        rbd={colegio.rbd}
+        periodoActivo={periodoActivo}
+        onGuardarCurso={onGuardarCurso}
+        onCursoCreado={(nuevoId) => setCursoSeleccionadoPlan(nuevoId)}
+      />
 
-            <form onSubmit={handleCrearCurso} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nivel Educativo *</label>
-                <select
-                  value={nivel}
-                  onChange={e => setNivel(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-medium"
-                >
-                  {NIVELES_DISPONIBLES.map(n => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Letra / Sección *</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={2}
-                    value={letra}
-                    onChange={e => setLetra(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Jornada *</label>
-                  <select
-                    value={regimen}
-                    onChange={e => setRegimen(e.target.value as any)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                  >
-                    <option value="JEC">JEC (Completa - 38 HA)</option>
-                    <option value="No JEC">No JEC (Media - 30 HA)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Proporción Docente *</label>
-                  <select
-                    value={regimenProporcionModal}
-                    onChange={e => setRegimenProporcionModal(e.target.value as any)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-semibold text-xs"
-                  >
-                    <option value="65_35">65/35 (Estándar)</option>
-                    <option value="60_40">60/40 (Vulnerabilidad / 1° Ciclo)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Cupo SAE Declarado</label>
-                  <input
-                    type="number"
-                    min="10"
-                    max="50"
-                    required
-                    value={cupoSae}
-                    onChange={e => setCupoSae(parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Matrícula Proyectada</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="50"
-                    required
-                    value={matriculaProyectada}
-                    onChange={e => setMatriculaProyectada(parseInt(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold text-orange-600"
-                  />
-                </div>
-              </div>
-
-              {/* Matrícula PIE para el cálculo de Demanda Decreto 170 */}
-              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200 space-y-2">
-                <div className="text-[11px] font-bold text-purple-900 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                  Matrícula PIE Inicial (Decreto 170)
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-purple-800 mb-1">Alumnos NEET (máx 5)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      value={alumnosNeet}
-                      onChange={e => setAlumnosNeet(parseInt(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 border border-purple-300 rounded focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-semibold text-purple-800 mb-1">Alumnos NEEP (máx 2)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      value={alumnosNeep}
-                      onChange={e => setAlumnosNeep(parseInt(e.target.value) || 0)}
-                      className="w-full px-2 py-1.5 border border-purple-300 rounded focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setModalCursoOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow"
-                >
-                  Guardar Curso
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* MODALES AISLADOS DE ASIGNACIÓN (0 LAG AL TIPEAR)          */}
-      {/* ========================================================= */}
+      {/* MODALES AISLADOS DE ASIGNACIÓN (0 LAG AL TIPEAR) */}
       {onGuardarAsignacion && (
         <>
           <ModalAsignarDocencia
@@ -1895,89 +1803,26 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         </>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL 4: AJUSTAR ALUMNOS NEET / NEEP DEL CURSO            */}
-      {/* ========================================================= */}
-      {modalNeeOpen && cursoActivo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 border border-slate-200">
-            <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
-              <Users className="w-4 h-4 text-purple-600" />
-              Matrícula PIE: {cursoActivo.nivel} {cursoActivo.letra}
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Ajusta los estudiantes con NEE para recalcular la demanda normativa de Educadoras Diferenciales y Profesionales PAE.
-            </p>
-
-            <form
-              onSubmit={e => {
-                e.preventDefault();
-                onGuardarCurso({
-                  ...cursoActivo,
-                  alumnosNeet: Number(editNeet),
-                  alumnosNeep: Number(editNeep)
-                });
-                setModalNeeOpen(false);
-              }}
-              className="space-y-4 text-xs"
-            >
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Estudiantes Transitorios (NEET) - Máx 5
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="15"
-                  required
-                  value={editNeet}
-                  onChange={e => setEditNeet(parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 text-base"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Estudiantes Permanentes (NEEP) - Máx 2
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="10"
-                  required
-                  value={editNeep}
-                  onChange={e => setEditNeep(parseInt(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-900 text-base"
-                />
-              </div>
-
-              {Number(editNeet) > 5 || Number(editNeep) > 2 ? (
-                <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-[11px] flex items-start gap-1.5">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Aforo excedido:</strong> Decreto 170 fija tope de 5 NEET y 2 NEEP por sala. Requerirá autorización fundada de la SEREMI.
-                  </span>
-                </div>
-              ) : null}
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setModalNeeOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg shadow"
-                >
-                  Guardar Cupos
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* MODAL 4: AJUSTAR ALUMNOS NEET / NEEP DEL CURSO */}
+      {cursoActivo && (
+        <CursoNeeModal
+          isOpen={modalNeeOpen}
+          onClose={() => setModalNeeOpen(false)}
+          cursoNivel={cursoActivo.nivel}
+          cursoLetra={cursoActivo.letra}
+          editNeet={editNeet}
+          setEditNeet={setEditNeet}
+          editNeep={editNeep}
+          setEditNeep={setEditNeep}
+          onGuardar={() => {
+            onGuardarCurso({
+              ...cursoActivo,
+              alumnosNeet: Number(editNeet),
+              alumnosNeep: Number(editNeep)
+            });
+            setModalNeeOpen(false);
+          }}
+        />
       )}
     </div>
   );

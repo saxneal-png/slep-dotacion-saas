@@ -1,0 +1,59 @@
+import { Establecimiento, CursoSae, Docente, AsignacionHoraria } from '../../types';
+
+export interface CurriculumDemandaViewProps {
+  colegio: Establecimiento | null;
+  cursos: CursoSae[];
+  docentes?: Docente[];
+  asignaciones?: AsignacionHoraria[];
+  onGuardarCurso: (curso: CursoSae) => void;
+  onEliminarCurso: (id: string) => void;
+  onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void;
+  onEliminarAsignacion?: (id: string) => Promise<void> | void;
+  periodoActivo?: number;
+}
+
+export const NIVELES_REGULARES = [
+  'Pre-Kínder', 'Kínder',
+  '1° Básico', '2° Básico', '3° Básico', '4° Básico',
+  '5° Básico', '6° Básico', '7° Básico', '8° Básico',
+  '1° Medio', '2° Medio',
+  '3° Medio (Humanístico-Científico)', '4° Medio (Humanístico-Científico)',
+  '3° Medio (Técnico-Profesional)', '4° Medio (Técnico-Profesional)'
+];
+
+export const NIVELES_MULTIGRADO_PRESETS = [
+  'Multigrado NT1-NT2',
+  'Multigrado 1°-2° Básico',
+  'Multigrado 3°-4° Básico',
+  'Multigrado 5°-6° Básico',
+  'Multigrado 7°-8° Básico',
+  'Multigrado 1° a 6° Básico',
+  'Multigrado 1° a 8° Básico'
+];
+
+export const NIVELES_EPJA_OFICIALES = [
+  { id: 'EPJA Básica - 1° Nivel Básico (1° a 4° Básico)', label: 'EPJA Básica - 1° Nivel (1° a 4° Básico - 20 HA)', horasDefecto: 20, ciclo: 'Básica Adultos' },
+  { id: 'EPJA Básica - 2° Nivel Básico (5° a 6° Básico)', label: 'EPJA Básica - 2° Nivel (5° a 6° Básico - 22 HA)', horasDefecto: 22, ciclo: 'Básica Adultos' },
+  { id: 'EPJA Básica - 3° Nivel Básico (7° a 8° Básico)', label: 'EPJA Básica - 3° Nivel (7° a 8° Básico - 22 HA)', horasDefecto: 22, ciclo: 'Básica Adultos' },
+  { id: 'EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)', label: 'EPJA Media HC - 1° Nivel (1° y 2° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
+  { id: 'EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)', label: 'EPJA Media HC - 2° Nivel (3° y 4° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
+  { id: 'EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)', label: 'EPJA Media TP - 1° Nivel (1° y 2° Medio TP - 32 HA)', horasDefecto: 32, ciclo: 'Media TP Adultos' },
+  { id: 'EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)', label: 'EPJA Media TP - 2° Nivel (3° y 4° Medio TP - 34 HA)', horasDefecto: 34, ciclo: 'Media TP Adultos' }
+];
+
+export const GRADOS_COMBINABLES = [
+  'Pre-Kínder', 'Kínder',
+  '1° Básico', '2° Básico', '3° Básico', '4° Básico',
+  '5° Básico', '6° Básico', '7° Básico', '8° Básico',
+  '1° Medio', '2° Medio', '3° Medio', '4° Medio',
+  '1° Nivel Básico Adultos', '2° Nivel Básico Adultos', '3° Nivel Básico Adultos',
+  '1° Nivel Medio Adultos', '2° Nivel Medio Adultos'
+];
+
+export const TIPOS_APOYO_PIE = [
+  { id: 'Co-Docencia en Aula Regular', label: 'Co-Docencia en Aula Regular (Docente Diferencial)', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
+  { id: 'Aula de Recursos / Apoyo Especializado', label: 'Aula de Recursos / Apoyo Especializado', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
+  { id: 'Apoyo Multidisciplinario / Clínico PAE', label: 'Apoyo Profesional PAE (Fonoaudiólogo / Psicólogo / TO)', estamentoSugerido: 'PROFESIONAL_PAE' },
+  { id: 'Apoyo Técnico en Aula', label: 'Apoyo Técnico en Educación Especial', estamentoSugerido: 'TECNICO_ESPECIAL' },
+  { id: 'Trabajo Colaborativo / Co-Planificación', label: 'Trabajo Colaborativo Art. 86 (Docente de Aula)', estamentoSugerido: 'DOCENTE_AULA' }
+];

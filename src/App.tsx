@@ -3,17 +3,17 @@ import { Header } from './components/Header';
 import { SchoolNavigatorModal } from './components/SchoolNavigatorModal';
 import { SaveBackupModal } from './components/SaveBackupModal';
 
-import { CarteraView } from './views/CarteraView';
-import { SalasSaeView } from './views/SalasSaeView';
-import { CurriculumDemandaView } from './views/CurriculumDemandaView';
-import { PieAuditorView } from './views/PieAuditorView';
-import { DocentesDotacionView } from './views/DocentesDotacionView';
-import { BalanzaDiagnosticoView } from './views/BalanzaDiagnosticoView';
-import { ConsolidadorMasterView } from './views/ConsolidadorMasterView';
-import { SigeIngestaView } from './views/SigeIngestaView';
-import { ColegioWorkspaceView } from './views/ColegioWorkspaceView';
-import { AnalizadorDotacionView } from './views/AnalizadorDotacionView';
-import { EstadisticasView } from './views/EstadisticasView';
+const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
+const SalasSaeView = React.lazy(() => import('./views/SalasSaeView').then(m => ({ default: m.SalasSaeView })));
+const CurriculumDemandaView = React.lazy(() => import('./views/CurriculumDemandaView').then(m => ({ default: m.CurriculumDemandaView })));
+const PieAuditorView = React.lazy(() => import('./views/PieAuditorView').then(m => ({ default: m.PieAuditorView })));
+const DocentesDotacionView = React.lazy(() => import('./views/DocentesDotacionView').then(m => ({ default: m.DocentesDotacionView })));
+const BalanzaDiagnosticoView = React.lazy(() => import('./views/BalanzaDiagnosticoView').then(m => ({ default: m.BalanzaDiagnosticoView })));
+const ConsolidadorMasterView = React.lazy(() => import('./views/ConsolidadorMasterView').then(m => ({ default: m.ConsolidadorMasterView })));
+const SigeIngestaView = React.lazy(() => import('./views/SigeIngestaView').then(m => ({ default: m.SigeIngestaView })));
+const ColegioWorkspaceView = React.lazy(() => import('./views/ColegioWorkspaceView').then(m => ({ default: m.ColegioWorkspaceView })));
+const AnalizadorDotacionView = React.lazy(() => import('./views/AnalizadorDotacionView').then(m => ({ default: m.AnalizadorDotacionView })));
+const EstadisticasView = React.lazy(() => import('./views/EstadisticasView').then(m => ({ default: m.EstadisticasView })));
 
 import {
   Establecimiento,
@@ -518,6 +518,14 @@ export const App: React.FC = () => {
 
       {/* Contenedor Principal de Vistas */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <React.Suspense
+          fallback={
+            <div className="flex flex-col items-center justify-center min-h-[400px] py-16 space-y-4 animate-in fade-in">
+              <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-600 rounded-full animate-spin" />
+              <p className="text-sm font-semibold text-slate-500">Cargando módulo...</p>
+            </div>
+          }
+        >
         {vistaActiva === 'cartera' && (
           <CarteraView
             colegios={colegios}
@@ -697,6 +705,7 @@ export const App: React.FC = () => {
             }}
           />
         )}
+        </React.Suspense>
       </main>
 
       {/* Modal Navegador Rápido de Colegios (Spotlight / Ctrl+K) */}

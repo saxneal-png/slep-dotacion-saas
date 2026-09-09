@@ -42,8 +42,8 @@ export interface CursoSae {
   id: string;
   rbd: string;
   periodo?: number; // 2026 | 2027
-  nivel: string; // ej: "1° Básico", "4° Medio HC"
-  letra: string; // "A", "B"
+  nivel: string; // ej: "1° Básico", "4° Medio HC", "Multigrado 1°-2° Básico", "EPJA - 1° Nivel Básico"
+  letra: string; // "A", "B", "U"
   regimen: 'JEC' | 'No JEC';
   regimenProporcion?: '65_35' | '60_40';
   salaId?: string;
@@ -52,6 +52,10 @@ export interface CursoSae {
   alumnosNeet: number; // Necesidades Educativas Transitorias
   alumnosNeep: number; // Necesidades Educativas Permanentes
   talleresJec?: TallerJec[];
+  esMultigrado?: boolean;
+  esCombinado?: boolean;
+  tipoModalidad?: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL';
+  gradosCombinados?: string[]; // ej: ["1° Básico", "2° Básico"] o ["1° Nivel", "2° Nivel"]
 }
 
 export type CalidadJuridicaDocente = 'TITULAR' | 'CONTRATA';
