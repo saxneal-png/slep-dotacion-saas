@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { Establecimiento, Docente, CursoSae, AsignacionHoraria } from '../types';
 import { obtenerTramoMineduc, RAW_65_35, RAW_60_40, parseHHMMToMinutes } from '@slep/mineduc-engine';
+import { normalizeText } from './analizador/classifier';
 
 /**
  * Convierte un índice numérico de columna (1-based: 1=A, 2=B, etc.) a letra Excel (A, B, ..., Z, AA, AB, ...)
@@ -71,7 +72,7 @@ export function ordenarCursosEstablecimiento(cursos: CursoSae[]): CursoSae[] {
 /**
  * Obtiene los minutos de recreo y horas no lectivas según el régimen y las horas de Subvención General
  */
-function obtenerMinutosRecreoYHnl(horasSubGral: number, es6040: boolean): { recreoMinutos: number; hnlMinutos: number } {
+export function obtenerMinutosRecreoYHnl(horasSubGral: number, es6040: boolean): { recreoMinutos: number; hnlMinutos: number } {
   const horasEnteras = Math.round(horasSubGral);
   if (horasEnteras <= 0) {
     return { recreoMinutos: 0, hnlMinutos: 0 };
@@ -104,8 +105,79 @@ function obtenerMinutosRecreoYHnl(horasSubGral: number, es6040: boolean): { recr
 }
 
 /**
+ * Clasifica a los docentes en dos apartados principales:
+ * 1. Docentes con Plan de Estudio Regular (Aula troncal, asignaturas, párvulos).
+ * 2. Docentes PIE, Codocentes, Talleristas de apoyo/extensión y Equipo Directivo/Gestión.
+ */
+export function clasificarDocentesEnSecciones(
+  docentes: Docente[],
+  asignaciones: AsignacionHoraria[]
+): {
+  seccion1_PlanEstudio: Docente[];
+  seccion2_ApoyoYDirectivos: Docente[];
+} {
+  const seccion1: Docente[] = [];
+  const seccion2: Docente[] = [];
+
+  for (const doc of docentes) {
+    const asigsDoc = asignaciones.filter(a => a.docenteId === doc.id || a.docenteId === doc.run || a.docenteRun === doc.run);
+
+    const esDirectivoOTecnico = doc.estamento === 'DIRECTIVO' ||
+      doc.estamento === 'TECNICO_PEDAGOGICO' ||
+      doc.estamento === 'COORDINADOR_CRA' ||
+      (Number(doc.horasDirectivas || 0) + Number(doc.horasTecnicoPedagogicas || 0) + Number(doc.horasInspectorGeneral || 0)) >= doc.horasContrato;
+
+    const esDocentePieOpae = doc.estamento === 'DOCENTE_DIFERENCIAL' ||
+      doc.estamento === 'PROFESIONAL_PAE' ||
+      doc.estamento === 'TECNICO_ESPECIAL' ||
+      doc.estamento === 'ASISTENTE_AULA' ||
+      (Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0)) >= (doc.horasContrato * 0.7);
+
+    // Revisar asignaciones del docente
+    let tieneAsignaturasPlanEstudio = false;
+    let soloEsCodocenciaOTaller = true;
+
+    for (const a of asigsDoc) {
+      const nombreNorm = normalizeText(a.asignatura || '');
+      const esCoDoc = Boolean(a.esCoDocencia || nombreNorm.includes('co-doc') || nombreNorm.includes('codoc'));
+      const esTallerExt = Boolean(a.esTallerSep || nombreNorm.includes('extension') || nombreNorm.includes('extraescolar'));
+      const esAulaRecursos = nombreNorm.includes('aula de recursos') || nombreNorm.includes('aula comun y aula de recursos');
+
+      if (!esCoDoc && !esTallerExt && !esAulaRecursos && Number(a.horasPedagogicasAula || 0) > 0) {
+        tieneAsignaturasPlanEstudio = true;
+        soloEsCodocenciaOTaller = false;
+      }
+    }
+
+    // Si tiene asignaturas regulares del plan de estudio y no es directivo puro ni PIE exclusivo
+    if (tieneAsignaturasPlanEstudio && !esDirectivoOTecnico && !esDocentePieOpae) {
+      seccion1.push(doc);
+    } else if (asigsDoc.length > 0 && !soloEsCodocenciaOTaller && !esDirectivoOTecnico && !esDocentePieOpae) {
+      seccion1.push(doc);
+    } else {
+      // Pertenece a Sección 2 (PIE, Co-docentes, Talleristas, Directivos)
+      seccion2.push(doc);
+    }
+  }
+
+  // Ordenar alfabéticamente dentro de cada sección
+  const sortDoc = (a: Docente, b: Docente) => {
+    const cmpApellidos = (a.apellidos || '').localeCompare(b.apellidos || '');
+    if (cmpApellidos !== 0) return cmpApellidos;
+    return (a.nombres || '').localeCompare(b.nombres || '');
+  };
+
+  return {
+    seccion1_PlanEstudio: seccion1.sort(sortDoc),
+    seccion2_ApoyoYDirectivos: seccion2.sort(sortDoc)
+  };
+}
+
+/**
  * Genera el archivo Excel oficial de la Matriz de Dotación por Escuela
- * con formato fiel al modelo SLEP Valle Diguillín y celdas horarias en [h]:mm.
+ * con formato fiel al modelo SLEP Valle Diguillín (Google Sheets oficial),
+ * separando la Sección 1 (Plan de Estudio) de la Sección 2 (PIE, Codocentes, Talleristas y Directivos)
+ * y formateando celdas horarias en [h]:mm.
  */
 export async function generarExcelMatrizDotacionColegio(
   establecimiento: Establecimiento,
@@ -127,7 +199,6 @@ export async function generarExcelMatrizDotacionColegio(
   // Preparar y ordenar los cursos de la escuela
   let cursosOrdenados = ordenarCursosEstablecimiento(cursos.filter(c => c.rbd === establecimiento.rbd));
   if (cursosOrdenados.length === 0) {
-    // Si no hay cursos registrados, intentar derivar cursos únicos desde las asignaciones
     const cursoIdsUnicos = new Set<string>();
     for (const a of asignaciones) {
       if (a.rbd === establecimiento.rbd && a.cursoId) {
@@ -148,23 +219,7 @@ export async function generarExcelMatrizDotacionColegio(
     cursosOrdenados = ordenarCursosEstablecimiento(cursosOrdenados);
   }
 
-  // Definición de columnas fijas y dinámicas
-  // Col 1: Docente / Asignatura
-  // Col 2: RUT
-  // Col 3: HORAS CONTRATO
-  // Col 4: TITULARES SUB GRAL
-  // Col 5: CONTRATA SUB GRAL
-  // Col 6: TITULARES SEP
-  // Col 7: CONTRATA SEP
-  // Col 8: TITULARES PIE
-  // Col 9: CONTRATA PIE
-  // Col 10 .. (9 + N): Cursos
-  // Col (10 + N): TOTAL HA*
-  // Col (11 + N): TOTAL HC** Sub. Gral
-  // Col (12 + N): TOTAL HC** Sub. SEP
-  // Col (13 + N): TOTAL HC** Sub. PIE
-  // Col (14 + N): TOTAL HC
-
+  // Definición de columnas
   const colIndexDocente = 1;
   const colIndexRut = 2;
   const colIndexContrato = 3;
@@ -184,7 +239,8 @@ export async function generarExcelMatrizDotacionColegio(
   const colIndexTotalHcSubSep = colIndexTotalHa + 2;
   const colIndexTotalHcSubPie = colIndexTotalHa + 3;
   const colIndexTotalHc = colIndexTotalHa + 4;
-  const totalColumnas = colIndexTotalHc;
+  const colIndexObservaciones = colIndexTotalHa + 5;
+  const totalColumnas = colIndexObservaciones;
 
   const colTotalHaLetter = getColumnLetter(colIndexTotalHa);
   const colSubGralLetter = getColumnLetter(colIndexTotalHcSubGral);
@@ -196,12 +252,25 @@ export async function generarExcelMatrizDotacionColegio(
   const headerFill: ExcelJS.FillPattern = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: '000000' } // Negro sólido idéntico al modelo
+    fgColor: { argb: '000000' } // Negro sólido institucional
   };
 
   const headerFont: Partial<ExcelJS.Font> = {
     name: 'Calibri',
     size: 8.5,
+    bold: true,
+    color: { argb: 'FFFFFF' }
+  };
+
+  const sectionDividerFill: ExcelJS.FillPattern = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: '1E293B' } // Slate oscuro institucional
+  };
+
+  const sectionDividerFont: Partial<ExcelJS.Font> = {
+    name: 'Calibri',
+    size: 10,
     bold: true,
     color: { argb: 'FFFFFF' }
   };
@@ -220,63 +289,72 @@ export async function generarExcelMatrizDotacionColegio(
     right: { style: 'thin', color: { argb: 'D1D5DB' } }
   };
 
-  // 1. Configuración de la Fila de Encabezado (Fila 1)
-  const headerRow = ws.getRow(1);
-  headerRow.height = 36;
+  const borderDoubleTotalRow: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: '000000' } },
+    left: { style: 'thin', color: { argb: 'D1D5DB' } },
+    bottom: { style: 'double', color: { argb: '000000' } },
+    right: { style: 'thin', color: { argb: 'D1D5DB' } }
+  };
 
-  headerRow.getCell(colIndexDocente).value = '';
-  headerRow.getCell(colIndexRut).value = '';
-  headerRow.getCell(colIndexContrato).value = 'HORAS\nCONTRATO';
-  headerRow.getCell(colIndexTitSubGral).value = 'TITULARES SUB\nGRAL';
-  headerRow.getCell(colIndexCttaSubGral).value = 'CONTRATA SUB\nGRAL';
-  headerRow.getCell(colIndexTitSep).value = 'TITULARES SEP';
-  headerRow.getCell(colIndexCttaSep).value = 'CONTRATA SEP';
-  headerRow.getCell(colIndexTitPie).value = 'TITULARES PIE';
-  headerRow.getCell(colIndexCttaPie).value = 'CONTRATA\nPIE';
+  // Función interna para renderizar una fila de encabezados de tabla
+  const renderizarEncabezado = (rowIdx: number) => {
+    const row = ws.getRow(rowIdx);
+    row.height = 36;
 
-  // Encabezados de cursos
-  cursosOrdenados.forEach((curso, idx) => {
-    const colIdx = colIndexInicioCursos + idx;
-    headerRow.getCell(colIdx).value = obtenerEtiquetaCortaCurso(curso.nivel, curso.letra);
-  });
+    row.getCell(colIndexDocente).value = 'NOMBRES';
+    row.getCell(colIndexRut).value = 'RUN';
+    row.getCell(colIndexContrato).value = 'HORAS\nCONTRATO';
+    row.getCell(colIndexTitSubGral).value = 'TITULARES SUB\nGRAL';
+    row.getCell(colIndexCttaSubGral).value = 'CONTRATA SUB\nGRAL';
+    row.getCell(colIndexTitSep).value = 'TITULARES SEP';
+    row.getCell(colIndexCttaSep).value = 'CONTRATA SEP';
+    row.getCell(colIndexTitPie).value = 'TITULARES PIE';
+    row.getCell(colIndexCttaPie).value = 'CONTRATA\nPIE';
 
-  headerRow.getCell(colIndexTotalHa).value = 'TOTAL HA*';
-  headerRow.getCell(colIndexTotalHcSubGral).value = 'TOTAL HC** Sub.\nGral';
-  headerRow.getCell(colIndexTotalHcSubSep).value = 'TOTAL HC** Sub.\nSEP';
-  headerRow.getCell(colIndexTotalHcSubPie).value = 'TOTAL HC** Sub.\nPIE';
-  headerRow.getCell(colIndexTotalHc).value = 'TOTAL HC';
-
-  for (let c = 1; c <= totalColumnas; c++) {
-    const cell = headerRow.getCell(c);
-    cell.fill = headerFill;
-    cell.font = headerFont;
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    cell.border = {
-      top: { style: 'thin', color: { argb: '374151' } },
-      left: { style: 'thin', color: { argb: '374151' } },
-      bottom: { style: 'thin', color: { argb: '374151' } },
-      right: { style: 'thin', color: { argb: '374151' } }
-    };
-  }
-
-  // Filtrar y ordenar docentes del colegio
-  const docentesColegio = docentes
-    .filter(d => d.rbd === establecimiento.rbd)
-    .sort((a, b) => {
-      const cmpApellidos = (a.apellidos || '').localeCompare(b.apellidos || '');
-      if (cmpApellidos !== 0) return cmpApellidos;
-      return (a.nombres || '').localeCompare(b.nombres || '');
+    cursosOrdenados.forEach((curso, idx) => {
+      const colIdx = colIndexInicioCursos + idx;
+      row.getCell(colIdx).value = obtenerEtiquetaCortaCurso(curso.nivel, curso.letra);
     });
+
+    row.getCell(colIndexTotalHa).value = 'TOTAL HA*';
+    row.getCell(colIndexTotalHcSubGral).value = 'TOTAL HC** Sub.\nGral';
+    row.getCell(colIndexTotalHcSubSep).value = 'TOTAL HC** Sub.\nSEP';
+    row.getCell(colIndexTotalHcSubPie).value = 'TOTAL HC** Sub.\nPIE';
+    row.getCell(colIndexTotalHc).value = 'TOTAL HC';
+    row.getCell(colIndexObservaciones).value = 'OBSERVACIONES / AUDITORÍA';
+
+    for (let c = 1; c <= totalColumnas; c++) {
+      const cell = row.getCell(c);
+      cell.fill = headerFill;
+      cell.font = headerFont;
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: '374151' } },
+        left: { style: 'thin', color: { argb: '374151' } },
+        bottom: { style: 'thin', color: { argb: '374151' } },
+        right: { style: 'thin', color: { argb: '374151' } }
+      };
+    }
+  };
 
   const es6040 = (establecimiento.porcentajePrioritarios || 0) >= 80;
 
-  let currentRowIdx = 2;
+  // Clasificar docentes en Sección 1 (Plan de Estudio) y Sección 2 (Apoyo, PIE, Codocentes, Talleristas, Directivos)
+  const docentesColegio = docentes.filter(d => d.rbd === establecimiento.rbd);
+  const { seccion1_PlanEstudio, seccion2_ApoyoYDirectivos } = clasificarDocentesEnSecciones(docentesColegio, asignaciones);
 
-  // Renderizar cada bloque de docente
-  for (const docente of docentesColegio) {
-    const teacherStartRow = currentRowIdx;
+  // ===========================================================================
+  // 1. SECCIÓN 1: DOCENTES DE PLAN DE ESTUDIO / AULA REGULAR
+  // ===========================================================================
+  let currentRowIdx = 1;
+  renderizarEncabezado(currentRowIdx);
+  currentRowIdx++;
 
-    // 1. Fila Maestra del Docente (Nombre, RUN, Horas de contrato y desglose de financiamiento)
+  const firstTeacherRowSection1 = currentRowIdx;
+  const filasSujetasTotalesCursos: number[] = [];
+
+  for (const docente of seccion1_PlanEstudio) {
+    // 1. Fila Maestra del Docente
     const masterRow = ws.getRow(currentRowIdx);
     masterRow.height = 18;
 
@@ -317,20 +395,23 @@ export async function generarExcelMatrizDotacionColegio(
     masterRow.getCell(colIndexCttaPie).alignment = { horizontal: 'center', vertical: 'middle' };
     masterRow.getCell(colIndexCttaPie).font = { name: 'Calibri', size: 9 };
 
+    if (docente.aplicaArticulo69) {
+      masterRow.getCell(colIndexObservaciones).value = 'Ley reducción horaria: 24 de 30 en aula (Art. 69)';
+      masterRow.getCell(colIndexObservaciones).font = { name: 'Calibri', size: 8.5, italic: true, color: { argb: '2563EB' } };
+    }
+
     for (let c = 1; c <= totalColumnas; c++) {
       masterRow.getCell(c).border = borderThin;
     }
 
     currentRowIdx++;
 
-    // Obtener asignaciones horarias del docente en este colegio
+    // Asignaciones del docente
     const asigsDocente = asignaciones.filter(
-      a => a.rbd === establecimiento.rbd && (a.docenteId === docente.id || a.docenteId === docente.run)
+      a => a.rbd === establecimiento.rbd && (a.docenteId === docente.id || a.docenteId === docente.run || a.docenteRun === docente.run)
     );
 
-    // Agrupar asignaciones regulares de aula por asignatura
-    const asignaturasMap = new Map<string, Map<string, number>>(); // Asignatura -> (CursoId -> HorasAula)
-
+    const asignaturasMap = new Map<string, Map<string, number>>();
     for (const asig of asigsDocente) {
       const asigNombre = (asig.asignatura || 'Docencia Aula').trim();
       if (!asignaturasMap.has(asigNombre)) {
@@ -345,7 +426,7 @@ export async function generarExcelMatrizDotacionColegio(
     let firstSubjectRow = currentRowIdx;
     let lastSubjectRow = currentRowIdx - 1;
 
-    // 2. Filas de Asignaturas / Carga Lectiva en Cursos
+    // Filas de Asignaturas
     for (const [nombreAsignatura, cursosMap] of asignaturasMap.entries()) {
       const subjectRow = ws.getRow(currentRowIdx);
       subjectRow.height = 17;
@@ -354,7 +435,6 @@ export async function generarExcelMatrizDotacionColegio(
       subjectRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
       subjectRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
 
-      // Llenar horas en cada columna de curso
       let sumaHaFila = 0;
       cursosOrdenados.forEach((curso, idx) => {
         const colIdx = colIndexInicioCursos + idx;
@@ -367,7 +447,6 @@ export async function generarExcelMatrizDotacionColegio(
         }
       });
 
-      // TOTAL HA* (Fórmula =SUMA de las columnas de cursos de esa fila)
       if (numCursos > 0) {
         const colStartLetter = getColumnLetter(colIndexInicioCursos);
         const colEndLetter = getColumnLetter(colIndexFinCursos);
@@ -381,11 +460,10 @@ export async function generarExcelMatrizDotacionColegio(
       subjectRow.getCell(colIndexTotalHa).alignment = { horizontal: 'center', vertical: 'middle' };
       subjectRow.getCell(colIndexTotalHa).font = { name: 'Calibri', size: 9 };
 
-      // TOTAL HC** Sub. Gral: Horas cronológicas equivalentes (HA * 45 / 60) en formato de hora [h]:mm
-      // En Excel, 1 día = 24 hrs. Por lo tanto valor en días = (HA * 45 / 60) / 24 = HA * 45 / 1440.
+      // Conversión HA -> Horas Cronológicas en formato [h]:mm
       const valorHorasDia = (sumaHaFila * 45) / 1440;
       subjectRow.getCell(colIndexTotalHcSubGral).value = {
-        formula: `(${colTotalHaLetter}${currentRowIdx}*45/60)/24`,
+        formula: `((${colTotalHaLetter}${currentRowIdx}*45)/60)/24`,
         result: valorHorasDia
       };
       subjectRow.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
@@ -396,12 +474,12 @@ export async function generarExcelMatrizDotacionColegio(
         subjectRow.getCell(c).border = borderThin;
       }
 
+      filasSujetasTotalesCursos.push(currentRowIdx);
       lastSubjectRow = currentRowIdx;
       currentRowIdx++;
     }
 
-    // 3. Filas de Funciones No Aula y Financiamiento Específico (SEP, PIE, Directivas/UTP)
-    // a) SEP (Coordinación SEP / Taller SEP / Asesoría)
+    // Funciones Fijas SEP / PIE / Directivas
     const horasSepTotal = Number(docente.horasSepTitular || 0) + Number(docente.horasSepContrata || 0);
     const horasSepTaller = Number(docente.horasTallerSep || 0);
     const horasSepEfectivas = Math.max(horasSepTotal, horasSepTaller);
@@ -413,19 +491,15 @@ export async function generarExcelMatrizDotacionColegio(
       sepRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
       sepRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
 
-      const valorSepDia = horasSepEfectivas / 24;
-      sepRow.getCell(colIndexTotalHcSubSep).value = valorSepDia;
+      sepRow.getCell(colIndexTotalHcSubSep).value = horasSepEfectivas / 24;
       sepRow.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
       sepRow.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
       sepRow.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9 };
 
-      for (let c = 1; c <= totalColumnas; c++) {
-        sepRow.getCell(c).border = borderThin;
-      }
+      for (let c = 1; c <= totalColumnas; c++) sepRow.getCell(c).border = borderThin;
       currentRowIdx++;
     }
 
-    // b) PIE (Trabajo Colaborativo / Coordinación PIE)
     const horasPieTotal = Number(docente.horasPieTitular || 0) + Number(docente.horasPieContrata || 0);
     const horasPieColab = Number(docente.horasTrabajoColaborativo || 0) + Number(docente.horasCoordinacionPie || 0);
     const horasPieEfectivas = Math.max(horasPieTotal, horasPieColab);
@@ -437,53 +511,16 @@ export async function generarExcelMatrizDotacionColegio(
       pieRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
       pieRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
 
-      const valorPieDia = horasPieEfectivas / 24;
-      pieRow.getCell(colIndexTotalHcSubPie).value = valorPieDia;
+      pieRow.getCell(colIndexTotalHcSubPie).value = horasPieEfectivas / 24;
       pieRow.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
       pieRow.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
       pieRow.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9 };
 
-      for (let c = 1; c <= totalColumnas; c++) {
-        pieRow.getCell(c).border = borderThin;
-      }
+      for (let c = 1; c <= totalColumnas; c++) pieRow.getCell(c).border = borderThin;
       currentRowIdx++;
     }
 
-    // c) Funciones No Aula Subvención General (Directivas, UTP, Inspectoría, Coordinación)
-    const funcionesNoAulaList: { nombre: string; horas: number }[] = [];
-    if (Number(docente.horasDirectivas || 0) > 0) {
-      funcionesNoAulaList.push({ nombre: 'Horas Directivas', horas: Number(docente.horasDirectivas) });
-    }
-    if (Number(docente.horasTecnicoPedagogicas || 0) > 0) {
-      funcionesNoAulaList.push({ nombre: 'Jefatura UTP / Técnico Pedagógica', horas: Number(docente.horasTecnicoPedagogicas) });
-    }
-    if (Number(docente.horasInspectorGeneral || 0) > 0) {
-      funcionesNoAulaList.push({ nombre: 'Inspectoría General', horas: Number(docente.horasInspectorGeneral) });
-    }
-    if (Number(docente.horasCoordinacion || 0) > 0) {
-      funcionesNoAulaList.push({ nombre: 'Coordinación UTP', horas: Number(docente.horasCoordinacion) });
-    }
-
-    for (const fNoAula of funcionesNoAulaList) {
-      const fRow = ws.getRow(currentRowIdx);
-      fRow.height = 17;
-      fRow.getCell(colIndexDocente).value = fNoAula.nombre;
-      fRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
-      fRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
-
-      const valorDia = fNoAula.horas / 24;
-      fRow.getCell(colIndexTotalHcSubGral).value = valorDia;
-      fRow.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
-      fRow.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
-      fRow.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9 };
-
-      for (let c = 1; c <= totalColumnas; c++) {
-        fRow.getCell(c).border = borderThin;
-      }
-      currentRowIdx++;
-    }
-
-    // 4. Cálculo y Filas de Recreo y Horas No Lectivas (Ley 20.903)
+    // Ley 20.903 (Recreo y Horas No Lectivas)
     const subGralDeclarado = Number(docente.horasSubvencionGeneralTitular || 0) + Number(docente.horasSubvencionGeneralContrata || 0);
     const subGralEfectivo = subGralDeclarado > 0
       ? subGralDeclarado
@@ -491,7 +528,7 @@ export async function generarExcelMatrizDotacionColegio(
 
     const { recreoMinutos, hnlMinutos } = obtenerMinutosRecreoYHnl(subGralEfectivo, es6040);
 
-    // a) Recreo 60/40
+    // Recreo 60/40
     const rowRec6040 = ws.getRow(currentRowIdx);
     rowRec6040.height = 17;
     rowRec6040.getCell(colIndexDocente).value = 'Recreo 60/40';
@@ -505,7 +542,7 @@ export async function generarExcelMatrizDotacionColegio(
     for (let c = 1; c <= totalColumnas; c++) rowRec6040.getCell(c).border = borderThin;
     currentRowIdx++;
 
-    // b) Recreo 65/35
+    // Recreo 65/35
     const rowRec6535 = ws.getRow(currentRowIdx);
     rowRec6535.height = 17;
     rowRec6535.getCell(colIndexDocente).value = 'Recreo 65/35';
@@ -519,7 +556,7 @@ export async function generarExcelMatrizDotacionColegio(
     for (let c = 1; c <= totalColumnas; c++) rowRec6535.getCell(c).border = borderThin;
     currentRowIdx++;
 
-    // c) Horas no lectivas 60/40
+    // Horas no lectivas 60/40
     const rowHnl6040 = ws.getRow(currentRowIdx);
     rowHnl6040.height = 17;
     rowHnl6040.getCell(colIndexDocente).value = 'Horas no lectivas 60/40';
@@ -533,7 +570,7 @@ export async function generarExcelMatrizDotacionColegio(
     for (let c = 1; c <= totalColumnas; c++) rowHnl6040.getCell(c).border = borderThin;
     currentRowIdx++;
 
-    // d) Horas no lectivas 65/35
+    // Horas no lectivas 65/35
     const rowHnl6535 = ws.getRow(currentRowIdx);
     rowHnl6535.height = 17;
     rowHnl6535.getCell(colIndexDocente).value = 'Horas no lectivas 65/35';
@@ -549,7 +586,7 @@ export async function generarExcelMatrizDotacionColegio(
 
     const lastDetailRow = currentRowIdx - 1;
 
-    // 5. Fila Total del Docente
+    // Fila Total del Docente
     const totalRow = ws.getRow(currentRowIdx);
     totalRow.height = 18;
 
@@ -557,7 +594,6 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, bold: true };
     totalRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
 
-    // Total HA* (Suma de las asignaturas)
     if (lastSubjectRow >= firstSubjectRow) {
       totalRow.getCell(colIndexTotalHa).value = {
         formula: `SUM(${colTotalHaLetter}${firstSubjectRow}:${colTotalHaLetter}${lastSubjectRow})`
@@ -568,7 +604,6 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexTotalHa).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHa).font = { name: 'Calibri', size: 9, bold: true };
 
-    // Total HC Sub. Gral
     totalRow.getCell(colIndexTotalHcSubGral).value = {
       formula: `SUM(${colSubGralLetter}${firstDetailRow}:${colSubGralLetter}${lastDetailRow})`,
       result: subGralEfectivo / 24
@@ -577,7 +612,6 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9, bold: true };
 
-    // Total HC Sub. SEP
     totalRow.getCell(colIndexTotalHcSubSep).value = {
       formula: `SUM(${colSepLetter}${firstDetailRow}:${colSepLetter}${lastDetailRow})`,
       result: horasSepEfectivas / 24
@@ -586,7 +620,6 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9, bold: true };
 
-    // Total HC Sub. PIE
     totalRow.getCell(colIndexTotalHcSubPie).value = {
       formula: `SUM(${colPieLetter}${firstDetailRow}:${colPieLetter}${lastDetailRow})`,
       result: horasPieEfectivas / 24
@@ -595,7 +628,6 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9, bold: true };
 
-    // TOTAL HC (Sub. Gral + Sub. SEP + Sub. PIE)
     totalRow.getCell(colIndexTotalHc).value = {
       formula: `SUM(${colSubGralLetter}${currentRowIdx}:${colPieLetter}${currentRowIdx})`,
       result: (Number(docente.horasContrato) || (subGralEfectivo + horasSepEfectivas + horasPieEfectivas)) / 24
@@ -609,9 +641,176 @@ export async function generarExcelMatrizDotacionColegio(
     }
 
     currentRowIdx++;
+  }
 
-    // Fila en blanco de separación entre docentes
+  // Fila de Cierre Sección 1: Totales de Carga Horaria por Curso (Demanda Plan de Estudio)
+  const filaTotalCursos = ws.getRow(currentRowIdx);
+  filaTotalCursos.height = 20;
+  filaTotalCursos.getCell(colIndexDocente).value = 'TOTAL CARGA LECTIVA CURSOS';
+  filaTotalCursos.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, bold: true };
+
+  cursosOrdenados.forEach((curso, idx) => {
+    const colIdx = colIndexInicioCursos + idx;
+    const colLetter = getColumnLetter(colIdx);
+    if (filasSujetasTotalesCursos.length > 0) {
+      filaTotalCursos.getCell(colIdx).value = {
+        formula: `SUM(${colLetter}${firstTeacherRowSection1}:${colLetter}${currentRowIdx - 1})`
+      };
+    } else {
+      filaTotalCursos.getCell(colIdx).value = 0;
+    }
+    filaTotalCursos.getCell(colIdx).alignment = { horizontal: 'center', vertical: 'middle' };
+    filaTotalCursos.getCell(colIdx).font = { name: 'Calibri', size: 9, bold: true };
+  });
+
+  if (filasSujetasTotalesCursos.length > 0) {
+    filaTotalCursos.getCell(colIndexTotalHa).value = {
+      formula: `SUM(${colTotalHaLetter}${firstTeacherRowSection1}:${colTotalHaLetter}${currentRowIdx - 1})`
+    };
+  } else {
+    filaTotalCursos.getCell(colIndexTotalHa).value = 0;
+  }
+  filaTotalCursos.getCell(colIndexTotalHa).alignment = { horizontal: 'center', vertical: 'middle' };
+  filaTotalCursos.getCell(colIndexTotalHa).font = { name: 'Calibri', size: 9, bold: true };
+
+  for (let c = 1; c <= totalColumnas; c++) {
+    filaTotalCursos.getCell(c).border = borderDoubleTotalRow;
+  }
+  currentRowIdx += 2;
+
+  // ===========================================================================
+  // 2. SECCIÓN 2: DOCENTES PIE, CO-DOCENTES, TALLERISTAS Y GESTIÓN DIRECTIVA
+  // ===========================================================================
+  if (seccion2_ApoyoYDirectivos.length > 0) {
+    // Fila de Título Separador Institucional
+    const bannerRow = ws.getRow(currentRowIdx);
+    bannerRow.height = 24;
+    ws.mergeCells(`A${currentRowIdx}:${getColumnLetter(totalColumnas)}${currentRowIdx}`);
+    bannerRow.getCell(1).value = `APARTADO 2: DOTACIÓN DE APOYO PIE, CO-DOCENCIA, TALLERISTAS Y GESTIÓN INSTITUCIONAL (${establecimiento.nombre.toUpperCase()})`;
+    bannerRow.getCell(1).fill = sectionDividerFill;
+    bannerRow.getCell(1).font = sectionDividerFont;
+    bannerRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     currentRowIdx++;
+
+    // Segundo Encabezado de Columnas
+    renderizarEncabezado(currentRowIdx);
+    currentRowIdx++;
+
+    for (const docente of seccion2_ApoyoYDirectivos) {
+      const masterRow = ws.getRow(currentRowIdx);
+      masterRow.height = 18;
+
+      const nombreDocente = `${docente.apellidos || ''}, ${docente.nombres || ''}`.trim() || 'Docente';
+      masterRow.getCell(colIndexDocente).value = nombreDocente;
+      masterRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, bold: true };
+      masterRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+
+      masterRow.getCell(colIndexRut).value = docente.run || '';
+      masterRow.getCell(colIndexRut).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexRut).font = { name: 'Calibri', size: 9 };
+
+      masterRow.getCell(colIndexContrato).value = docente.horasContrato || null;
+      masterRow.getCell(colIndexContrato).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexContrato).font = { name: 'Calibri', size: 9, bold: true };
+
+      masterRow.getCell(colIndexTitSubGral).value = docente.horasSubvencionGeneralTitular || null;
+      masterRow.getCell(colIndexTitSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexTitSubGral).font = { name: 'Calibri', size: 9 };
+
+      masterRow.getCell(colIndexCttaSubGral).value = docente.horasSubvencionGeneralContrata || null;
+      masterRow.getCell(colIndexCttaSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexCttaSubGral).font = { name: 'Calibri', size: 9 };
+
+      masterRow.getCell(colIndexTitSep).value = docente.horasSepTitular || null;
+      masterRow.getCell(colIndexTitSep).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexTitSep).font = { name: 'Calibri', size: 9 };
+
+      masterRow.getCell(colIndexCttaSep).value = docente.horasSepContrata || null;
+      masterRow.getCell(colIndexCttaSep).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexCttaSep).font = { name: 'Calibri', size: 9 };
+
+      masterRow.getCell(colIndexTitPie).value = docente.horasPieTitular || null;
+      masterRow.getCell(colIndexTitPie).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexTitPie).font = { name: 'Calibri', size: 9 };
+
+      masterRow.getCell(colIndexCttaPie).value = docente.horasPieContrata || null;
+      masterRow.getCell(colIndexCttaPie).alignment = { horizontal: 'center', vertical: 'middle' };
+      masterRow.getCell(colIndexCttaPie).font = { name: 'Calibri', size: 9 };
+
+      for (let c = 1; c <= totalColumnas; c++) {
+        masterRow.getCell(c).border = borderThin;
+      }
+      currentRowIdx++;
+
+      // Desglose de funciones de la Sección 2 (Co-docencia, PIE Recursos, Talleres SEP/Extensión, Directivos)
+      const asigsDocente = asignaciones.filter(
+        a => a.rbd === establecimiento.rbd && (a.docenteId === docente.id || a.docenteId === docente.run || a.docenteRun === docente.run)
+      );
+
+      // 1. Asignaciones registradas
+      for (const asig of asigsDocente) {
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = asig.asignatura || 'Apoyo Pedagógico';
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+
+        const asigNorm = normalizeText(asig.asignatura || '');
+        const esPie = asig.esTrabajoColaborativo || asigNorm.includes('pie') || asigNorm.includes('recursos') || (asig.horasCronologicasPie || 0) > 0;
+        const esSep = asig.esTallerSep || asigNorm.includes('sep') || asigNorm.includes('extension');
+
+        const horasValor = Number(asig.horasCronologicasPie || asig.horasPedagogicasAula || 0);
+
+        if (esPie) {
+          row.getCell(colIndexTotalHcSubPie).value = horasValor / 24;
+          row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+          row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if (esSep) {
+          row.getCell(colIndexTotalHcSubSep).value = horasValor / 24;
+          row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+          row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          row.getCell(colIndexTotalHcSubGral).value = horasValor / 24;
+          row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
+          row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        currentRowIdx++;
+      }
+
+      // 2. Funciones directivas/institucionales si no estaban en asignaciones
+      if (asigsDocente.length === 0) {
+        let funcionNombre = docente.cargoInstitucional || 'Gestión Institucional';
+        if (docente.estamento === 'DIRECTIVO') funcionNombre = 'Directora / Equipo Directivo';
+        if (docente.estamento === 'TECNICO_PEDAGOGICO') funcionNombre = 'Jefe Unidad Técnico Pedagógica (UTP)';
+        if (docente.estamento === 'DOCENTE_DIFERENCIAL') funcionNombre = 'Docente Especialista PIE';
+
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = funcionNombre;
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+
+        const esPieDoc = (Number(docente.horasPieTitular || 0) + Number(docente.horasPieContrata || 0)) > 0 || docente.estamento === 'DOCENTE_DIFERENCIAL';
+        const esSepDoc = (Number(docente.horasSepTitular || 0) + Number(docente.horasSepContrata || 0)) > 0;
+
+        if (esPieDoc) {
+          row.getCell(colIndexTotalHcSubPie).value = docente.horasContrato / 24;
+          row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+          row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if (esSepDoc) {
+          row.getCell(colIndexTotalHcSubSep).value = docente.horasContrato / 24;
+          row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+          row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          row.getCell(colIndexTotalHcSubGral).value = docente.horasContrato / 24;
+          row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
+          row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        currentRowIdx++;
+      }
+    }
   }
 
   // Dimensionamiento óptimo de columnas
@@ -629,12 +828,13 @@ export async function generarExcelMatrizDotacionColegio(
     [colIndexTotalHcSubGral]: 13,
     [colIndexTotalHcSubSep]: 13,
     [colIndexTotalHcSubPie]: 13,
-    [colIndexTotalHc]: 12
+    [colIndexTotalHc]: 12,
+    [colIndexObservaciones]: 30
   };
 
   for (let c = 1; c <= totalColumnas; c++) {
     if (c >= colIndexInicioCursos && c <= colIndexFinCursos) {
-      ws.getColumn(c).width = 5.5; // Columnas de cursos compactas
+      ws.getColumn(c).width = 5.5;
     } else if (columnWidths[c]) {
       ws.getColumn(c).width = columnWidths[c];
     }

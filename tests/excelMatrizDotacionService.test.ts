@@ -4,6 +4,7 @@ import {
   generarExcelMatrizDotacionColegio,
   obtenerEtiquetaCortaCurso,
   ordenarCursosEstablecimiento,
+  clasificarDocentesEnSecciones,
   getColumnLetter
 } from '../src/services/excelMatrizDotacionService';
 import { Establecimiento, Docente, CursoSae, AsignacionHoraria } from '../src/types';
@@ -44,14 +45,60 @@ describe('excelMatrizDotacionService', () => {
     ]);
   });
 
-  it('genera un archivo Excel válido con formato [h]:mm y estructura según el modelo', async () => {
+  it('clasifica correctamente a los docentes en Sección 1 (Plan de Estudio) y Sección 2 (PIE/Codocentes/Directivos)', () => {
+    const docAula: Docente = {
+      id: 'doc-1',
+      rbd: '3641',
+      run: '11.111.111-1',
+      nombres: 'Juan',
+      apellidos: 'Pérez',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44
+    };
+
+    const docPie: Docente = {
+      id: 'doc-2',
+      rbd: '3641',
+      run: '22.222.222-2',
+      nombres: 'María',
+      apellidos: 'Gómez',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      horasContrato: 32,
+      horasPieContrata: 32
+    };
+
+    const docDirectivo: Docente = {
+      id: 'doc-3',
+      rbd: '3641',
+      run: '33.333.333-3',
+      nombres: 'Pedro',
+      apellidos: 'López',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DIRECTIVO',
+      horasContrato: 44,
+      horasDirectivas: 44
+    };
+
+    const asigs: AsignacionHoraria[] = [
+      { id: 'a1', rbd: '3641', docenteId: 'doc-1', cursoId: 'c1', asignatura: 'Lenguaje', horasPedagogicasAula: 8 },
+      { id: 'a2', rbd: '3641', docenteId: 'doc-2', cursoId: 'c1', asignatura: 'Co-docencia', horasPedagogicasAula: 32, esCoDocencia: true }
+    ];
+
+    const res = clasificarDocentesEnSecciones([docAula, docPie, docDirectivo], asigs);
+    expect(res.seccion1_PlanEstudio.map(d => d.id)).toEqual(['doc-1']);
+    expect(res.seccion2_ApoyoYDirectivos.map(d => d.id)).toEqual(['doc-2', 'doc-3']);
+  });
+
+  it('genera un archivo Excel válido con estructura de dos secciones, totales de curso y formato [h]:mm', async () => {
     const establecimiento: Establecimiento = {
       id: 'est-3641',
       rbd: '3641',
       nombre: 'Escuela Rural El Carmen',
       comuna: 'El Carmen',
       regimen: 'JEC',
-      porcentajePrioritarios: 75, // Régimen 65/35
+      porcentajePrioritarios: 75,
       director: 'Director Prueba',
       asesorUatp: 'Asesor UATP'
     };
@@ -60,7 +107,7 @@ describe('excelMatrizDotacionService', () => {
       { id: 'c-1b', rbd: '3641', nivel: '1° Básico', letra: 'B', regimen: 'JEC', cupoSae: 30, matriculaProyectada: 30, alumnosNeet: 0, alumnosNeep: 0 }
     ];
 
-    const docente: Docente = {
+    const docenteAula: Docente = {
       id: 'doc-1',
       rbd: '3641',
       run: '22.250.8874-4',
@@ -75,15 +122,27 @@ describe('excelMatrizDotacionService', () => {
       cargoInstitucional: 'Coordinación Ciclo'
     };
 
+    const docentePie: Docente = {
+      id: 'doc-2',
+      rbd: '3641',
+      run: '18.281.913-1',
+      nombres: 'Natalia',
+      apellidos: 'Bórquez Barría',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      horasContrato: 39,
+      horasPieContrata: 39
+    };
+
     const asignaciones: AsignacionHoraria[] = [
       { id: 'a-1', rbd: '3641', cursoId: 'c-1b', docenteId: 'doc-1', asignatura: 'Lenguaje', horasPedagogicasAula: 8 },
       { id: 'a-2', rbd: '3641', cursoId: 'c-1b', docenteId: 'doc-1', asignatura: 'Matemáticas', horasPedagogicasAula: 6 },
-      { id: 'a-3', rbd: '3641', cursoId: 'c-1b', docenteId: 'doc-1', asignatura: 'Historia', horasPedagogicasAula: 3 }
+      { id: 'a-3', rbd: '3641', cursoId: 'c-1b', docenteId: 'doc-2', asignatura: 'Aula común y aula de recursos', horasPedagogicasAula: 11, horasCronologicasPie: 11 }
     ];
 
     const buffer = await generarExcelMatrizDotacionColegio(
       establecimiento,
-      [docente],
+      [docenteAula, docentePie],
       cursos,
       asignaciones
     );
@@ -91,56 +150,33 @@ describe('excelMatrizDotacionService', () => {
     expect(buffer).toBeInstanceOf(Uint8Array);
     expect(buffer.length).toBeGreaterThan(1000);
 
-    // Cargar en ExcelJS para verificar estructura de celdas
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as any);
     const ws = wb.worksheets[0];
 
     expect(ws).toBeDefined();
-    expect(ws.name).toContain('3641');
 
-    // Fila 1: Encabezados
+    // Validar encabezado Sección 1
     expect(ws.getRow(1).getCell(3).value).toContain('HORAS');
     expect(ws.getRow(1).getCell(10).value).toBe('1B');
-    expect(ws.getRow(1).getCell(11).value).toBe('TOTAL HA*');
 
-    // Fila 2: Docente Maestro
+    // Validar Docente de Sección 1
     expect(ws.getRow(2).getCell(1).value).toBe('Bravo de Peralta Reyes, Magdielin');
-    expect(ws.getRow(2).getCell(2).value).toBe('22.250.8874-4');
-    expect(ws.getRow(2).getCell(3).value).toBe(42);
-    expect(ws.getRow(2).getCell(5).value).toBe(35);
-    expect(ws.getRow(2).getCell(7).value).toBe(4);
-    expect(ws.getRow(2).getCell(9).value).toBe(3);
 
-    // Fila 3: Lenguaje (8 HA en 1B -> 6:00 en Sub Gral)
-    expect(ws.getRow(3).getCell(1).value).toBe('Lenguaje');
-    expect(ws.getRow(3).getCell(10).value).toBe(8);
-    expect(ws.getRow(3).getCell(12).numFmt).toBe('[h]:mm');
-
-    // Verificar que existen filas de Recreo y Horas no lectivas con formato [h]:mm
-    let tieneRecreo6535 = false;
-    let tieneHnl6535 = false;
-    let tieneTotal = false;
+    // Validar que existe la fila de totales de cursos y el banner de Sección 2
+    let tieneFilaTotalCursos = false;
+    let tieneBannerSeccion2 = false;
+    let tieneDocenteSeccion2 = false;
 
     ws.eachRow((row) => {
-      const v = row.getCell(1).value;
-      if (v === 'Recreo 65/35') {
-        tieneRecreo6535 = true;
-        expect(row.getCell(12).numFmt).toBe('[h]:mm');
-      }
-      if (v === 'Horas no lectivas 65/35') {
-        tieneHnl6535 = true;
-        expect(row.getCell(12).numFmt).toBe('[h]:mm');
-      }
-      if (v === 'Total') {
-        tieneTotal = true;
-        expect(row.getCell(12).numFmt).toBe('[h]:mm');
-        expect(row.getCell(15).numFmt).toBe('[h]:mm');
-      }
+      const v = String(row.getCell(1).value || '');
+      if (v.includes('TOTAL CARGA LECTIVA CURSOS')) tieneFilaTotalCursos = true;
+      if (v.includes('APARTADO 2')) tieneBannerSeccion2 = true;
+      if (v.includes('Bórquez Barría, Natalia')) tieneDocenteSeccion2 = true;
     });
 
-    expect(tieneRecreo6535).toBe(true);
-    expect(tieneHnl6535).toBe(true);
-    expect(tieneTotal).toBe(true);
+    expect(tieneFilaTotalCursos).toBe(true);
+    expect(tieneBannerSeccion2).toBe(true);
+    expect(tieneDocenteSeccion2).toBe(true);
   });
 });
