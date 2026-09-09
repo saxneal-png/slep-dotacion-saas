@@ -48,6 +48,7 @@ export interface ColegioWorkspaceViewProps {
   onRefreshData?: () => void;
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void> | void;
   onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
+  onExportarMatrizExcelColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
 }
 
 export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
@@ -75,7 +76,8 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onTogglePeriodo,
   onRefreshData,
   onLimpiarDotacionColegio,
-  onExportarDotacionColegio
+  onExportarDotacionColegio,
+  onExportarMatrizExcelColegio
 }) => {
   const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'cursos' | 'pie' | 'salas'>('balanza');
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
@@ -181,6 +183,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
               <span>Exportar Dotación (.slep)</span>
             </button>
 
+            {onExportarMatrizExcelColegio && (
+              <button
+                onClick={() => onExportarMatrizExcelColegio(colegio, periodoActivo)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition-all border border-emerald-200"
+                title={`Exportar Matriz de Dotación Excel oficial de ${colegio.nombre} (Formato SLEP / [h]:mm)`}
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Exportar Matriz Excel</span>
+              </button>
+            )}
+
             <button
               onClick={() => window.print()}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
@@ -192,10 +205,11 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 
             <button
               onClick={onExportarExcel}
-              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow transition-all"
+              className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow transition-all"
+              title="Exportar archivo consolidado de todo el territorio SLEP"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>Exportar Excel</span>
+              <span>Consolidado SLEP</span>
             </button>
 
             {onLimpiarDotacionColegio && (

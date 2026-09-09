@@ -17,6 +17,7 @@ interface CarteraViewProps {
   periodoActivo?: number;
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void>;
   onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
+  onExportarMatrizExcelColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
 }
 
 const COMUNAS: ComunaValleDiguillin[] = [
@@ -43,7 +44,8 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
   onImportarSqlite,
   periodoActivo = 2026,
   onLimpiarDotacionColegio,
-  onExportarDotacionColegio
+  onExportarDotacionColegio,
+  onExportarMatrizExcelColegio
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEst, setEditingEst] = useState<Establecimiento | null>(null);
@@ -444,6 +446,16 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1">
+                  {onExportarMatrizExcelColegio && (
+                    <button
+                      onClick={() => onExportarMatrizExcelColegio(est, periodoActivo)}
+                      className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
+                      title={`Exportar Matriz de Dotación Excel oficial de ${est.nombre} (Periodo ${periodoActivo} / Formato SLEP y [h]:mm)`}
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </button>
+                  )}
+
                   {onExportarDotacionColegio && (
                     <button
                       onClick={() => onExportarDotacionColegio(est, periodoActivo)}

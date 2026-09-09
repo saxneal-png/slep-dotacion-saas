@@ -59,6 +59,7 @@ import {
 import { checkAndSeedInitialData } from './database/seedData';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { generarExcelConsolidadoSlep } from './services/excelReportService';
+import { generarExcelMatrizDotacionColegio } from './services/excelMatrizDotacionService';
 
 export const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -336,6 +337,36 @@ export const App: React.FC = () => {
     }
   };
 
+  // Exportar Matriz Oficial Excel por Escuela (Formato SLEP / [h]:mm)
+  const handleExportarMatrizExcelColegio = async (est: Establecimiento, periodo: number = periodoActivo) => {
+    try {
+      const cursosColegio = todosLosCursos.filter(c => c.rbd === est.rbd && (c.periodo === undefined || c.periodo === periodo));
+      const docentesColegio = todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodo));
+      const asignacionesColegio = todasLasAsignaciones.filter(a => a.rbd === est.rbd && (a.periodo === undefined || a.periodo === periodo));
+
+      const bytes = await generarExcelMatrizDotacionColegio(
+        est,
+        docentesColegio,
+        cursosColegio,
+        asignacionesColegio
+      );
+
+      const nombreLimpio = est.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
+      const filename = `Matriz_Dotacion_${nombreLimpio}_RBD_${est.rbd}_${periodo}.xlsx`;
+
+      const guardado = await guardarArchivoNativoOEnNavegador(
+        bytes,
+        filename,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        [{ name: 'Planillas Microsoft Excel', extensions: ['xlsx'] }]
+      );
+      if (guardado) mostrarMensaje(`Matriz de dotación Excel de ${est.nombre} exportada exitosamente.`);
+    } catch (e: any) {
+      console.error('Error al exportar matriz excel colegio:', e);
+      mostrarMensaje(`Error al exportar matriz Excel: ${e.message || e}`, 'error');
+    }
+  };
+
   // Importar Cartera .slep o Dotación Individual de Asesor
   const handleImportarCarteraSlep = async (file: File) => {
     try {
@@ -545,6 +576,7 @@ export const App: React.FC = () => {
             periodoActivo={periodoActivo}
             onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
             onExportarDotacionColegio={handleExportarDotacionColegio}
+            onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
           />
         )}
 
@@ -576,6 +608,7 @@ export const App: React.FC = () => {
               onRefreshData={() => cargarDatos(periodoActivo)}
               onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
               onExportarDotacionColegio={handleExportarDotacionColegio}
+              onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
             />
           ) : (
             <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-center max-w-md mx-auto my-12 animate-in fade-in">
