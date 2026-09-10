@@ -299,14 +299,11 @@ export function calcularDiagnosticoColegio(
     const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
     const cronTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
-    const tieneAsignaciones = (docenteAsigs.length + coDocenteAsigs.length) > 0;
-    const sepExentas = tieneAsignaciones
-      ? (cronTallerSep + sumFuncionesNoAulaSep)
-      : (hTallerSepDoc + sumFuncionesNoAulaSep);
+    const totalTrabajoColab = Math.max(hColabDoc, cronTrabajoColab);
+    const totalTallerSep = Math.max(hTallerSepDoc, cronTallerSep);
 
-    const pieCronologicas = tieneAsignaciones
-      ? (cronTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie))
-      : (hColabDoc + hCoordPie + sumFuncionesNoAulaPie);
+    const sepExentas = totalTallerSep + sumFuncionesNoAulaSep;
+    const pieCronologicas = totalTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie);
 
     const hInstNoAula = sumFuncionesNoAulaSubvGen;
     const hExentas = hInstNoAula + sepExentas + pieCronologicas;
@@ -391,8 +388,8 @@ export function calcularDiagnosticoColegio(
       horasPedagogicasAsignadas: pedTotalAsignadas,
       horasAulaRegular: pedAulaRegular,
       horasCoDocencia: totalPedCoDocencia,
-      horasTallerSep: pedTallerSep,
-      horasTrabajoColaborativo: pedTrabajoColab,
+      horasTallerSep: totalTallerSep,
+      horasTrabajoColaborativo: totalTrabajoColab,
       horasDocenciaAfecta: horasParaDocenciaAula,
       horasExentas: hExentas,
       horasLectivasMaximas: maxHAPermitidas,
@@ -809,14 +806,11 @@ export function obtenerDocentesConsolidadosTerritorio(
       const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
       const cronTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
-      const tieneAsignaciones = asigsColegio.length > 0;
-      const sepExentas = tieneAsignaciones
-        ? (cronTallerSep + sumFuncionesNoAulaSep)
-        : (hTallerSepDoc + sumFuncionesNoAulaSep);
+      const docTrabajoColab = Math.max(hColabDoc, cronTrabajoColab);
+      const docTallerSep = Math.max(hTallerSepDoc, cronTallerSep);
 
-      const pieCronologicas = tieneAsignaciones
-        ? (cronTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie))
-        : (hColabDoc + hCoordPie + sumFuncionesNoAulaPie);
+      const sepExentas = docTallerSep + sumFuncionesNoAulaSep;
+      const pieCronologicas = docTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
@@ -897,8 +891,8 @@ export function obtenerDocentesConsolidadosTerritorio(
       totalPedAula += pedTotalAsignadas;
       totalAulaRegular += pedAulaRegular;
       totalCoDocencia += totalPedCoDocencia;
-      totalTallerSep += (hTallerSepDoc || pedTallerSep);
-      totalTrabajoColaborativo += (hColabDoc || pedTrabajoColab);
+      totalTallerSep += docTallerSep;
+      totalTrabajoColaborativo += docTrabajoColab;
       totalInstitucionalesNoAula += hInstNoAula;
 
       // Auditoría Financiera: Restricción de financiamiento de Plan de Estudio titular con SEP/PIE

@@ -561,4 +561,52 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     expect(contrato.esInfractorExcesoLectivo).toBe(false); // NO exceso lectivo!
     expect(contrato.saldoHoras).toBe(4); // 4h de saldo a favor / vacantes
   });
+
+  it('cuenta horas de Trabajo Colaborativo Art. 86 ingresadas en la ficha del docente y no las deja como vacantes cuando tiene asignaciones de aula', () => {
+    // Docente de aula con 44h Subvención General
+    // 30 HA de aula asignadas (Lenguaje y Matemática)
+    // 3 horas de Trabajo Colaborativo Art. 86 ingresadas directamente en la ficha del docente
+    const docColab86: Docente = {
+      id: 'doc-colab-86',
+      rbd: '9999',
+      run: '18.999.000-1',
+      nombres: 'Rodrigo',
+      apellidos: 'Pérez San Martín',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44,
+      horasTrabajoColaborativo: 3 // 3h ingresadas en la ficha
+    };
+
+    const asigsDoc: AsignacionHoraria[] = [
+      {
+        id: 'asig-lenguaje',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-colab-86',
+        asignatura: 'Lenguaje y Comunicación',
+        horasPedagogicasAula: 30
+      }
+    ];
+
+    // Diagnóstico intra-escuela
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docColab86], asigsDoc);
+    const estDoc = diag.estadoDocentes[0];
+
+    // En 65/35, 30 HA exige 35h de contrato base + 3h colaborativo = 38h calculadas
+    expect(estDoc.horasTrabajoColaborativo).toBe(3);
+    expect(estDoc.horasExentas).toBe(3);
+    expect(estDoc.horasDocenciaAfecta).toBe(41); // 44h - 3h exentas = 41h disponibles para aula
+    expect(estDoc.horasVacantes).toBe(6); // 44h - 38h = 6h libres (NO 9h!)
+
+    // Consolidado territorial
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docColab86], asigsDoc, cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.horasTrabajoColaborativo).toBe(3);
+    expect(contrato.contratoCalculadoTotal).toBe(38); // 35h aula + 3h colaborativo
+    expect(contrato.saldoHoras).toBe(6); // 44h real - 38h calculadas = 6h libres
+    expect(contrato.esInfractorExcesoLectivo).toBe(false);
+  });
 });

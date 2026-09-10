@@ -200,14 +200,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const cronTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
       const cronTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
-      const tieneAsignaciones = asigs.length > 0;
-      const sepExentas = tieneAsignaciones
-        ? (cronTallerSep + sumFuncionesNoAulaSep)
-        : (hTallerSepDoc + sumFuncionesNoAulaSep);
+      const totalTrabajoColab = Math.max(hColabDoc, cronTrabajoColab);
+      const totalTallerSep = Math.max(hTallerSepDoc, cronTallerSep);
 
-      const pieCronologicas = tieneAsignaciones
-        ? (cronTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie))
-        : (hColabDoc + hCoordPie + sumFuncionesNoAulaPie);
+      const sepExentas = totalTallerSep + sumFuncionesNoAulaSep;
+      const pieCronologicas = totalTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;

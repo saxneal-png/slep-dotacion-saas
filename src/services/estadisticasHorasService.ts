@@ -353,9 +353,11 @@ export function calcularEstadisticasColegio(
       ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : 0;
 
-    const tieneAsignaciones = (docAsigs.length + coDocAsigs.length) > 0;
-    const sepExentoDoc = tieneAsignaciones ? (haSep + sumFuncionesNoAulaSep) : (dTallerSep + sumFuncionesNoAulaSep);
-    const pieCronologicoDoc = tieneAsignaciones ? (haColab + sumFuncionesNoAulaPie) : (dColab + haColab + sumFuncionesNoAulaPie);
+    const totalTrabajoColab = Math.max(dColab, haColab);
+    const totalTallerSep = Math.max(dTallerSep, haSep);
+
+    const sepExentoDoc = totalTallerSep + sumFuncionesNoAulaSep;
+    const pieCronologicoDoc = totalTrabajoColab + sumFuncionesNoAulaPie;
 
     const hExentas = dDir + dInsp + dTec + dCoord + sepExentoDoc + pieCronologicoDoc;
     const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);
