@@ -202,28 +202,66 @@ export function calcularDiagnosticoColegio(
     const docenteAsigs = asignaciones.filter(a => a.docenteId === doc.id);
     const coDocenteAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
 
-    const asigsCoDocencia = [
-      ...docenteAsigs.filter(a => a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'),
-      ...coDocenteAsigs
+    const subTotalDoc = Number(doc.horasSubvencionGeneralTitular || 0) + Number(doc.horasSubvencionGeneralContrata || 0);
+    const contratoSepDoc = Number(doc.horasSepTitular || 0) + Number(doc.horasSepContrata || 0);
+    const contratoPieDoc = Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0);
+
+    const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || (contratoPieDoc > 0 && subTotalDoc === 0);
+    const isSepDoc = contratoSepDoc > 0 && contratoPieDoc === 0 && subTotalDoc === 0;
+
+    const isAsigSep = (a: AsignacionHoraria) => {
+      if (a.esTallerSep) return true;
+      if (a.tipoApoyo === 'TALLER_SEP') return true;
+      if (a.financiador === 'SEP') return true;
+      if (isSepDoc && a.financiador !== 'SUB_GEN') return true;
+      if (a.asignatura && /taller.*sep|apoyo.*sep|\bsep\b/i.test(a.asignatura)) return true;
+      return false;
+    };
+
+    const isAsigPie = (a: AsignacionHoraria) => {
+      if (a.esTrabajoColaborativo) return true;
+      if (a.tipoApoyo === 'TRABAJO_COLABORATIVO') return true;
+      if (a.horasCronologicasPie && a.horasCronologicasPie > 0 && !a.esCoDocencia && a.tipoApoyo !== 'CO_DOCENCIA') return true;
+      if (a.asignatura && /colaborativ/i.test(a.asignatura)) return true;
+      return false;
+    };
+
+    // Asignaciones financiadas con SEP (todas son horas cronológicas de 60 min)
+    const asigsSep = [
+      ...docenteAsigs.filter(a => isAsigSep(a)),
+      ...coDocenteAsigs.filter(a => isAsigSep(a))
     ];
-    const asigsTallerSep = docenteAsigs.filter(a => (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a));
-    const asigsTrabajoColaborativo = docenteAsigs.filter(
-      a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO' || a.asignatura.toLowerCase().includes('colaborativ')
-    );
 
-    // Asignaciones de aula regular titular (impartidas como titular)
-    const asigsAulaRegular = docenteAsigs.filter(a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a));
+    // Asignaciones financiadas con PIE (todas son horas cronológicas de 60 min)
+    const asigsTrabajoColaborativo = [
+      ...docenteAsigs.filter(a => isAsigPie(a)),
+      ...coDocenteAsigs.filter(a => isAsigPie(a))
+    ];
 
-    // Todas las asignaciones de docencia en aula del docente (aula regular + codocencia)
+    // Co-Docencia con Subvención General (no SEP ni PIE)
+    const asigsCoDocenciaSubvGen = [
+      ...docenteAsigs.filter(a => !isAsigSep(a) && !isAsigPie(a) && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE')),
+      ...coDocenteAsigs.filter(a => !isAsigSep(a) && !isAsigPie(a))
+    ];
+
+    // Asignaciones de aula regular titular (impartidas como titular con Subvención General)
+    const asigsAulaRegular = docenteAsigs.filter(a => !isAsigSep(a) && !isAsigPie(a) && !asigsCoDocenciaSubvGen.includes(a));
+
+    // Solo las horas de aula financiadas con Subvención General entran al cálculo de proporción 65/35 o 60/40
     const asigsAulaDocente = [
       ...asigsAulaRegular,
-      ...asigsCoDocencia
+      ...asigsCoDocenciaSubvGen
     ];
 
+    const totalPedCoDocencia = [
+      ...docenteAsigs.filter(a => a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE' || (a.asignatura && /co.*docenc|codocenc/i.test(a.asignatura))),
+      ...coDocenteAsigs
+    ].reduce((sum, a) => sum + a.horasPedagogicasAula, 0);
+
     const pedAulaRegular = asigsAulaRegular.reduce((sum, a) => sum + a.horasPedagogicasAula, 0);
-    const pedCoDocencia = asigsCoDocencia.reduce((sum, a) => sum + a.horasPedagogicasAula, 0);
-    const pedTallerSep = asigsTallerSep.reduce((sum, a) => sum + a.horasPedagogicasAula, 0);
-    const pedTrabajoColab = asigsTrabajoColaborativo.reduce((sum, a) => sum + a.horasPedagogicasAula, 0);
+    const pedCoDocencia = asigsCoDocenciaSubvGen.reduce((sum, a) => sum + a.horasPedagogicasAula, 0);
+    const pedTallerSep = asigsSep.reduce((sum, a) => sum + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+    const pedTrabajoColab = asigsTrabajoColaborativo.reduce((sum, a) => sum + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
     const pedTotalAsignadas = [
       ...docenteAsigs,
       ...coDocenteAsigs
@@ -233,12 +271,6 @@ export function calcularDiagnosticoColegio(
     horasLectivasAsignadas += pedAulaRegular;
 
     // Deducir funciones no aula (Directivas, Inspectoría, UTP, Coordinación, Taller SEP, Trabajo Colaborativo / PIE no aula)
-    const subTotalDoc = Number(doc.horasSubvencionGeneralTitular || 0) + Number(doc.horasSubvencionGeneralContrata || 0);
-    const contratoSepDoc = Number(doc.horasSepTitular || 0) + Number(doc.horasSepContrata || 0);
-    const contratoPieDoc = Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0);
-
-    const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || (contratoPieDoc > 0 && subTotalDoc === 0);
-    const isSepDoc = contratoSepDoc > 0 && contratoPieDoc === 0 && subTotalDoc === 0;
 
     const isSepFin = (f: any) => {
       if (f.financiamiento && /sep/i.test(f.financiamiento)) return true;
@@ -265,7 +297,7 @@ export function calcularDiagnosticoColegio(
       : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
     const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
-    const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+    const cronTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
     const tieneAsignaciones = (docenteAsigs.length + coDocenteAsigs.length) > 0;
     const sepExentas = tieneAsignaciones
@@ -350,15 +382,15 @@ export function calcularDiagnosticoColegio(
     const cargaTotalTrabajo = auditDoc.contratoCalculadoTotal;
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
 
-    const horasSepSinAsignarDoc = Math.max(0, contratoSepDoc - (sepExentas + auditDoc.req65_35 + auditDoc.req60_40));
-    const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - (pieCronologicas + auditDoc.req65_35 + auditDoc.req60_40));
+    const horasSepSinAsignarDoc = Math.max(0, contratoSepDoc - sepExentas);
+    const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - pieCronologicas);
     const horasSubvGenSinAsignarDoc = Math.max(0, subTotalDoc - (reqSubvDoc + sumFuncionesNoAulaSubvGen));
 
     return {
       docente: doc,
       horasPedagogicasAsignadas: pedTotalAsignadas,
       horasAulaRegular: pedAulaRegular,
-      horasCoDocencia: pedCoDocencia,
+      horasCoDocencia: totalPedCoDocencia,
       horasTallerSep: pedTallerSep,
       horasTrabajoColaborativo: pedTrabajoColab,
       horasDocenciaAfecta: horasParaDocenciaAula,
@@ -663,41 +695,6 @@ export function obtenerDocentesConsolidadosTerritorio(
         a => a.rbd === doc.rbd && (a.docenteId === doc.id || (a.coDocenteId === doc.id && a.tieneCoDocente))
       );
 
-      const asigsCoDocencia = asigsColegio.filter(
-        a => (a.coDocenteId === doc.id && a.tieneCoDocente) || (a.docenteId === doc.id && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'))
-      );
-      const asigsTallerSep = asigsColegio.filter(
-        a => a.docenteId === doc.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a)
-      );
-      const asigsTrabajoColaborativo = asigsColegio.filter(
-        a => a.docenteId === doc.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO' || a.asignatura.toLowerCase().includes('colaborativ'))
-      );
-
-      const asigsAulaRegular = asigsColegio.filter(
-        a => a.docenteId === doc.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a)
-      );
-
-      const asigsAulaDocente = [
-        ...asigsAulaRegular,
-        ...asigsCoDocencia
-      ];
-
-      const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedCoDocencia = asigsCoDocencia.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedTallerSep = asigsTallerSep.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedTotalAsignadas = asigsColegio.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-
-      const hDir = doc.horasDirectivas || 0;
-      const hInsp = doc.horasInspectorGeneral || 0;
-      const hTec = doc.horasTecnicoPedagogicas || 0;
-      const hCoord = doc.horasCoordinacion || 0;
-      const hCoordPie = doc.horasCoordinacionPie || 0;
-      const hConv = doc.horasConvivenciaEscolar || 0;
-      const hExtra = doc.horasExtraescolar || 0;
-      const hTallerSepDoc = doc.horasTallerSep || 0;
-      const hColabDoc = doc.horasTrabajoColaborativo || 0;
-
       // Fuentes de financiamiento
       let subTit = Number(doc.horasSubvencionGeneralTitular || 0);
       let subCon = Number(doc.horasSubvencionGeneralContrata || 0);
@@ -721,6 +718,69 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || (contratoPieDoc > 0 && subTotalDoc === 0);
       const isSepDoc = contratoSepDoc > 0 && contratoPieDoc === 0 && subTotalDoc === 0;
+
+      const isAsigSep = (a: AsignacionHoraria) => {
+        if (a.esTallerSep) return true;
+        if (a.tipoApoyo === 'TALLER_SEP') return true;
+        if (a.financiador === 'SEP') return true;
+        if (isSepDoc && a.financiador !== 'SUB_GEN') return true;
+        if (a.asignatura && /taller.*sep|apoyo.*sep|\bsep\b/i.test(a.asignatura)) return true;
+        return false;
+      };
+
+      const isAsigPie = (a: AsignacionHoraria) => {
+        if (a.esTrabajoColaborativo) return true;
+        if (a.tipoApoyo === 'TRABAJO_COLABORATIVO') return true;
+        if (a.horasCronologicasPie && a.horasCronologicasPie > 0 && !a.esCoDocencia && a.tipoApoyo !== 'CO_DOCENCIA') return true;
+        if (a.asignatura && /colaborativ/i.test(a.asignatura)) return true;
+        return false;
+      };
+
+      // Asignaciones financiadas con SEP (todas son horas cronológicas de 60 min)
+      const asigsSep = [
+        ...asigsColegio.filter(a => isAsigSep(a))
+      ];
+
+      // Asignaciones financiadas con PIE (todas son horas cronológicas de 60 min)
+      const asigsTrabajoColaborativo = [
+        ...asigsColegio.filter(a => isAsigPie(a))
+      ];
+
+      // Co-Docencia con Subvención General (no SEP ni PIE)
+      const asigsCoDocenciaSubvGen = [
+        ...asigsColegio.filter(a => !isAsigSep(a) && !isAsigPie(a) && ((a.coDocenteId === doc.id && a.tieneCoDocente) || (a.docenteId === doc.id && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'))))
+      ];
+
+      // Asignaciones de aula regular titular (impartidas como titular con Subvención General)
+      const asigsAulaRegular = asigsColegio.filter(
+        a => a.docenteId === doc.id && !isAsigSep(a) && !isAsigPie(a) && !asigsCoDocenciaSubvGen.includes(a)
+      );
+
+      // Solo las horas de aula financiadas con Subvención General entran al cálculo de proporción 65/35 o 60/40
+      const asigsAulaDocente = [
+        ...asigsAulaRegular,
+        ...asigsCoDocenciaSubvGen
+      ];
+
+      const totalPedCoDocencia = asigsColegio.filter(
+        a => (a.coDocenteId === doc.id && a.tieneCoDocente) || (a.docenteId === doc.id && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE' || (a.asignatura && /co.*docenc|codocenc/i.test(a.asignatura))))
+      ).reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+      const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedCoDocencia = asigsCoDocenciaSubvGen.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const pedTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const pedTotalAsignadas = asigsColegio.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+      const hDir = doc.horasDirectivas || 0;
+      const hInsp = doc.horasInspectorGeneral || 0;
+      const hTec = doc.horasTecnicoPedagogicas || 0;
+      const hCoord = doc.horasCoordinacion || 0;
+      const hCoordPie = doc.horasCoordinacionPie || 0;
+      const hConv = doc.horasConvivenciaEscolar || 0;
+      const hExtra = doc.horasExtraescolar || 0;
+      const hTallerSepDoc = doc.horasTallerSep || 0;
+      const hColabDoc = doc.horasTrabajoColaborativo || 0;
 
       const isSepFin = (f: any) => {
         if (f.financiamiento && /sep/i.test(f.financiamiento)) return true;
@@ -747,7 +807,7 @@ export function obtenerDocentesConsolidadosTerritorio(
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
       const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
-      const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const cronTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
       const tieneAsignaciones = asigsColegio.length > 0;
       const sepExentas = tieneAsignaciones
@@ -836,7 +896,7 @@ export function obtenerDocentesConsolidadosTerritorio(
       totalHorasSlep += doc.horasContrato;
       totalPedAula += pedTotalAsignadas;
       totalAulaRegular += pedAulaRegular;
-      totalCoDocencia += pedCoDocencia;
+      totalCoDocencia += totalPedCoDocencia;
       totalTallerSep += (hTallerSepDoc || pedTallerSep);
       totalTrabajoColaborativo += (hColabDoc || pedTrabajoColab);
       totalInstitucionalesNoAula += hInstNoAula;
@@ -884,7 +944,7 @@ export function obtenerDocentesConsolidadosTerritorio(
         horasCoordinacion: hCoord,
         horasTallerSep: sepExentas,
         horasTrabajoColaborativo: pieCronologicas,
-        horasCoDocencia: pedCoDocencia,
+        horasCoDocencia: totalPedCoDocencia,
         horasAulaRegular: pedAulaRegular,
         esExentoProporcion: horasDocenciaNeta === 0,
         horasPedagogicasAsignadas: pedTotalAsignadas,
@@ -931,8 +991,8 @@ export function obtenerDocentesConsolidadosTerritorio(
         aplicaArticulo69: Boolean(doc.aplicaArticulo69),
         horasReduccionArticulo69: auditMulti.horasReduccionArticulo69 || calculo.horasReduccionArticulo69 || 0,
         minutosReduccionArticulo69: auditMulti.minutosReduccionArticulo69 || calculo.minutosReduccionArticulo69 || 0,
-        horasSepSinAsignar: Math.max(0, contratoSepDoc - (sepExentas + auditMulti.req65_35 + auditMulti.req60_40)),
-        horasPieSinAsignar: Math.max(0, contratoPieDoc - (pieCronologicas + auditMulti.req65_35 + auditMulti.req60_40)),
+        horasSepSinAsignar: Math.max(0, contratoSepDoc - sepExentas),
+        horasPieSinAsignar: Math.max(0, contratoPieDoc - pieCronologicas),
         horasSubvGeneralSinAsignar: Math.max(0, subTotalDoc - (contratoReqSubvencionGeneral + sumFuncionesNoAulaSubvGen))
       });
     }

@@ -484,10 +484,10 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     const consolidado = obtenerDocentesConsolidadosTerritorio([colegioVulnerable], [docMarianela], asigsMarianela, cursosVuln);
     const contrato = consolidado[0].contratos[0];
 
-    expect(contrato.horasAula60_40).toBe(28); // 4 HA talleres + 24 HA codocencia
-    expect(contrato.contratoCalculadoTotal).toBe(35);
-    expect(contrato.saldoHoras).toBe(0);
-    expect(contrato.estadoSaldo).toBe('EXACTO');
+    expect(contrato.horasAula60_40).toBe(4); // 4 HA talleres regular/JEC
+    expect(contrato.horasTallerSep).toBe(24); // 24 hrs cronológicas SEP
+    expect(contrato.contratoCalculadoTotal).toBe(29); // 5h base aula + 24h SEP
+    expect(contrato.saldoHoras).toBe(6); // 35h contrato - 29h asignadas = 6h vacantes
     expect(contrato.esInfractorExcesoLectivo).toBe(false);
   });
 
@@ -546,20 +546,19 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docValentina], asigsValentina);
     const estDoc = diag.estadoDocentes[0];
 
-    expect(estDoc.horasCoDocencia).toBe(22);
-    expect(estDoc.horasTallerSep).toBe(0);
-    expect(estDoc.horasExentas).toBe(0); // CERO horas exentas fantasma
-    expect(estDoc.horasDocenciaAfecta).toBe(26); // Todas las 26h están disponibles para docencia de aula
+    expect(estDoc.horasTallerSep).toBe(22); // 22 hrs SEP cronológicas asignadas
+    expect(estDoc.horasExentas).toBe(22); // 22 hrs cronológicas exentas de proporción regular
+    expect(estDoc.horasSepSinAsignar).toBe(4); // 26h contrato SEP - 22h asignadas = 4h vacantes
     expect(estDoc.estaSobreasignado).toBe(false);
 
     // 2. Consolidado territorial
     const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docValentina], asigsValentina, cursos);
     const contrato = consolidado[0].contratos[0];
 
-    expect(contrato.horasAula65_35).toBe(22);
-    expect(contrato.horasTallerSep).toBe(0); // 0 hrs de taller fuera de aula
-    expect(contrato.contratoCalculadoTotal).toBeLessThanOrEqual(26); // 25h calculadas (cubre las 22 HA), NO 27h!
+    expect(contrato.horasAula65_35).toBe(0); // 0 HA de aula regular (son 100% SEP cronológicas)
+    expect(contrato.horasTallerSep).toBe(22); // 22 hrs cronológicas SEP
+    expect(contrato.contratoCalculadoTotal).toBe(22); // 22h calculadas (Base: 0h + 22h SEP)
     expect(contrato.esInfractorExcesoLectivo).toBe(false); // NO exceso lectivo!
-    expect(contrato.saldoHoras).toBeGreaterThanOrEqual(0);
+    expect(contrato.saldoHoras).toBe(4); // 4h de saldo a favor / vacantes
   });
 });
