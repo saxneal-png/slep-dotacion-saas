@@ -238,8 +238,8 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
       esCoDocencia: true,
       esAgrupacionFlexible: coDocTipo === 'AGRUPACION_FLEXIBLE',
       tipoApoyo: coDocTipo,
-      esTallerSep: coDocFinanciamiento === 'SEP',
-      esProporcionDocente: false
+      esTallerSep: false,
+      esProporcionDocente: true
     };
 
     await onGuardar(newAsig);

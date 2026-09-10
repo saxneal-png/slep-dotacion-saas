@@ -267,8 +267,15 @@ export function calcularDiagnosticoColegio(
     const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
     const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
-    const sepExentas = Math.max(hTallerSepDoc, cronTallerSep) + sumFuncionesNoAulaSep;
-    const pieCronologicas = Math.max(hColabDoc + hCoordPie, cronTrabajoColab) + sumFuncionesNoAulaPie;
+    const tieneAsignaciones = (docenteAsigs.length + coDocenteAsigs.length) > 0;
+    const sepExentas = tieneAsignaciones
+      ? (cronTallerSep + sumFuncionesNoAulaSep)
+      : (hTallerSepDoc + sumFuncionesNoAulaSep);
+
+    const pieCronologicas = tieneAsignaciones
+      ? (cronTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie))
+      : (hColabDoc + hCoordPie + sumFuncionesNoAulaPie);
+
     const hInstNoAula = sumFuncionesNoAulaSubvGen;
     const hExentas = hInstNoAula + sepExentas + pieCronologicas;
     const horasParaDocenciaAula = Math.max(0, doc.horasContrato - hExentas);
@@ -742,8 +749,14 @@ export function obtenerDocentesConsolidadosTerritorio(
       const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
       const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
-      const sepExentas = Math.max(hTallerSepDoc, cronTallerSep) + sumFuncionesNoAulaSep;
-      const pieCronologicas = Math.max(hColabDoc + hCoordPie, cronTrabajoColab) + sumFuncionesNoAulaPie;
+      const tieneAsignaciones = asigsColegio.length > 0;
+      const sepExentas = tieneAsignaciones
+        ? (cronTallerSep + sumFuncionesNoAulaSep)
+        : (hTallerSepDoc + sumFuncionesNoAulaSep);
+
+      const pieCronologicas = tieneAsignaciones
+        ? (cronTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie))
+        : (hColabDoc + hCoordPie + sumFuncionesNoAulaPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;

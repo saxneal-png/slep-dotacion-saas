@@ -310,12 +310,26 @@ export function calcularEstadisticasColegio(
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
+    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || '')).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaSubvGen = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+
+    const tieneAsignaciones = (docAsigs.length + coDocAsigs.length) > 0;
+    const sepExentoDoc = tieneAsignaciones ? sumFuncionesNoAulaSep : (dTallerSep + sumFuncionesNoAulaSep);
+    const pieCronologicoDoc = tieneAsignaciones ? (haColab + sumFuncionesNoAulaPie) : (dColab + haColab + sumFuncionesNoAulaPie);
+
     // Auditoría multitramo oficial MINEDUC (calcula 60/40 y 65/35 por separado y suma minutos de recreo, lectivas y HNL)
     const auditDoc = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: ha65,
       horasAula60_40: ha60,
-      horasPieCronologicas: dColab + haColab,
-      horasTallerSepExento: dTallerSep,
+      horasPieCronologicas: pieCronologicoDoc,
+      horasTallerSepExento: sepExentoDoc,
       horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord,
       horasContratoReal: doc.horasContrato,
       aplicaArticulo69: Boolean(doc.aplicaArticulo69)
@@ -328,16 +342,6 @@ export function calcularEstadisticasColegio(
 
     const horasNoLectivasDoc = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
     const horasRecreoDoc = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
-
-    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || '')).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-    const sumFuncionesNoAulaSubvGen = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
 
     const sepAsignadasDoc = dTallerSep + sumFuncionesNoAulaSep;
     const sepSinAsignarDoc = Math.max(0, (spTit + spCon) - sepAsignadasDoc);

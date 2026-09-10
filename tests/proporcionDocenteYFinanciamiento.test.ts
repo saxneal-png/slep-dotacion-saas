@@ -490,4 +490,76 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     expect(contrato.estadoSaldo).toBe('EXACTO');
     expect(contrato.esInfractorExcesoLectivo).toBe(false);
   });
+
+  it('audita caso real de Valentina Alarcón Jünemann (26h SEP, 22 HA Co-Docencia SEP en 65/35): no debe generar horas exentas ficticias ni falso exceso lectivo', () => {
+    // Valentina Alarcón Jünemann:
+    // Contrato 26 hrs SEP (TITULAR)
+    // 22 HA de Co-Docencia SEP distribuidas en 3 cursos (10 HA en 1° Básico + 6 HA en 2° Básico + 6 HA en 3° Básico)
+    // Campo legacy en docente con horasTallerSep: 2 (no debe descontar horas del contrato de aula si no hay asignaciones fuera de aula)
+    const docValentina: Docente = {
+      id: 'doc-valentina-alarcon',
+      rbd: '9999',
+      run: '16.217.826-1',
+      nombres: 'Valentina',
+      apellidos: 'Alarcón Jünemann',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 26,
+      horasSepTitular: 26,
+      horasTallerSep: 2 // legacy field que no debe generar horas exentas fantasma
+    };
+
+    const asigsValentina: AsignacionHoraria[] = [
+      {
+        id: 'asig-val-1',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-valentina-alarcon',
+        asignatura: 'Codocencia Lenguaje 1B',
+        horasPedagogicasAula: 10,
+        esCoDocencia: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      },
+      {
+        id: 'asig-val-2',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-valentina-alarcon',
+        asignatura: 'Codocencia Matemática 2B',
+        horasPedagogicasAula: 6,
+        esCoDocencia: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      },
+      {
+        id: 'asig-val-3',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-valentina-alarcon',
+        asignatura: 'Codocencia Lenguaje 3B',
+        horasPedagogicasAula: 6,
+        esCoDocencia: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      }
+    ];
+
+    // 1. Diagnóstico del colegio
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docValentina], asigsValentina);
+    const estDoc = diag.estadoDocentes[0];
+
+    expect(estDoc.horasCoDocencia).toBe(22);
+    expect(estDoc.horasTallerSep).toBe(0);
+    expect(estDoc.horasExentas).toBe(0); // CERO horas exentas fantasma
+    expect(estDoc.horasDocenciaAfecta).toBe(26); // Todas las 26h están disponibles para docencia de aula
+    expect(estDoc.estaSobreasignado).toBe(false);
+
+    // 2. Consolidado territorial
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docValentina], asigsValentina, cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.horasAula65_35).toBe(22);
+    expect(contrato.horasTallerSep).toBe(0); // 0 hrs de taller fuera de aula
+    expect(contrato.contratoCalculadoTotal).toBeLessThanOrEqual(26); // 25h calculadas (cubre las 22 HA), NO 27h!
+    expect(contrato.esInfractorExcesoLectivo).toBe(false); // NO exceso lectivo!
+    expect(contrato.saldoHoras).toBeGreaterThanOrEqual(0);
+  });
 });
