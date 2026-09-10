@@ -8,6 +8,7 @@ import {
 import {
   calcularJornadaMinutos,
   calcularAuditoriaDocenteMultitramo,
+  buscarContratoMinimoPorTabla,
   obtenerPlanPorCurso,
   calcularDemandaNormativaPieCurso
 } from '@slep/mineduc-engine';
@@ -290,18 +291,40 @@ export function calcularEstadisticasColegio(
     horasCoDocenciaTotal += haCoDoc;
     horasTrabajoColaborativoTotal += (dColab + haColab);
 
-    const hExentas = dDir + dInsp + dTec + dCoord + dTallerSep + dColab;
+    const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || ((pTit + pCon) > 0 && (sTit + sCon) === 0);
+    const asigsDocenciaEfectiva = isPieDoc
+      ? asigsRegulares
+      : [...asigsRegulares, ...asigsCoDoc];
+
+    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || '')).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaSubvGen = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+
+    const sepExentas = isPieDoc
+      ? Math.max(spTit + spCon, dTallerSep, sumFuncionesNoAulaSep)
+      : (Math.max(dTallerSep, docAsigs.filter(a => a.esTallerSep).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0)) + sumFuncionesNoAulaSep);
+    const pieCronologicas = isPieDoc
+      ? Math.max(pTit + pCon, dColab, haColab + sumFuncionesNoAulaPie)
+      : Math.max(dColab, haColab) + sumFuncionesNoAulaPie;
+
+    const hExentas = dDir + dInsp + dTec + dCoord + sepExentas + pieCronologicas + sumFuncionesNoAulaSubvGen;
     const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);
 
-    // Separar horas regulares según régimen del curso (60/40 vs 65/35) para cálculo independiente
-    const ha60 = asigsRegulares
+    // Separar horas efectivas según régimen del curso (60/40 vs 65/35) para cálculo independiente
+    const ha60 = asigsDocenciaEfectiva
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
-    const ha65 = asigsRegulares
+    const ha65 = asigsDocenciaEfectiva
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
@@ -312,9 +335,9 @@ export function calcularEstadisticasColegio(
     const auditDoc = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: ha65,
       horasAula60_40: ha60,
-      horasPieCronologicas: pTit + pCon,
-      horasTallerSepExento: Math.max(spTit + spCon, dTallerSep),
-      horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord,
+      horasPieCronologicas: pieCronologicas,
+      horasTallerSepExento: sepExentas,
+      horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord + sumFuncionesNoAulaSubvGen,
       horasContratoReal: doc.horasContrato,
       aplicaArticulo69: Boolean(doc.aplicaArticulo69)
     });
@@ -327,24 +350,23 @@ export function calcularEstadisticasColegio(
     const horasNoLectivasDoc = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
     const horasRecreoDoc = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
 
-    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || '')).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-    const sumFuncionesNoAulaSubvGen = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
+    const asigsSepAula = isPieDoc ? [] : docAsigs.filter(a => a.esTallerSep || a.tipoApoyo === 'TALLER_SEP' || (a.esCoDocencia && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP')));
+    const pedSep65 = asigsSepAula.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const pedSep60 = asigsSepAula.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const reqSepDoc = (pedSep65 > 0 || pedSep60 > 0)
+      ? (buscarContratoMinimoPorTabla(pedSep65, '65_35') + buscarContratoMinimoPorTabla(pedSep60, '60_40') + sumFuncionesNoAulaSep)
+      : (dTallerSep + sumFuncionesNoAulaSep);
 
-    const sepAsignadasDoc = dTallerSep + sumFuncionesNoAulaSep;
+    const pedCurricular65 = asigsRegulares.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const pedCurricular60 = asigsRegulares.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const reqSubvDoc = buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40') + dDir + dInsp + dTec + dCoord + sumFuncionesNoAulaSubvGen;
+
+    const sepAsignadasDoc = reqSepDoc;
+    const pieAsignadasDoc = (isPieDoc ? Math.max(pTit + pCon, haColab + sumFuncionesNoAulaPie) : (dColab + haColab + sumFuncionesNoAulaPie));
+
     const sepSinAsignarDoc = Math.max(0, (spTit + spCon) - sepAsignadasDoc);
-
-    const pieAsignadasDoc = dColab + haColab + sumFuncionesNoAulaPie;
     const pieSinAsignarDoc = Math.max(0, (pTit + pCon) - pieAsignadasDoc);
-
-    const subvGenAsignadasDoc = auditDoc.req65_35 + auditDoc.req60_40 + dDir + dInsp + dTec + dCoord + sumFuncionesNoAulaSubvGen;
-    const subvGenSinAsignarDoc = Math.max(0, (sTit + sCon) - subvGenAsignadasDoc);
+    const subvGenSinAsignarDoc = Math.max(0, (sTit + sCon) - reqSubvDoc);
     const totalSinAsignarDoc = sepSinAsignarDoc + pieSinAsignarDoc + subvGenSinAsignarDoc;
 
     horasSepSinAsignarTotal += sepSinAsignarDoc;

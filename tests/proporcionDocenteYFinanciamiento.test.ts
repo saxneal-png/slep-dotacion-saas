@@ -470,7 +470,7 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
         cursoId: 'TRANSVERSAL',
         docenteId: 'doc-marianela',
         asignatura: 'Co-docencia',
-        horasPedagogicasAula: 32,
+        horasPedagogicasAula: 25,
         esCoDocencia: true,
         esTallerSep: true,
         tipoApoyo: 'CO_DOCENCIA'
@@ -480,10 +480,109 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     const consolidado = obtenerDocentesConsolidadosTerritorio([colegioVulnerable], [docMarianela], asigsMarianela, cursos);
     const contrato = consolidado[0].contratos[0];
 
-    // Debe dar exactamente 36 horas calculadas (4h base de los talleres + 32h Co-docencia SEP), NO 28h!
+    // En régimen 60/40, 29 HA de aula (4 HA regular + 25 HA Co-docencia SEP) exigen exactamente 36h de contrato
     expect(contrato.contratoCalculadoTotal).toBe(36);
     expect(contrato.saldoHoras).toBe(0);
     expect(contrato.estadoSaldo).toBe('EXACTO');
     expect(contrato.esInfractorExcesoLectivo).toBe(false);
+  });
+
+  it('audita caso real de Daniela Cabrera Gutiérrez (32h contrato: 2 HA regular + 26 HA Co-Docencia SEP = 28 HA): calcula 32h exactas con proporción Ley 20.903 y 0h libres', () => {
+    // Daniela Cabrera:
+    // DOCENTE AULA, CONTRATA 32 hrs (2h Subvención General + 30h SEP)
+    // 2 HA Plan Regular / JEC (1 HA Orientación + 1 HA Taller Socioemocional)
+    // 26 HA Co-docencia SEP en aula
+    // Total aula: 28 HA en 65/35 -> Exige exactamente 32 hrs de contrato (21h lectivas + 8h 49m HNL + 2h 11m recreos)
+    const docDaniela: Docente = {
+      id: 'doc-daniela-cabrera',
+      rbd: '9999',
+      run: '17.747.745-1',
+      nombres: 'Daniela Marioly',
+      apellidos: 'Cabrera Gutierrez',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 32,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 2,
+      horasSepTitular: 0,
+      horasSepContrata: 30,
+      horasPieTitular: 0,
+      horasPieContrata: 0
+    };
+
+    const asigsDaniela: AsignacionHoraria[] = [
+      {
+        id: 'asig-daniela-orient',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-daniela-cabrera',
+        asignatura: 'Orientación',
+        horasPedagogicasAula: 1
+      },
+      {
+        id: 'asig-daniela-socioem',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-daniela-cabrera',
+        asignatura: 'Jec: Taller Socioemocional',
+        horasPedagogicasAula: 1,
+        esTallerJec: true
+      },
+      {
+        id: 'asig-daniela-codoc-sep-1',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-daniela-cabrera',
+        asignatura: 'Co-docencia SEP Lenguaje',
+        horasPedagogicasAula: 14,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      },
+      {
+        id: 'asig-daniela-codoc-sep-2',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-daniela-cabrera',
+        asignatura: 'Co-docencia SEP Matemática',
+        horasPedagogicasAula: 12,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      }
+    ];
+
+    // 1. Diagnóstico del colegio
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docDaniela], asigsDaniela);
+    const estDoc = diag.estadoDocentes[0];
+
+    // Aula regular solo 2 HA (las 26 HA de co-docencia no inflan la demanda curricular)
+    expect(estDoc.horasAulaRegular).toBe(2);
+    expect(estDoc.horasCoDocencia).toBe(26);
+    expect(estDoc.horasPedagogicasAsignadas).toBe(28);
+    // 0 horas vacantes/libres (se consumen exactamente las 32h)
+    expect(estDoc.horasVacantes).toBe(0);
+    expect(estDoc.estaSobreasignado).toBe(false);
+    expect(estDoc.horasSepSinAsignar).toBe(0);
+    expect(estDoc.horasSubvGeneralSinAsignar).toBe(0);
+
+    // Balanza curricular de la escuela: solo 2 HA lectivas regulares sumadas
+    expect(diag.balanzaGeneral.horasLectivasAsignadas).toBe(2);
+
+    // 2. Consolidado territorial multitramo
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docDaniela], asigsDaniela, cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.contratoCalculadoTotal).toBe(32); // Exactamente 32 hrs
+    expect(contrato.saldoHoras).toBe(0);
+    expect(contrato.estadoSaldo).toBe('EXACTO');
+    expect(contrato.esInfractorExcesoLectivo).toBe(false);
+    expect(contrato.esImprocedenteFinanciamientoSepPie).toBe(false);
+    expect(contrato.deficitSubvencionGeneral).toBe(0);
+
+    // Minutos oficiales: 28 HA = 1260 mins lectivas, recreo > 0, HNL > 0
+    expect(contrato.minutosLectivosMineduc).toBe(28 * 45); // 1260 mins (21h 00m)
+    expect(contrato.minutosRecreoMineduc).toBe(131); // 2h 11m según tabla RAW_65_35
+    expect(contrato.minutosNoLectivosMineduc).toBe(529); // 8h 49m según tabla RAW_65_35
   });
 });

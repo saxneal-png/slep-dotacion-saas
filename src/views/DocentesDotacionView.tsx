@@ -202,12 +202,21 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
       const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-      const sepExentas = isSepDoc
+      // Docencia efectiva de aula que requiere proporción Ley 20.903 (HNL + recreos)
+      const asigsDocenciaAulaEfectiva = isPieDoc
+        ? asigsAulaRegular
+        : [
+            ...asigsAulaRegular,
+            ...asigsCoDocencia
+          ];
+
+      const sepExentas = isPieDoc
         ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
-        : Math.max(hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep);
+        : (Math.max(hTallerSepDoc, pedTallerSep, cronTallerSep) + sumFuncionesNoAulaSep);
+
       const pieCronologicas = isPieDoc
         ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
-        : Math.max(hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie);
+        : Math.max(cronTrabajoColab + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
@@ -247,14 +256,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
           };
 
-      const ped65 = asigsAulaRegular
+      const ped65 = asigsDocenciaAulaEfectiva
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-      const ped60 = asigsAulaRegular
+      const ped60 = asigsDocenciaAulaEfectiva
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
@@ -275,7 +284,21 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
       const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
-      const reqSubvDoc = auditMulti.req65_35 + auditMulti.req60_40;
+      const pedCurricular65 = asigsAulaRegular
+        .filter(a => {
+          const c = cursos.find(x => x.id === a.cursoId);
+          return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
+        })
+        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+      const pedCurricular60 = asigsAulaRegular
+        .filter(a => {
+          const c = cursos.find(x => x.id === a.cursoId);
+          return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+        })
+        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+      const reqSubvDoc = buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40') + sumFuncionesNoAulaSubvGen;
       const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
       const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
 
