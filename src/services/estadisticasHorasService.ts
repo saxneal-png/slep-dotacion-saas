@@ -278,96 +278,42 @@ export function calcularEstadisticasColegio(
     const docAsigs = asignaciones.filter(a => a.docenteId === doc.id);
     const coDocAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
 
-    const isSepDoc = (spTit + spCon > 0) && (pTit + pCon === 0) && (sTit + sCon === 0);
-    const isPieDoc = (pTit + pCon > 0) && (sTit + sCon === 0);
-
-    const isAsigSep = (a: AsignacionHoraria) => {
-      if (a.esTallerSep) return true;
-      if (a.tipoApoyo === 'TALLER_SEP') return true;
-      if (a.financiador === 'SEP') return true;
-      if (isSepDoc && a.financiador !== 'SUB_GEN') return true;
-      if (a.asignatura && /taller.*sep|apoyo.*sep|\bsep\b/i.test(a.asignatura)) return true;
-      return false;
-    };
-
-    const isAsigPie = (a: AsignacionHoraria) => {
-      if (a.esTrabajoColaborativo) return true;
-      if (a.tipoApoyo === 'TRABAJO_COLABORATIVO') return true;
-      if (a.horasCronologicasPie && a.horasCronologicasPie > 0 && !a.esCoDocencia && a.tipoApoyo !== 'CO_DOCENCIA') return true;
-      if (a.asignatura && /colaborativ/i.test(a.asignatura)) return true;
-      return false;
-    };
-
-    const asigsSep = [
-      ...docAsigs.filter(a => isAsigSep(a)),
-      ...coDocAsigs.filter(a => isAsigSep(a))
-    ];
-    const asigsColab = [
-      ...docAsigs.filter(a => isAsigPie(a)),
-      ...coDocAsigs.filter(a => isAsigPie(a))
-    ];
-    const asigsCoDoc = [
-      ...docAsigs.filter(a => !isAsigSep(a) && !isAsigPie(a) && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE')),
-      ...coDocAsigs.filter(a => !isAsigSep(a) && !isAsigPie(a))
-    ];
-    const asigsRegulares = docAsigs.filter(a => !isAsigSep(a) && !isAsigPie(a) && !asigsCoDoc.includes(a));
-
-    const totalHaCoDoc = [
-      ...docAsigs.filter(a => a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE' || (a.asignatura && /co.*docenc|codocenc/i.test(a.asignatura))),
-      ...coDocAsigs
-    ].reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const asigsRegulares = docAsigs.filter(a => !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO');
+    const asigsCoDoc = [...docAsigs.filter(a => a.esCoDocencia), ...coDocAsigs];
+    const asigsColab = docAsigs.filter(a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO' || a.asignatura.toLowerCase().includes('colaborativ'));
 
     const haRegular = asigsRegulares.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
     const haCoDoc = asigsCoDoc.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-    const haColab = asigsColab.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula ?? 0), 0);
-    const haSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula ?? 0), 0);
+    const haColab = asigsColab.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
     horasAulaPedagogicasAsignadas += haRegular;
-    horasCoDocenciaTotal += totalHaCoDoc;
+    horasCoDocenciaTotal += haCoDoc;
     horasTrabajoColaborativoTotal += (dColab + haColab);
 
-    const asigsAulaDocente = [...asigsRegulares, ...asigsCoDoc];
+    const hExentas = dDir + dInsp + dTec + dCoord + dTallerSep + dColab;
+    const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);
 
-    // Separar horas de aula (regulares y codocencia) según régimen del curso (60/40 vs 65/35)
-    const ha60 = asigsAulaDocente
+    // Separar horas regulares según régimen del curso (60/40 vs 65/35) para cálculo independiente
+    const ha60 = asigsRegulares
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
-    const ha65 = asigsAulaDocente
+    const ha65 = asigsRegulares
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
-    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || '')).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-    const sumFuncionesNoAulaSubvGen = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
-      ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : 0;
-
-    const totalTrabajoColab = Math.max(dColab, haColab);
-    const totalTallerSep = Math.max(dTallerSep, haSep);
-
-    const sepExentoDoc = totalTallerSep + sumFuncionesNoAulaSep;
-    const pieCronologicoDoc = totalTrabajoColab + sumFuncionesNoAulaPie;
-
-    const hExentas = dDir + dInsp + dTec + dCoord + sepExentoDoc + pieCronologicoDoc;
-    const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);
-
     // Auditoría multitramo oficial MINEDUC (calcula 60/40 y 65/35 por separado y suma minutos de recreo, lectivas y HNL)
     const auditDoc = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: ha65,
       horasAula60_40: ha60,
-      horasPieCronologicas: pieCronologicoDoc,
-      horasTallerSepExento: sepExentoDoc,
+      horasPieCronologicas: pTit + pCon,
+      horasTallerSepExento: Math.max(spTit + spCon, dTallerSep),
       horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord,
       horasContratoReal: doc.horasContrato,
       aplicaArticulo69: Boolean(doc.aplicaArticulo69)
@@ -381,10 +327,20 @@ export function calcularEstadisticasColegio(
     const horasNoLectivasDoc = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
     const horasRecreoDoc = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
 
-    const sepAsignadasDoc = sepExentoDoc;
+    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || '')).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaSubvGen = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+
+    const sepAsignadasDoc = dTallerSep + sumFuncionesNoAulaSep;
     const sepSinAsignarDoc = Math.max(0, (spTit + spCon) - sepAsignadasDoc);
 
-    const pieAsignadasDoc = pieCronologicoDoc;
+    const pieAsignadasDoc = dColab + haColab + sumFuncionesNoAulaPie;
     const pieSinAsignarDoc = Math.max(0, (pTit + pCon) - pieAsignadasDoc);
 
     const subvGenAsignadasDoc = auditDoc.req65_35 + auditDoc.req60_40 + dDir + dInsp + dTec + dCoord + sumFuncionesNoAulaSubvGen;

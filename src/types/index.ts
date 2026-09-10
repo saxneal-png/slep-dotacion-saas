@@ -153,7 +153,6 @@ export interface AsignacionHoraria {
   horasCronologicasPie?: number;
   horasColaborativas?: number;
   tipoApoyo?: string;
-  financiador?: 'SUB_GEN' | 'SEP' | 'PIE' | string;
 }
 
 export interface BalanzaHorariaColegio {

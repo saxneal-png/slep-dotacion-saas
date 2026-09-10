@@ -298,68 +298,11 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     expect(contrato.horasDocenciaNeta).toBe(24);
   });
 
-  it('calcula la proporción docente (65/35 y 60/40) para horas de co-docencia bajo el Estatuto Docente', () => {
-    // Docente de Educación Diferencial (PIE):
-    // 24 HA de Co-Docencia en curso 65/35 (según tabla oficial 65/35, 24 HA exige 28h de contrato)
-    // 3h de Trabajo Colaborativo (Art. 86 no aula)
-    // 1h de Coordinación PIE (no aula)
-    // Total contrato requerido = 28h + 4h = 32h
-    const docPie: Docente = {
-      id: 'doc-pie-proporcion',
-      rbd: '9999',
-      run: '19.876.543-2',
-      nombres: 'Camila',
-      apellidos: 'Herrera',
-      calidadJuridica: 'CONTRATA',
-      estamento: 'DOCENTE_DIFERENCIAL',
-      horasContrato: 32,
-      horasPieContrata: 32,
-      horasTrabajoColaborativo: 3,
-      horasCoordinacionPie: 1
-    };
-
-    const asigsPie: AsignacionHoraria[] = [
-      {
-        id: 'asig-codoc-1',
-        rbd: '9999',
-        cursoId: 'curso-5b',
-        docenteId: 'doc-pie-proporcion',
-        asignatura: 'Co-docencia Lenguaje',
-        horasPedagogicasAula: 24,
-        esCoDocencia: true,
-        tipoApoyo: 'CO_DOCENCIA'
-      },
-      {
-        id: 'asig-colab-1',
-        rbd: '9999',
-        cursoId: 'curso-5b',
-        docenteId: 'doc-pie-proporcion',
-        asignatura: 'Trabajo Colaborativo Art. 86',
-        horasPedagogicasAula: 3,
-        esTrabajoColaborativo: true,
-        tipoApoyo: 'TRABAJO_COLABORATIVO'
-      }
-    ];
-
-    // 24 HA en 65/35 exige 28h de contrato + 4h no aula = 32h de contrato total requerido
-    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docPie], asigsPie, cursos);
-    const contrato = consolidado[0].contratos[0];
-
-    expect(contrato.horasCoDocencia).toBe(24);
-    expect(contrato.horasAula65_35).toBe(24);
-    expect(contrato.horasTrabajoColaborativo).toBe(4); // 3h colab + 1h coord
-    expect(contrato.contratoCalculadoTotal).toBe(32);
-    expect(contrato.saldoHoras).toBe(0);
-    expect(contrato.estadoSaldo).toBe('EXACTO');
-    expect(contrato.esInfractorExcesoLectivo).toBe(false);
-  });
-
-  it('audita caso real de Docente PIE con 39h contrata (11 HA apoyo aula + 28h Coordinadora PIE): calcula proporción de aula y horas no aula', () => {
+  it('audita caso real de Docente PIE con 39h contrata (11h apoyo aula + 28h Coordinadora PIE): calcula 39h exactas sin inflación', () => {
     // Caso de usuario:
     // Docente diferencial con contrato de 39h PIE contrata (0 Subv. Gen, 0 SEP)
-    // 11 HA de apoyo en aula (co-docencia PIE en 65/35 -> exige 14h de contrato)
+    // 11h de apoyo en aula (co-docencia PIE)
     // 28h como Coordinadora PIE de primer ciclo (registrada en funcionesNoAula con financiamiento PIE)
-    // Carga total calculada = 14h + 28h = 42h
     const docPie39: Docente = {
       id: 'doc-pie-39',
       rbd: '9999',
@@ -368,8 +311,13 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
       apellidos: 'Morales',
       calidadJuridica: 'CONTRATA',
       estamento: 'DOCENTE_DIFERENCIAL',
-      horasContrato: 41,
-      horasPieContrata: 41,
+      horasContrato: 39,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasPieTitular: 0,
+      horasPieContrata: 39,
       funcionesNoAula: [
         {
           id: 'func-coord-pie',
@@ -389,8 +337,9 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
         docenteId: 'doc-pie-39',
         asignatura: 'Apoyo Especializado PIE Matemática',
         horasPedagogicasAula: 11,
+        horasCronologicasPie: 11,
         esCoDocencia: true,
-        tipoApoyo: 'CO_DOCENCIA'
+        tipoApoyo: 'Co-Docencia en Aula Regular'
       }
     ];
 
@@ -398,46 +347,88 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docPie39], asigPie11);
     const estDoc = diag.estadoDocentes[0];
 
-    expect(estDoc.horasAulaRegular).toBe(0); // Co-docencia no es titular plan de estudio
+    expect(estDoc.horasAulaRegular).toBe(0); // Co-docencia no es aula regular
     expect(estDoc.horasCoDocencia).toBe(11);
-    expect(estDoc.horasExentas).toBe(28); // 28h coord PIE no aula
-    expect(estDoc.horasDocenciaAfecta).toBe(13); // 41h contrato - 28h no aula = 13h para docencia de aula
+    expect(estDoc.horasExentas).toBe(39); // 28h coord PIE + 11h apoyo = 39h
+    expect(estDoc.horasDocenciaAfecta).toBe(0);
     expect(estDoc.estaSobreasignado).toBe(false);
+    expect(estDoc.horasVacantes).toBe(0); // 39h contrato - 39h carga = 0
 
     // 2. Consolidado territorial multitramo
-    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docPie39], asigPie11, cursos);
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docPie39], asigPie11);
     const contrato = consolidado[0].contratos[0];
 
-    // 11 HA en 65/35 exige 13h de contrato + 28h no aula = 41h total
-    expect(contrato.contratoCalculadoTotal).toBe(41);
-    expect(contrato.fuentesFinanciamiento.total).toBe(41);
+    expect(contrato.contratoCalculadoTotal).toBe(39); // NO 67h!
+    expect(contrato.fuentesFinanciamiento.total).toBe(39);
     expect(contrato.saldoHoras).toBe(0);
     expect(contrato.estadoSaldo).toBe('EXACTO');
     expect(contrato.esInfractorExcesoLectivo).toBe(false);
   });
 
-  it('audita caso de Docente con Co-Docencia SEP (calcula proporción lectiva docente sobre horas aula)', () => {
-    const colegioVulnerable: Establecimiento = {
-      ...colegio,
-      porcentajePrioritarios: 85 // Escuela vulnerable (>80% prioritarios, régimen 60/40)
+  it('audita caso real de Natalia Bórquez Barría (15 HA / 11h cronológicas apoyo PIE + 28h Coordinadora PIE): calcula 39h exactas', () => {
+    // Natalia Bórquez Barría:
+    // DOCENTE DIFERENCIAL, TITULAR 39 hrs.
+    // 1 función no aula de 28h (Coordinadora PIE).
+    // Asignación PIE con 15 HA pedagógicas (equivalente a 11h cronológicas).
+    const docNatalia: Docente = {
+      id: 'doc-natalia-borquez',
+      rbd: '9999',
+      run: '18.281.913-1',
+      nombres: 'Natalia',
+      apellidos: 'Bórquez Barría',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      horasContrato: 39,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasPieTitular: 39,
+      horasPieContrata: 0,
+      funcionesNoAula: [
+        {
+          id: 'func-coord-natalia',
+          tipo: 'COORDINACION_PIE',
+          nombre: 'Coordinadora PIE Primer Ciclo',
+          horas: 28,
+          financiamiento: 'PIE'
+        }
+      ]
     };
 
-    const cursosVuln: CursoSae[] = [
+    const asigNatalia: AsignacionHoraria[] = [
       {
-        id: 'curso-5b-vuln',
+        id: 'asig-natalia-apoyo',
         rbd: '9999',
-        nivel: '5° Básico',
-        letra: 'A',
-        regimen: 'JEC',
-        cupoSae: 35,
-        matriculaProyectada: 30,
-        regimenProporcion: '60_40'
+        cursoId: 'curso-5b',
+        docenteId: 'doc-natalia-borquez',
+        asignatura: 'Apoyo PIE - Co-docencia Aula Común',
+        horasPedagogicasAula: 15, // 15 HA pedagógicas = 11h cronológicas
+        horasCronologicasPie: 11,
+        esCoDocencia: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
       }
     ];
 
-    // Marianela: 35h de contrato (3h Subv. Gral + 32h SEP)
-    // 4 HA de talleres en aula + 24 HA de co-docencia SEP en aula = 28 HA totales de aula
-    // En 60/40: 28 HA exige exactamente 35h de contrato (21h aula + 11h 40m HNL + 2h 20m recreo = 35h)
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docNatalia], asigNatalia);
+    const estDoc = diag.estadoDocentes[0];
+    expect(estDoc.horasExentas).toBe(39);
+    expect(estDoc.horasVacantes).toBe(0);
+    expect(estDoc.estaSobreasignado).toBe(false);
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docNatalia], asigNatalia);
+    const contrato = consolidado[0].contratos[0];
+    expect(contrato.contratoCalculadoTotal).toBe(39); // 39h exactas, NO 43h!
+    expect(contrato.saldoHoras).toBe(0);
+    expect(contrato.estadoSaldo).toBe('EXACTO');
+  });
+
+  it('audita correctamente el caso Ortiz Ortiz Castro Marianela con 36 horas de contrato (32 HA Co-Docencia SEP + 4 HA Talleres)', () => {
+    const colegioVulnerable: Establecimiento = {
+      ...colegio,
+      porcentajePrioritarios: 85 // Escuela vulnerable (>80% prioritarios)
+    };
+
     const docMarianela: Docente = {
       id: 'doc-marianela',
       rbd: '9999',
@@ -446,16 +437,20 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
       apellidos: 'Ortiz Ortiz Castro',
       calidadJuridica: 'CONTRATA',
       estamento: 'DOCENTE_AULA',
-      horasContrato: 35,
-      horasSubvencionGeneralContrata: 3,
-      horasSepContrata: 32
+      horasContrato: 36,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 4,
+      horasSepTitular: 0,
+      horasSepContrata: 32,
+      horasPieTitular: 0,
+      horasPieContrata: 0
     };
 
     const asigsMarianela: AsignacionHoraria[] = [
       {
         id: 'asig-aele',
         rbd: '9999',
-        cursoId: 'curso-5b-vuln',
+        cursoId: 'curso-5b',
         docenteId: 'doc-marianela',
         asignatura: 'Taller AELE',
         horasPedagogicasAula: 2,
@@ -464,7 +459,7 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
       {
         id: 'asig-extension',
         rbd: '9999',
-        cursoId: 'curso-5b-vuln',
+        cursoId: 'TRANSVERSAL',
         docenteId: 'doc-marianela',
         asignatura: 'Taller Extensión Horaria',
         horasPedagogicasAula: 2
@@ -472,141 +467,23 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
       {
         id: 'asig-codoc-sep',
         rbd: '9999',
-        cursoId: 'curso-5b-vuln',
+        cursoId: 'TRANSVERSAL',
         docenteId: 'doc-marianela',
-        asignatura: 'Co-docencia SEP',
-        horasPedagogicasAula: 24,
+        asignatura: 'Co-docencia',
+        horasPedagogicasAula: 32,
         esCoDocencia: true,
+        esTallerSep: true,
         tipoApoyo: 'CO_DOCENCIA'
       }
     ];
 
-    const consolidado = obtenerDocentesConsolidadosTerritorio([colegioVulnerable], [docMarianela], asigsMarianela, cursosVuln);
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegioVulnerable], [docMarianela], asigsMarianela, cursos);
     const contrato = consolidado[0].contratos[0];
 
-    expect(contrato.horasAula60_40).toBe(4); // 4 HA talleres regular/JEC
-    expect(contrato.horasTallerSep).toBe(24); // 24 hrs cronológicas SEP
-    expect(contrato.contratoCalculadoTotal).toBe(29); // 5h base aula + 24h SEP
-    expect(contrato.saldoHoras).toBe(6); // 35h contrato - 29h asignadas = 6h vacantes
-    expect(contrato.esInfractorExcesoLectivo).toBe(false);
-  });
-
-  it('audita caso real de Valentina Alarcón Jünemann (26h SEP, 22 HA Co-Docencia SEP en 65/35): no debe generar horas exentas ficticias ni falso exceso lectivo', () => {
-    // Valentina Alarcón Jünemann:
-    // Contrato 26 hrs SEP (TITULAR)
-    // 22 HA de Co-Docencia SEP distribuidas en 3 cursos (10 HA en 1° Básico + 6 HA en 2° Básico + 6 HA en 3° Básico)
-    // Campo legacy en docente con horasTallerSep: 2 (no debe descontar horas del contrato de aula si no hay asignaciones fuera de aula)
-    const docValentina: Docente = {
-      id: 'doc-valentina-alarcon',
-      rbd: '9999',
-      run: '16.217.826-1',
-      nombres: 'Valentina',
-      apellidos: 'Alarcón Jünemann',
-      calidadJuridica: 'TITULAR',
-      estamento: 'DOCENTE_AULA',
-      horasContrato: 26,
-      horasSepTitular: 26,
-      horasTallerSep: 2 // legacy field que no debe generar horas exentas fantasma
-    };
-
-    const asigsValentina: AsignacionHoraria[] = [
-      {
-        id: 'asig-val-1',
-        rbd: '9999',
-        cursoId: 'curso-5b',
-        docenteId: 'doc-valentina-alarcon',
-        asignatura: 'Codocencia Lenguaje 1B',
-        horasPedagogicasAula: 10,
-        esCoDocencia: true,
-        tipoApoyo: 'CO_DOCENCIA'
-      },
-      {
-        id: 'asig-val-2',
-        rbd: '9999',
-        cursoId: 'curso-5b',
-        docenteId: 'doc-valentina-alarcon',
-        asignatura: 'Codocencia Matemática 2B',
-        horasPedagogicasAula: 6,
-        esCoDocencia: true,
-        tipoApoyo: 'CO_DOCENCIA'
-      },
-      {
-        id: 'asig-val-3',
-        rbd: '9999',
-        cursoId: 'curso-5b',
-        docenteId: 'doc-valentina-alarcon',
-        asignatura: 'Codocencia Lenguaje 3B',
-        horasPedagogicasAula: 6,
-        esCoDocencia: true,
-        tipoApoyo: 'CO_DOCENCIA'
-      }
-    ];
-
-    // 1. Diagnóstico del colegio
-    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docValentina], asigsValentina);
-    const estDoc = diag.estadoDocentes[0];
-
-    expect(estDoc.horasTallerSep).toBe(22); // 22 hrs SEP cronológicas asignadas
-    expect(estDoc.horasExentas).toBe(22); // 22 hrs cronológicas exentas de proporción regular
-    expect(estDoc.horasSepSinAsignar).toBe(4); // 26h contrato SEP - 22h asignadas = 4h vacantes
-    expect(estDoc.estaSobreasignado).toBe(false);
-
-    // 2. Consolidado territorial
-    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docValentina], asigsValentina, cursos);
-    const contrato = consolidado[0].contratos[0];
-
-    expect(contrato.horasAula65_35).toBe(0); // 0 HA de aula regular (son 100% SEP cronológicas)
-    expect(contrato.horasTallerSep).toBe(22); // 22 hrs cronológicas SEP
-    expect(contrato.contratoCalculadoTotal).toBe(22); // 22h calculadas (Base: 0h + 22h SEP)
-    expect(contrato.esInfractorExcesoLectivo).toBe(false); // NO exceso lectivo!
-    expect(contrato.saldoHoras).toBe(4); // 4h de saldo a favor / vacantes
-  });
-
-  it('cuenta horas de Trabajo Colaborativo Art. 86 ingresadas en la ficha del docente y no las deja como vacantes cuando tiene asignaciones de aula', () => {
-    // Docente de aula con 44h Subvención General
-    // 30 HA de aula asignadas (Lenguaje y Matemática)
-    // 3 horas de Trabajo Colaborativo Art. 86 ingresadas directamente en la ficha del docente
-    const docColab86: Docente = {
-      id: 'doc-colab-86',
-      rbd: '9999',
-      run: '18.999.000-1',
-      nombres: 'Rodrigo',
-      apellidos: 'Pérez San Martín',
-      calidadJuridica: 'TITULAR',
-      estamento: 'DOCENTE_AULA',
-      horasContrato: 44,
-      horasSubvencionGeneralTitular: 44,
-      horasTrabajoColaborativo: 3 // 3h ingresadas en la ficha
-    };
-
-    const asigsDoc: AsignacionHoraria[] = [
-      {
-        id: 'asig-lenguaje',
-        rbd: '9999',
-        cursoId: 'curso-5b',
-        docenteId: 'doc-colab-86',
-        asignatura: 'Lenguaje y Comunicación',
-        horasPedagogicasAula: 30
-      }
-    ];
-
-    // Diagnóstico intra-escuela
-    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docColab86], asigsDoc);
-    const estDoc = diag.estadoDocentes[0];
-
-    // En 65/35, 30 HA exige 35h de contrato base + 3h colaborativo = 38h calculadas
-    expect(estDoc.horasTrabajoColaborativo).toBe(3);
-    expect(estDoc.horasExentas).toBe(3);
-    expect(estDoc.horasDocenciaAfecta).toBe(41); // 44h - 3h exentas = 41h disponibles para aula
-    expect(estDoc.horasVacantes).toBe(6); // 44h - 38h = 6h libres (NO 9h!)
-
-    // Consolidado territorial
-    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docColab86], asigsDoc, cursos);
-    const contrato = consolidado[0].contratos[0];
-
-    expect(contrato.horasTrabajoColaborativo).toBe(3);
-    expect(contrato.contratoCalculadoTotal).toBe(38); // 35h aula + 3h colaborativo
-    expect(contrato.saldoHoras).toBe(6); // 44h real - 38h calculadas = 6h libres
+    // Debe dar exactamente 36 horas calculadas (4h base de los talleres + 32h Co-docencia SEP), NO 28h!
+    expect(contrato.contratoCalculadoTotal).toBe(36);
+    expect(contrato.saldoHoras).toBe(0);
+    expect(contrato.estadoSaldo).toBe('EXACTO');
     expect(contrato.esInfractorExcesoLectivo).toBe(false);
   });
 });

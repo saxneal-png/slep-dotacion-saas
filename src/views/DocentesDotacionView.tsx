@@ -119,45 +119,35 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   // Resúmenes de sobreasignación considerando horas directivas, inspectoría, UTP, coordinaciones, taller SEP y trabajo colaborativo (Memorizado)
   const docentesAuditados = useMemo(() => {
     return docentes.map(d => {
-      const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
-      const contratoSepDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
-      const contratoPieDoc = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
-
-      const isPieDoc = d.estamento === 'DOCENTE_DIFERENCIAL' || (contratoPieDoc > 0 && subTotalDoc === 0);
-      const isSepDoc = contratoSepDoc > 0 && contratoPieDoc === 0 && subTotalDoc === 0;
-
-      const isAsigSep = (a: AsignacionHoraria) => {
-        if (a.esTallerSep) return true;
-        if (a.tipoApoyo === 'TALLER_SEP') return true;
-        if (a.financiador === 'SEP') return true;
-        if (isSepDoc && a.financiador !== 'SUB_GEN') return true;
-        if (a.asignatura && /taller.*sep|apoyo.*sep|\bsep\b/i.test(a.asignatura)) return true;
-        return false;
-      };
-
-      const isAsigPie = (a: AsignacionHoraria) => {
-        if (a.esTrabajoColaborativo) return true;
-        if (a.tipoApoyo === 'TRABAJO_COLABORATIVO') return true;
-        if (a.horasCronologicasPie && a.horasCronologicasPie > 0 && !a.esCoDocencia && a.tipoApoyo !== 'CO_DOCENCIA') return true;
-        if (a.asignatura && /colaborativ/i.test(a.asignatura)) return true;
-        return false;
-      };
-
       const asigs = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
-      const asigsSep = asigs.filter(a => isAsigSep(a));
-      const asigsTrabajoColab = asigs.filter(a => isAsigPie(a));
-      const asigsCoDocenciaSubvGen = asigs.filter(a => !isAsigSep(a) && !isAsigPie(a) && ((a.coDocenteId === d.id && a.tieneCoDocente) || a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'));
-      const asigsAulaRegular = asigs.filter(a => a.docenteId === d.id && !isAsigSep(a) && !isAsigPie(a) && !asigsCoDocenciaSubvGen.includes(a));
+      const asigsCoDocencia = asigs.filter(a => (a.coDocenteId === d.id && a.tieneCoDocente) || a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE');
+      const asigsTallerSep = asigs.filter(a => a.docenteId === d.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a));
+      const asigsTrabajoColab = asigs.filter(a => a.docenteId === d.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO'));
 
-      const asigsAulaDocente = [
-        ...asigsAulaRegular,
+      const asigsCoDocenciaPie = asigsCoDocencia.filter(a => 
+        Boolean(a.horasCronologicasPie) || 
+        (a.tipoApoyo && /pie/i.test(a.tipoApoyo)) || 
+        d.estamento === 'DOCENTE_DIFERENCIAL' || 
+        (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0) > 0 && Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0) === 0)
+      );
+      const asigsCoDocenciaSep = asigsCoDocencia.filter(a => 
+        !asigsCoDocenciaPie.includes(a) && 
+        Boolean(a.esTallerSep || a.tipoApoyo === 'TALLER_SEP')
+      );
+      const asigsCoDocenciaSubvGen = asigsCoDocencia.filter(a => 
+        !asigsCoDocenciaPie.includes(a) && 
+        !asigsCoDocenciaSep.includes(a)
+      );
+
+      const asigsAulaRegular = [
+        ...asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a)),
         ...asigsCoDocenciaSubvGen
       ];
 
       const pedAulaRegular = asigsAulaRegular.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedCoDocencia = asigsCoDocenciaSubvGen.reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
-      const pedTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const pedCoDocencia = asigsCoDocencia.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedTallerSep = asigsTallerSep.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + a.horasPedagogicasAula, 0);
       const pedTotalAsignadas = asigs.reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
       const hDir = d.horasDirectivas || 0;
@@ -169,6 +159,13 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const hExtra = d.horasExtraescolar || 0;
       const hTallerSepDoc = d.horasTallerSep || 0;
       const hColabDoc = d.horasTrabajoColaborativo || 0;
+
+      const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
+      const contratoSepDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
+      const contratoPieDoc = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+
+      const isPieDoc = d.estamento === 'DOCENTE_DIFERENCIAL' || (contratoPieDoc > 0 && subTotalDoc === 0);
+      const isSepDoc = contratoSepDoc > 0 && contratoPieDoc === 0 && subTotalDoc === 0;
 
       const isSepFin = (f: any) => {
         if (f.financiamiento && /sep/i.test(f.financiamiento)) return true;
@@ -198,62 +195,66 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
       const cronTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
-      const cronTallerSep = asigsSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const cronCoDocenciaPie = asigsCoDocenciaPie.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const cronCoDocenciaSep = asigsCoDocenciaSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
+      const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? a.horasPedagogicasAula), 0);
 
-      const totalTrabajoColab = Math.max(hColabDoc, cronTrabajoColab);
-      const totalTallerSep = Math.max(hTallerSepDoc, cronTallerSep);
+      const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
+      const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-      const sepExentas = totalTallerSep + sumFuncionesNoAulaSep;
-      const pieCronologicas = totalTrabajoColab + (sumFuncionesNoAulaPie > 0 ? sumFuncionesNoAulaPie : hCoordPie);
+      const sepExentas = isSepDoc
+        ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+        : Math.max(hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep);
+      const pieCronologicas = isPieDoc
+        ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
+        : Math.max(hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
       const horasParaDocencia = Math.max(0, d.horasContrato - hExentas);
       const esExento = horasParaDocencia === 0;
 
-      const totalHAAula = pedAulaRegular + pedCoDocencia;
-
-      // La proporción Ley 20.903 evalúa todas las horas de aula (regulares y codocencia)
+      // La proporción Ley 20.903 solo aplica sobre horas de aula regular
       const calculo = !esExento
-        ? calcularJornadaMinutos(horasParaDocencia, totalHAAula, regimenTabla, Boolean(d.aplicaArticulo69))
+        ? calcularJornadaMinutos(horasParaDocencia, pedAulaRegular, regimenTabla, Boolean(d.aplicaArticulo69))
         : {
             horasContrato: 0,
             minutosContratoTotales: 0,
             horasPedagogicasDisponiblesMax: 0,
             minutosLectivosDisponiblesMax: 0,
-            horasPedagogicasAsignadas: totalHAAula,
-            minutosLectivosAsignados: totalHAAula * 45,
+            horasPedagogicasAsignadas: pedAulaRegular,
+            minutosLectivosAsignados: pedAulaRegular * 45,
             horasPedagogicasVacantes: 0,
             minutosLectivosVacantes: 0,
             minutosRecreoAsignados: 0,
             minutosNoLectivosCalculados: 0,
             minutosUsadosTotales: 0,
-            esSobreasignado: totalHAAula > 0,
-            minutosSobreasignados: totalHAAula * 45,
-            cumple65_35: totalHAAula === 0,
+            esSobreasignado: pedAulaRegular > 0,
+            minutosSobreasignados: pedAulaRegular * 45,
+            cumple65_35: pedAulaRegular === 0,
             aplicaArticulo69: Boolean(d.aplicaArticulo69),
             minutosReduccionArticulo69: 0,
             horasReduccionArticulo69: 0
           };
 
       const valSobre = !esExento
-        ? validarSobreasignacionDocente(horasParaDocencia, totalHAAula, regimenProporcion)
+        ? validarSobreasignacionDocente(horasParaDocencia, pedAulaRegular, regimenProporcion)
         : {
-            estaSobreasignado: totalHAAula > 0,
-            horasAsignadas: totalHAAula,
+            estaSobreasignado: pedAulaRegular > 0,
+            horasAsignadas: pedAulaRegular,
             horasMaxLectivasPermitidas: 0,
-            excesoHoras: totalHAAula,
-            mensaje: totalHAAula > 0 ? `Funcionario No Aula con ${totalHAAula} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
+            excesoHoras: pedAulaRegular,
+            mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
           };
 
-      const ped65 = asigsAulaDocente
+      const ped65 = asigsAulaRegular
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-      const ped60 = asigsAulaDocente
+      const ped60 = asigsAulaRegular
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
@@ -274,19 +275,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
       const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
-      const reqSubvDoc = buscarContratoMinimoPorTabla(
-        asigsAulaRegular.filter(a => {
-          const c = cursos.find(x => x.id === a.cursoId);
-          return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
-        }).reduce((s, a) => s + a.horasPedagogicasAula, 0),
-        '65_35'
-      ) + buscarContratoMinimoPorTabla(
-        asigsAulaRegular.filter(a => {
-          const c = cursos.find(x => x.id === a.cursoId);
-          return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
-        }).reduce((s, a) => s + a.horasPedagogicasAula, 0),
-        '60_40'
-      );
+      const reqSubvDoc = auditMulti.req65_35 + auditMulti.req60_40;
       const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
       const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
 

@@ -227,7 +227,6 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
     e.preventDefault();
     if (!coDocAsignatura.trim() || !coDocCursoId) return;
 
-    const isSep = coDocFinanciamiento === 'SEP';
     const newAsig: AsignacionHoraria = {
       id: `asig-codoc-${Date.now()}`,
       rbd: colegio.rbd,
@@ -236,13 +235,11 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
       docenteId: docente.id,
       asignatura: coDocAsignatura.trim(),
       horasPedagogicasAula: Number(coDocHoras),
-      horasCronologicasPie: isSep ? Number(coDocHoras) : undefined,
       esCoDocencia: true,
       esAgrupacionFlexible: coDocTipo === 'AGRUPACION_FLEXIBLE',
       tipoApoyo: coDocTipo,
-      esTallerSep: isSep,
-      financiador: isSep ? 'SEP' : 'SUB_GEN',
-      esProporcionDocente: !isSep
+      esTallerSep: coDocFinanciamiento === 'SEP',
+      esProporcionDocente: false
     };
 
     await onGuardar(newAsig);
@@ -599,14 +596,6 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {asignacionesDocente.map(a => {
-              const esSep = Boolean(
-                a.esTallerSep ||
-                a.financiador === 'SEP' ||
-                a.tipoApoyo === 'TALLER_SEP' ||
-                (a.asignatura && /taller.*sep|apoyo.*sep|\bsep\b/i.test(a.asignatura)) ||
-                ((docente.horasSepTitular || docente.horasSepContrata) && (!docente.horasSubvencionGeneralTitular && !docente.horasSubvencionGeneralContrata && !docente.horasPieTitular && !docente.horasPieContrata))
-              );
-
               const esCoDoc = (a.coDocenteId === docente.id && a.tieneCoDocente) ||
                               a.esCoDocencia ||
                               a.esAgrupacionFlexible ||
@@ -620,11 +609,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
                 (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
                 (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
-                (a.horasCronologicasPie && a.horasCronologicasPie > 0 && !esSep) ||
-                a.financiador === 'PIE'
+                (a.horasCronologicasPie && a.horasCronologicasPie > 0)
               );
-
-              const esCronologico = esPie || esSep;
 
               return (
                 <tr key={a.id} className="hover:bg-slate-50">
@@ -666,18 +652,18 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                     <div className="inline-flex items-center justify-center gap-1">
                       <input
                         type="number"
-                        defaultValue={esCronologico ? (a.horasCronologicasPie || a.horasPedagogicasAula) : a.horasPedagogicasAula}
+                        defaultValue={esPie ? (a.horasCronologicasPie || a.horasPedagogicasAula) : a.horasPedagogicasAula}
                         min={1}
                         max={44}
-                        step={esCronologico ? '0.5' : '1'}
+                        step={esPie ? '0.5' : '1'}
                         onBlur={async (e) => {
                           const h = Number(e.target.value);
                           if (h > 0 && onGuardarAsignacion) {
-                            if (esCronologico) {
+                            if (esPie) {
                               await onGuardarAsignacion({ 
                                 ...a, 
                                 horasCronologicasPie: h, 
-                                horasPedagogicasAula: h
+                                horasPedagogicasAula: Math.round(h * 1.333) 
                               });
                             } else if (h !== a.horasPedagogicasAula) {
                               await onGuardarAsignacion({ ...a, horasPedagogicasAula: h });
@@ -690,7 +676,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                         className="w-16 text-center font-black bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-1 py-0.5 text-xs"
                       />
                       <span className="text-[10px] text-slate-400 font-normal">
-                        {esCronologico ? 'hrs cron' : 'HA'}
+                        {esPie ? 'hrs cron' : 'HA'}
                       </span>
                     </div>
                   </td>
@@ -700,20 +686,19 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                         <ShieldCheck className="w-3 h-3 text-purple-600" />
                         <span>{a.tipoApoyo || 'Apoyo PIE Dec. 170'}</span>
                       </span>
-                    ) : esSep ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
-                        <span>🌱</span>
-                        <span>{esCoDoc ? (a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ? 'Agrupación SEP' : 'Co-Docencia SEP') : 'SEP Extracurricular'}</span>
-                        <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 rounded font-semibold">cron</span>
-                      </span>
                     ) : esCoDoc ? (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200 inline-flex items-center gap-1">
                         <span>🤝</span>
-                        <span>{a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ? 'Agrupación Flexible' : a.tipoApoyo === 'REFUERZO_AULA' ? 'Refuerzo Aula' : a.tipoApoyo === 'APOYO_DOCENTE' ? 'Apoyo Docente' : 'Co-Docencia Aula'}</span>
+                        <span>{a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ? 'Agrupación Flexible' : a.tipoApoyo === 'REFUERZO_AULA' ? 'Refuerzo Aula' : a.tipoApoyo === 'APOYO_DOCENTE' ? 'Apoyo Docente' : 'Co-Docencia'}</span>
+                        {a.esTallerSep && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1 rounded">SEP</span>}
                       </span>
                     ) : (a.cursoId === 'TRANSVERSAL' || !a.cursoId || a.cursoId === 'SIN_CURSO') ? (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                         🌟 Taller Transversal
+                      </span>
+                    ) : a.esTallerSep ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        🌱 SEP Extracurricular
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
