@@ -6,6 +6,9 @@ import {
   MatrizExcelParseResult
 } from '../types';
 import { identifySchool } from '../data/slepSchoolsCatalog';
+import { normalizarRut } from '../utils/rutUtils';
+
+export { normalizarRut };
 
 export function normalizarEncabezadoCurso(header: string): { nivel: string; letra: string; regimen: 'JEC' | 'No JEC'; esMultigrado: boolean } | null {
   if (!header) return null;
@@ -153,21 +156,6 @@ export function extraerHorasCelda(val: any): number {
   }
 
   return 0;
-}
-
-export function normalizarRut(val: any): string {
-  if (!val) return '';
-  let str = String(val).trim().toUpperCase();
-  str = str.replace(/[.,\s]/g, '');
-  if (!str) return '';
-
-  if (!str.includes('-') && str.length >= 8 && str.length <= 9) {
-    const cuerpo = str.slice(0, -1);
-    const dv = str.slice(-1);
-    return `${cuerpo}-${dv}`;
-  }
-
-  return str;
 }
 
 export function separarNombresApellidos(nombreCompleto: string): { nombres: string; apellidos: string } {

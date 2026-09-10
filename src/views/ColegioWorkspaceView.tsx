@@ -49,6 +49,7 @@ export interface ColegioWorkspaceViewProps {
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void> | void;
   onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
   onExportarMatrizExcelColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
+  onAbrirCopilot?: () => void;
 }
 
 export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
@@ -77,7 +78,8 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onRefreshData,
   onLimpiarDotacionColegio,
   onExportarDotacionColegio,
-  onExportarMatrizExcelColegio
+  onExportarMatrizExcelColegio,
+  onAbrirCopilot
 }) => {
   const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'cursos' | 'pie' | 'salas'>('balanza');
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
@@ -144,6 +146,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            {onAbrirCopilot && (
+              <button
+                onClick={onAbrirCopilot}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 border border-blue-400/30 group"
+                title="Abrir Copilot Asistente de Dotación para este establecimiento (Ctrl+J)"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
+                <span>Consultar Copilot IA</span>
+              </button>
+            )}
+
             <button
               onClick={() => setModalMatrizAbierto(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
@@ -413,6 +426,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         docentesCount={docentes.length}
         asignacionesCount={asignaciones.length}
         onConfirmarVaciar={handleEjecutarVaciarDotacion}
+        onExportarRespaldoPrevio={onExportarDotacionColegio ? () => onExportarDotacionColegio(colegio, periodoActivo) : undefined}
       />
     </div>
   );

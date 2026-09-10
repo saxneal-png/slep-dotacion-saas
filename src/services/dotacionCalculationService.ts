@@ -18,6 +18,7 @@ import {
   DocenteConsolidadoTerritorial,
   ContratoDocenteColegio
 } from '../types';
+import { normalizarRut } from '../utils/rutUtils';
 
 export interface DiagnosticoEspecialidad {
   asignatura: string;
@@ -488,10 +489,12 @@ export function consolidarCarteraTerritorial(
   // 1. Detección de RUTs Duplicados y Sobrecarga Cruzada Territorial
   const docentesPorRun: { [run: string]: Docente[] } = {};
   for (const d of docentes) {
-    if (!docentesPorRun[d.run]) {
-      docentesPorRun[d.run] = [];
+    const runLimpio = normalizarRut(d.run);
+    if (!runLimpio) continue;
+    if (!docentesPorRun[runLimpio]) {
+      docentesPorRun[runLimpio] = [];
     }
-    docentesPorRun[d.run].push(d);
+    docentesPorRun[runLimpio].push(d);
   }
 
   for (const [run, list] of Object.entries(docentesPorRun)) {
@@ -505,7 +508,7 @@ export function consolidarCarteraTerritorial(
       if (horasTotales > 44) {
         inconsistencias.push({
           tipo: 'EXCESO_JORNADA_GLOBAL',
-          run,
+          run: list[0].run,
           docenteNombre: `${list[0].nombres} ${list[0].apellidos}`,
           colegiosInvolucrados: nombresColegios,
           horasTotalesSumadas: horasTotales,
@@ -514,7 +517,7 @@ export function consolidarCarteraTerritorial(
       } else {
         inconsistencias.push({
           tipo: 'RUT_DUPLICADO',
-          run,
+          run: list[0].run,
           docenteNombre: `${list[0].nombres} ${list[0].apellidos}`,
           colegiosInvolucrados: nombresColegios,
           horasTotalesSumadas: horasTotales,
@@ -617,7 +620,8 @@ export function obtenerDocentesConsolidadosTerritorio(
   // Agrupar por RUN
   const porRun: { [run: string]: Docente[] } = {};
   for (const d of docentes) {
-    const cleanRun = d.run.trim();
+    const cleanRun = normalizarRut(d.run);
+    if (!cleanRun) continue;
     if (!porRun[cleanRun]) {
       porRun[cleanRun] = [];
     }
@@ -942,7 +946,7 @@ export function obtenerDocentesConsolidadosTerritorio(
     const colegiosNombres = Array.from(new Set(contratos.map(c => c.colegio.nombre)));
 
     resultado.push({
-      run,
+      run: primerDoc.run,
       nombres: primerDoc.nombres,
       apellidos: primerDoc.apellidos,
       titulo: primerDoc.titulo,

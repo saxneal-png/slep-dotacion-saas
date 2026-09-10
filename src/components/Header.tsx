@@ -22,6 +22,7 @@ interface HeaderProps {
   onTogglePeriodo: (p: number) => void;
   onAbrirComparadorPeriodos?: () => void;
   onAbrirImportadorMatriz?: () => void;
+  onAbrirCopilot?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,7 +40,8 @@ export const Header: React.FC<HeaderProps> = ({
   periodoActivo,
   onTogglePeriodo,
   onAbrirComparadorPeriodos,
-  onAbrirImportadorMatriz
+  onAbrirImportadorMatriz,
+  onAbrirCopilot
 }) => {
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolsRef = useRef<HTMLDivElement>(null);
@@ -262,6 +264,21 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Botón Copilot IA */}
+            {onAbrirCopilot && (
+              <button
+                onClick={onAbrirCopilot}
+                className="flex items-center space-x-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/30 border border-blue-400/30 group"
+                title="Abrir Copilot Asistente de Dotación (Ctrl+J / ⌘J)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
+                <span>Copilot IA</span>
+                <span className="hidden sm:inline-block text-[9px] bg-black/30 px-1 py-0.2 rounded text-blue-200 font-mono">
+                  ⌘J
+                </span>
+              </button>
+            )}
 
             {/* Exportar Excel */}
             <button

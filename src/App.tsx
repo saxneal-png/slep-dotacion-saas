@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { SchoolNavigatorModal } from './components/SchoolNavigatorModal';
 import { SaveBackupModal } from './components/SaveBackupModal';
+import { DotacionCopilotDrawer } from './components/DotacionCopilotDrawer';
 
 const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
 const SalasSaeView = React.lazy(() => import('./views/SalasSaeView').then(m => ({ default: m.SalasSaeView })));
@@ -81,9 +82,10 @@ export const App: React.FC = () => {
   const [vistaActiva, setVistaActiva] = useState<string>('cartera');
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
 
-  // Modales Steve Jobs: Navegador Rápido y Centro de Respaldos
+  // Modales Steve Jobs: Navegador Rápido, Centro de Respaldos y Copilot IA
   const [modalNavegadorAbierto, setModalNavegadorAbierto] = useState(false);
   const [modalRespaldosAbierto, setModalRespaldosAbierto] = useState(false);
+  const [modalCopilotAbierto, setModalCopilotAbierto] = useState(false);
   const [estadoGuardado, setEstadoGuardado] = useState<'saved' | 'error'>('saved');
   const [errorGuardado, setErrorGuardado] = useState<string | undefined>(undefined);
   const [ultimaHoraGuardado, setUltimaHoraGuardado] = useState<string>(getUltimaHoraGuardado());
@@ -104,12 +106,15 @@ export const App: React.FC = () => {
     return unsub;
   }, []);
 
-  // Atajo de teclado global Ctrl+K / Cmd+K para abrir el Navegador Rápido
+  // Atajos de teclado globales: Ctrl+K / Cmd+K (Navegador) y Ctrl+J / Cmd+J (Copilot IA)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setModalNavegadorAbierto(prev => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setModalCopilotAbierto(prev => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -212,7 +217,7 @@ export const App: React.FC = () => {
     setColegios(list);
     if (!colegioActivo || colegioActivo.id === est.id) {
       setColegioActivo(est);
-      await cargarDatosColegio(est.rbd);
+      await cargarDatosColegio(est.rbd, periodoActivo);
     }
     mostrarMensaje(`Establecimiento ${est.nombre} guardado exitosamente.`);
   };
@@ -239,7 +244,7 @@ export const App: React.FC = () => {
 
   const handleEliminarSala = async (id: string) => {
     await eliminarSala(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
     const allSalas = await listarTodasLasSalas();
     setTodasLasSalas(allSalas);
     mostrarMensaje('Sala eliminada.');
@@ -247,48 +252,48 @@ export const App: React.FC = () => {
 
   const handleGuardarCurso = async (c: CursoSae) => {
     await guardarCurso(c);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
-    const allCursos = await listarTodosLosCursos();
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const allCursos = await listarTodosLosCursos(periodoActivo);
     setTodosLosCursos(allCursos);
     mostrarMensaje(`Curso ${c.nivel} ${c.letra} actualizado.`);
   };
 
   const handleEliminarCurso = async (id: string) => {
     await eliminarCurso(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
-    const allCursos = await listarTodosLosCursos();
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const allCursos = await listarTodosLosCursos(periodoActivo);
     setTodosLosCursos(allCursos);
     mostrarMensaje('Curso eliminado.');
   };
 
   const handleGuardarDocente = async (d: Docente) => {
     await guardarDocente(d);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
-    const all = await listarTodosLosDocentesTerritorio();
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const all = await listarTodosLosDocentesTerritorio(periodoActivo);
     setTodosLosDocentes(all);
     mostrarMensaje(`Docente ${d.nombres} ${d.apellidos} guardado.`);
   };
 
   const handleEliminarDocente = async (id: string) => {
     await eliminarDocente(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
-    const all = await listarTodosLosDocentesTerritorio();
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const all = await listarTodosLosDocentesTerritorio(periodoActivo);
     setTodosLosDocentes(all);
     mostrarMensaje('Docente eliminado de la dotación.');
   };
 
   const handleGuardarAsignacion = async (asig: AsignacionHoraria) => {
     await guardarAsignacion(asig);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
-    const all = await listarTodasLasAsignaciones();
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const all = await listarTodasLasAsignaciones(periodoActivo);
     setTodasLasAsignaciones(all);
     mostrarMensaje('Asignación horaria actualizada.');
   };
 
   const handleEliminarAsignacion = async (id: string) => {
     await eliminarAsignacion(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
-    const all = await listarTodasLasAsignaciones();
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const all = await listarTodasLasAsignaciones(periodoActivo);
     setTodasLasAsignaciones(all);
     mostrarMensaje('Asignación eliminada.');
   };
@@ -451,7 +456,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Borrado Masivo de Dotación por Periodo / Colegio
+  // Borrado Seguro de Dotación por Colegio / Periodo
   const handleBorrarDotacionPeriodo = async (periodo: number, rbd?: string) => {
     try {
       const res = await borrarDotacionPeriodo(periodo, rbd);
@@ -459,9 +464,14 @@ export const App: React.FC = () => {
       if (colegioActivo) {
         await cargarDatosColegio(colegioActivo.rbd, periodo);
       }
-      mostrarMensaje(`Se eliminaron ${res.cursosBorrados} cursos, ${res.docentesBorrados} docentes y ${res.asignacionesBorradas} asignaciones del periodo ${periodo}.`);
+      const colegioTarget = rbd ? colegios.find(c => c.rbd === rbd) : null;
+      if (colegioTarget) {
+        mostrarMensaje(`✓ Se vació exitosamente la dotación de "${colegioTarget.nombre}" (RBD ${rbd}) en el periodo ${periodo}: ${res.cursosBorrados} cursos, ${res.docentesBorrados} docentes y ${res.asignacionesBorradas} asignaciones eliminadas.`);
+      } else {
+        mostrarMensaje(`Se eliminaron ${res.cursosBorrados} cursos, ${res.docentesBorrados} docentes y ${res.asignacionesBorradas} asignaciones del periodo ${periodo}.`);
+      }
     } catch (e: any) {
-      mostrarMensaje(`Error al borrar dotación: ${e.message || e}`, 'error');
+      mostrarMensaje(`Error al vaciar dotación: ${e.message || e}`, 'error');
     }
   };
 
@@ -554,6 +564,7 @@ export const App: React.FC = () => {
         ultimaHoraGuardado={ultimaHoraGuardado}
         periodoActivo={periodoActivo}
         onTogglePeriodo={handleTogglePeriodo}
+        onAbrirCopilot={() => setModalCopilotAbierto(true)}
       />
 
       {/* Toast Notificación */}
@@ -627,6 +638,7 @@ export const App: React.FC = () => {
               onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
               onExportarDotacionColegio={handleExportarDotacionColegio}
               onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
+              onAbrirCopilot={() => setModalCopilotAbierto(true)}
             />
           ) : (
             <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-center max-w-md mx-auto my-12 animate-in fade-in">
@@ -795,6 +807,20 @@ export const App: React.FC = () => {
         onImportarCarteraSlep={handleImportarCarteraSlep}
         onBorrarDotacionPeriodo={handleBorrarDotacionPeriodo}
         onReiniciarBaseDatos={handleReiniciarBaseDatos}
+      />
+
+      {/* Panel Lateral Retráctil: Copilot UATP (Chatbot de Dotación en Tiempo Real) */}
+      <DotacionCopilotDrawer
+        isOpen={modalCopilotAbierto}
+        onClose={() => setModalCopilotAbierto(false)}
+        establecimiento={colegioActivo}
+        periodo={periodoActivo}
+        salas={salas}
+        cursos={cursos}
+        docentes={docentes}
+        asignaciones={asignaciones}
+        todosLosDocentesTerritorio={todosLosDocentes}
+        todosLosEstablecimientos={colegios}
       />
     </div>
   );

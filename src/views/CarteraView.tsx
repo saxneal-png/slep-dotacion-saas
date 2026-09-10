@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database, FileSpreadsheet, Eraser, Search, RotateCcw, X } from 'lucide-react';
 import { Establecimiento, ComunaValleDiguillin, RegimenJornada } from '../types';
+import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
 
 interface CarteraViewProps {
   colegios: Establecimiento[];
@@ -49,6 +50,7 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEst, setEditingEst] = useState<Establecimiento | null>(null);
+  const [colegioParaVaciar, setColegioParaVaciar] = useState<Establecimiento | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedComunaFilter, setSelectedComunaFilter] = useState<string>('ALL');
@@ -468,11 +470,7 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
 
                   {onLimpiarDotacionColegio && (
                     <button
-                      onClick={async () => {
-                        if (confirm(`¿Deseas vaciar todos los cursos, docentes y asignaciones horarias de "${est.nombre}" para el Periodo ${periodoActivo}?\n\nEl establecimiento (RBD ${est.rbd}) y sus salas de infraestructura permanecerán intactos.`)) {
-                          await onLimpiarDotacionColegio(periodoActivo, est.rbd);
-                        }
-                      }}
+                      onClick={() => setColegioParaVaciar(est)}
                       className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded"
                       title={`Vaciar dotación ${periodoActivo} de ${est.nombre} (preserva el colegio)`}
                     >
@@ -624,6 +622,23 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+      {colegioParaVaciar && (
+        <ConfirmarVaciarDotacionModal
+          isOpen={Boolean(colegioParaVaciar)}
+          onClose={() => setColegioParaVaciar(null)}
+          colegio={colegioParaVaciar}
+          periodoActivo={periodoActivo}
+          cursosCount={0}
+          docentesCount={0}
+          asignacionesCount={0}
+          onConfirmarVaciar={async () => {
+            if (onLimpiarDotacionColegio && colegioParaVaciar) {
+              await onLimpiarDotacionColegio(periodoActivo, colegioParaVaciar.rbd);
+            }
+          }}
+          onExportarRespaldoPrevio={onExportarDotacionColegio && colegioParaVaciar ? () => onExportarDotacionColegio(colegioParaVaciar, periodoActivo) : undefined}
+        />
       )}
     </div>
   );

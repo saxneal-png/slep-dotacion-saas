@@ -280,54 +280,40 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
                 Permite depurar y restablecer la información cargada en SQLite de forma masiva ante reprocesamientos o reestructuraciones.
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Borrar Dotación de Toda la Red en Periodo */}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (confirm(`¿CONFIRMA EL BORRADO MASIVO de toda la dotación (cursos, docentes y asignaciones) del Periodo ${periodoActivo} en TODOS los colegios?`)) {
-                      if (onBorrarDotacionPeriodo) {
-                        await onBorrarDotacionPeriodo(periodoActivo);
-                        onClose();
-                      }
-                    }
-                  }}
-                  className="p-3 text-left bg-red-50/70 hover:bg-red-100/80 border border-red-200 rounded-xl flex items-start gap-2.5 transition-colors group"
-                >
-                  <Trash2 className="w-4 h-4 text-red-600 mt-0.5 group-hover:scale-110 transition-transform" />
-                  <div>
-                    <div className="text-xs font-bold text-red-900">Borrar Periodo {periodoActivo}</div>
-                    <div className="text-[10px] text-red-700 mt-0.5">
-                      Elimina cursos, docentes y asignaciones del periodo {periodoActivo} en toda la red.
-                    </div>
-                  </div>
-                </button>
-
+              <div className="space-y-2.5">
                 {/* Borrar Dotación del Colegio Activo */}
                 {colegioActivo ? (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (confirm(`¿CONFIRMA EL BORRADO de la dotación del establecimiento ${colegioActivo.nombre} (RBD ${colegioActivo.rbd}) en el Periodo ${periodoActivo}?`)) {
-                        if (onBorrarDotacionPeriodo) {
-                          await onBorrarDotacionPeriodo(periodoActivo, colegioActivo.rbd);
-                          onClose();
-                        }
-                      }
-                    }}
-                    className="p-3 text-left bg-orange-50/70 hover:bg-orange-100/80 border border-orange-200 rounded-xl flex items-start gap-2.5 transition-colors group"
-                  >
-                    <Trash2 className="w-4 h-4 text-orange-600 mt-0.5 group-hover:scale-110 transition-transform" />
-                    <div>
-                      <div className="text-xs font-bold text-orange-900 truncate max-w-[180px]">Borrar {colegioActivo.nombre}</div>
-                      <div className="text-[10px] text-orange-700 mt-0.5">
-                        Elimina dotación solo de este colegio en el periodo {periodoActivo}.
+                  <div className="p-3.5 bg-orange-50/80 border border-orange-200 rounded-xl flex items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-start gap-2.5">
+                      <Trash2 className="w-4 h-4 text-orange-600 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-xs font-bold text-orange-950 truncate max-w-[280px]">
+                          Vaciar Dotación de {colegioActivo.nombre}
+                        </div>
+                        <div className="text-[10px] text-orange-800 mt-0.5">
+                          RBD: <span className="font-mono font-bold">{colegioActivo.rbd}</span> • Periodo {periodoActivo}. Las demás escuelas de la red permanecerán intactas.
+                        </div>
                       </div>
                     </div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm(`¿CONFIRMAS VACIAR LA DOTACIÓN DE "${colegioActivo.nombre}" (RBD ${colegioActivo.rbd}) para el Periodo ${periodoActivo}?\n\nEsta acción solo afectará a este colegio. Los demás colegios no serán modificados.`)) {
+                          if (onBorrarDotacionPeriodo) {
+                            await onBorrarDotacionPeriodo(periodoActivo, colegioActivo.rbd);
+                            onClose();
+                          }
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shrink-0 shadow-2xs transition-colors"
+                    >
+                      Vaciar Colegio
+                    </button>
+                  </div>
                 ) : (
-                  <div className="p-3 text-left bg-slate-50 border border-slate-200 rounded-xl text-[10px] text-slate-400 flex items-center">
-                    Selecciona un colegio activo para borrar solo sus datos individuales.
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>Selecciona un establecimiento en el menú superior para vaciar su dotación de forma individual y segura.</span>
                   </div>
                 )}
               </div>

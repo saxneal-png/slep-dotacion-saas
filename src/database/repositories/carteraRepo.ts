@@ -14,6 +14,7 @@ import { listarCursos, guardarCurso } from './cursosRepo';
 import { listarDocentes, listarTodosLosDocentesTerritorio, guardarDocente } from './docentesRepo';
 import { listarAsignaciones, listarTodasLasAsignaciones, guardarAsignacion } from './asignacionesRepo';
 import { calcularDiagnosticoColegio } from '../../services/dotacionCalculationService';
+import { normalizarRut } from '../../utils/rutUtils';
 
 export async function exportarDotacionEstablecimiento(
   rbd: string,
@@ -263,18 +264,39 @@ export async function proyectarPeriodoColegio(
   const idCursoMap = new Map<string, string>();
   let cursosCreados = 0;
 
+  // Detectar niveles que imparte el colegio
+  const tieneMedia = cursosOrigen.some(c =>
+    /medio|media/i.test(c.nivel) || (c.tipoModalidad && /media/i.test(c.tipoModalidad))
+  );
+
   let teniaPrekinder = false;
+  let teniaKinder = false;
+  let tiene1Basico = false;
+
   for (const c of cursosOrigen) {
-    if (c.nivel === 'Pre-Kínder' || c.nivel === 'NT1') {
-      teniaPrekinder = true;
-    }
+    if (c.nivel === 'Pre-Kínder' || c.nivel === 'NT1') teniaPrekinder = true;
+    if (c.nivel === 'Kínder' || c.nivel === 'NT2') teniaKinder = true;
+    if (c.nivel === '1° Básico') tiene1Basico = true;
   }
 
   for (const c of cursosOrigen) {
     let nuevoNivel = c.nivel;
-    if (opciones.promoverCursos && MAPA_PROMOCION_NIVELES[c.nivel]) {
-      nuevoNivel = MAPA_PROMOCION_NIVELES[c.nivel];
+    if (opciones.promoverCursos) {
+      // 1. Alumnos de 4° Medio egresan de la etapa escolar
+      if (c.nivel === '4° Medio') {
+        continue;
+      }
+
+      // 2. Alumnos de 8° Básico en escuelas de enseñanza básica exclusiva egresan de la escuela
+      if (c.nivel === '8° Básico' && !tieneMedia) {
+        continue;
+      }
+
+      if (MAPA_PROMOCION_NIVELES[c.nivel]) {
+        nuevoNivel = MAPA_PROMOCION_NIVELES[c.nivel];
+      }
     }
+
     const nuevoId = `c_${rbd}_${periodoDestino}_${nuevoNivel}_${c.letra}`.replace(/[\s°]/g, '_');
     idCursoMap.set(c.id, nuevoId);
 
@@ -288,18 +310,47 @@ export async function proyectarPeriodoColegio(
     cursosCreados++;
   }
 
-  if (opciones.promoverCursos && teniaPrekinder) {
-    const pkOriginales = cursosOrigen.filter(c => c.nivel === 'Pre-Kínder' || c.nivel === 'NT1');
-    for (const pk of pkOriginales) {
-      const nuevoIdPk = `c_${rbd}_${periodoDestino}_Pre_Kinder_${pk.letra}`;
-      const nuevoPk: CursoSae = {
-        ...pk,
-        id: nuevoIdPk,
-        periodo: periodoDestino,
-        nivel: 'Pre-Kínder'
-      };
-      await guardarCurso(nuevoPk);
-      cursosCreados++;
+  // Regeneración del curso inicial (cohorte entrante) al promover niveles
+  if (opciones.promoverCursos) {
+    if (teniaPrekinder) {
+      const pkOriginales = cursosOrigen.filter(c => c.nivel === 'Pre-Kínder' || c.nivel === 'NT1');
+      for (const pk of pkOriginales) {
+        const nuevoIdPk = `c_${rbd}_${periodoDestino}_Pre_Kinder_${pk.letra}`.replace(/[\s°]/g, '_');
+        const nuevoPk: CursoSae = {
+          ...pk,
+          id: nuevoIdPk,
+          periodo: periodoDestino,
+          nivel: pk.nivel
+        };
+        await guardarCurso(nuevoPk);
+        cursosCreados++;
+      }
+    } else if (teniaKinder) {
+      const kOriginales = cursosOrigen.filter(c => c.nivel === 'Kínder' || c.nivel === 'NT2');
+      for (const k of kOriginales) {
+        const nuevoIdK = `c_${rbd}_${periodoDestino}_Kinder_${k.letra}`.replace(/[\s°]/g, '_');
+        const nuevoK: CursoSae = {
+          ...k,
+          id: nuevoIdK,
+          periodo: periodoDestino,
+          nivel: k.nivel
+        };
+        await guardarCurso(nuevoK);
+        cursosCreados++;
+      }
+    } else if (tiene1Basico) {
+      const bOriginales = cursosOrigen.filter(c => c.nivel === '1° Básico');
+      for (const b of bOriginales) {
+        const nuevoIdB = `c_${rbd}_${periodoDestino}_1_Basico_${b.letra}`.replace(/[\s°]/g, '_');
+        const nuevoB: CursoSae = {
+          ...b,
+          id: nuevoIdB,
+          periodo: periodoDestino,
+          nivel: '1° Básico'
+        };
+        await guardarCurso(nuevoB);
+        cursosCreados++;
+      }
     }
   }
 
@@ -307,7 +358,8 @@ export async function proyectarPeriodoColegio(
   let docentesCreados = 0;
 
   for (const d of docentesOrigen) {
-    const nuevoIdDoc = `doc_${rbd}_${periodoDestino}_${d.run}`;
+    const runNorm = normalizarRut(d.run) || d.run;
+    const nuevoIdDoc = `doc_${rbd}_${periodoDestino}_${runNorm}`.replace(/[\s°]/g, '_');
     idDocenteMap.set(d.id, nuevoIdDoc);
 
     const docenteProyectado: Docente = {

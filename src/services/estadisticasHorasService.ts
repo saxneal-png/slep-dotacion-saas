@@ -11,6 +11,7 @@ import {
   obtenerPlanPorCurso,
   calcularDemandaNormativaPieCurso
 } from '@slep/mineduc-engine';
+import { normalizarRut } from '../utils/rutUtils';
 
 export interface EstadisticasColegioHoras {
   rbd: string;
@@ -412,7 +413,7 @@ export function calcularEstadisticasTerritoriales(
     return calcularEstadisticasColegio(col, cursosCol, docentesCol, asigsCol);
   });
 
-  const runsUnicos = new Set(todosLosDocentes.map(d => d.run.trim())).size;
+  const runsUnicos = new Set(todosLosDocentes.map(d => normalizarRut(d.run)).filter(Boolean)).size;
 
   let totalMatricula = 0;
   let totalCursos = 0;

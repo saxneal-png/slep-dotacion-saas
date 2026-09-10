@@ -17,7 +17,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      webSecurity: false, // Permite llamadas de red y carga de assets locales sin fricción de CORS
+      webSecurity: true,
       allowRunningInsecureContent: false
     }
   });

@@ -1,6 +1,7 @@
 import initSqlJs, { Database } from 'sql.js';
 import { getEmbeddedSqlWasm } from './sqlWasmBinary';
 import { INIT_SCHEMA_SQL, runMigrations } from './schema';
+import { getIdbBytes, setIdbBytes, deleteIdbBytes } from './idbStorage';
 
 let dbInstance: Database | null = null;
 const STORAGE_KEY = 'slep_valle_diguillin_sqlite_db';
@@ -27,11 +28,27 @@ export async function getDb(): Promise<Database> {
   }
 
   let db: Database;
-  const savedData = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-  if (savedData) {
+  let rawBytes: Uint8Array | null = await getIdbBytes(STORAGE_KEY);
+
+  // Si no está en IndexedDB, verificar si existe migración pendiente desde localStorage
+  if (!rawBytes && typeof localStorage !== 'undefined') {
+    const savedData = localStorage.getItem(STORAGE_KEY);
+    if (savedData) {
+      try {
+        rawBytes = new Uint8Array(JSON.parse(savedData));
+        // Migrar a IndexedDB y limpiar localStorage
+        await setIdbBytes(STORAGE_KEY, rawBytes);
+        localStorage.removeItem(STORAGE_KEY);
+        console.log('Migración exitosa de SQLite DB desde localStorage a IndexedDB.');
+      } catch (e) {
+        console.error('Error al migrar datos desde localStorage:', e);
+      }
+    }
+  }
+
+  if (rawBytes) {
     try {
-      const uInt8Array = new Uint8Array(JSON.parse(savedData));
-      db = new SQL.Database(uInt8Array);
+      db = new SQL.Database(rawBytes);
     } catch (e) {
       console.error('Error al restaurar SQLite DB, creando nueva:', e);
       db = new SQL.Database();
@@ -65,11 +82,24 @@ export function persistDb(): void {
   if (!dbInstance) return;
   try {
     const data = dbInstance.export();
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(data)));
-    }
     lastPersistTime = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    persistListeners.forEach(l => l('saved', lastPersistTime));
+
+    if (typeof indexedDB !== 'undefined') {
+      setIdbBytes(STORAGE_KEY, data)
+        .then(() => {
+          persistListeners.forEach(l => l('saved', lastPersistTime));
+        })
+        .catch(err => {
+          console.error('Error al persistir en IndexedDB:', err);
+          persistListeners.forEach(l => l('error', lastPersistTime, err?.message));
+        });
+    } else if (typeof localStorage !== 'undefined') {
+      // Fallback para entornos donde no exista IndexedDB
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(data)));
+      persistListeners.forEach(l => l('saved', lastPersistTime));
+    } else {
+      persistListeners.forEach(l => l('saved', lastPersistTime));
+    }
   } catch (e: any) {
     console.error('Error al persistir SQLite DB:', e);
     const msg = e?.name === 'QuotaExceededError'
@@ -148,11 +178,12 @@ export async function reiniciarTodaLaBaseDatos(): Promise<void> {
   db.run("DELETE FROM establecimientos");
 
   try {
+    await deleteIdbBytes(STORAGE_KEY);
     if (typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.removeItem(STORAGE_KEY);
     }
   } catch (e) {
-    console.error('Error clearing localStorage SQLite database:', e);
+    console.error('Error clearing SQLite database storage:', e);
   }
 
   persistDb();
