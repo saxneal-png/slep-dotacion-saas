@@ -7,6 +7,7 @@ import {
   Layers
 } from 'lucide-react';
 import { Docente, AsignacionHoraria, CursoSae, Establecimiento } from '../types';
+import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
 
 interface DocenteAsignacionPanelProps {
   docente: Docente;
@@ -38,10 +39,54 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   onGuardar,
   onCerrar
 }) => {
-  const [regNombre, setRegNombre] = useState('Lenguaje y Comunicación');
   const [regCursoId, setRegCursoId] = useState(cursos[0]?.id || 'TRANSVERSAL');
+  const [regNombre, setRegNombre] = useState('');
   const [regHoras, setRegHoras] = useState(4);
   const [regEsTallerSep, setRegEsTallerSep] = useState(false);
+
+  // Obtener plan de estudio del curso seleccionado
+  const cursoSeleccionado = cursos.find(c => c.id === regCursoId) || null;
+  const planCurso = cursoSeleccionado ? obtenerPlanPorCurso(cursoSeleccionado.nivel, cursoSeleccionado.regimen) : null;
+
+  // Sugerencias de asignaturas según el curso o por defecto
+  const sugerenciasAsignaturas = planCurso?.asignaturasBase && planCurso.asignaturasBase.length > 0
+    ? planCurso.asignaturasBase.map(a => ({ nombre: a.nombre, horas: a.horasSugeridas }))
+    : [
+        { nombre: 'Lenguaje y Comunicación', horas: 6 },
+        { nombre: 'Matemática', horas: 6 },
+        { nombre: 'Ciencias Naturales', horas: 3 },
+        { nombre: 'Historia, Geografía y Ciencias Sociales', horas: 3 },
+        { nombre: 'Inglés', horas: 3 },
+        { nombre: 'Educación Física y Salud', horas: 3 },
+        { nombre: 'Artes Visuales', horas: 2 },
+        { nombre: 'Música', horas: 2 },
+        { nombre: 'Tecnología', horas: 1 },
+        { nombre: 'Orientación', horas: 1 },
+        { nombre: 'Religión', horas: 2 },
+        { nombre: 'Taller Extracurricular SEP', horas: 2 },
+        { nombre: 'Taller de Refuerzo Pedagógico', horas: 2 }
+      ];
+
+  const handleSelectAsignatura = (nombre: string) => {
+    setRegNombre(nombre);
+    const asigPlan = sugerenciasAsignaturas.find(a => a.nombre.toLowerCase() === nombre.trim().toLowerCase());
+    if (asigPlan?.horas && asigPlan.horas > 0) {
+      setRegHoras(asigPlan.horas);
+    }
+    if (/sep/i.test(nombre)) {
+      setRegEsTallerSep(true);
+    }
+  };
+
+  const handleCursoChange = (nuevoCursoId: string) => {
+    setRegCursoId(nuevoCursoId);
+    if (nuevoCursoId === 'TRANSVERSAL') {
+      if (!regNombre || regNombre === 'Lenguaje y Comunicación') {
+        setRegNombre('Taller Institucional Transversal');
+        setRegHoras(2);
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,22 +111,32 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
 
   return (
     <form onSubmit={handleSubmit} className="p-3 bg-white border border-orange-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
-      <div className="flex-1 min-w-[150px]">
+      <div className="flex-1 min-w-[170px]">
         <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Asignatura</label>
         <input
           type="text"
+          autoFocus
           value={regNombre}
-          onChange={(e) => setRegNombre(e.target.value)}
-          className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-medium focus:ring-1 focus:ring-orange-500 focus:outline-none"
-          placeholder="Ej: Matemática"
+          onChange={(e) => handleSelectAsignatura(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          list={`datalist-reg-${docente.id}`}
+          className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-orange-500 focus:outline-none bg-white"
+          placeholder="Ej: Matemática, Lenguaje..."
           required
         />
+        <datalist id={`datalist-reg-${docente.id}`}>
+          {sugerenciasAsignaturas.map((s, idx) => (
+            <option key={idx} value={s.nombre}>
+              {s.horas ? `${s.horas} HA` : ''}
+            </option>
+          ))}
+        </datalist>
       </div>
       <div className="min-w-[180px]">
         <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Curso o Modalidad</label>
         <select
           value={regCursoId}
-          onChange={(e) => setRegCursoId(e.target.value)}
+          onChange={(e) => handleCursoChange(e.target.value)}
           className="w-full px-2 py-1 border border-slate-200 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-orange-500 focus:outline-none"
         >
           <option value="TRANSVERSAL">🌟 Taller Institucional / Transversal (Sin Curso)</option>
@@ -98,6 +153,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           type="number"
           value={regHoras}
           onChange={(e) => setRegHoras(Number(e.target.value))}
+          onFocus={(e) => e.target.select()}
           className="w-full px-2 py-1 border border-slate-200 rounded text-xs text-center font-bold focus:ring-1 focus:ring-orange-500 focus:outline-none"
           min={1}
           max={44}
@@ -109,7 +165,13 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           <input
             type="checkbox"
             checked={regEsTallerSep}
-            onChange={(e) => setRegEsTallerSep(e.target.checked)}
+            onChange={(e) => {
+              setRegEsTallerSep(e.target.checked);
+              if (e.target.checked && !regNombre) {
+                setRegNombre('Taller Extracurricular SEP');
+                setRegHoras(2);
+              }
+            }}
           />
           <span>Taller Extracurricular SEP</span>
         </label>
@@ -149,10 +211,17 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
   onCerrar
 }) => {
   const [coDocCursoId, setCoDocCursoId] = useState(cursos[0]?.id || '');
-  const [coDocAsignatura, setCoDocAsignatura] = useState('Lenguaje y Comunicación');
+  const [coDocAsignatura, setCoDocAsignatura] = useState('');
   const [coDocHoras, setCoDocHoras] = useState(4);
   const [coDocTipo, setCoDocTipo] = useState<'CO_DOCENCIA' | 'AGRUPACION_FLEXIBLE' | 'REFUERZO_AULA' | 'APOYO_DOCENTE'>('CO_DOCENCIA');
   const [coDocFinanciamiento, setCoDocFinanciamiento] = useState<'SUB_GEN' | 'SEP'>('SEP');
+
+  const cursoSeleccionado = cursos.find(c => c.id === coDocCursoId) || null;
+  const planCurso = cursoSeleccionado ? obtenerPlanPorCurso(cursoSeleccionado.nivel, cursoSeleccionado.regimen) : null;
+
+  const sugerenciasAsignaturas = planCurso?.asignaturasBase && planCurso.asignaturasBase.length > 0
+    ? planCurso.asignaturasBase.map(a => a.nombre)
+    : ['Lenguaje y Comunicación', 'Matemática', 'Ciencias Naturales', 'Historia, Geografía y Ciencias Sociales', 'Inglés'];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,16 +263,24 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
           ))}
         </select>
       </div>
-      <div className="flex-1 min-w-[140px]">
+      <div className="flex-1 min-w-[150px]">
         <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Asignatura</label>
         <input
           type="text"
+          autoFocus
           value={coDocAsignatura}
           onChange={(e) => setCoDocAsignatura(e.target.value)}
-          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-          placeholder="Ej: Matemática"
+          onFocus={(e) => e.target.select()}
+          list={`datalist-codoc-${docente.id}`}
+          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+          placeholder="Ej: Matemática, Lenguaje..."
           required
         />
+        <datalist id={`datalist-codoc-${docente.id}`}>
+          {sugerenciasAsignaturas.map((nombre, idx) => (
+            <option key={idx} value={nombre} />
+          ))}
+        </datalist>
       </div>
       <div className="min-w-[180px]">
         <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Modalidad de Apoyo</label>
@@ -224,6 +301,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
           type="number"
           value={coDocHoras}
           onChange={(e) => setCoDocHoras(Number(e.target.value))}
+          onFocus={(e) => e.target.select()}
           className="w-full px-2 py-1 border border-indigo-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-indigo-500 focus:outline-none"
           min={1}
           max={44}
@@ -356,9 +434,11 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
         <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Descripción / Asignatura</label>
         <input
           type="text"
+          autoFocus
           value={pieAsignatura}
           onChange={(e) => setPieAsignatura(e.target.value)}
-          className="w-full px-2 py-1 border border-purple-300 rounded text-xs font-medium focus:ring-1 focus:ring-purple-500 focus:outline-none"
+          onFocus={(e) => e.target.select()}
+          className="w-full px-2 py-1 border border-purple-300 rounded text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white"
           placeholder="Ej: Apoyo PIE Matemática"
           required
         />
@@ -370,6 +450,7 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
           type="number"
           value={pieHoras}
           onChange={(e) => setPieHoras(Number(e.target.value))}
+          onFocus={(e) => e.target.select()}
           className="w-full px-2 py-1 border border-purple-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-purple-500 focus:outline-none"
           min={1}
           max={44}
