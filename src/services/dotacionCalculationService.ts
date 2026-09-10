@@ -284,16 +284,17 @@ export function calcularDiagnosticoColegio(
     const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
     // Docencia efectiva de aula que requiere proporción Ley 20.903 (HNL + recreos)
-    // Para docentes de aula, incluye regular y co-docencia en aula
-    const asigsDocenciaAulaEfectiva = isPieDoc
+    // Para docentes de aula MIXTOS (SubvGen + SEP), la co-docencia SEP genera HNL y recreos proporcionales.
+    // Para docentes puros SEP o PIE, la co-docencia está cubierta 1:1 por su contrato → se mantiene en sepExentas/pieCronologicas.
+    const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
       ? asigsAulaRegular
       : [
           ...asigsAulaRegular,
           ...asigsCoDocencia
         ];
 
-    const sepExentas = isPieDoc
-      ? (isSepDoc ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep) : Math.max(hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep))
+    const sepExentas = (isPieDoc || isSepDoc)
+      ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
       : (Math.max(hTallerSepDoc, pedTallerSep, cronTallerSep) + sumFuncionesNoAulaSep);
 
     const pieCronologicas = isPieDoc
@@ -811,15 +812,15 @@ export function obtenerDocentesConsolidadosTerritorio(
       const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
       const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-      // Docencia efectiva de aula que requiere proporción Ley 20.903 (HNL + recreos)
-      const asigsDocenciaAulaEfectiva = isPieDoc
+      // Docencia efectiva de aula: mixtos (SubvGen+SEP) incluyen co-docencia; puros SEP/PIE la mantienen como exenta
+      const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
         ? asigsAulaRegular
         : [
             ...asigsAulaRegular,
             ...asigsCoDocencia
           ];
 
-      const sepExentas = isPieDoc
+      const sepExentas = (isPieDoc || isSepDoc)
         ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
         : (Math.max(hTallerSepDoc, pedTallerSep, cronTallerSep) + sumFuncionesNoAulaSep);
 

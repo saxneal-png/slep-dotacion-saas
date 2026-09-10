@@ -585,4 +585,60 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     expect(contrato.minutosRecreoMineduc).toBe(131); // 2h 11m según tabla RAW_65_35
     expect(contrato.minutosNoLectivosMineduc).toBe(529); // 8h 49m según tabla RAW_65_35
   });
+
+  it('Karem Mogollón - docente puro SEP (isSepDoc=true): 35h contrato, 35 HA Co-Docencia SEP → sin Exceso Lectivo', () => {
+    // Caso real: docente TITULAR solo con horas SEP (sin SubvGen ni PIE).
+    // El contrato SEP cubre 1:1 sus horas de co-docencia → NO debe mostrar "Exceso Lectivo".
+    const docKarem: Docente = {
+      id: 'doc-karem-mogollon',
+      rbd: '9999',
+      run: '26.204.207-3',
+      nombres: 'Karem',
+      apellidos: 'Mogollón Ubán',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 35,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 35,
+      horasSepContrata: 0,
+      horasPieTitular: 0,
+      horasPieContrata: 0
+    };
+
+    const asigsKarem: AsignacionHoraria[] = [
+      {
+        id: 'asig-karem-codoc',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-karem-mogollon',
+        asignatura: 'Codocencia',
+        horasPedagogicasAula: 35,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      } as AsignacionHoraria
+    ];
+
+    const colegioKarem = { ...colegio, porcentajePrioritarios: 50 };
+
+    // Diagnóstico
+    const diag = calcularDiagnosticoColegio(colegioKarem, salas, cursos, [docKarem], asigsKarem);
+    const estDoc = diag.estadoDocentes[0];
+    expect(estDoc.horasVacantes).toBe(0);
+    expect(estDoc.estaSobreasignado).toBe(false);
+
+    // Consolidado territorial
+    const resultado = obtenerDocentesConsolidadosTerritorio([colegioKarem], [docKarem], asigsKarem, cursos);
+    const contrato = resultado[0].contratos[0];
+
+    // Contrato calculado = 35h (SEP exento 1:1), saldo EXACTO
+    expect(contrato.contratoCalculadoTotal).toBe(35);
+    expect(contrato.saldoHoras).toBe(0);
+    expect(contrato.estadoSaldo).toBe('EXACTO');
+    // NO debe ser Exceso Lectivo ni improcedente
+    expect(contrato.esInfractorExcesoLectivo).toBe(false);
+    expect(contrato.esImprocedenteFinanciamientoSepPie).toBe(false);
+    expect(contrato.deficitSubvencionGeneral).toBe(0);
+  });
 });

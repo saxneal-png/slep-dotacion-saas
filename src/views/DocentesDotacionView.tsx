@@ -202,15 +202,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
       const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-      // Docencia efectiva de aula que requiere proporción Ley 20.903 (HNL + recreos)
-      const asigsDocenciaAulaEfectiva = isPieDoc
+      // Docencia efectiva de aula: mixtos (SubvGen+SEP) incluyen co-docencia; puros SEP/PIE la mantienen como exenta
+      const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
         ? asigsAulaRegular
         : [
             ...asigsAulaRegular,
             ...asigsCoDocencia
           ];
 
-      const sepExentas = isPieDoc
+      const sepExentas = (isPieDoc || isSepDoc)
         ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
         : (Math.max(hTallerSepDoc, pedTallerSep, cronTallerSep) + sumFuncionesNoAulaSep);
 

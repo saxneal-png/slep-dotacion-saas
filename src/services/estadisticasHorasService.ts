@@ -292,7 +292,9 @@ export function calcularEstadisticasColegio(
     horasTrabajoColaborativoTotal += (dColab + haColab);
 
     const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || ((pTit + pCon) > 0 && (sTit + sCon) === 0);
-    const asigsDocenciaEfectiva = isPieDoc
+    const isSepDoc = (spTit + spCon) > 0 && (pTit + pCon) === 0 && (sTit + sCon) === 0;
+    // Docencia efectiva de aula: mixtos (SubvGen+SEP) incluyen co-docencia; puros SEP/PIE la mantienen como exenta
+    const asigsDocenciaEfectiva = (isPieDoc || isSepDoc)
       ? asigsRegulares
       : [...asigsRegulares, ...asigsCoDoc];
 
@@ -306,7 +308,7 @@ export function calcularEstadisticasColegio(
       ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : 0;
 
-    const sepExentas = isPieDoc
+    const sepExentas = (isPieDoc || isSepDoc)
       ? Math.max(spTit + spCon, dTallerSep, sumFuncionesNoAulaSep)
       : (Math.max(dTallerSep, docAsigs.filter(a => a.esTallerSep).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0)) + sumFuncionesNoAulaSep);
     const pieCronologicas = isPieDoc
