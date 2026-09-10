@@ -293,15 +293,17 @@ export function calcularEstadisticasColegio(
     const hExentas = dDir + dInsp + dTec + dCoord + dTallerSep + dColab;
     const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);
 
-    // Separar horas regulares según régimen del curso (60/40 vs 65/35) para cálculo independiente
-    const ha60 = asigsRegulares
+    const asigsAulaDocente = [...asigsRegulares, ...asigsCoDoc];
+
+    // Separar horas de aula (regulares y codocencia) según régimen del curso (60/40 vs 65/35)
+    const ha60 = asigsAulaDocente
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
-    const ha65 = asigsRegulares
+    const ha65 = asigsAulaDocente
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
@@ -312,8 +314,8 @@ export function calcularEstadisticasColegio(
     const auditDoc = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: ha65,
       horasAula60_40: ha60,
-      horasPieCronologicas: pTit + pCon,
-      horasTallerSepExento: Math.max(spTit + spCon, dTallerSep),
+      horasPieCronologicas: dColab + haColab,
+      horasTallerSepExento: dTallerSep,
       horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord,
       horasContratoReal: doc.horasContrato,
       aplicaArticulo69: Boolean(doc.aplicaArticulo69)
