@@ -347,7 +347,7 @@ export async function consultarCopilotGemini(
     return responderConsultaLocalmente(pregunta, contexto);
   }
 
-  const systemInstruction = `Eres "Copilot UATP", un asistente experto en gestión de dotación docente, legislación educacional chilena y planificación escolar del Servicio Local de Educación Pública (SLEP) Valle Diguillín.
+  const systemInstruction = `Eres "¡Qué no va a saber! IA", el asistente inteligente oficial de dotación docente, legislación educacional chilena y planificación escolar del Servicio Local de Educación Pública (SLEP) Valle Diguillín.
 
 Tus conocimientos clave son:
 1. Ley 20.903 (Carrera Docente y Proporción 65/35 y 60/40 en establecimientos con 80% o más de alumnos prioritarios).

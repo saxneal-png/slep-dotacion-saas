@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { SchoolNavigatorModal } from './components/SchoolNavigatorModal';
 import { SaveBackupModal } from './components/SaveBackupModal';
 import { DotacionCopilotDrawer } from './components/DotacionCopilotDrawer';
+import { Sparkles } from 'lucide-react';
 
 const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
 const SalasSaeView = React.lazy(() => import('./views/SalasSaeView').then(m => ({ default: m.SalasSaeView })));
@@ -809,7 +810,7 @@ export const App: React.FC = () => {
         onReiniciarBaseDatos={handleReiniciarBaseDatos}
       />
 
-      {/* Panel Lateral Retráctil: Copilot UATP (Chatbot de Dotación en Tiempo Real) */}
+      {/* Panel Lateral Retráctil: ¡Qué no va a saber! IA */}
       <DotacionCopilotDrawer
         isOpen={modalCopilotAbierto}
         onClose={() => setModalCopilotAbierto(false)}
@@ -822,6 +823,25 @@ export const App: React.FC = () => {
         todosLosDocentesTerritorio={todosLosDocentes}
         todosLosEstablecimientos={colegios}
       />
+
+      {/* Botón Flotante Permanente Estilo Steve Jobs: ¡Qué no va a saber! IA */}
+      <aside aria-label="Asistente de Dotación Flotante" className="fixed bottom-6 right-6 z-40">
+        <button
+          onClick={() => setModalCopilotAbierto(true)}
+          className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 hover:bg-slate-900 text-white rounded-2xl shadow-2xl border border-blue-500/40 hover:border-blue-400 hover:scale-105 active:scale-95 transition-all group backdrop-blur-md"
+          title="Abrir asistente inteligente ¡Qué no va a saber! IA (Ctrl+J / ⌘J)"
+        >
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/30">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
+          </div>
+          <span className="text-xs font-black tracking-tight text-white">
+            ¡Qué no va a saber! IA
+          </span>
+          <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-blue-200 font-mono border border-white/10">
+            ⌘J
+          </span>
+        </button>
+      </aside>
     </div>
   );
 };

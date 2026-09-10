@@ -145,76 +145,119 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Hero 1: Asistente Inteligente */}
             {onAbrirCopilot && (
               <button
                 onClick={onAbrirCopilot}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 border border-blue-400/30 group"
-                title="Abrir Copilot Asistente de Dotación para este establecimiento (Ctrl+J)"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/25 border border-blue-400/30 group"
+                title="Abrir asistente ¡Qué no va a saber! IA para este colegio (Ctrl+J)"
               >
                 <Sparkles className="w-4 h-4 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
-                <span>Consultar Copilot IA</span>
+                <span>¡Qué no va a saber! IA</span>
               </button>
             )}
 
+            {/* Hero 2: Importar Matriz */}
             <button
               onClick={() => setModalMatrizAbierto(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
-              title="Importar planilla Excel con desglose por columnas de curso"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm border border-slate-700"
+              title="Importar planilla Excel con cursos y docentes"
             >
-              <FileSpreadsheet className="w-4 h-4" />
+              <FileSpreadsheet className="w-4 h-4 text-orange-400" />
               <span>Importar Matriz Excel</span>
             </button>
 
+            {/* Hero 3: Comparar Periodos */}
             <button
               onClick={() => setModalComparadorAbierto(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
+              className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-300 shadow-sm"
               title="Comparar Dotación 2026 vs 2027 lado a lado"
             >
               <Scale className="w-4 h-4 text-indigo-600" />
-              <span>Comparar 2026 vs 2027</span>
+              <span>Comparar 2026 / 2027</span>
             </button>
 
-            <button
-              onClick={onAbrirModuloSige}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
-            >
-              <FileUp className="w-4 h-4 text-orange-600" />
-              <span>Cargar SIGE</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (onExportarDotacionColegio) {
-                  onExportarDotacionColegio(colegio, periodoActivo);
-                }
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all border border-indigo-200"
-              title={`Exportar archivo .slep exclusivo con la dotación de ${colegio.nombre} para enviar al consolidador territorial`}
-            >
-              <FileDown className="w-4 h-4 text-indigo-600" />
-              <span>Exportar Dotación (.slep)</span>
-            </button>
-
-            {onExportarMatrizExcelColegio && (
+            {/* Menú Desplegable de Más Opciones y Exportaciones */}
+            <div className="relative">
               <button
-                onClick={() => onExportarMatrizExcelColegio(colegio, periodoActivo)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition-all border border-emerald-200"
-                title={`Exportar Matriz de Dotación Excel oficial de ${colegio.nombre} (Formato SLEP / [h]:mm)`}
+                onClick={() => setMenuAvanzadoAbierto(!menuAvanzadoAbierto)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-300 shadow-sm"
+                title="Exportar dotación, cargar SIGE o imprimir"
               >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                <span>Exportar Matriz Excel</span>
+                <span>Acciones</span>
+                <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${menuAvanzadoAbierto ? 'rotate-90' : ''}`} />
               </button>
-            )}
 
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200"
-              title="Imprimir informe oficial de dotación"
-            >
-              <Printer className="w-4 h-4 text-slate-600" />
-              <span className="hidden sm:inline">Imprimir Ficha</span>
-            </button>
+              {menuAvanzadoAbierto && (
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-fade-in divide-y divide-slate-100">
+                  <div className="p-1 space-y-0.5">
+                    {onExportarMatrizExcelColegio && (
+                      <button
+                        onClick={() => {
+                          onExportarMatrizExcelColegio(colegio, periodoActivo);
+                          setMenuAvanzadoAbierto(false);
+                        }}
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors text-left"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                        <span>Exportar Matriz Oficial Excel</span>
+                      </button>
+                    )}
+
+                    {onExportarDotacionColegio && (
+                      <button
+                        onClick={() => {
+                          onExportarDotacionColegio(colegio, periodoActivo);
+                          setMenuAvanzadoAbierto(false);
+                        }}
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors text-left"
+                      >
+                        <FileDown className="w-4 h-4 text-indigo-600" />
+                        <span>Exportar Ficha (.slep)</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        onAbrirModuloSige();
+                        setMenuAvanzadoAbierto(false);
+                      }}
+                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 hover:bg-orange-50 hover:text-orange-700 transition-colors text-left"
+                    >
+                      <FileUp className="w-4 h-4 text-orange-600" />
+                      <span>Cargar Nómina SIGE</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        window.print();
+                        setMenuAvanzadoAbierto(false);
+                      }}
+                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors text-left"
+                    >
+                      <Printer className="w-4 h-4 text-slate-500" />
+                      <span>Imprimir Informe Oficial</span>
+                    </button>
+                  </div>
+
+                  {onLimpiarDotacionColegio && (
+                    <div className="p-1">
+                      <button
+                        onClick={() => {
+                          setModalVaciarSeguroAbierto(true);
+                          setMenuAvanzadoAbierto(false);
+                        }}
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-red-600 hover:bg-red-50 transition-colors text-left"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <span>Vaciar Dotación del Período</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <button
               onClick={onExportarExcel}

@@ -111,11 +111,11 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
       const bienvenida: CopilotMessage = {
         id: 'msg-welcome',
         sender: 'assistant',
-        text: `Hola, soy tu **Copilot UATP**. Estoy conectado en tiempo real a la dotación de **${establecimiento.nombre}** (RBD ${establecimiento.rbd}, Período ${periodo}).\n\n` +
+        text: `Hola, soy **¡Qué no va a saber! IA**, tu asistente inteligente oficial para la dotación de **${establecimiento.nombre}** (RBD ${establecimiento.rbd}, Período ${periodo}).\n\n` +
           `• **Estado de la Balanza:** ${b.superavitDeficitLectivo >= 0 ? '🟢' : '🔴'} **${estadoBalanza}** (${b.horasAulaDemandadasCurriculo} HA demandadas vs ${b.horasLectivasAsignadas} HA asignadas)\n` +
           `• **Planta Docente:** ${contexto.docentes.length} docentes (${b.horasContratadasTotales}h totales)\n` +
           `• **Matrícula:** ${b.totalMatriculaProyectada} alumnos en ${contexto.cursos.length} cursos\n\n` +
-          `¿En qué puedo orientarte hoy? Puedes elegir una de las preguntas sugeridas abajo o escribir libremente tu consulta.`,
+          `¿Qué deseas consultar o calcular? Selecciona una pregunta rápida o escribe tu consulta.`,
         timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
         source: apiKey ? 'gemini' : 'local'
       };
@@ -253,10 +253,11 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center space-x-2">
-                  <h2 className="text-base font-bold tracking-tight text-white truncate">
-                    Copilot UATP
+                  <h2 className="text-sm sm:text-base font-black tracking-tight text-white truncate flex items-center gap-1.5">
+                    <span>¡Qué no va a saber! IA</span>
+                    <Sparkles className="w-4 h-4 text-amber-300" />
                   </h2>
-                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                  <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
                     {periodo}
                   </span>
                   {apiKey.trim() ? (
