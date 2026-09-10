@@ -286,6 +286,10 @@ export interface ContratoDocenteColegio {
   aplicaArticulo69?: boolean;
   horasReduccionArticulo69?: number;
   minutosReduccionArticulo69?: number;
+  // Horas sin función asignada por fuente de financiamiento
+  horasSepSinAsignar?: number;
+  horasPieSinAsignar?: number;
+  horasSubvGeneralSinAsignar?: number;
 }
 
 export interface DocenteConsolidadoTerritorial {

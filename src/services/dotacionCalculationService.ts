@@ -50,6 +50,9 @@ export interface DiagnosticoColegioCompleto {
     estaSobreasignado: boolean;
     excesoHoras: number;
     horasVacantes: number;
+    horasSepSinAsignar?: number;
+    horasPieSinAsignar?: number;
+    horasSubvGeneralSinAsignar?: number;
   }[];
 }
 
@@ -283,17 +286,9 @@ export function calcularDiagnosticoColegio(
     const sepExentas = isSepDoc
       ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
       : Math.max(hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep);
-
     const pieCronologicas = isPieDoc
-      ? Math.max(
-          contratoPieDoc,
-          hColabDoc + hCoordPie,
-          cronApoyoPie + sumFuncionesNoAulaPie
-        )
-      : Math.max(
-          hColabDoc + hCoordPie,
-          cronApoyoPie + sumFuncionesNoAulaPie
-        );
+      ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
+      : Math.max(hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie);
 
     const hInstNoAula = sumFuncionesNoAulaSubvGen;
     const hExentas = hInstNoAula + sepExentas + pieCronologicas;
@@ -357,6 +352,10 @@ export function calcularDiagnosticoColegio(
     const cargaTotalTrabajo = auditDoc.contratoCalculadoTotal + coDocenciaNoPieSep;
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
 
+    const horasSepSinAsignarDoc = Math.max(0, contratoSepDoc - (cronSepTotal + sumFuncionesNoAulaSep + hTallerSepDoc));
+    const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - (cronApoyoPie + sumFuncionesNoAulaPie + hColabDoc + hCoordPie));
+    const horasSubvGenSinAsignarDoc = Math.max(0, subTotalDoc - (auditDoc.req65_35 + auditDoc.req60_40 + sumFuncionesNoAulaSubvGen));
+
     return {
       docente: doc,
       horasPedagogicasAsignadas: pedTotalAsignadas,
@@ -369,7 +368,10 @@ export function calcularDiagnosticoColegio(
       horasLectivasMaximas: maxHAPermitidas,
       estaSobreasignado: auditDoc.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditDoc.saldoHoras < 0),
       excesoHoras: Math.max(0, pedAulaRegular - maxHAPermitidas),
-      horasVacantes: horasVacantesFuncionario
+      horasVacantes: horasVacantesFuncionario,
+      horasSepSinAsignar: horasSepSinAsignarDoc,
+      horasPieSinAsignar: horasPieSinAsignarDoc,
+      horasSubvGeneralSinAsignar: horasSubvGenSinAsignarDoc
     };
   });
 
@@ -765,20 +767,12 @@ export function obtenerDocentesConsolidadosTerritorio(
       const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
       const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-      const sepExentas = isSepDoc
-        ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
-        : Math.max(hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep);
-
-      const pieCronologicas = isPieDoc
-        ? Math.max(
-            contratoPieDoc,
-            hColabDoc + hCoordPie,
-            cronApoyoPie + sumFuncionesNoAulaPie
-          )
-        : Math.max(
-            hColabDoc + hCoordPie,
-            cronApoyoPie + sumFuncionesNoAulaPie
-          );
+      const sepExentas = Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep);
+      const pieCronologicas = Math.max(
+        contratoPieDoc,
+        hColabDoc + hCoordPie,
+        cronApoyoPie + sumFuncionesNoAulaPie
+      );
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
@@ -936,7 +930,10 @@ export function obtenerDocentesConsolidadosTerritorio(
         funcionesNoAula: doc.funcionesNoAula,
         aplicaArticulo69: Boolean(doc.aplicaArticulo69),
         horasReduccionArticulo69: auditMulti.horasReduccionArticulo69 || calculo.horasReduccionArticulo69 || 0,
-        minutosReduccionArticulo69: auditMulti.minutosReduccionArticulo69 || calculo.minutosReduccionArticulo69 || 0
+        minutosReduccionArticulo69: auditMulti.minutosReduccionArticulo69 || calculo.minutosReduccionArticulo69 || 0,
+        horasSepSinAsignar: Math.max(0, contratoSepDoc - (cronSepTotal + sumFuncionesNoAulaSep + hTallerSepDoc)),
+        horasPieSinAsignar: Math.max(0, contratoPieDoc - (cronApoyoPie + sumFuncionesNoAulaPie + hColabDoc + hCoordPie)),
+        horasSubvGeneralSinAsignar: Math.max(0, subTotalDoc - (auditMulti.req65_35 + auditMulti.req60_40 + sumFuncionesNoAulaSubvGen))
       });
     }
 

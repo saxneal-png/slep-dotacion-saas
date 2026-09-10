@@ -520,6 +520,37 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                       </div>
                     </div>
 
+                    {/* Horas Sin Asignar por Subvención */}
+                    {Boolean(
+                      (c.horasSepSinAsignar && c.horasSepSinAsignar > 0) ||
+                      (c.horasPieSinAsignar && c.horasPieSinAsignar > 0) ||
+                      (c.horasSubvGeneralSinAsignar && c.horasSubvGeneralSinAsignar > 0)
+                    ) && (
+                      <div className="bg-amber-50/80 border border-amber-200 rounded-lg p-3 text-xs space-y-1">
+                        <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Horas Contractuales Sin Función Asignada (Disponibles):</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+                          {Boolean(c.horasSepSinAsignar && c.horasSepSinAsignar > 0) && (
+                            <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200 font-semibold">
+                              💡 SEP: {c.horasSepSinAsignar} hrs sin taller ni función asignada
+                            </span>
+                          )}
+                          {Boolean(c.horasPieSinAsignar && c.horasPieSinAsignar > 0) && (
+                            <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200 font-semibold">
+                              💡 PIE: {c.horasPieSinAsignar} hrs sin trabajo colaborativo ni apoyo asignado
+                            </span>
+                          )}
+                          {Boolean(c.horasSubvGeneralSinAsignar && c.horasSubvGeneralSinAsignar > 0) && (
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold">
+                              💡 Subv. General: {c.horasSubvGeneralSinAsignar} hrs vacantes / por asignar
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Asignaciones Horarias en esta Escuela */}
                     {c.asignaciones.length > 0 ? (
                       <div>

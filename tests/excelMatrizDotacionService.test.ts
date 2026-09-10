@@ -11,6 +11,17 @@ import {
 import { Establecimiento, Docente, CursoSae, AsignacionHoraria } from '../src/types';
 
 describe('excelMatrizDotacionService', () => {
+  const getHoras = (cellVal: any): number => {
+    const res = cellVal?.result !== undefined ? cellVal.result : cellVal;
+    if (typeof res === 'number') return res * 24;
+    if (res instanceof Date) {
+      // ExcelJS interpreta números con formato de fecha/hora como fecha desde epoch 1899-12-30
+      const epoch = new Date(Date.UTC(1899, 11, 30, 0, 0, 0)).getTime();
+      return (res.getTime() - epoch) / (1000 * 60 * 60);
+    }
+    return 0;
+  };
+
   it('genera correctamente las letras de columnas', () => {
     expect(getColumnLetter(1)).toBe('A');
     expect(getColumnLetter(2)).toBe('B');
@@ -309,5 +320,82 @@ describe('excelMatrizDotacionService', () => {
     // La columna de auditoría en la fila maestra del docente debe evidenciar la holgura de 1h
     const obsVal = String(filaMaestraDocente!.getCell(colObservaciones).value);
     expect(obsVal).toContain('⚠ Holgura: Realiza 42h de 43h (1h vacantes)');
+  });
+
+  it('no debe inventar funciones ficticias como Coordinación Ciclo para horas SEP sin asignar y debe exportarlas como Horas SEP sin asignar (Disponibles)', async () => {
+    const establecimiento: Establecimiento = {
+      id: 'est-1',
+      rbd: '3641',
+      nombre: 'Liceo Bicentenario San Nicolás',
+      comuna: 'San Ignacio',
+      regimen: 'JEC',
+      porcentajePrioritarios: 70
+    };
+
+    const cursos: CursoSae[] = [
+      { id: 'c1', rbd: '3641', nivel: '1° Básico', letra: 'A', regimen: 'JEC', cupoSae: 30, matriculaProyectada: 30, alumnosNeet: 0, alumnosNeep: 0 }
+    ];
+
+    // Docente de aula con 30h Subvención General y 6h SEP sin ninguna función o taller asignado
+    const docenteConSepSinAsignar: Docente = {
+      id: 'doc-sep-libre',
+      rbd: '3641',
+      run: '17.888.999-0',
+      nombres: 'Esteban',
+      apellidos: 'Muñoz',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 36,
+      horasSubvencionGeneralContrata: 30,
+      horasSepContrata: 6
+    };
+
+    // Solo 20 HA de Matemática en Subvención General
+    const asignaciones: AsignacionHoraria[] = [
+      {
+        id: 'asig-1',
+        rbd: '3641',
+        cursoId: 'c1',
+        docenteId: 'doc-sep-libre',
+        asignatura: 'Matemática',
+        horasPedagogicasAula: 20
+      }
+    ];
+
+    const buffer = await generarExcelMatrizDotacionColegio(
+      establecimiento,
+      [docenteConSepSinAsignar],
+      cursos,
+      asignaciones
+    );
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as any);
+    const ws = wb.worksheets[0];
+
+    const textosColDocente: string[] = [];
+    ws.eachRow((row) => {
+      const val = row.getCell(1).value;
+      if (val) textosColDocente.push(String(val));
+    });
+
+    // 1. NUNCA debe existir "Coordinación Ciclo"
+    expect(textosColDocente.some(t => t.includes('Coordinación Ciclo'))).toBe(false);
+
+    // 2. DEBE existir explícitamente "Horas SEP sin asignar (Disponibles)"
+    expect(textosColDocente.some(t => t.includes('Horas SEP sin asignar (Disponibles)'))).toBe(true);
+
+    // 3. Verificar que la fila de horas SEP sin asignar tenga las 6h en la columna SEP
+    let filaSepSinAsignar: ExcelJS.Row | null = null;
+    ws.eachRow((row) => {
+      if (String(row.getCell(1).value || '').includes('Horas SEP sin asignar (Disponibles)')) {
+        filaSepSinAsignar = row;
+      }
+    });
+
+    expect(filaSepSinAsignar).not.toBeNull();
+    const colSep = 13; // col 13 es TOTAL HC** Sub. SEP
+    const valSepCell = filaSepSinAsignar!.getCell(colSep).value;
+    expect(getHoras(valSepCell)).toBeCloseTo(6, 1);
   });
 });

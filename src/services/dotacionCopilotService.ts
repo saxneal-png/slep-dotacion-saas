@@ -143,9 +143,28 @@ export function construirContextoDotacion(
     const pie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
     const estadoAlerta = ed.estaSobreasignado ? ` [🚨 SOBREASIGNADO +${ed.excesoHoras} HA]` : ` [✓ Correcto]`;
     const art69 = d.aplicaArticulo69 ? ` [Art. 69 Activo]` : '';
-    resumen += `• ${d.nombres} ${d.apellidos} (${d.run}) - ${d.calidadJuridica} (${d.horasContrato}h: Subv ${subGral}h, SEP ${sep}h, PIE ${pie}h). Horas Aula Asignadas: ${ed.horasAulaRegular || 0} HA / Máx ${ed.horasLectivasMaximas} HA. Vacantes: ${ed.horasVacantes}h.${estadoAlerta}${art69}\n`;
+    const sinAsignarDetalle = [];
+    if ((ed.horasSepSinAsignar || 0) > 0) sinAsignarDetalle.push(`SEP sin asignar: ${ed.horasSepSinAsignar}h`);
+    if ((ed.horasPieSinAsignar || 0) > 0) sinAsignarDetalle.push(`PIE sin asignar: ${ed.horasPieSinAsignar}h`);
+    if ((ed.horasSubvGeneralSinAsignar || 0) > 0) sinAsignarDetalle.push(`Subv sin asignar: ${ed.horasSubvGeneralSinAsignar}h`);
+    const sinAsignarStr = sinAsignarDetalle.length > 0 ? ` [⚠️ ${sinAsignarDetalle.join(', ')}]` : '';
+    resumen += `• ${d.nombres} ${d.apellidos} (${d.run}) - ${d.calidadJuridica} (${d.horasContrato}h: Subv ${subGral}h, SEP ${sep}h, PIE ${pie}h). Horas Aula Asignadas: ${ed.horasAulaRegular || 0} HA / Máx ${ed.horasLectivasMaximas} HA. Vacantes: ${ed.horasVacantes}h.${estadoAlerta}${art69}${sinAsignarStr}\n`;
   }
   resumen += `\n`;
+
+  const docentesConSinAsignar = diagnostico.estadoDocentes.filter(ed => ((ed.horasSepSinAsignar || 0) > 0 || (ed.horasPieSinAsignar || 0) > 0 || (ed.horasSubvGeneralSinAsignar || 0) > 0));
+  if (docentesConSinAsignar.length > 0) {
+    resumen += `=== HORAS CONTRATADAS SIN ASIGNAR (DISPONIBLES) ===\n`;
+    for (const ed of docentesConSinAsignar) {
+      const items = [
+        (ed.horasSepSinAsignar || 0) > 0 ? `${ed.horasSepSinAsignar}h SEP` : null,
+        (ed.horasPieSinAsignar || 0) > 0 ? `${ed.horasPieSinAsignar}h PIE` : null,
+        (ed.horasSubvGeneralSinAsignar || 0) > 0 ? `${ed.horasSubvGeneralSinAsignar}h Subv. Gral` : null
+      ].filter(Boolean).join(', ');
+      resumen += `• ${ed.docente.nombres} ${ed.docente.apellidos} (${ed.docente.run}): ${items} disponibles sin función asignada.\n`;
+    }
+    resumen += `\n`;
+  }
 
   if (docentesMultiEscuela.length > 0) {
     resumen += `=== DOCENTES COMPARTIDOS EN MÚLTIPLES ESTABLECIMIENTOS ===\n`;
@@ -398,8 +417,14 @@ INSTRUCCIONES DE RESPUESTA:
     const errorData = await response.json().catch(() => ({}));
     const errorMsg = errorData?.error?.message || `Error HTTP ${response.status}`;
     console.warn('Fallo llamada Gemini Copilot, usando motor local:', errorMsg);
-    // Fallback al motor local con aviso
-    return responderConsultaLocalmente(pregunta, contexto) + `\n\n> ⚠️ *Nota: No se pudo conectar con Gemini AI (${errorMsg}). Se generó respuesta con el motor determinista local.*`;
+    
+    let explicacionError = `No se pudo conectar con Gemini AI (${errorMsg}).`;
+    if (errorMsg.includes('ERR_NAME_NOT_RESOLVED') || errorMsg.includes('ENOTFOUND') || errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+      explicacionError = 'Sin conexión a internet o el dominio de Google AI no pudo resolverse en la red (ERR_NAME_NOT_RESOLVED).';
+    }
+    
+    // Fallback al motor determinista local
+    return responderConsultaLocalmente(pregunta, contexto) + `\n\n> ℹ️ *Modo Local Activo: ${explicacionError} Se generó respuesta 100% determinista con el motor normativo de dotación SLEP.*`;
   }
 
   const data = await response.json();

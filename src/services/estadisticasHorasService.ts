@@ -77,6 +77,12 @@ export interface EstadisticasColegioHoras {
   porcentajeRecreo: number;
   porcentajeInstitucional: number;
 
+  // 8. Horas Sin Asignar / Vacantes desglosadas por Subvención
+  horasSepSinAsignarTotal: number;
+  horasPieSinAsignarTotal: number;
+  horasSubvGeneralSinAsignarTotal: number;
+  totalHorasSinAsignarColegio: number;
+
   // Detalle por docente para la vista intra-escuela
   desgloseDocentes: {
     id: string;
@@ -94,6 +100,12 @@ export interface EstadisticasColegioHoras {
     horasSubvGeneral: number;
     horasInstitucionales: number;
     estaSobreasignado: boolean;
+    horasSepAsignadas: number;
+    horasSepSinAsignar: number;
+    horasPieAsignadas: number;
+    horasPieSinAsignar: number;
+    horasSubvGeneralSinAsignar: number;
+    totalHorasSinAsignar: number;
   }[];
 }
 
@@ -113,6 +125,7 @@ export interface EstadisticasTerritorialesHoras {
   horasColaborativoTotal: number;
   horasCoDocenciaTotal: number;
   horasDemandadasPlanTotal: number;
+  horasLectivasMaximasTotal: number;
   balanceLectivoGlobal: number;
 
   // Financiamiento Consolidado
@@ -141,6 +154,12 @@ export interface EstadisticasTerritorialesHoras {
   porcentajeNoLectivoGlobal: number;
   porcentajeRecreoGlobal: number;
   porcentajeInstitucionalGlobal: number;
+
+  // Horas sin asignar territoriales
+  horasSepSinAsignarTotal: number;
+  horasPieSinAsignarTotal: number;
+  horasSubvGeneralSinAsignarTotal: number;
+  totalHorasSinAsignarTerritorio: number;
 
   // Agrupado por Comuna
   porComuna: {
@@ -219,6 +238,9 @@ export function calcularEstadisticasColegio(
   let hTecnico = 0;
   let hCoord = 0;
   let hTallerSep = 0;
+  let horasSepSinAsignarTotal = 0;
+  let horasPieSinAsignarTotal = 0;
+  let horasSubvGeneralSinAsignarTotal = 0;
 
   const desgloseDocentes = docentes.map(doc => {
     horasContratoTotal += doc.horasContrato;
@@ -291,7 +313,7 @@ export function calcularEstadisticasColegio(
       horasAula65_35: ha65,
       horasAula60_40: ha60,
       horasPieCronologicas: pTit + pCon,
-      horasTallerSepExento: dTallerSep,
+      horasTallerSepExento: Math.max(spTit + spCon, dTallerSep),
       horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord,
       horasContratoReal: doc.horasContrato,
       aplicaArticulo69: Boolean(doc.aplicaArticulo69)
@@ -304,6 +326,30 @@ export function calcularEstadisticasColegio(
 
     const horasNoLectivasDoc = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
     const horasRecreoDoc = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
+
+    const sumFuncionesNoAulaSep = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || '')).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaPie = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+    const sumFuncionesNoAulaSubvGen = (doc.funcionesNoAula && doc.funcionesNoAula.length > 0)
+      ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+
+    const sepAsignadasDoc = dTallerSep + sumFuncionesNoAulaSep;
+    const sepSinAsignarDoc = Math.max(0, (spTit + spCon) - sepAsignadasDoc);
+
+    const pieAsignadasDoc = dColab + haColab + sumFuncionesNoAulaPie;
+    const pieSinAsignarDoc = Math.max(0, (pTit + pCon) - pieAsignadasDoc);
+
+    const subvGenAsignadasDoc = auditDoc.req65_35 + auditDoc.req60_40 + dDir + dInsp + dTec + dCoord + sumFuncionesNoAulaSubvGen;
+    const subvGenSinAsignarDoc = Math.max(0, (sTit + sCon) - subvGenAsignadasDoc);
+    const totalSinAsignarDoc = sepSinAsignarDoc + pieSinAsignarDoc + subvGenSinAsignarDoc;
+
+    horasSepSinAsignarTotal += sepSinAsignarDoc;
+    horasPieSinAsignarTotal += pieSinAsignarDoc;
+    horasSubvGeneralSinAsignarTotal += subvGenSinAsignarDoc;
 
     return {
       id: doc.id,
@@ -320,7 +366,13 @@ export function calcularEstadisticasColegio(
       horasPie: pTit + pCon,
       horasSubvGeneral: sTit + sCon,
       horasInstitucionales: hExentas,
-      estaSobreasignado: auditDoc.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditDoc.saldoHoras < 0)
+      estaSobreasignado: auditDoc.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditDoc.saldoHoras < 0),
+      horasSepAsignadas: sepAsignadasDoc,
+      horasSepSinAsignar: sepSinAsignarDoc,
+      horasPieAsignadas: pieAsignadasDoc,
+      horasPieSinAsignar: pieSinAsignarDoc,
+      horasSubvGeneralSinAsignar: subvGenSinAsignarDoc,
+      totalHorasSinAsignar: totalSinAsignarDoc
     };
   });
 
@@ -393,6 +445,11 @@ export function calcularEstadisticasColegio(
     porcentajeRecreo: pctRecreo,
     porcentajeInstitucional: pctInst,
 
+    horasSepSinAsignarTotal,
+    horasPieSinAsignarTotal,
+    horasSubvGeneralSinAsignarTotal,
+    totalHorasSinAsignarColegio: horasSepSinAsignarTotal + horasPieSinAsignarTotal + horasSubvGeneralSinAsignarTotal,
+
     desgloseDocentes
   };
 }
@@ -425,6 +482,7 @@ export function calcularEstadisticasTerritoriales(
   let horasColaborativoTotal = 0;
   let horasCoDocenciaTotal = 0;
   let horasDemandadasPlanTotal = 0;
+  let horasLectivasMaximasTotal = 0;
   let balanceLectivoGlobal = 0;
 
   let subvTit = 0;
@@ -440,6 +498,10 @@ export function calcularEstadisticasTerritoriales(
   let hCoordTotal = 0;
   let hInstitucionalesTotal = 0;
 
+  let horasSepSinAsignarTotal = 0;
+  let horasPieSinAsignarTotal = 0;
+  let horasSubvGeneralSinAsignarTotal = 0;
+
   const porComuna: EstadisticasTerritorialesHoras['porComuna'] = {};
 
   for (const st of porColegio) {
@@ -453,6 +515,7 @@ export function calcularEstadisticasTerritoriales(
     horasColaborativoTotal += st.horasTrabajoColaborativo;
     horasCoDocenciaTotal += st.horasCoDocencia;
     horasDemandadasPlanTotal += st.horasAulaDemandadasPlan;
+    horasLectivasMaximasTotal += st.horasLectivasMaximasPermitidas;
     balanceLectivoGlobal += st.balanceAulaLectiva;
 
     subvTit += st.financiamiento.subvencionGeneralTitular;
@@ -467,6 +530,10 @@ export function calcularEstadisticasTerritoriales(
     hTecnicoTotal += st.horasTecnicoPedagogicas;
     hCoordTotal += st.horasCoordinacion;
     hInstitucionalesTotal += st.horasInstitucionalesTotal;
+
+    horasSepSinAsignarTotal += st.horasSepSinAsignarTotal;
+    horasPieSinAsignarTotal += st.horasPieSinAsignarTotal;
+    horasSubvGeneralSinAsignarTotal += st.horasSubvGeneralSinAsignarTotal;
 
     const com = st.comuna;
     if (!porComuna[com]) {
@@ -518,6 +585,7 @@ export function calcularEstadisticasTerritoriales(
     horasColaborativoTotal,
     horasCoDocenciaTotal,
     horasDemandadasPlanTotal,
+    horasLectivasMaximasTotal,
     balanceLectivoGlobal,
 
     financiamiento: {
@@ -538,6 +606,11 @@ export function calcularEstadisticasTerritoriales(
     horasTecnicoPedagogicasTotal: hTecnicoTotal,
     horasCoordinacionTotal: hCoordTotal,
     horasInstitucionalesTotal: hInstitucionalesTotal,
+
+    horasSepSinAsignarTotal,
+    horasPieSinAsignarTotal,
+    horasSubvGeneralSinAsignarTotal,
+    totalHorasSinAsignarTerritorio: horasSepSinAsignarTotal + horasPieSinAsignarTotal + horasSubvGeneralSinAsignarTotal,
 
     porcentajeAulaGlobal: pctAula,
     porcentajeNoLectivoGlobal: pctNoLectivo,

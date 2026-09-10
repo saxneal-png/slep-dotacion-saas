@@ -309,6 +309,11 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="text-[11px] text-slate-500 mt-1 font-mono">
                   Titular: {statsTerritoriales.financiamiento.subvencionGeneralTitular}h • Contrata: {statsTerritoriales.financiamiento.subvencionGeneralContrata}h
                 </div>
+                {statsTerritoriales.horasSubvGeneralSinAsignarTotal > 0 && (
+                  <div className="text-[10px] text-slate-700 font-semibold mt-1 bg-slate-200/70 px-1.5 py-0.5 rounded">
+                    Sin asignar: {statsTerritoriales.horasSubvGeneralSinAsignarTotal}h disponibles
+                  </div>
+                )}
               </div>
 
               <div className="bg-purple-50/50 p-3 rounded-xl border border-purple-200 text-xs">
@@ -319,6 +324,11 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="text-[11px] text-purple-700 mt-1 font-mono">
                   Titular: {statsTerritoriales.financiamiento.sepTitular}h • Contrata: {statsTerritoriales.financiamiento.sepContrata}h
                 </div>
+                {statsTerritoriales.horasSepSinAsignarTotal > 0 && (
+                  <div className="text-[10px] text-purple-800 font-semibold mt-1 bg-purple-100 px-1.5 py-0.5 rounded">
+                    Sin asignar: {statsTerritoriales.horasSepSinAsignarTotal}h disponibles
+                  </div>
+                )}
               </div>
 
               <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-200 text-xs">
@@ -329,6 +339,11 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="text-[11px] text-blue-700 mt-1 font-mono">
                   Titular: {statsTerritoriales.financiamiento.pieTitular}h • Contrata: {statsTerritoriales.financiamiento.pieContrata}h
                 </div>
+                {statsTerritoriales.horasPieSinAsignarTotal > 0 && (
+                  <div className="text-[10px] text-blue-800 font-semibold mt-1 bg-blue-100 px-1.5 py-0.5 rounded">
+                    Sin asignar: {statsTerritoriales.horasPieSinAsignarTotal}h disponibles
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -390,6 +405,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     <th className="px-2 py-2.5 text-center">SEP</th>
                     <th className="px-2 py-2.5 text-center">PIE</th>
                     <th className="px-2 py-2.5 text-center">Subv. Gral</th>
+                    <th className="px-2 py-2.5 text-center text-amber-700">Sin Asignar</th>
                     <th className="px-2 py-2.5 text-center">Balance Aula</th>
                     <th className="px-2 py-2.5 text-center">Acción</th>
                   </tr>
@@ -437,6 +453,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                         </td>
                         <td className="px-2 py-2.5 text-center font-mono">
                           {st.financiamiento.subvencionGeneralTotal}h
+                        </td>
+                        <td className="px-2 py-2.5 text-center">
+                          {st.totalHorasSinAsignarColegio > 0 ? (
+                            <span
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200"
+                              title={`SEP: ${st.horasSepSinAsignarTotal}h • PIE: ${st.horasPieSinAsignarTotal}h • Subv: ${st.horasSubvGeneralSinAsignarTotal}h`}
+                            >
+                              {st.totalHorasSinAsignarColegio}h
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">0h</span>
+                          )}
                         </td>
                         <td className="px-2 py-2.5 text-center">
                           <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
@@ -635,6 +663,11 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     <span className="text-[10px] text-slate-500 font-mono">
                       Titular: {statsColegioActivo.financiamiento.subvencionGeneralTitular}h • Contrata: {statsColegioActivo.financiamiento.subvencionGeneralContrata}h
                     </span>
+                    {statsColegioActivo.horasSubvGeneralSinAsignarTotal > 0 && (
+                      <div className="text-[10px] text-slate-700 font-semibold mt-1 bg-slate-200/70 px-1.5 py-0.5 rounded">
+                        Sin asignar: {statsColegioActivo.horasSubvGeneralSinAsignarTotal}h disponibles
+                      </div>
+                    )}
                   </div>
 
                   <div className="bg-purple-50/50 p-3 rounded-xl border border-purple-200 text-xs">
@@ -645,6 +678,11 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     <span className="text-[10px] text-purple-700 font-mono">
                       Titular: {statsColegioActivo.financiamiento.sepTitular}h • Contrata: {statsColegioActivo.financiamiento.sepContrata}h
                     </span>
+                    {statsColegioActivo.horasSepSinAsignarTotal > 0 && (
+                      <div className="text-[10px] text-purple-800 font-semibold mt-1 bg-purple-100 px-1.5 py-0.5 rounded">
+                        Sin asignar: {statsColegioActivo.horasSepSinAsignarTotal}h disponibles
+                      </div>
+                    )}
                   </div>
 
                   <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-200 text-xs">
@@ -655,6 +693,11 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     <span className="text-[10px] text-blue-700 font-mono">
                       Titular: {statsColegioActivo.financiamiento.pieTitular}h • Contrata: {statsColegioActivo.financiamiento.pieContrata}h
                     </span>
+                    {statsColegioActivo.horasPieSinAsignarTotal > 0 && (
+                      <div className="text-[10px] text-blue-800 font-semibold mt-1 bg-blue-100 px-1.5 py-0.5 rounded">
+                        Sin asignar: {statsColegioActivo.horasPieSinAsignarTotal}h disponibles
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -685,6 +728,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                         <th className="px-2 py-2.5 text-center">SEP</th>
                         <th className="px-2 py-2.5 text-center">PIE</th>
                         <th className="px-2 py-2.5 text-center">Subv. Gral</th>
+                        <th className="px-2 py-2.5 text-center text-amber-700">Sin Asignar</th>
                         <th className="px-2 py-2.5 text-center">Estado</th>
                       </tr>
                     </thead>
@@ -726,6 +770,27 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                           </td>
                           <td className="px-2 py-2 text-center font-mono">
                             {d.horasSubvGeneral}h
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            {d.totalHorasSinAsignar > 0 ? (
+                              <div className="inline-flex flex-col items-center">
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200"
+                                  title={`SEP: ${d.horasSepSinAsignar}h • PIE: ${d.horasPieSinAsignar}h • Subv: ${d.horasSubvGeneralSinAsignar}h`}
+                                >
+                                  {d.totalHorasSinAsignar}h
+                                </span>
+                                <span className="text-[9px] text-amber-800 font-mono mt-0.5">
+                                  {[
+                                    d.horasSepSinAsignar > 0 ? `SEP ${d.horasSepSinAsignar}h` : null,
+                                    d.horasPieSinAsignar > 0 ? `PIE ${d.horasPieSinAsignar}h` : null,
+                                    d.horasSubvGeneralSinAsignar > 0 ? `Subv ${d.horasSubvGeneralSinAsignar}h` : null
+                                  ].filter(Boolean).join(' ')}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">0h</span>
+                            )}
                           </td>
                           <td className="px-2 py-2 text-center">
                             {d.estaSobreasignado ? (

@@ -99,6 +99,11 @@ describe('Servicio Estadístico de Horas (Aula, Proporciones, Recreos, SEP, PIE)
     expect(stats.horasNoLectivasCalculadas).toBeGreaterThan(0);
     expect(stats.horasRecreoCalculadas).toBeGreaterThan(0);
     expect(stats.desgloseDocentes.length).toBe(2);
+
+    // Verificación de horas sin asignar sin inventar funciones
+    expect(stats.horasSepSinAsignarTotal).toBe(14); // 14h SEP de d-1 sin taller asignado
+    expect(stats.totalHorasSinAsignarColegio).toBeGreaterThanOrEqual(14);
+    expect(stats.desgloseDocentes[0].horasSepSinAsignar).toBe(14);
   });
 
   it('calcula correctamente las estadísticas territoriales agregadas', () => {
@@ -112,6 +117,8 @@ describe('Servicio Estadístico de Horas (Aula, Proporciones, Recreos, SEP, PIE)
     expect(statsTerr.totalEstablecimientos).toBe(1);
     expect(statsTerr.totalDocentesPlanta).toBe(2);
     expect(statsTerr.horasContratoTotal).toBe(74);
+    expect(statsTerr.horasSepSinAsignarTotal).toBe(14);
+    expect(statsTerr.totalHorasSinAsignarTerritorio).toBeGreaterThanOrEqual(14);
     expect(statsTerr.porComuna['Bulnes']).toBeDefined();
     expect(statsTerr.porComuna['Bulnes'].colegiosCount).toBe(1);
     expect(statsTerr.porComuna['Bulnes'].horasContrato).toBe(74);

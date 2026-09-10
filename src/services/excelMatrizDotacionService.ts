@@ -605,40 +605,6 @@ export async function generarExcelMatrizDotacionColegio(
       currentRowIdx++;
     }
 
-    // Fila Funciones SEP (Coordinación Ciclo / Taller SEP contractual)
-    if (sepContrato > 0) {
-      const sepRow = ws.getRow(currentRowIdx);
-      sepRow.height = 17;
-      sepRow.getCell(colIndexDocente).value = docente.cargoInstitucional || 'Coordinación Ciclo';
-      sepRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
-      sepRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
-
-      sepRow.getCell(colIndexTotalHcSubSep).value = sepContrato / 24;
-      sepRow.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
-      sepRow.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
-      sepRow.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9 };
-
-      for (let c = 1; c <= totalColumnas; c++) sepRow.getCell(c).border = borderThin;
-      currentRowIdx++;
-    }
-
-    // Fila Funciones PIE (Colaborativo PIE contractual)
-    if (pieContrato > 0) {
-      const pieRow = ws.getRow(currentRowIdx);
-      pieRow.height = 17;
-      pieRow.getCell(colIndexDocente).value = 'Colaborativo PIE';
-      pieRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
-      pieRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
-
-      pieRow.getCell(colIndexTotalHcSubPie).value = pieContrato / 24;
-      pieRow.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
-      pieRow.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
-      pieRow.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9 };
-
-      for (let c = 1; c <= totalColumnas; c++) pieRow.getCell(c).border = borderThin;
-      currentRowIdx++;
-    }
-
     // Ley 20.903 — Proporción calculada estrictamente sobre la base de las Horas Aula (HA)
     // efectivamente asignadas según el motor oficial de cálculo (@slep/mineduc-engine).
     const detalleAula = buscarDetallePorHorasAula(
@@ -686,6 +652,171 @@ export async function generarExcelMatrizDotacionColegio(
       currentRowIdx++;
     }
 
+    // Identificar funciones no aula formalmente asignadas
+    const funcionesDoc = docente.funcionesNoAula || [];
+    const funcsSep = funcionesDoc.filter(f => f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || /sep/i.test(f.nombre || ''));
+    const funcsPie = funcionesDoc.filter(f => f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre)));
+    const funcsSubGral = funcionesDoc.filter(f => !funcsSep.includes(f) && !funcsPie.includes(f));
+
+    // 1. Funciones Subvención General Fuera de Aula (Directivas, UTP, Coordinaciones)
+    let sumSubGralNoAula = 0;
+    if (funcsSubGral.length > 0) {
+      for (const f of funcsSubGral) {
+        const hVal = Number(f.horas || 0);
+        if (hVal <= 0) continue;
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = f.nombre || f.tipo.replace('_', ' ');
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+        row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubGral).value = hVal / 24;
+        row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
+        row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9 };
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        sumSubGralNoAula += hVal;
+        currentRowIdx++;
+      }
+    } else {
+      // Fallback a campos legacy si no existen en funcionesNoAula
+      const legacyItems: { nombre: string; horas: number }[] = [];
+      if ((docente.horasDirectivas || 0) > 0) legacyItems.push({ nombre: 'Función Directiva', horas: docente.horasDirectivas! });
+      if ((docente.horasInspectorGeneral || 0) > 0) legacyItems.push({ nombre: 'Inspectoría General', horas: docente.horasInspectorGeneral! });
+      if ((docente.horasTecnicoPedagogicas || 0) > 0) legacyItems.push({ nombre: 'Jefatura UTP', horas: docente.horasTecnicoPedagogicas! });
+      if ((docente.horasCoordinacion || 0) > 0) legacyItems.push({ nombre: `Coordinación ${docente.tipoCoordinacion ? `(${docente.tipoCoordinacion})` : ''}`.trim(), horas: docente.horasCoordinacion! });
+      if ((docente.horasConvivenciaEscolar || 0) > 0) legacyItems.push({ nombre: 'Convivencia Escolar', horas: docente.horasConvivenciaEscolar! });
+      if ((docente.horasExtraescolar || 0) > 0) legacyItems.push({ nombre: 'Coordinación Extraescolar', horas: docente.horasExtraescolar! });
+      for (const item of legacyItems) {
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = item.nombre;
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+        row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubGral).value = item.horas / 24;
+        row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
+        row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9 };
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        sumSubGralNoAula += item.horas;
+        currentRowIdx++;
+      }
+    }
+
+    // 2. Funciones SEP: Desglose fiel y rotulación explícita de Horas Sin Asignar
+    let sumSepAsignadas = 0;
+    if (funcsSep.length > 0) {
+      for (const f of funcsSep) {
+        const hVal = Number(f.horas || 0);
+        if (hVal <= 0) continue;
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = f.nombre || f.tipo.replace('_', ' ');
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+        row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubSep).value = hVal / 24;
+        row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+        row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9 };
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        sumSepAsignadas += hVal;
+        currentRowIdx++;
+      }
+    } else if ((docente.horasTallerSep || 0) > 0) {
+      const row = ws.getRow(currentRowIdx);
+      row.height = 17;
+      row.getCell(colIndexDocente).value = 'Taller SEP';
+      row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+      row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+      row.getCell(colIndexTotalHcSubSep).value = docente.horasTallerSep! / 24;
+      row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+      row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9 };
+      for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+      sumSepAsignadas += docente.horasTallerSep!;
+      currentRowIdx++;
+    }
+
+    const sepSinAsignar = Math.max(0, sepContrato - sumSepAsignadas);
+    if (sepSinAsignar > 0) {
+      const sepRow = ws.getRow(currentRowIdx);
+      sepRow.height = 17;
+      // NUNCA inventar "Coordinación Ciclo": rotular fielmente como horas sin asignar
+      sepRow.getCell(colIndexDocente).value = 'Horas SEP sin asignar (Disponibles)';
+      sepRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, italic: true };
+      sepRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+      sepRow.getCell(colIndexTotalHcSubSep).value = sepSinAsignar / 24;
+      sepRow.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+      sepRow.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+      sepRow.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9, italic: true };
+      for (let c = 1; c <= totalColumnas; c++) sepRow.getCell(c).border = borderThin;
+      currentRowIdx++;
+    }
+
+    // 3. Funciones PIE: Desglose fiel de trabajo colaborativo o rotulación de Horas Sin Asignar
+    let sumPieAsignadas = 0;
+    if (funcsPie.length > 0) {
+      for (const f of funcsPie) {
+        const hVal = Number(f.horas || 0);
+        if (hVal <= 0) continue;
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = f.nombre || (f.tipo === 'COORDINACION' ? 'Coordinación PIE (Dec. 170)' : 'Trabajo Colaborativo PIE');
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+        row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubPie).value = hVal / 24;
+        row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+        row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9 };
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        sumPieAsignadas += hVal;
+        currentRowIdx++;
+      }
+    } else {
+      if ((docente.horasTrabajoColaborativo || 0) > 0) {
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = 'Trabajo Colaborativo PIE';
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+        row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubPie).value = docente.horasTrabajoColaborativo! / 24;
+        row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+        row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9 };
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        sumPieAsignadas += docente.horasTrabajoColaborativo!;
+        currentRowIdx++;
+      }
+      if ((docente.horasCoordinacionPie || 0) > 0) {
+        const row = ws.getRow(currentRowIdx);
+        row.height = 17;
+        row.getCell(colIndexDocente).value = 'Coordinación PIE (Dec. 170)';
+        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+        row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubPie).value = docente.horasCoordinacionPie! / 24;
+        row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+        row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9 };
+        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+        sumPieAsignadas += docente.horasCoordinacionPie!;
+        currentRowIdx++;
+      }
+    }
+
+    const pieSinAsignar = Math.max(0, pieContrato - sumPieAsignadas);
+    if (pieSinAsignar > 0) {
+      const pieRow = ws.getRow(currentRowIdx);
+      pieRow.height = 17;
+      pieRow.getCell(colIndexDocente).value = 'Horas PIE sin asignar (Disponibles)';
+      pieRow.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, italic: true };
+      pieRow.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+      pieRow.getCell(colIndexTotalHcSubPie).value = pieSinAsignar / 24;
+      pieRow.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+      pieRow.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+      pieRow.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9, italic: true };
+      for (let c = 1; c <= totalColumnas; c++) pieRow.getCell(c).border = borderThin;
+      currentRowIdx++;
+    }
+
     const lastDetailRow = currentRowIdx - 1;
 
     // Fila Total del Docente
@@ -711,7 +842,7 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexTotalHcSubGral).value = tieneFilasDetalle
       ? {
           formula: `SUM(${colSubGralLetter}${firstDetailRow}:${colSubGralLetter}${lastDetailRow})`,
-          result: jornadaAulaRequerida / 24
+          result: (jornadaAulaRequerida + sumSubGralNoAula) / 24
         }
       : 0;
     totalRow.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
@@ -738,7 +869,7 @@ export async function generarExcelMatrizDotacionColegio(
     totalRow.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
     totalRow.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9, bold: true };
 
-    const cargaEfectivaTotal = jornadaAulaRequerida + sepContrato + pieContrato;
+    const cargaEfectivaTotal = jornadaAulaRequerida + sumSubGralNoAula + sepContrato + pieContrato;
     totalRow.getCell(colIndexTotalHc).value = {
       formula: `SUM(${colSubGralLetter}${currentRowIdx}:${colPieLetter}${currentRowIdx})`,
       result: cargaEfectivaTotal / 24
@@ -928,33 +1059,127 @@ export async function generarExcelMatrizDotacionColegio(
           currentRowIdx++;
         }
       } else {
-        // Funciones por estamento / cargo institucional
-        let funcionNombre = docente.cargoInstitucional || 'Gestión Institucional';
-        if (docente.estamento === 'DIRECTIVO') funcionNombre = 'Directora / Equipo Directivo';
-        if (docente.estamento === 'TECNICO_PEDAGOGICO') funcionNombre = 'Jefe Unidad Técnico Pedagógica (UTP)';
-        if (docente.estamento === 'DOCENTE_DIFERENCIAL') funcionNombre = 'Docente Especialista PIE / Aula de Recursos';
+        // Docente sin asignaciones directas de aula
+        const funcsDoc = docente.funcionesNoAula || [];
+        if (funcsDoc.length > 0) {
+          let sumSubGralS2 = 0;
+          let sumSepS2 = 0;
+          let sumPieS2 = 0;
+          for (const f of funcsDoc) {
+            const hVal = Number(f.horas || 0);
+            if (hVal <= 0) continue;
+            const row = ws.getRow(currentRowIdx);
+            row.height = 17;
+            row.getCell(colIndexDocente).value = f.nombre || f.tipo.replace('_', ' ');
+            row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+            row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
 
-        const row = ws.getRow(currentRowIdx);
-        row.height = 17;
-        row.getCell(colIndexDocente).value = funcionNombre;
-        row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+            const esPie = f.financiamiento === 'PIE' || /pie/i.test(f.financiamiento || '') || (f.nombre && /pie/i.test(f.nombre));
+            const esSep = f.financiamiento === 'SEP' || /sep/i.test(f.financiamiento || '') || (f.nombre && /sep/i.test(f.nombre));
 
-        if (pieContratoS2 > 0 || docente.estamento === 'DOCENTE_DIFERENCIAL') {
-          row.getCell(colIndexTotalHcSubPie).value = (pieContratoS2 || docente.horasContrato) / 24;
-          row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
-          row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
-        } else if (sepContratoS2 > 0) {
-          row.getCell(colIndexTotalHcSubSep).value = (sepContratoS2 || docente.horasContrato) / 24;
-          row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
-          row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+            if (esPie) {
+              row.getCell(colIndexTotalHcSubPie).value = hVal / 24;
+              row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+              row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+              row.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9 };
+              sumPieS2 += hVal;
+            } else if (esSep) {
+              row.getCell(colIndexTotalHcSubSep).value = hVal / 24;
+              row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+              row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+              row.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9 };
+              sumSepS2 += hVal;
+            } else {
+              row.getCell(colIndexTotalHcSubGral).value = hVal / 24;
+              row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
+              row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+              row.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9 };
+              sumSubGralS2 += hVal;
+            }
+            for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+            currentRowIdx++;
+          }
+
+          // Remanentes sin asignar en Sección 2
+          const subSinAsignarS2 = Math.max(0, subGralContratoS2 - sumSubGralS2);
+          const sepSinAsignarS2 = Math.max(0, sepContratoS2 - sumSepS2);
+          const pieSinAsignarS2 = Math.max(0, pieContratoS2 - sumPieS2);
+
+          if (subSinAsignarS2 > 0) {
+            const row = ws.getRow(currentRowIdx);
+            row.height = 17;
+            row.getCell(colIndexDocente).value = 'Horas Subv. General sin asignar (Disponibles)';
+            row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, italic: true };
+            row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubGral).value = subSinAsignarS2 / 24;
+            row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
+            row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9, italic: true };
+            for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+            currentRowIdx++;
+          }
+          if (sepSinAsignarS2 > 0) {
+            const row = ws.getRow(currentRowIdx);
+            row.height = 17;
+            row.getCell(colIndexDocente).value = 'Horas SEP sin asignar (Disponibles)';
+            row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, italic: true };
+            row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubSep).value = sepSinAsignarS2 / 24;
+            row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+            row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9, italic: true };
+            for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+            currentRowIdx++;
+          }
+          if (pieSinAsignarS2 > 0) {
+            const row = ws.getRow(currentRowIdx);
+            row.height = 17;
+            row.getCell(colIndexDocente).value = 'Horas PIE sin asignar (Disponibles)';
+            row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9, italic: true };
+            row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubPie).value = pieSinAsignarS2 / 24;
+            row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+            row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9, italic: true };
+            for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+            currentRowIdx++;
+          }
         } else {
-          row.getCell(colIndexTotalHcSubGral).value = (subGralContratoS2 || docente.horasContrato) / 24;
-          row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
-          row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
-        }
+          // Funciones por estamento / cargo institucional explícito si existe
+          let funcionNombre = docente.cargoInstitucional;
+          if (!funcionNombre) {
+            if (docente.estamento === 'DIRECTIVO') funcionNombre = 'Equipo Directivo';
+            else if (docente.estamento === 'TECNICO_PEDAGOGICO') funcionNombre = 'Unidad Técnico Pedagógica (UTP)';
+            else if (docente.estamento === 'DOCENTE_DIFERENCIAL') funcionNombre = 'Docente Especialista PIE / Aula de Recursos';
+            else funcionNombre = 'Horas sin función asignada (Disponibles)';
+          }
 
-        for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
-        currentRowIdx++;
+          const row = ws.getRow(currentRowIdx);
+          row.height = 17;
+          row.getCell(colIndexDocente).value = funcionNombre;
+          row.getCell(colIndexDocente).font = { name: 'Calibri', size: 9 };
+          row.getCell(colIndexDocente).alignment = { horizontal: 'left', vertical: 'middle' };
+
+          if (pieContratoS2 > 0 || docente.estamento === 'DOCENTE_DIFERENCIAL') {
+            row.getCell(colIndexTotalHcSubPie).value = (pieContratoS2 || docente.horasContrato) / 24;
+            row.getCell(colIndexTotalHcSubPie).numFmt = '[h]:mm';
+            row.getCell(colIndexTotalHcSubPie).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubPie).font = { name: 'Calibri', size: 9 };
+          } else if (sepContratoS2 > 0) {
+            row.getCell(colIndexTotalHcSubSep).value = (sepContratoS2 || docente.horasContrato) / 24;
+            row.getCell(colIndexTotalHcSubSep).numFmt = '[h]:mm';
+            row.getCell(colIndexTotalHcSubSep).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubSep).font = { name: 'Calibri', size: 9 };
+          } else {
+            row.getCell(colIndexTotalHcSubGral).value = (subGralContratoS2 || docente.horasContrato) / 24;
+            row.getCell(colIndexTotalHcSubGral).numFmt = '[h]:mm';
+            row.getCell(colIndexTotalHcSubGral).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(colIndexTotalHcSubGral).font = { name: 'Calibri', size: 9 };
+          }
+
+          for (let c = 1; c <= totalColumnas; c++) row.getCell(c).border = borderThin;
+          currentRowIdx++;
+        }
       }
 
       const lastDetailRowS2 = currentRowIdx - 1;

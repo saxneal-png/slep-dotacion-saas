@@ -205,17 +205,9 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const sepExentas = isSepDoc
         ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
         : Math.max(hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep);
-
       const pieCronologicas = isPieDoc
-        ? Math.max(
-            contratoPieDoc,
-            hColabDoc + hCoordPie,
-            cronApoyoPie + sumFuncionesNoAulaPie
-          )
-        : Math.max(
-            hColabDoc + hCoordPie,
-            cronApoyoPie + sumFuncionesNoAulaPie
-          );
+        ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
+        : Math.max(hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;

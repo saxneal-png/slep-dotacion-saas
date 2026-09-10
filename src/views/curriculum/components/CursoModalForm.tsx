@@ -1,5 +1,5 @@
-﻿import React, { useState } from 'react';
-import { Plus, X, Layers, School, BookOpen } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, X, Layers, School, BookOpen, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { CursoSae } from '../../../types';
 import {
   NIVELES_REGULARES,
@@ -7,13 +7,16 @@ import {
   NIVELES_EPJA_OFICIALES,
   GRADOS_COMBINABLES
 } from '../types';
+import { extraerGradosDeCurso } from '../../../services/combinacionCursosService';
 
 interface CursoModalFormProps {
   isOpen: boolean;
   onClose: () => void;
   rbd: string;
   periodoActivo: number;
+  cursosExistentes?: CursoSae[];
   onGuardarCurso: (curso: CursoSae) => void;
+  onCombinarCursos?: (cursosIds: string[], nuevoCurso: CursoSae) => Promise<void> | void;
   onCursoCreado: (cursoId: string) => void;
 }
 
@@ -22,12 +25,16 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
   onClose,
   rbd,
   periodoActivo,
+  cursosExistentes = [],
   onGuardarCurso,
+  onCombinarCursos,
   onCursoCreado
 }) => {
   const [categoria, setCategoria] = useState<'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA'>('REGULAR');
   const [nivel, setNivel] = useState('1° Básico');
   const [gradosCombinados, setGradosCombinados] = useState<string[]>(['1° Básico', '2° Básico']);
+  const [cursosExistentesSeleccionados, setCursosExistentesSeleccionados] = useState<string[]>([]);
+  const [modoCombinado, setModoCombinado] = useState<'EXISTENTES' | 'NUEVO'>('EXISTENTES');
   const [nombreCombinado, setNombreCombinado] = useState('');
   const [letra, setLetra] = useState('A');
   const [regimen, setRegimen] = useState<'JEC' | 'No JEC'>('JEC');
@@ -37,9 +44,38 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
   const [alumnosNeet, setAlumnosNeet] = useState(5);
   const [alumnosNeep, setAlumnosNeep] = useState(2);
 
+  // Cuando se seleccionan cursos existentes a combinar, calcular sumatorias automáticamente
+  useEffect(() => {
+    if (categoria === 'COMBINADO' && modoCombinado === 'EXISTENTES' && cursosExistentesSeleccionados.length > 0) {
+      const seleccionados = cursosExistentes.filter(c => cursosExistentesSeleccionados.includes(c.id));
+      const totMat = seleccionados.reduce((s, c) => s + (c.matriculaProyectada || 0), 0);
+      const totCupo = seleccionados.reduce((s, c) => s + (c.cupoSae || 0), 0);
+      const totNeet = seleccionados.reduce((s, c) => s + (c.alumnosNeet || 0), 0);
+      const totNeep = seleccionados.reduce((s, c) => s + (c.alumnosNeep || 0), 0);
+      
+      const todosGrados: string[] = [];
+      for (const c of seleccionados) {
+        for (const g of extraerGradosDeCurso(c)) {
+          if (!todosGrados.includes(g)) todosGrados.push(g);
+        }
+      }
+
+      setMatriculaProyectada(totMat);
+      setCupoSae(totCupo);
+      setAlumnosNeet(totNeet);
+      setAlumnosNeep(totNeep);
+      setGradosCombinados(todosGrados);
+      setLetra('U');
+      if (seleccionados.some(c => c.regimen === 'JEC')) setRegimen('JEC');
+      if (!nombreCombinado) {
+        setNombreCombinado(todosGrados.length <= 3 ? `Curso Combinado (${todosGrados.join(' - ')})` : `Multigrado (${todosGrados[0]} a ${todosGrados[todosGrados.length - 1]})`);
+      }
+    }
+  }, [cursosExistentesSeleccionados, categoria, modoCombinado]);
+
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     let nivelFinal = nivel;
     let esMulti = false;
@@ -80,8 +116,16 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
       gradosCombinados: categoria === 'COMBINADO' ? gradosCombinados : undefined
     };
 
-    onGuardarCurso(nuevo);
-    onCursoCreado(nuevo.id);
+    if (categoria === 'COMBINADO' && modoCombinado === 'EXISTENTES' && cursosExistentesSeleccionados.length >= 2 && onCombinarCursos) {
+      if (confirm(`¿Confirmas combinar los ${cursosExistentesSeleccionados.length} cursos seleccionados en "${nuevo.nivel} ${nuevo.letra}"? Los cursos de origen se fusionarán.`)) {
+        await onCombinarCursos(cursosExistentesSeleccionados, nuevo);
+      } else {
+        return;
+      }
+    } else {
+      onGuardarCurso(nuevo);
+      onCursoCreado(nuevo.id);
+    }
     onClose();
   };
 
@@ -199,37 +243,107 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
 
           {categoria === 'COMBINADO' && (
             <div className="space-y-3 p-3 bg-indigo-50/60 rounded-xl border border-indigo-200/70">
+              {cursosExistentes.length >= 2 && (
+                <div className="flex rounded-lg bg-indigo-100/70 p-0.5 text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setModoCombinado('EXISTENTES')}
+                    className={`flex-1 py-1 px-2 rounded-md transition-all ${
+                      modoCombinado === 'EXISTENTES'
+                        ? 'bg-white text-indigo-950 shadow-xs'
+                        : 'text-indigo-700 hover:text-indigo-900'
+                    }`}
+                  >
+                    Combinar Cursos Creados ({cursosExistentes.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModoCombinado('NUEVO')}
+                    className={`flex-1 py-1 px-2 rounded-md transition-all ${
+                      modoCombinado === 'NUEVO'
+                        ? 'bg-white text-indigo-950 shadow-xs'
+                        : 'text-indigo-700 hover:text-indigo-900'
+                    }`}
+                  >
+                    Crear Nuevo desde Cero
+                  </button>
+                </div>
+              )}
+
+              {modoCombinado === 'EXISTENTES' && cursosExistentes.length >= 2 ? (
+                <div>
+                  <label className="block text-[11px] font-bold text-indigo-900 mb-1.5">
+                    Selecciona los cursos existentes a fusionar ({cursosExistentesSeleccionados.length} seleccionados):
+                  </label>
+                  <div className="space-y-1 max-h-40 overflow-y-auto bg-white p-2 rounded-lg border border-indigo-100 text-xs">
+                    {cursosExistentes.map(c => {
+                      const checked = cursosExistentesSeleccionados.includes(c.id);
+                      return (
+                        <label
+                          key={c.id}
+                          className={`flex items-center justify-between p-1.5 rounded cursor-pointer transition-colors ${
+                            checked ? 'bg-indigo-50 font-bold text-indigo-950 border border-indigo-200' : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={e => {
+                                if (e.target.checked) setCursosExistentesSeleccionados(prev => [...prev, c.id]);
+                                else setCursosExistentesSeleccionados(prev => prev.filter(id => id !== c.id));
+                              }}
+                              className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                            />
+                            <span>{c.nivel} {c.letra}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-normal">
+                            {c.matriculaProyectada} est. • {c.regimen}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {cursosExistentesSeleccionados.length >= 2 && (
+                    <div className="mt-2 p-2 bg-indigo-100/60 rounded-md text-[11px] text-indigo-950 font-medium">
+                      ✓ Fusionará <strong>{cursosExistentesSeleccionados.length} cursos</strong> sumando <strong>{matriculaProyectada} estudiantes</strong> y <strong>{alumnosNeet}T / {alumnosNeep}P</strong> PIE.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[11px] font-bold text-indigo-900 mb-1.5">Selecciona los Grados a Combinar en la Misma Aula:</label>
+                  <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto bg-white p-2.5 rounded-lg border border-indigo-100 text-xs">
+                    {GRADOS_COMBINABLES.map(g => {
+                      const checked = gradosCombinados.includes(g);
+                      return (
+                        <label key={g} className={`flex items-center gap-1.5 p-1 rounded cursor-pointer ${checked ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => {
+                              if (e.target.checked) setGradosCombinados(prev => [...prev, g]);
+                              else setGradosCombinados(prev => prev.filter(x => x !== g));
+                            }}
+                            className="rounded text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="truncate">{g}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-indigo-900 mb-1">Nombre Descriptivo del Curso Combinado</label>
                 <input
                   type="text"
-                  placeholder="Ej. Combinado Parvularia y 1° Básico"
+                  placeholder="Ej. Curso Combinado (1° Básico - 2° Básico)"
                   value={nombreCombinado}
                   onChange={e => setNombreCombinado(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs text-indigo-950 font-medium"
                 />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-indigo-900 mb-1.5">Selecciona los Grados a Combinar en la Misma Aula:</label>
-                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto bg-white p-2.5 rounded-lg border border-indigo-100 text-xs">
-                  {GRADOS_COMBINABLES.map(g => {
-                    const checked = gradosCombinados.includes(g);
-                    return (
-                      <label key={g} className={`flex items-center gap-1.5 p-1 rounded cursor-pointer ${checked ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={e => {
-                            if (e.target.checked) setGradosCombinados(prev => [...prev, g]);
-                            else setGradosCombinados(prev => prev.filter(x => x !== g));
-                          }}
-                          className="rounded text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="truncate">{g}</span>
-                      </label>
-                    );
-                  })}
-                </div>
               </div>
             </div>
           )}
