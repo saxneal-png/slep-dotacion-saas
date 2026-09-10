@@ -65,13 +65,23 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [modalConfigAbierto, setModalConfigAbierto] = useState(false);
 
-  // Configuración Gemini
+  // Configuración Gemini (sincronizada automáticamente con la clave general de la aplicación)
   const [apiKey, setApiKey] = useState<string>(() => {
     return typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_api_key') || '' : '';
   });
   const [modelName, setModelName] = useState<string>(() => {
-    return typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_model') || 'gemini-2.5-flash' : 'gemini-2.5-flash';
+    return typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_copilot_model') || 'gemini-2.5-flash-lite' : 'gemini-2.5-flash-lite';
   });
+
+  // Sincronizar automáticamente la API Key general cada vez que se abre el drawer
+  useEffect(() => {
+    if (isOpen && typeof localStorage !== 'undefined') {
+      const globalKey = localStorage.getItem('gemini_api_key') || '';
+      setApiKey(globalKey);
+      const savedModel = localStorage.getItem('gemini_copilot_model') || 'gemini-2.5-flash-lite';
+      setModelName(savedModel);
+    }
+  }, [isOpen]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -218,7 +228,7 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
   const handleGuardarConfig = () => {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('gemini_api_key', apiKey.trim());
-      localStorage.setItem('gemini_model', modelName);
+      localStorage.setItem('gemini_copilot_model', modelName);
     }
     setModalConfigAbierto(false);
   };
@@ -510,7 +520,7 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Ingresa tu API Key de Google Gemini para habilitar razonamiento avanzado, análisis de jurisprudencia y redacción de propuestas ejecutivas.
+              La API Key configurada aquí se comparte automáticamente con todos los módulos de la aplicación (Analizador de Nóminas, Exportador de Matriz y Copilot). Utiliza el modelo <strong>Gemini 2.5 Flash Lite</strong> para máxima velocidad y eficiencia.
             </p>
 
             <div className="space-y-3">
@@ -536,7 +546,9 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
                   onChange={e => setModelName(e.target.value)}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 >
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado - Ultrarrápido)</option>
+                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Ultrarrápido y Económico - Predeterminado)</option>
+                  <option value="gemini-flash-lite-latest">Gemini Flash Lite Latest</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Estándar)</option>
                   <option value="gemini-2.5-pro">Gemini 2.5 Pro (Razonamiento Complejo)</option>
                 </select>
               </div>

@@ -339,7 +339,7 @@ export async function consultarCopilotGemini(
   contexto: DotacionContextoCompleto,
   historial: { role: 'user' | 'model'; text: string }[] = [],
   apiKey?: string,
-  modelName: string = 'gemini-2.5-flash'
+  modelName: string = 'gemini-2.5-flash-lite'
 ): Promise<string> {
   const effectiveApiKey = apiKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_api_key') : '') || '';
   if (!effectiveApiKey) {
