@@ -213,13 +213,14 @@ export function calcularDiagnosticoColegio(
 
     const asigsCoDocenciaPie = asigsCoDocencia.filter(a => 
       Boolean(a.horasCronologicasPie) || 
-      (a.tipoApoyo && /pie/i.test(a.tipoApoyo)) || 
+      (a.tipoApoyo && /pie|recurso|co-docencia en aula regular|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) || 
+      (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura)) ||
       doc.estamento === 'DOCENTE_DIFERENCIAL' || 
       (Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0) > 0 && Number(doc.horasSubvencionGeneralTitular || 0) + Number(doc.horasSubvencionGeneralContrata || 0) === 0)
     );
     const asigsCoDocenciaSep = asigsCoDocencia.filter(a => 
       !asigsCoDocenciaPie.includes(a) && 
-      Boolean(a.esTallerSep || a.tipoApoyo === 'TALLER_SEP')
+      Boolean(a.esTallerSep || a.tipoApoyo === 'TALLER_SEP' || (a.tipoApoyo && /sep/i.test(a.tipoApoyo)) || (a.asignatura && /sep/i.test(a.asignatura)))
     );
     const asigsCoDocenciaSubvGen = asigsCoDocencia.filter(a => 
       !asigsCoDocenciaPie.includes(a) && 
@@ -283,15 +284,11 @@ export function calcularDiagnosticoColegio(
     const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
     const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-    // Docencia efectiva de aula que requiere proporción Ley 20.903 (HNL + recreos)
-    // Para docentes de aula MIXTOS (SubvGen + SEP), la co-docencia SEP genera HNL y recreos proporcionales.
-    // Para docentes puros SEP o PIE, la co-docencia está cubierta 1:1 por su contrato → se mantiene en sepExentas/pieCronologicas.
+    // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
+    // Para docentes de aula con co-docencia SEP, las horas de aula SEP forman parte de su carga lectiva regulada
     const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
       ? asigsAulaRegular
-      : [
-          ...asigsAulaRegular,
-          ...asigsCoDocencia
-        ];
+      : [...asigsAulaRegular, ...asigsCoDocenciaSep];
 
     const sepExentas = (isPieDoc || isSepDoc)
       ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
@@ -299,7 +296,7 @@ export function calcularDiagnosticoColegio(
 
     const pieCronologicas = isPieDoc
       ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
-      : Math.max(cronTrabajoColab + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
+      : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
     const hInstNoAula = sumFuncionesNoAulaSubvGen;
     const hExentas = hInstNoAula + sepExentas + pieCronologicas;
@@ -722,13 +719,14 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       const asigsCoDocenciaPie = asigsCoDocencia.filter(a => 
         Boolean(a.horasCronologicasPie) || 
-        (a.tipoApoyo && /pie/i.test(a.tipoApoyo)) || 
+        (a.tipoApoyo && /pie|recurso|co-docencia en aula regular|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) || 
+        (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura)) ||
         doc.estamento === 'DOCENTE_DIFERENCIAL' || 
         (Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0) > 0 && Number(doc.horasSubvencionGeneralTitular || 0) + Number(doc.horasSubvencionGeneralContrata || 0) === 0)
       );
       const asigsCoDocenciaSep = asigsCoDocencia.filter(a => 
         !asigsCoDocenciaPie.includes(a) && 
-        Boolean(a.esTallerSep || a.tipoApoyo === 'TALLER_SEP')
+        Boolean(a.esTallerSep || a.tipoApoyo === 'TALLER_SEP' || (a.tipoApoyo && /sep/i.test(a.tipoApoyo)) || (a.asignatura && /sep/i.test(a.asignatura)))
       );
       const asigsCoDocenciaSubvGen = asigsCoDocencia.filter(a => 
         !asigsCoDocenciaPie.includes(a) && 
@@ -812,13 +810,11 @@ export function obtenerDocentesConsolidadosTerritorio(
       const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
       const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-      // Docencia efectiva de aula: mixtos (SubvGen+SEP) incluyen co-docencia; puros SEP/PIE la mantienen como exenta
+      // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
+      // Para docentes de aula con co-docencia SEP, las horas de aula SEP forman parte de su carga lectiva regulada
       const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
         ? asigsAulaRegular
-        : [
-            ...asigsAulaRegular,
-            ...asigsCoDocencia
-          ];
+        : [...asigsAulaRegular, ...asigsCoDocenciaSep];
 
       const sepExentas = (isPieDoc || isSepDoc)
         ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
@@ -826,7 +822,7 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       const pieCronologicas = isPieDoc
         ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
-        : Math.max(cronTrabajoColab + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
+        : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
