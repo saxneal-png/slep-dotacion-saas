@@ -204,14 +204,19 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
       // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
-      // Para docentes de aula con co-docencia SEP, las horas de aula SEP forman parte de su carga lectiva regulada
-      const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
-        ? asigsAulaRegular
-        : [...asigsAulaRegular, ...asigsCoDocenciaSep];
+      // Para docentes con contrato SEP estándar de aula (como Laura de la Hoz), las horas de aula (co-docencia y talleres) forman parte de su carga lectiva regulada
+      const asigsTallerSepLectivos = (hTallerSepDoc > 0) ? [] : asigsTallerSep;
+      const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos];
+      const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const esSepProporcional = isSepDoc && (d.horasContrato > 0 && buscarContratoMinimoPorTabla(pedCandidatas, regimenTabla) <= d.horasContrato);
 
-      const sepExentas = (isPieDoc || isSepDoc)
+      const asigsDocenciaAulaEfectiva = (isPieDoc || (isSepDoc && !esSepProporcional))
+        ? asigsAulaRegular
+        : asigsCandidatasAula;
+
+      const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
         ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
-        : (Math.max(hTallerSepDoc, pedTallerSep, cronTallerSep) + sumFuncionesNoAulaSep);
+        : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
       const pieCronologicas = isPieDoc
         ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)

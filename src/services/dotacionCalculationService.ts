@@ -285,14 +285,19 @@ export function calcularDiagnosticoColegio(
     const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
     // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
-    // Para docentes de aula con co-docencia SEP, las horas de aula SEP forman parte de su carga lectiva regulada
-    const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
-      ? asigsAulaRegular
-      : [...asigsAulaRegular, ...asigsCoDocenciaSep];
+    // Para docentes con contrato SEP estándar de aula (como Laura de la Hoz), las horas de aula (co-docencia y talleres) forman parte de su carga lectiva regulada
+    const asigsTallerSepLectivos = (hTallerSepDoc > 0) ? [] : asigsTallerSep;
+    const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos];
+    const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+    const esSepProporcional = isSepDoc && (doc.horasContrato > 0 && buscarContratoMinimoPorTabla(pedCandidatas, regimenTabla) <= doc.horasContrato);
 
-    const sepExentas = (isPieDoc || isSepDoc)
+    const asigsDocenciaAulaEfectiva = (isPieDoc || (isSepDoc && !esSepProporcional))
+      ? asigsAulaRegular
+      : asigsCandidatasAula;
+
+    const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
       ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
-      : (Math.max(hTallerSepDoc, pedTallerSep, cronTallerSep) + sumFuncionesNoAulaSep);
+      : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
     const pieCronologicas = isPieDoc
       ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
@@ -810,15 +815,23 @@ export function obtenerDocentesConsolidadosTerritorio(
       const cronApoyoPie = cronTrabajoColab + cronCoDocenciaPie;
       const cronSepTotal = cronTallerSep + cronCoDocenciaSep;
 
-      // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
-      // Para docentes de aula con co-docencia SEP, las horas de aula SEP forman parte de su carga lectiva regulada
-      const asigsDocenciaAulaEfectiva = (isPieDoc || isSepDoc)
-        ? asigsAulaRegular
-        : [...asigsAulaRegular, ...asigsCoDocenciaSep];
+      const regimen: '65/35' | '60/40' = colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
+      const regimenTabla = regimen === '60/40' ? '60_40' : '65_35';
 
-      const sepExentas = (isPieDoc || isSepDoc)
+      // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
+      // Para docentes con contrato SEP estándar de aula (como Laura de la Hoz), las horas de aula (co-docencia y talleres) forman parte de su carga lectiva regulada
+      const asigsTallerSepLectivos = (hTallerSepDoc > 0) ? [] : asigsTallerSep;
+      const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos];
+      const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const esSepProporcional = isSepDoc && (doc.horasContrato > 0 && buscarContratoMinimoPorTabla(pedCandidatas, regimenTabla) <= doc.horasContrato);
+
+      const asigsDocenciaAulaEfectiva = (isPieDoc || (isSepDoc && !esSepProporcional))
+        ? asigsAulaRegular
+        : asigsCandidatasAula;
+
+      const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
         ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
-        : (Math.max(hTallerSepDoc, pedTallerSep, cronTallerSep) + sumFuncionesNoAulaSep);
+        : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
       const pieCronologicas = isPieDoc
         ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
@@ -827,9 +840,6 @@ export function obtenerDocentesConsolidadosTerritorio(
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
       const horasDocenciaNeta = Math.max(0, doc.horasContrato - hExentas);
-
-      const regimen: '65/35' | '60/40' = colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
-      const regimenTabla = regimen === '60/40' ? '60_40' : '65_35';
 
       // Proporción evaluada sobre horas de aula regular
       const calculo = horasDocenciaNeta > 0
