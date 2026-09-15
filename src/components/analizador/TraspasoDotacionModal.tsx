@@ -91,15 +91,13 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
     const initialJec: Record<string, 'JEC' | 'No JEC'> = {};
     const initialProp: Record<string, '65_35' | '60_40'> = {};
     for (const c of courses) {
-      const isParv = c.nivel.toLowerCase().includes('parv') || c.nivel.toLowerCase().includes('nt');
+      const isMediaOrTp = c.nivel.toLowerCase().includes('medio') || c.nivel.toLowerCase().includes('tp') || c.nivel.toLowerCase().includes('especialidad');
+      const isParv = !isMediaOrTp && (c.nivel.toLowerCase().includes('parv') || c.nivel.toLowerCase().includes('nt'));
       initialJec[c.curso] = isParv ? 'No JEC' : 'JEC';
       const isNTorPrimerCiclo =
         isParv ||
         /^[1-4][°\.\s]?[bB]/.test(c.nivel) ||
-        c.nivel.includes('1°') ||
-        c.nivel.includes('2°') ||
-        c.nivel.includes('3°') ||
-        c.nivel.includes('4°');
+        (!isMediaOrTp && (c.nivel.includes('1°') || c.nivel.includes('2°') || c.nivel.includes('3°') || c.nivel.includes('4°')));
       if (isNTorPrimerCiclo) {
         initialProp[c.curso] = '65_35';
       }
@@ -629,16 +627,14 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {courses.map((c) => {
-                        const currentJec = cursosJecMap[c.curso] || ((c.nivel.toLowerCase().includes('parv') || c.nivel.toLowerCase().includes('nt')) ? 'No JEC' : 'JEC');
+                        const isMediaOrTp = c.nivel.toLowerCase().includes('medio') || c.nivel.toLowerCase().includes('tp') || c.nivel.toLowerCase().includes('especialidad');
+                        const isParv = !isMediaOrTp && (c.nivel.toLowerCase().includes('parv') || c.nivel.toLowerCase().includes('nt'));
+                        const currentJec = cursosJecMap[c.curso] || (isParv ? 'No JEC' : 'JEC');
                         const currentProp = cursosProporcionMap[c.curso] || '65_35';
                         const isNTorPrimerCiclo =
-                          c.nivel.toLowerCase().includes('parv') ||
-                          c.nivel.toLowerCase().includes('nt') ||
+                          isParv ||
                           /^[1-4][°\.\s]?[bB]/.test(c.nivel) ||
-                          c.nivel.includes('1°') ||
-                          c.nivel.includes('2°') ||
-                          c.nivel.includes('3°') ||
-                          c.nivel.includes('4°');
+                          (!isMediaOrTp && (c.nivel.includes('1°') || c.nivel.includes('2°') || c.nivel.includes('3°') || c.nivel.includes('4°')));
 
                         return (
                           <tr key={c.curso} className="hover:bg-slate-50/80 transition-colors">

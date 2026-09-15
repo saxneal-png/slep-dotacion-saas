@@ -75,4 +75,28 @@ describe('Planes y Programas MINEDUC', () => {
       expect(totalAsignaturas).toBe(36);
     }
   });
+
+  it('resuelve 3° y 4° Medio Especialidad Atención de Párvulos como MEDIA_TP y nunca como Parvularia', () => {
+    // 3° Medio Atención de Párvulos
+    const planParv3 = obtenerPlanPorCurso('3° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP) A', 'JEC');
+    expect(planParv3).toBeDefined();
+    expect(planParv3?.nivel).toBe('3° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)');
+    expect(planParv3?.categoria).toBe('MEDIA_TP');
+    expect(planParv3?.totalHorasPlan).toBe(42);
+    expect(planParv3?.horasLibreDisposicion).toBe(6);
+    expect(planParv3?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('didáctico'))).toBe(true);
+
+    // 4° Medio Atención de Párvulos
+    const planParv4 = obtenerPlanPorCurso('4° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP) B', 'JEC');
+    expect(planParv4).toBeDefined();
+    expect(planParv4?.nivel).toBe('4° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)');
+    expect(planParv4?.categoria).toBe('MEDIA_TP');
+    expect(planParv4?.totalHorasPlan).toBe(42);
+    expect(planParv4?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('educativas'))).toBe(true);
+
+    // Educación Parvularia real
+    const planParvulariaReal = obtenerPlanPorCurso('Kínder A', 'No JEC');
+    expect(planParvulariaReal?.categoria).toBe('PARVULARIA');
+    expect(planParvulariaReal?.totalHorasPlan).toBe(22);
+  });
 });

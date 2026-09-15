@@ -1025,7 +1025,7 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
     }
   }
   // 2. ESPECIALIDADES TÉCNICO-PROFESIONALES ESPECÍFICAS
-  else if (c.includes('electric') || c.includes('programac') || c.includes('gastronom') || c.includes('parvulo') || 
+  else if (c.includes('electric') || c.includes('programac') || c.includes('gastronom') || c.includes('parvulo') || c.includes('atencion de parv') ||
            c.includes('administrac') || c.includes('construcc') || c.includes('mecanic') || c.includes('agropec') || 
            c.includes('elaboracion') || c.includes('alimento') || c.includes('vitivin') || c.includes('recursos humanos') ||
            c.includes('edificac') || c.includes('terminacion') || c.includes('obra vial') || c.includes('matricer') || 
@@ -1050,7 +1050,7 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
       } else {
         grupo = "3° Medio - Especialidad Gastronomía (Plan Común de la Especialidad)";
       }
-    } else if (c.includes('parvulo')) {
+    } else if (c.includes('parvulo') || c.includes('atencion de parv') || (c.includes('parvul') && (c.includes('medio') || c.includes('tp') || c.includes('especialidad')))) {
       grupo = es4 
         ? "4° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)"
         : "3° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)";
@@ -1111,7 +1111,7 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
     }
   }
   // 4. PARVULARIA REGULAR
-  else if (c.includes('prekinder') || c.includes('kinder') || c.includes('nt1') || c.includes('nt2') || c.includes('parvular')) {
+  else if ((c.includes('prekinder') || c.includes('kinder') || c.includes('nt1') || c.includes('nt2') || c.includes('parvular')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
     grupo = 'Educación Parvularia (NT1 y NT2)';
   }
   // 5. BÁSICA Y MEDIA REGULAR

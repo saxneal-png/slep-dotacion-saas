@@ -15,6 +15,7 @@ export interface NormalizedCourseInfo {
 export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null {
   if (!raw) return null;
   const clean = raw.trim().toUpperCase().replace(/\s+/g, ' ');
+  const cleanNoAccents = clean.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
   // Descartar encabezados que claramente no son cursos
   if (/^(NOMBRES?|RUN|RUT|HORAS?|TITULAR(ES)?|CONTRATA|TOTAL|OBSERVA|SUBV|SUB\b|CARGO|FUNCION|ESTAMENTO|ACTIVIDAD|DOCENTE|CORREO|TELEFONO|FIRMA)/i.test(clean)) {
@@ -22,34 +23,34 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
   }
 
   // 1. EPJA - Educación de Adultos (Bases Curriculares Decreto Supremo N° 10/2022)
-  if (/(?:EPJA|ADULTO)/i.test(clean) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(clean) || /OFICIO/i.test(clean)) {
+  if (/(?:EPJA|ADULTO)/i.test(cleanNoAccents) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(cleanNoAccents) || /OFICIO/i.test(cleanNoAccents)) {
     const letraMatch = clean.match(/\b([A-Z])\b$/);
     const letra = letraMatch ? letraMatch[1] : 'A';
-    if (/OFICIO/i.test(clean)) {
+    if (/OFICIO/i.test(cleanNoAccents)) {
       const nivel = 'Educación Media TP en Oficios - Niveles 1 y 2 (1° a 4° Medio TP)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
-    if (/TP|T[EÉ]CNICO|PROFESIONAL|ESPECIALIDAD/i.test(clean)) {
-      if (/(?:2|SEGUNDO|3|4|TERCER|CUARTO)/i.test(clean)) {
+    if (/TP|TECNICO|PROFESIONAL|ESPECIALIDAD/i.test(cleanNoAccents)) {
+      if (/(?:2|SEGUNDO|3|4|TERCER|CUARTO)/i.test(cleanNoAccents)) {
         const nivel = 'Educación Media TP en Especialidades - Niveles 2 y 3 (3° y 4° Medio TP)';
         return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
       }
       const nivel = 'Educación Media TP en Especialidades - Nivel 1 (1° y 2° Medio TP)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
-    if (/MEDIO|SECUNDARIA|HC|HUMAN/i.test(clean)) {
-      if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
+    if (/MEDIO|SECUNDARIA|HC|HUMAN/i.test(cleanNoAccents)) {
+      if (/(?:2|SEGUNDO|3|4)/i.test(cleanNoAccents)) {
         const nivel = 'Educación Media HC - Nivel 2 (3° y 4° Medio)';
         return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
       }
       const nivel = 'Educación Media HC - Nivel 1 (1° y 2° Medio)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
-    if (/(?:3|TERCER|7|8)/i.test(clean)) {
+    if (/(?:3|TERCER|7|8)/i.test(cleanNoAccents)) {
       const nivel = 'Educación Básica - Nivel 3 (7° y 8° Básico)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
-    if (/(?:2|SEGUNDO|5|6)/i.test(clean)) {
+    if (/(?:2|SEGUNDO|5|6)/i.test(cleanNoAccents)) {
       const nivel = 'Educación Básica - Nivel 2 (5° y 6° Básico)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
@@ -58,10 +59,10 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
   }
 
   // 2. Especialidades Técnico-Profesionales (Decretos 452/2013 y 0954/2015)
-  if (/(?:ELECTRIC|PROGRAMAC|GASTRONOM|PARVULO|ADMINISTRAC|CONSTRUCC|MECANIC|AGROPEC|ELABORACION|ALIMENTO|EDIFICAC|TERMINACION|VIAL|MATRICER|HERRAMIENTA|COCINA|PASTEL)/i.test(clean)) {
+  if (/(?:ELECTRIC|PROGRAMAC|GASTRONOM|PARVULO|ADMINISTRAC|CONSTRUCC|MECANIC|AGROPEC|ELABORACION|ALIMENTO|EDIFICAC|TERMINACION|VIAL|MATRICER|HERRAMIENTA|COCINA|PASTEL)/i.test(cleanNoAccents)) {
     const letraMatch = clean.match(/\b([A-Z])\b$/);
     const letra = letraMatch ? letraMatch[1] : 'A';
-    const planDetectado = obtenerPlanPorCurso(clean, 'JEC');
+    const planDetectado = obtenerPlanPorCurso(clean, 'JEC') || obtenerPlanPorCurso(cleanNoAccents, 'JEC');
     if (planDetectado) {
       return {
         cursoCompleto: `${planDetectado.nivel} ${letra}`,

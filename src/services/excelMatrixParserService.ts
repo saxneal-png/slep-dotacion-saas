@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { identifySchool } from '../data/slepSchoolsCatalog';
 import { normalizarRut } from '../utils/rutUtils';
+import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
 
 export { normalizarRut };
 
@@ -23,9 +24,12 @@ export function normalizarEncabezadoCurso(header: string): { nivel: string; letr
   if (/(?:EPJA|ADULTO)/i.test(clean) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(clean)) {
     const letraMatch = clean.match(/\b([A-Z])\b$/);
     const letra = letraMatch ? letraMatch[1] : 'A';
-    if (/TP|T[EÉ]CNICO|PROFESIONAL/i.test(clean)) {
-      if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
-        return { nivel: 'EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)', letra, regimen: 'No JEC', esMultigrado: false };
+    if (/OFICIO/i.test(clean)) {
+      return { nivel: 'EPJA Media TP - Oficios (1° a 4° Medio TP)', letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/TP|T[EÉ]CNICO|PROFESIONAL|ESPECIALIDAD/i.test(clean)) {
+      if (/(?:2|SEGUNDO|3|4|TERCER|CUARTO)/i.test(clean)) {
+        return { nivel: 'EPJA Media TP - 2° y 3° Nivel Medio (3° y 4° Medio TP)', letra, regimen: 'No JEC', esMultigrado: false };
       }
       return { nivel: 'EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)', letra, regimen: 'No JEC', esMultigrado: false };
     }
@@ -42,6 +46,16 @@ export function normalizarEncabezadoCurso(header: string): { nivel: string; letr
       return { nivel: 'EPJA Básica - 2° Nivel Básico (5° a 6° Básico)', letra, regimen: 'No JEC', esMultigrado: false };
     }
     return { nivel: 'EPJA Básica - 1° Nivel Básico (1° a 4° Básico)', letra, regimen: 'No JEC', esMultigrado: false };
+  }
+
+  // 1.5 Especialidades Técnico-Profesionales (Decretos 452/2013 y 0954/2015)
+  if (/(?:ELECTRIC|PROGRAMAC|GASTRONOM|PARVULO|ADMINISTRAC|CONSTRUCC|MECANIC|AGROPEC|ELABORACION|ALIMENTO|EDIFICAC|TERMINACION|VIAL|MATRICER|HERRAMIENTA|COCINA|PASTEL)/i.test(clean)) {
+    const letraMatch = clean.match(/\b([A-Z])\b$/);
+    const letra = letraMatch ? letraMatch[1] : 'A';
+    const planDetectado = obtenerPlanPorCurso(clean, 'JEC');
+    if (planDetectado) {
+      return { nivel: planDetectado.nivel, letra, regimen: 'JEC', esMultigrado: false };
+    }
   }
 
   // 2. Cursos Combinados

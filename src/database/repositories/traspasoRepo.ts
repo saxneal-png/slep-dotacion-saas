@@ -99,14 +99,15 @@ export async function ejecutarTraspasoDotacionAnalizador(
         config.cursosJecMap?.[`${sc.nivel}_${sc.letra}`] ||
         config.cursosJecMap?.[sc.nivel];
 
-      const defaultJec = (sc.nivel.toLowerCase().includes('parv') || sc.nivel.toLowerCase().includes('nt')) ? 'No JEC' : 'JEC';
+      const isMediaOrTp = sc.nivel.toLowerCase().includes('medio') || sc.nivel.toLowerCase().includes('tp') || sc.nivel.toLowerCase().includes('especialidad');
+      const isParvLevel = !isMediaOrTp && (sc.nivel.toLowerCase().includes('parv') || sc.nivel.toLowerCase().includes('nt'));
+      const defaultJec = isParvLevel ? 'No JEC' : 'JEC';
       const effectiveJec = customJec || defaultJec;
 
       const isPrimerCicloOrParv =
-        sc.nivel.toLowerCase().includes('parv') ||
-        sc.nivel.toLowerCase().includes('nt') ||
+        isParvLevel ||
         /^[1-4][°\.\s]?[bB]/.test(sc.nivel) ||
-        sc.nivel.includes('1°') || sc.nivel.includes('2°') || sc.nivel.includes('3°') || sc.nivel.includes('4°');
+        (!isMediaOrTp && (sc.nivel.includes('1°') || sc.nivel.includes('2°') || sc.nivel.includes('3°') || sc.nivel.includes('4°')));
 
       const customProp =
         config.cursosProporcionMap?.[sc.curso] ||

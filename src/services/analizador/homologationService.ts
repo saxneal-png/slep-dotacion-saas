@@ -122,7 +122,7 @@ export function getAsignaturasSugeridasParaNivel(nivel: string): string[] {
     if (n.includes('media') || n.includes('oficio')) return ASIGNATURAS_OFICIALES_POR_NIVEL.epja_media;
     return ASIGNATURAS_OFICIALES_POR_NIVEL.epja_basica;
   }
-  if (n.includes('pre-k') || n.includes('kínder') || n.includes('kinder') || n.includes('nt1') || n.includes('nt2') || n.includes('parv')) {
+  if (n.includes('pre-k') || n.includes('kínder') || n.includes('kinder') || n.includes('nt1') || n.includes('nt2') || (n.includes('parv') && !n.includes('medio') && !n.includes('tp') && !n.includes('especialidad') && !n.includes('tecnico'))) {
     return ASIGNATURAS_OFICIALES_POR_NIVEL.parvularia;
   }
   if (n.includes('7°') || n.includes('8°') || n.includes('7o') || n.includes('8o')) {
@@ -134,7 +134,7 @@ export function getAsignaturasSugeridasParaNivel(nivel: string): string[] {
   if (n.includes('1° m') || n.includes('2° m') || n.includes('1° medio') || n.includes('2° medio')) {
     return ASIGNATURAS_OFICIALES_POR_NIVEL.media_1_2;
   }
-  if (n.includes('3° m') || n.includes('4° m') || n.includes('3° medio') || n.includes('4° medio')) {
+  if (n.includes('3° m') || n.includes('4° m') || n.includes('3° medio') || n.includes('4° medio') || n.includes('especialidad') || n.includes('tp')) {
     return ASIGNATURAS_OFICIALES_POR_NIVEL.media_3_4;
   }
   // Lista integral completa por defecto
@@ -210,8 +210,8 @@ export function homologarAsignaturaPorRegla(
     }
   }
 
-  const esParvularia = normNivel.includes('nt1') || normNivel.includes('nt2') || normNivel.includes('k') || normNivel.includes('parv');
-  const esMediaO78 = normNivel.includes('7') || normNivel.includes('8') || normNivel.includes('med');
+  const esParvularia = (normNivel.includes('nt1') || normNivel.includes('nt2') || normNivel.includes('k') || normNivel.includes('parv')) && !normNivel.includes('medio') && !normNivel.includes('tp') && !normNivel.includes('especialidad') && !normNivel.includes('tecnico');
+  const esMediaO78 = normNivel.includes('7') || normNivel.includes('8') || normNivel.includes('med') || normNivel.includes('tp') || normNivel.includes('especialidad');
   const esEpja = normNivel.includes('epja') || normNivel.includes('adult');
 
   // 1. Cargos y Funciones Directivas (Director, Subdirector, Inspector General, Profesor Encargado)

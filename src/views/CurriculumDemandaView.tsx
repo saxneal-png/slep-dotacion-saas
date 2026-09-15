@@ -548,14 +548,16 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
     let matchCiclo = true;
     const n = c.nivel.toLowerCase();
+    const esTP = n.includes('tp') || n.includes('técnico') || n.includes('tecnico') || n.includes('profesional') || n.includes('especialidad') || (n.includes('medio') && (n.includes('parv') || n.includes('mecanic') || n.includes('electric') || n.includes('agropec') || n.includes('gastronom') || n.includes('administrac') || n.includes('programac')));
+
     if (filtroCicloCurso === 'PARVULARIA') {
-      matchCiclo = (n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || n.includes('párv') || n.includes('parv')) && !esModalidadAdultos(c.nivel);
+      matchCiclo = (n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || ((n.includes('párv') || n.includes('parv')) && !n.includes('medio') && !esTP)) && !esModalidadAdultos(c.nivel);
     } else if (filtroCicloCurso === 'BASICA') {
       matchCiclo = (n.includes('básico') || n.includes('basico') || n.includes('básica') || n.includes('basica')) && !esModalidadAdultos(c.nivel) && !c.esMultigrado && !c.esCombinado && !esModalidadMultigradoOCombinado(c.nivel);
     } else if (filtroCicloCurso === 'MEDIA_HC') {
-      matchCiclo = (n.includes('medio') || n.includes('media')) && !n.includes('tp') && !n.includes('técnico') && !n.includes('tecnico') && !esModalidadAdultos(c.nivel);
+      matchCiclo = (n.includes('medio') || n.includes('media')) && !esTP && !esModalidadAdultos(c.nivel);
     } else if (filtroCicloCurso === 'MEDIA_TP') {
-      matchCiclo = (n.includes('tp') || n.includes('técnico') || n.includes('tecnico') || n.includes('profesional')) && !esModalidadAdultos(c.nivel);
+      matchCiclo = esTP && !esModalidadAdultos(c.nivel);
     } else if (filtroCicloCurso === 'MULTIGRADO_COMBINADO') {
       matchCiclo = Boolean(c.esMultigrado || c.esCombinado || esModalidadMultigradoOCombinado(c.nivel));
     } else if (filtroCicloCurso === 'EPJA') {
@@ -833,6 +835,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           {esModalidadAdultos(c.nivel) || c.tipoModalidad?.startsWith('EPJA') ? (
                             <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 font-bold border border-indigo-200">
                               EPJA
+                            </span>
+                          ) : null}
+                          {plan?.categoria === 'MEDIA_TP' || c.nivel.toLowerCase().includes('tp') || c.nivel.toLowerCase().includes('especialidad') ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
+                              Técnico-Profesional
                             </span>
                           ) : null}
                         </div>

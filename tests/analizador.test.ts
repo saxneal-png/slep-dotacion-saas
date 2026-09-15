@@ -306,6 +306,36 @@ describe('Analizador - Planillas Oficiales SLEP con Cursos entre CONTRATA PIE y 
     expect(agroCourse.porcentaje_cobertura_plan).toBe(100);
     expect(agroCourse.plan_referencia).toContain('Agropecuaria');
   });
+
+  it('reconoce 3° Medio Atención de Párvulos como TP y no como Parvularia regular', () => {
+    const rawCourse = '3° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP) A';
+    const norm = normalizeCourseHeader(rawCourse);
+    expect(norm).not.toBeNull();
+    expect(norm?.nivel).toBe('3° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)');
+
+    const mockTeachers: TeacherRecord[] = [
+      {
+        id: 'parv-tp-1',
+        file_name: 'liceo_tp.xlsx',
+        rbd: '22334',
+        establishment: 'LICEO TECNICO',
+        rut: '17.222.333-4',
+        teacher_name: 'DOCENTE PARVULOS TP',
+        activity: 'Módulo: Material didáctico y de ambientación',
+        curso: rawCourse,
+        hours: 42,
+        category: 'AULA',
+        source: 'Test',
+      }
+    ];
+
+    const summaries = buildCourseLoadSummaries(mockTeachers);
+    expect(summaries.length).toBe(1);
+    expect(summaries[0].categoria_plan).toBe('MEDIA_TP');
+    expect(summaries[0].horas_plan_estudio).toBe(42);
+    expect(summaries[0].estado_cobertura).toBe('CUBIERTO');
+    expect(summaries[0].plan_referencia).toContain('Atención de Párvulos');
+  });
 });
 
 
