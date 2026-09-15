@@ -66,3 +66,11 @@ export {
 export {
   ejecutarTraspasoDotacionAnalizador
 } from './repositories/traspasoRepo';
+
+export {
+  listarPlanesEstudio,
+  obtenerPlanEstudioPorNivelYRegimen,
+  guardarPlanEstudio,
+  poblarPlanesEstudioEnDb
+} from './repositories/planesEstudioRepo';
+export type { PlanEstudioRegistroDb } from './repositories/planesEstudioRepo';

@@ -27,4 +27,52 @@ describe('Planes y Programas MINEDUC', () => {
     expect(p12m.regimen.JEC.total).toBe(42);
     expect(p12m.regimen.JEC.libre).toBe(6);
   });
+
+  it('resuelve correctamente especialidades TP por nombre de curso', () => {
+    // 3° Medio Electricidad
+    const planElec3 = obtenerPlanPorCurso('3° Medio Electricidad A', 'JEC');
+    expect(planElec3).toBeDefined();
+    expect(planElec3?.nivel).toBe('3° Medio - Especialidad Electricidad (Formación Diferenciada TP)');
+    expect(planElec3?.categoria).toBe('MEDIA_TP');
+    expect(planElec3?.totalHorasPlan).toBe(42);
+    expect(planElec3?.horasLibreDisposicion).toBe(6);
+    expect(planElec3?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('instalaci'))).toBe(true);
+
+    // 4° Medio Gastronomía Cocina
+    const planGastro4 = obtenerPlanPorCurso('4° Medio Gastronomía Mención Cocina', 'JEC');
+    expect(planGastro4).toBeDefined();
+    expect(planGastro4?.nivel).toBe('4° Medio - Especialidad Gastronomía, Mención Cocina');
+    expect(planGastro4?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('cocina'))).toBe(true);
+
+    // 4° Medio Programación en No-JEC
+    const planProgNoJec = obtenerPlanPorCurso('4° Medio TP Programación', 'No JEC');
+    expect(planProgNoJec).toBeDefined();
+    expect(planProgNoJec?.totalHorasPlan).toBe(36);
+    expect(planProgNoJec?.horasLibreDisposicion).toBe(0);
+    expect(planProgNoJec?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('programaci'))).toBe(true);
+
+    // Plan Común TP
+    const planComunTP = obtenerPlanPorCurso('3° y 4° Medio Técnico-Profesional (Plan Común de Formación General)', 'JEC');
+    expect(planComunTP).toBeDefined();
+    expect(planComunTP?.totalHorasPlan).toBe(20);
+  });
+
+  it('verifica que todas las especialidades TP tienen distribución correcta de 42h JEC y 36h No-JEC', () => {
+    const planesTP = PLANES_MINEDUC.filter(p => p.categoria === 'MEDIA_TP' && p.nivel.includes('Especialidad'));
+    expect(planesTP.length).toBe(50); // 25 planes diferenciados de especialidad x 2 regímenes (JEC y No JEC)
+
+    for (const plan of planesTP) {
+      if (plan.regimen === 'JEC') {
+        expect(plan.totalHorasPlan).toBe(42);
+        expect(plan.horasLibreDisposicion).toBe(6);
+      } else {
+        expect(plan.totalHorasPlan).toBe(36);
+        expect(plan.horasLibreDisposicion).toBe(0);
+      }
+      // Horas del plan general (14h) + Horas de especialidad (22h) = 36h obligatorias
+      expect(plan.horasObligatorias).toBe(36);
+      const totalAsignaturas = plan.asignaturasBase.reduce((sum, a) => sum + (a.horasSugeridas || 0), 0);
+      expect(totalAsignaturas).toBe(36);
+    }
+  });
 });

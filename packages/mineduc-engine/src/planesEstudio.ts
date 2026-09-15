@@ -14,6 +14,8 @@ export interface PlanEstudioNivel {
   horasLibreDisposicion: number;
   totalHorasPlan: number;
   asignaturasBase: AsignaturaPlan[];
+  categoria?: 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'EPJA' | 'MULTIGRADO' | 'OTRO';
+  referenciaFuente?: string;
 }
 
 export const DATA_PLANES_ESTUDIO_MINEDUC = {
@@ -194,10 +196,533 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
     }
   },
   // ===========================================================================
+  // EDUCACIÓN MEDIA TÉCNICO-PROFESIONAL (DECRETOS 452/2013 Y 0954/2015)
+  // ===========================================================================
+  "tp_formacion_general_3_4": {
+    nombre: "3° y 4° Medio Técnico-Profesional (Plan Común de Formación General)",
+    referenciaFuente: "Decreto Supremo de Educación N° 452/2013 y Decreto Exento de Educación N° 0954/2015",
+    regimen: {
+      JEC: { total: 20, libre: 6 },
+      No_JEC: { total: 14, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_electricidad_3": {
+    nombre: "3° Medio - Especialidad Electricidad (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Electricidad (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Instalación de motores eléctricos y equipos de calefacción", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Instalaciones eléctricas domiciliarias", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Elaboración de proyectos eléctricos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Mantenimiento de máquinas, equipos y sistemas eléctricos", JEC: 6, No_JEC: 6 }
+    ]
+  },
+  "tp_electricidad_4": {
+    nombre: "4° Medio - Especialidad Electricidad (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Electricidad (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Instalación de sistemas de control eléctrico industrial", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Instalaciones eléctricas industriales", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Instalación de equipos electrónicos de potencia", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Automatización de sistemas eléctricos industriales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_programacion_3": {
+    nombre: "3° Medio - Especialidad Programación (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Programación (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Programación y bases de datos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Instalación y configuración de equipos informáticos", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Soporte a usuarios y productividad", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Sistemas operativos", JEC: 5, No_JEC: 5 }
+    ]
+  },
+  "tp_programacion_4": {
+    nombre: "4° Medio - Especialidad Programación (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Programación (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Diseño de bases de datos relacionales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Programación orientada a objetos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Administración de bases de datos", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Desarrollo de aplicaciones web", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_gastronomia_3": {
+    nombre: "3° Medio - Especialidad Gastronomía (Plan Común de la Especialidad)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Gastronomía (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Higiene para la elaboración de alimentos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Elaboración de alimentos de baja complejidad", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Recepción y almacenamiento de insumos", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Planificación de la producción gastronómica", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Preparación, diseño y montaje de buffet", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Servicio de comedores, bares y salones", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_gastronomia_cocina_4": {
+    nombre: "4° Medio - Especialidad Gastronomía, Mención Cocina",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Gastronomía (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Cocina chilena", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Innovación y cocina internacional", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Elaboración de bebidas alcohólicas y analcohólicas", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Elaboración de menús y carta", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_gastronomia_pasteleria_4": {
+    nombre: "4° Medio - Especialidad Gastronomía, Mención Pastelería y Repostería",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Gastronomía (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Elaboración de masas y pastas", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Elaboración de productos de repostería", JEC: 3, No_JEC: 3 },
+      { nombre: "Módulo mención: Elaboración de productos de pastelería", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Innovación en la pastelería y repostería", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_parvulos_3": {
+    nombre: "3° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Atención de Párvulos (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Material didáctico y de ambientación", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Expresión musical para párvulos", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Relación con la familia", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Salud en párvulos", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Recreación y bienestar de los párvulos", JEC: 6, No_JEC: 6 }
+    ]
+  },
+  "tp_parvulos_4": {
+    nombre: "4° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Atención de Párvulos (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Actividades educativas para párvulos", JEC: 7, No_JEC: 7 },
+      { nombre: "Módulo: Expresión literaria y teatral con párvulos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Alimentación de los párvulos", JEC: 3, No_JEC: 3 },
+      { nombre: "Módulo: Higiene y seguridad de los párvulos", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_administracion_3": {
+    nombre: "3° Medio - Especialidad Administración (Plan Común de la Especialidad)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Administración (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Utilización de información contable", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Gestión comercial y tributaria", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Procesos administrativos", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Atención de clientes", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Organización de oficinas", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Aplicaciones informáticas para la gestión administrativa", JEC: 3, No_JEC: 3 }
+    ]
+  },
+  "tp_administracion_rrhh_4": {
+    nombre: "4° Medio - Especialidad Administración, Mención Recursos Humanos",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Administración (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Legislación laboral", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Cálculo de remuneraciones, finiquitos y obligaciones laborales", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Desarrollo y bienestar del personal", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Dotación de personal", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_construccion_3": {
+    nombre: "3° Medio - Especialidad Construcción (Plan Común de la Especialidad)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Construcción (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Análisis de muestras de hormigón, suelos y materiales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Carpintería de instalación de faenas", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Control y mantenimiento de bodegas y pañoles", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Cubicación de materiales e insumos", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Interpretación de planos de construcción", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Prevención de riesgos en la construcción", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Trazado de obras de construcción", JEC: 4, No_JEC: 4 }
+    ]
+  },
+  "tp_construccion_edificacion_4": {
+    nombre: "4° Medio - Especialidad Construcción, Mención Edificación",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Construcción (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Albañilerías estructurales y no estructurales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Carpintería estructural", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Enfierradura para elementos estructurales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Estructuras de hormigón", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_construccion_terminaciones_4": {
+    nombre: "4° Medio - Especialidad Construcción, Mención Terminaciones de la Construcción",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Construcción (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Impermeabilización y aislación de elementos", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Instalación de cubiertas y elementos de evacuación de aguas lluvias", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Instalación de muebles, puertas y ventanas", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Revestimientos para pisos, muros y cielos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_construccion_viales_4": {
+    nombre: "4° Medio - Especialidad Construcción, Mención Obras Viales e Infraestructura",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Construcción (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Calidad en obras viales e infraestructura", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo mención: Seguridad vial", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Mantenimiento de obras viales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Conformación de la calzada", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Infraestructura para la protección de la calzada", JEC: 3, No_JEC: 3 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_mecanica_industrial_3": {
+    nombre: "3° Medio - Especialidad Mecánica Industrial (Plan Común de la Especialidad)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Mecánica Industrial (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Soldadura industrial", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Mantenimiento de herramientas", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Medición y verificación", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Mecánica de banco", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Lectura de manuales y planos", JEC: 3, No_JEC: 3 }
+    ]
+  },
+  "tp_mecanica_mantenimiento_4": {
+    nombre: "4° Medio - Especialidad Mecánica Industrial, Mención Mantenimiento Electromecánico",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Mecánica Industrial (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Mantenimiento y reparación industrial", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Detección de fallas en sistemas industriales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Control de procesos industriales", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Montaje de equipos y sistemas industriales", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_mecanica_herramientas_4": {
+    nombre: "4° Medio - Especialidad Mecánica Industrial, Mención Máquinas-Herramientas",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Mecánica Industrial (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Torneado de piezas y conjuntos mecánicos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Fresado de piezas y conjuntos mecánicos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Taladrado y rectificado de piezas mecánicas", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Mecanizado con máquinas de control numérico computacional", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_mecanica_matriceria_4": {
+    nombre: "4° Medio - Especialidad Mecánica Industrial, Mención Matricería",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Mecánica Industrial (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Fabricación de matrices", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo mención: Fabricación de moldes", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo mención: Mantención de matrices y moldes", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo mención: Diseño y dibujo de moldes y matrices", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_agropecuaria_3": {
+    nombre: "3° Medio - Especialidad Agropecuaria (Plan Común de la Especialidad)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Agropecuaria (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Manejo de suelo y residuos", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Manejo de técnicas de riego", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Técnicas de reproducción vegetal", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Alimentación y pesaje pecuario", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo: Control de plagas y enfermedades", JEC: 4, No_JEC: 4 }
+    ]
+  },
+  "tp_agropecuaria_agricultura_4": {
+    nombre: "4° Medio - Especialidad Agropecuaria, Mención Agricultura",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Agropecuaria (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Técnicas de cultivo de especies vegetales", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo mención: Manejos para optimización productiva de frutales", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Postcosecha y guarda de productos agrícolas", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Mantenimiento de maquinarias y equipos agrícolas", JEC: 3, No_JEC: 3 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_agropecuaria_pecuaria_4": {
+    nombre: "4° Medio - Especialidad Agropecuaria, Mención Pecuaria",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Agropecuaria (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Manejos pecuarios", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo mención: Reproducción animal", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Producción lechera", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Sanidad y bienestar animal", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Cultivo de praderas y forrajes", JEC: 3, No_JEC: 3 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_agropecuaria_vitivinicola_4": {
+    nombre: "4° Medio - Especialidad Agropecuaria, Mención Vitivinícola",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Agropecuaria (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo mención: Viticultura", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo mención: Cosecha y transporte de vides", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Elaboración de vinos", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Envasado y maquinaria vitivinícola", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Manejo de bodegas vitivinícolas", JEC: 3, No_JEC: 3 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "tp_elaboracion_alimentos_3": {
+    nombre: "3° Medio - Especialidad Elaboración Industrial de Alimentos (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Elaboración Industrial de Alimentos (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Recepción de materias primas", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Almacenaje y bodega de alimentos e insumos alimentarios", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo: Elaboración de alimentos e higiene", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Aseguramiento de la calidad de procesos y alimentos", JEC: 6, No_JEC: 6 }
+    ]
+  },
+  "tp_elaboracion_alimentos_4": {
+    nombre: "4° Medio - Especialidad Elaboración Industrial de Alimentos (Formación Diferenciada TP)",
+    referenciaFuente: "Programa de Estudio 3° y 4° Medio - Especialidad Elaboración Industrial de Alimentos (Decreto Exento N° 0954/2015)",
+    regimen: {
+      JEC: { total: 42, libre: 6 },
+      No_JEC: { total: 36, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      { nombre: "Módulo: Tratamientos de conservación de alimentos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Control y registro de procesos de la industria de alimentos", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo: Manejo de desechos de la industria de alimentos", JEC: 3, No_JEC: 3 },
+      { nombre: "Módulo: Envasado y rotulación de alimentos", JEC: 5, No_JEC: 5 },
+      { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  // ===========================================================================
   // EDUCACIÓN DE PERSONAS JÓVENES Y ADULTAS (EPJA)
   // ===========================================================================
   "epja_basica_1_nivel": {
     nombre: "EPJA Básica - 1° Nivel Básico (1° a 4° Básico)",
+    referenciaFuente: "Decretos Supremos N° 584/2007 y N° 239/2004",
     regimen: {
       JEC: { total: 24, libre: 4 },
       No_JEC: { total: 20, libre: 0 }
@@ -211,6 +736,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "epja_basica_2_nivel": {
     nombre: "EPJA Básica - 2° Nivel Básico (5° a 6° Básico)",
+    referenciaFuente: "Decretos Supremos N° 584/2007 y N° 239/2004",
     regimen: {
       JEC: { total: 26, libre: 4 },
       No_JEC: { total: 22, libre: 0 }
@@ -225,6 +751,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "epja_basica_3_nivel": {
     nombre: "EPJA Básica - 3° Nivel Básico (7° a 8° Básico)",
+    referenciaFuente: "Decretos Supremos N° 584/2007 y N° 239/2004",
     regimen: {
       JEC: { total: 26, libre: 4 },
       No_JEC: { total: 22, libre: 0 }
@@ -239,6 +766,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "epja_media_hc_1_nivel": {
     nombre: "EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)",
+    referenciaFuente: "Decreto Supremo N° 257/2009",
     regimen: {
       JEC: { total: 30, libre: 4 },
       No_JEC: { total: 26, libre: 0 }
@@ -255,6 +783,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "epja_media_hc_2_nivel": {
     nombre: "EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)",
+    referenciaFuente: "Decreto Supremo N° 257/2009",
     regimen: {
       JEC: { total: 30, libre: 4 },
       No_JEC: { total: 26, libre: 0 }
@@ -271,6 +800,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "epja_media_tp_1_nivel": {
     nombre: "EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)",
+    referenciaFuente: "Decreto Supremo N° 257/2009",
     regimen: {
       JEC: { total: 36, libre: 4 },
       No_JEC: { total: 32, libre: 0 }
@@ -287,6 +817,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "epja_media_tp_2_nivel": {
     nombre: "EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)",
+    referenciaFuente: "Decreto Supremo N° 257/2009",
     regimen: {
       JEC: { total: 38, libre: 4 },
       No_JEC: { total: 34, libre: 0 }
@@ -305,10 +836,11 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
 export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   const result: PlanEstudioNivel[] = [];
 
-  const addSimplePlan = (key: keyof typeof DATA_PLANES_ESTUDIO_MINEDUC, customNivelName?: string) => {
+  const addSimplePlan = (key: keyof typeof DATA_PLANES_ESTUDIO_MINEDUC, customNivelName?: string, categoria?: PlanEstudioNivel['categoria']) => {
     const item = DATA_PLANES_ESTUDIO_MINEDUC[key] as any;
     if (!item || !item.regimen) return;
     const nivelName = customNivelName || item.nombre;
+    const refFuente = item.referenciaFuente;
 
     if (item.regimen.JEC && item.regimen.JEC.total > 0) {
       result.push({
@@ -317,7 +849,9 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
         horasObligatorias: item.regimen.JEC.total - (item.regimen.JEC.libre || 0),
         horasLibreDisposicion: item.regimen.JEC.libre || 0,
         totalHorasPlan: item.regimen.JEC.total,
-        asignaturasBase: item.asignaturas.map((a: any) => ({ nombre: a.nombre, horasSugeridas: a.JEC }))
+        asignaturasBase: item.asignaturas.map((a: any) => ({ nombre: a.nombre, horasSugeridas: a.JEC })),
+        referenciaFuente: refFuente,
+        categoria
       });
     }
 
@@ -328,26 +862,28 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
         horasObligatorias: item.regimen.No_JEC.total - (item.regimen.No_JEC.libre || 0),
         horasLibreDisposicion: item.regimen.No_JEC.libre || 0,
         totalHorasPlan: item.regimen.No_JEC.total,
-        asignaturasBase: item.asignaturas.map((a: any) => ({ nombre: a.nombre, horasSugeridas: a.No_JEC }))
+        asignaturasBase: item.asignaturas.map((a: any) => ({ nombre: a.nombre, horasSugeridas: a.No_JEC })),
+        referenciaFuente: refFuente,
+        categoria
       });
     }
   };
 
   // 0. Parvularia
-  addSimplePlan("parvularia", "Educación Parvularia (NT1 y NT2)");
-  addSimplePlan("multigrado_parvularia", "Multigrado Parvularia (NT1-NT2)");
+  addSimplePlan("parvularia", "Educación Parvularia (NT1 y NT2)", "PARVULARIA");
+  addSimplePlan("multigrado_parvularia", "Multigrado Parvularia (NT1-NT2)", "PARVULARIA");
 
   // 1. Básica Regular
-  addSimplePlan("1_4_basico", "1° a 4° Básico");
-  addSimplePlan("5_6_basico", "5° a 6° Básico");
-  addSimplePlan("7_8_basico", "7° a 8° Básico");
-  addSimplePlan("7_8_basico_indigena", "7° a 8° año de Educación Básica - Con Sector Lengua Indígena");
-  addSimplePlan("multigrado_basica", "Educación Básica Multigrado / Combinada");
+  addSimplePlan("1_4_basico", "1° a 4° Básico", "BASICA");
+  addSimplePlan("5_6_basico", "5° a 6° Básico", "BASICA");
+  addSimplePlan("7_8_basico", "7° a 8° Básico", "BASICA");
+  addSimplePlan("7_8_basico_indigena", "7° a 8° año de Educación Básica - Con Sector Lengua Indígena", "BASICA");
+  addSimplePlan("multigrado_basica", "Educación Básica Multigrado / Combinada", "MULTIGRADO");
 
   // 2. Media 1° y 2°
-  addSimplePlan("1_2_medio", "1° y 2° Medio");
+  addSimplePlan("1_2_medio", "1° y 2° Medio", "MEDIA_HC");
 
-  // 3. Media 3° y 4° Diferenciada
+  // 3. Media 3° y 4° Diferenciada Genérica
   const p34 = DATA_PLANES_ESTUDIO_MINEDUC["3_4_medio"];
   const general = p34.plan_comun_general;
   const electivo = p34.plan_comun_electivo;
@@ -359,6 +895,8 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
       { nombre: `Formación Diferenciada (${mod.nombre})`, horasSugeridas: mod.diferenciada }
     ];
 
+    const cat: PlanEstudioNivel['categoria'] = mod.nombre.includes('Técnico') ? 'MEDIA_TP' : 'MEDIA_HC';
+
     if (mod.JEC.total > 0) {
       result.push({
         nivel: `3° y 4° Medio (${mod.nombre})`,
@@ -366,7 +904,8 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
         horasObligatorias: mod.JEC.total - mod.JEC.libre,
         horasLibreDisposicion: mod.JEC.libre,
         totalHorasPlan: mod.JEC.total,
-        asignaturasBase: listBase
+        asignaturasBase: listBase,
+        categoria: cat
       });
     }
 
@@ -377,19 +916,48 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
         horasObligatorias: mod.No_JEC.total - mod.No_JEC.libre,
         horasLibreDisposicion: mod.No_JEC.libre,
         totalHorasPlan: mod.No_JEC.total,
-        asignaturasBase: listBase
+        asignaturasBase: listBase,
+        categoria: cat
       });
     }
   }
 
-  // 4. EPJA (Educación de Adultos)
-  addSimplePlan("epja_basica_1_nivel");
-  addSimplePlan("epja_basica_2_nivel");
-  addSimplePlan("epja_basica_3_nivel");
-  addSimplePlan("epja_media_hc_1_nivel");
-  addSimplePlan("epja_media_hc_2_nivel");
-  addSimplePlan("epja_media_tp_1_nivel");
-  addSimplePlan("epja_media_tp_2_nivel");
+  // 4. Planes Técnico-Profesionales Específicos del Territorio (26 Especialidades)
+  addSimplePlan("tp_formacion_general_3_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_electricidad_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_electricidad_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_programacion_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_programacion_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_gastronomia_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_gastronomia_cocina_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_gastronomia_pasteleria_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_parvulos_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_parvulos_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_administracion_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_administracion_rrhh_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_construccion_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_construccion_edificacion_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_construccion_terminaciones_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_construccion_viales_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_mecanica_industrial_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_mecanica_mantenimiento_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_mecanica_herramientas_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_mecanica_matriceria_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_agropecuaria_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_agropecuaria_agricultura_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_agropecuaria_pecuaria_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_agropecuaria_vitivinicola_4", undefined, "MEDIA_TP");
+  addSimplePlan("tp_elaboracion_alimentos_3", undefined, "MEDIA_TP");
+  addSimplePlan("tp_elaboracion_alimentos_4", undefined, "MEDIA_TP");
+
+  // 5. EPJA (Educación de Adultos)
+  addSimplePlan("epja_basica_1_nivel", undefined, "EPJA");
+  addSimplePlan("epja_basica_2_nivel", undefined, "EPJA");
+  addSimplePlan("epja_basica_3_nivel", undefined, "EPJA");
+  addSimplePlan("epja_media_hc_1_nivel", undefined, "EPJA");
+  addSimplePlan("epja_media_hc_2_nivel", undefined, "EPJA");
+  addSimplePlan("epja_media_tp_1_nivel", undefined, "EPJA");
+  addSimplePlan("epja_media_tp_2_nivel", undefined, "EPJA");
 
   return result;
 }
@@ -401,7 +969,14 @@ export const PLANES_MINEDUC: PlanEstudioNivel[] = getPlanesMineducConvertidos();
  */
 export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JEC' = 'JEC'): PlanEstudioNivel | null {
   if (!cursoNombre) return null;
-  const c = cursoNombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const raw = cursoNombre.trim();
+  const c = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // 0. Búsqueda por coincidencia exacta primero
+  const exactMatch = PLANES_MINEDUC.find(p => p.nivel === raw && p.regimen === regimen);
+  if (exactMatch) return exactMatch;
+  const exactAnyReg = PLANES_MINEDUC.find(p => p.nivel === raw);
+  if (exactAnyReg && exactAnyReg.regimen === regimen) return exactAnyReg;
 
   let grupo = '';
 
@@ -427,7 +1002,83 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
       grupo = "EPJA Básica - 1° Nivel Básico (1° a 4° Básico)";
     }
   }
-  // 2. CURSOS MULTIGRADO Y COMBINADOS
+  // 2. ESPECIALIDADES TÉCNICO-PROFESIONALES ESPECÍFICAS
+  else if (c.includes('electric') || c.includes('programac') || c.includes('gastronom') || c.includes('parvulo') || 
+           c.includes('administrac') || c.includes('construcc') || c.includes('mecanic') || c.includes('agropec') || 
+           c.includes('elaboracion') || c.includes('alimento') || c.includes('vitivin') || c.includes('recursos humanos') ||
+           c.includes('edificac') || c.includes('terminacion') || c.includes('obra vial') || c.includes('matricer') || 
+           c.includes('maquina') || c.includes('cocina') || c.includes('pasteler')) {
+    const es4 = c.includes('4°') || c.includes('4o') || c.includes('4 ') || c.includes('cuarto');
+
+    if (c.includes('electric')) {
+      grupo = es4 
+        ? "4° Medio - Especialidad Electricidad (Formación Diferenciada TP)"
+        : "3° Medio - Especialidad Electricidad (Formación Diferenciada TP)";
+    } else if (c.includes('programac')) {
+      grupo = es4 
+        ? "4° Medio - Especialidad Programación (Formación Diferenciada TP)"
+        : "3° Medio - Especialidad Programación (Formación Diferenciada TP)";
+    } else if (c.includes('gastronom')) {
+      if (es4) {
+        if (c.includes('pastel') || c.includes('repost')) {
+          grupo = "4° Medio - Especialidad Gastronomía, Mención Pastelería y Repostería";
+        } else {
+          grupo = "4° Medio - Especialidad Gastronomía, Mención Cocina";
+        }
+      } else {
+        grupo = "3° Medio - Especialidad Gastronomía (Plan Común de la Especialidad)";
+      }
+    } else if (c.includes('parvulo')) {
+      grupo = es4 
+        ? "4° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)"
+        : "3° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)";
+    } else if (c.includes('administrac')) {
+      grupo = es4 
+        ? "4° Medio - Especialidad Administración, Mención Recursos Humanos"
+        : "3° Medio - Especialidad Administración (Plan Común de la Especialidad)";
+    } else if (c.includes('construcc') || c.includes('edificac') || c.includes('terminacion') || c.includes('vial')) {
+      if (es4) {
+        if (c.includes('terminac')) {
+          grupo = "4° Medio - Especialidad Construcción, Mención Terminaciones de la Construcción";
+        } else if (c.includes('vial') || c.includes('infraestructura')) {
+          grupo = "4° Medio - Especialidad Construcción, Mención Obras Viales e Infraestructura";
+        } else {
+          grupo = "4° Medio - Especialidad Construcción, Mención Edificación";
+        }
+      } else {
+        grupo = "3° Medio - Especialidad Construcción (Plan Común de la Especialidad)";
+      }
+    } else if (c.includes('mecanic')) {
+      if (es4) {
+        if (c.includes('herramienta') || c.includes('mecaniz') || c.includes('torno')) {
+          grupo = "4° Medio - Especialidad Mecánica Industrial, Mención Máquinas-Herramientas";
+        } else if (c.includes('matricer') || c.includes('molde')) {
+          grupo = "4° Medio - Especialidad Mecánica Industrial, Mención Matricería";
+        } else {
+          grupo = "4° Medio - Especialidad Mecánica Industrial, Mención Mantenimiento Electromecánico";
+        }
+      } else {
+        grupo = "3° Medio - Especialidad Mecánica Industrial (Plan Común de la Especialidad)";
+      }
+    } else if (c.includes('agropec') || c.includes('agric') || c.includes('pecuar') || c.includes('vitivin')) {
+      if (es4) {
+        if (c.includes('pecuar') || c.includes('animal') || c.includes('leche')) {
+          grupo = "4° Medio - Especialidad Agropecuaria, Mención Pecuaria";
+        } else if (c.includes('vitivin') || c.includes('vino') || c.includes('vid')) {
+          grupo = "4° Medio - Especialidad Agropecuaria, Mención Vitivinícola";
+        } else {
+          grupo = "4° Medio - Especialidad Agropecuaria, Mención Agricultura";
+        }
+      } else {
+        grupo = "3° Medio - Especialidad Agropecuaria (Plan Común de la Especialidad)";
+      }
+    } else if (c.includes('elaboracion') || c.includes('alimento')) {
+      grupo = es4 
+        ? "4° Medio - Especialidad Elaboración Industrial de Alimentos (Formación Diferenciada TP)"
+        : "3° Medio - Especialidad Elaboración Industrial de Alimentos (Formación Diferenciada TP)";
+    }
+  }
+  // 3. CURSOS MULTIGRADO Y COMBINADOS
   else if (c.includes('multigrado') || c.includes('combinado') || c.includes('comb')) {
     if (c.includes('nt') || c.includes('kinder') || c.includes('parvular')) {
       grupo = "Multigrado Parvularia (NT1-NT2)";
@@ -437,11 +1088,11 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
       grupo = "Educación Básica Multigrado / Combinada";
     }
   }
-  // 3. PARVULARIA REGULAR
+  // 4. PARVULARIA REGULAR
   else if (c.includes('prekinder') || c.includes('kinder') || c.includes('nt1') || c.includes('nt2') || c.includes('parvular')) {
     grupo = 'Educación Parvularia (NT1 y NT2)';
   }
-  // 4. BÁSICA Y MEDIA REGULAR
+  // 5. BÁSICA Y MEDIA REGULAR
   else if (c.includes('1°') || c.includes('2°') || c.includes('3°') || c.includes('4°') ||
       c.includes('1o') || c.includes('2o') || c.includes('3o') || c.includes('4o') ||
       c.includes('1 ') || c.includes('2 ') || c.includes('3 ') || c.includes('4 ')) {

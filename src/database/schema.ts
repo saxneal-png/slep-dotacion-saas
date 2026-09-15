@@ -1,4 +1,5 @@
 import { Database } from 'sql.js';
+import { poblarPlanesEstudioEnDb } from './repositories/planesEstudioRepo';
 
 export const INIT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS establecimientos (
@@ -107,10 +108,29 @@ CREATE TABLE IF NOT EXISTS asignaciones_horarias (
   FOREIGN KEY (curso_id) REFERENCES cursos_sae(id),
   FOREIGN KEY (docente_id) REFERENCES docentes(id)
 );
+
+CREATE TABLE IF NOT EXISTS planes_estudio_mineduc (
+  id TEXT PRIMARY KEY,
+  nivel TEXT NOT NULL,
+  regimen TEXT NOT NULL,
+  categoria TEXT,
+  referencia_fuente TEXT,
+  horas_obligatorias REAL NOT NULL,
+  horas_libre_disposicion REAL NOT NULL,
+  total_horas_plan REAL NOT NULL,
+  asignaturas_json TEXT NOT NULL
+);
 `;
 
 export function runMigrations(db: Database): void {
   db.run(INIT_SCHEMA_SQL);
+
+  // Poblar y sincronizar planes de estudio oficiales MINEDUC (incluyendo especialidades TP)
+  try {
+    poblarPlanesEstudioEnDb(db);
+  } catch (e) {
+    console.warn('Error al sincronizar planes de estudio en SQLite:', e);
+  }
 
   // Asegurar columnas nuevas en tabla docentes si fue creada con versión previa
   try {
@@ -237,7 +257,8 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_asignaciones_rbd_periodo ON asignaciones_horarias(rbd, periodo);',
     'CREATE INDEX IF NOT EXISTS idx_asignaciones_curso ON asignaciones_horarias(curso_id);',
     'CREATE INDEX IF NOT EXISTS idx_asignaciones_docente ON asignaciones_horarias(docente_id);',
-    'CREATE INDEX IF NOT EXISTS idx_salas_rbd ON salas_infraestructura(rbd);'
+    'CREATE INDEX IF NOT EXISTS idx_salas_rbd ON salas_infraestructura(rbd);',
+    'CREATE INDEX IF NOT EXISTS idx_planes_estudio ON planes_estudio_mineduc(nivel, regimen);'
   ];
 
   for (const idxSql of indexes) {
