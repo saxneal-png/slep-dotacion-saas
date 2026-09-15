@@ -268,5 +268,44 @@ describe('Analizador - Planillas Oficiales SLEP con Cursos entre CONTRATA PIE y 
     expect(curso2).toBeDefined();
     expect(curso2?.total_horas).toBe(6);
   });
+
+  it('normaliza cursos TP y EPJA y calcula la cobertura del plan de estudio oficial', () => {
+    // 1. Normalización TP
+    const tp1 = normalizeCourseHeader('3° MEDIO TP AGROPECUARIA');
+    expect(tp1).not.toBeNull();
+    expect(tp1?.nivel).toContain('Agropecuaria');
+
+    // 2. Normalización EPJA
+    const epja1 = normalizeCourseHeader('EPJA TERCER NIVEL BASICA');
+    expect(epja1).not.toBeNull();
+    expect(epja1?.nivel).toContain('Nivel 3');
+
+    // 3. Resumen de carga con plan de estudio
+    const tpTeachers: TeacherRecord[] = [
+      {
+        id: 'tp-1',
+        file_name: 'liceo_tp.xlsx',
+        rbd: '22334',
+        establishment: 'LICEO POLIVALENTE',
+        rut: '15.111.222-3',
+        teacher_name: 'DOCENTE TP',
+        activity: 'Módulos Agropecuaria',
+        curso: '3° Medio TP Agropecuaria A',
+        hours: 42,
+        category: 'AULA',
+        source: 'Test',
+      }
+    ];
+
+    const tpSummaries = buildCourseLoadSummaries(tpTeachers);
+    expect(tpSummaries.length).toBe(1);
+    const agroCourse = tpSummaries[0];
+    expect(agroCourse.horas_plan_estudio).toBe(42);
+    expect(agroCourse.total_horas).toBe(42);
+    expect(agroCourse.estado_cobertura).toBe('CUBIERTO');
+    expect(agroCourse.porcentaje_cobertura_plan).toBe(100);
+    expect(agroCourse.plan_referencia).toContain('Agropecuaria');
+  });
 });
+
 

@@ -1,4 +1,5 @@
 import { TeacherRecord, TeacherConsolidatedLoad, HomologacionItem, TipoHoraInstitucional } from '../../types/analizadorTypes';
+import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
 
 /**
  * Asignaturas oficiales agrupadas por nivel según Decretos y Bases Curriculares MINEDUC.
@@ -68,6 +69,28 @@ export const ASIGNATURAS_OFICIALES_POR_NIVEL: Record<string, string[]> = {
     'Apoyo PIE / Codocencia',
     'Talleres JEC / Libre Disposición',
   ],
+  epja_basica: [
+    'Lengua Castellana y Comunicación',
+    'Educación Matemática',
+    'Ciencias Naturales',
+    'Estudios Sociales',
+    'Idioma Extranjero Inglés',
+    'Convivencia Social y Ciudadanía',
+    'Tecnología de la Información y las Comunicaciones (TIC)',
+    'Formación Instrumental de Oficio',
+    'Apoyo PIE / Codocencia',
+  ],
+  epja_media: [
+    'Lengua Castellana y Comunicación',
+    'Educación Matemática',
+    'Ciencias Naturales',
+    'Estudios Sociales',
+    'Idioma Extranjero Inglés',
+    'Filosofía',
+    'Módulos de Formación Diferenciada TP',
+    'Formación Instrumental de Oficio',
+    'Apoyo PIE / Codocencia',
+  ],
   general: [
     'Docencia de Aula General',
     'Apoyo PIE / Codocencia',
@@ -78,9 +101,27 @@ export const ASIGNATURAS_OFICIALES_POR_NIVEL: Record<string, string[]> = {
 
 /**
  * Obtiene la lista de asignaturas oficiales sugeridas para un curso o nivel determinado.
+ * Utiliza dinámicamente el catálogo oficial de planes de estudio Mineduc (incluyendo TP y EPJA).
  */
 export function getAsignaturasSugeridasParaNivel(nivel: string): string[] {
+  if (nivel) {
+    const plan = obtenerPlanPorCurso(nivel);
+    if (plan && plan.asignaturasBase && plan.asignaturasBase.length > 0) {
+      const asignaturasPlan = plan.asignaturasBase.map(a => a.nombre);
+      return Array.from(new Set([
+        ...asignaturasPlan,
+        'Apoyo PIE / Codocencia',
+        'Talleres JEC / Libre Disposición',
+        'Funciones Institucionales / No Lectivas',
+      ]));
+    }
+  }
+
   const n = (nivel || '').toLowerCase();
+  if (n.includes('epja') || n.includes('adulto')) {
+    if (n.includes('media') || n.includes('oficio')) return ASIGNATURAS_OFICIALES_POR_NIVEL.epja_media;
+    return ASIGNATURAS_OFICIALES_POR_NIVEL.epja_basica;
+  }
   if (n.includes('pre-k') || n.includes('kínder') || n.includes('kinder') || n.includes('nt1') || n.includes('nt2') || n.includes('parv')) {
     return ASIGNATURAS_OFICIALES_POR_NIVEL.parvularia;
   }
@@ -102,6 +143,7 @@ export function getAsignaturasSugeridasParaNivel(nivel: string): string[] {
     ...ASIGNATURAS_OFICIALES_POR_NIVEL.basica_7_8,
     ...ASIGNATURAS_OFICIALES_POR_NIVEL.media_3_4,
     ...ASIGNATURAS_OFICIALES_POR_NIVEL.parvularia,
+    ...ASIGNATURAS_OFICIALES_POR_NIVEL.epja_media,
     ...ASIGNATURAS_OFICIALES_POR_NIVEL.general,
   ]));
 }
@@ -140,8 +182,37 @@ export function homologarAsignaturaPorRegla(
   const norm = normalizeStr(rawSubject);
   const normNivel = normalizeStr(nivel);
 
+  // 0. Si el curso tiene un plan oficial específico (TP, EPJA, Básica, Media), verificar coincidencia directa con las asignaturas del plan
+  if (nivel) {
+    const plan = obtenerPlanPorCurso(nivel);
+    if (plan && plan.asignaturasBase) {
+      const matchExact = plan.asignaturasBase.find(
+        (a) => normalizeStr(a.nombre) === norm
+      );
+      if (matchExact) {
+        return {
+          asignaturaOficial: matchExact.nombre,
+          confianza: 'ALTA',
+          justificacion: `Asignatura oficial del plan ${plan.nivel} (${plan.referenciaFuente || 'Mineduc'})`,
+        };
+      }
+      // Búsqueda parcial / difusa en asignaturas del plan
+      const matchPartial = plan.asignaturasBase.find(
+        (a) => norm.length > 4 && normalizeStr(a.nombre).includes(norm)
+      );
+      if (matchPartial) {
+        return {
+          asignaturaOficial: matchPartial.nombre,
+          confianza: 'ALTA',
+          justificacion: `Módulo / Asignatura coincidente del plan ${plan.nivel}`,
+        };
+      }
+    }
+  }
+
   const esParvularia = normNivel.includes('nt1') || normNivel.includes('nt2') || normNivel.includes('k') || normNivel.includes('parv');
   const esMediaO78 = normNivel.includes('7') || normNivel.includes('8') || normNivel.includes('med');
+  const esEpja = normNivel.includes('epja') || normNivel.includes('adult');
 
   // 1. Cargos y Funciones Directivas (Director, Subdirector, Inspector General, Profesor Encargado)
   if (/subdirector|subdireccion|sub-director/i.test(norm)) {

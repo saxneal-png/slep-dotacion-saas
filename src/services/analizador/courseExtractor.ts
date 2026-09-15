@@ -1,4 +1,5 @@
 import { TeacherCourseAssignment, CourseLoadSummary, TeacherConsolidatedLoad, TeacherRecord } from '../../types/analizadorTypes';
+import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
 
 export interface NormalizedCourseInfo {
   cursoCompleto: string;
@@ -20,36 +21,56 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
     return null;
   }
 
-  // EPJA - Educación de Adultos
-  if (/(?:EPJA|ADULTO)/i.test(clean) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(clean)) {
+  // 1. EPJA - Educación de Adultos (Bases Curriculares Decreto Supremo N° 10/2022)
+  if (/(?:EPJA|ADULTO)/i.test(clean) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(clean) || /OFICIO/i.test(clean)) {
     const letraMatch = clean.match(/\b([A-Z])\b$/);
     const letra = letraMatch ? letraMatch[1] : 'A';
-    if (/TP|T[EÉ]CNICO|PROFESIONAL/i.test(clean)) {
-      if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
-        const nivel = 'EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)';
+    if (/OFICIO/i.test(clean)) {
+      const nivel = 'Educación Media TP en Oficios - Niveles 1 y 2 (1° a 4° Medio TP)';
+      return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+    }
+    if (/TP|T[EÉ]CNICO|PROFESIONAL|ESPECIALIDAD/i.test(clean)) {
+      if (/(?:2|SEGUNDO|3|4|TERCER|CUARTO)/i.test(clean)) {
+        const nivel = 'Educación Media TP en Especialidades - Niveles 2 y 3 (3° y 4° Medio TP)';
         return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
       }
-      const nivel = 'EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)';
+      const nivel = 'Educación Media TP en Especialidades - Nivel 1 (1° y 2° Medio TP)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
     if (/MEDIO|SECUNDARIA|HC|HUMAN/i.test(clean)) {
       if (/(?:2|SEGUNDO|3|4)/i.test(clean)) {
-        const nivel = 'EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)';
+        const nivel = 'Educación Media HC - Nivel 2 (3° y 4° Medio)';
         return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
       }
-      const nivel = 'EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)';
+      const nivel = 'Educación Media HC - Nivel 1 (1° y 2° Medio)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
     if (/(?:3|TERCER|7|8)/i.test(clean)) {
-      const nivel = 'EPJA Básica - 3° Nivel Básico (7° a 8° Básico)';
+      const nivel = 'Educación Básica - Nivel 3 (7° y 8° Básico)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
     if (/(?:2|SEGUNDO|5|6)/i.test(clean)) {
-      const nivel = 'EPJA Básica - 2° Nivel Básico (5° a 6° Básico)';
+      const nivel = 'Educación Básica - Nivel 2 (5° y 6° Básico)';
       return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
     }
-    const nivel = 'EPJA Básica - 1° Nivel Básico (1° a 4° Básico)';
+    const nivel = 'Educación Básica - Nivel 1 (1° a 4° Básico)';
     return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'No JEC', esMultigrado: false };
+  }
+
+  // 2. Especialidades Técnico-Profesionales (Decretos 452/2013 y 0954/2015)
+  if (/(?:ELECTRIC|PROGRAMAC|GASTRONOM|PARVULO|ADMINISTRAC|CONSTRUCC|MECANIC|AGROPEC|ELABORACION|ALIMENTO|EDIFICAC|TERMINACION|VIAL|MATRICER|HERRAMIENTA|COCINA|PASTEL)/i.test(clean)) {
+    const letraMatch = clean.match(/\b([A-Z])\b$/);
+    const letra = letraMatch ? letraMatch[1] : 'A';
+    const planDetectado = obtenerPlanPorCurso(clean, 'JEC');
+    if (planDetectado) {
+      return {
+        cursoCompleto: `${planDetectado.nivel} ${letra}`,
+        nivel: planDetectado.nivel,
+        letra,
+        regimen: 'JEC',
+        esMultigrado: false,
+      };
+    }
   }
 
   // Cursos Combinados
@@ -378,6 +399,7 @@ export function buildCourseLoadSummaries(teachers: TeacherRecord[]): CourseLoadS
           curso: cNombre,
           nivel: norm?.nivel || cNombre,
           letra: norm?.letra || 'A',
+          regimen: norm?.regimen || 'JEC',
           rbd: t.rbd,
           establishment: t.establishment,
           comuna: t.comuna,
@@ -397,6 +419,32 @@ export function buildCourseLoadSummaries(teachers: TeacherRecord[]): CourseLoadS
       });
     }
   }
+
+  // Enriquecer cada curso con la comparación frente al Plan de Estudio Oficial Mineduc
+  courseMap.forEach((cEntry) => {
+    const plan = obtenerPlanPorCurso(cEntry.nivel, cEntry.regimen || 'JEC') || obtenerPlanPorCurso(cEntry.curso, cEntry.regimen || 'JEC');
+    if (plan) {
+      cEntry.horas_plan_estudio = plan.totalHorasPlan;
+      cEntry.horas_obligatorias_plan = plan.horasObligatorias;
+      cEntry.horas_libre_disposicion_plan = plan.horasLibreDisposicion;
+      cEntry.plan_referencia = plan.nivel;
+      cEntry.categoria_plan = plan.categoria;
+
+      const diff = Math.round((cEntry.total_horas - plan.totalHorasPlan) * 100) / 100;
+      cEntry.diferencia_horas_plan = diff;
+      cEntry.porcentaje_cobertura_plan = plan.totalHorasPlan > 0 ? Math.round((cEntry.total_horas / plan.totalHorasPlan) * 100) : 100;
+
+      if (Math.abs(diff) <= 0.5) {
+        cEntry.estado_cobertura = 'CUBIERTO';
+      } else if (diff < -0.5) {
+        cEntry.estado_cobertura = 'DEFICIT';
+      } else {
+        cEntry.estado_cobertura = 'SUPERAVIT';
+      }
+    } else {
+      cEntry.estado_cobertura = 'SIN_PLAN';
+    }
+  });
 
   return Array.from(courseMap.values()).sort((a, b) => a.curso.localeCompare(b.curso));
 }

@@ -360,24 +360,79 @@ export const CourseTeacherLoadView: React.FC<CourseTeacherLoadViewProps> = ({
           {filteredCourses.map((c) => {
             const courseKey = `${c.rbd}-${c.curso}`;
             const isExpanded = expandedCourseKeys.has(courseKey);
+            const targetHours = c.horas_plan_estudio || (c.total_horas > 0 ? c.total_horas : 38);
+            const coveragePct = Math.min(100, Math.round((c.total_horas / targetHours) * 100));
 
             return (
               <div
                 key={courseKey}
                 className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col justify-between"
               >
-                <div className="p-4 border-b border-slate-100">
+                <div className="p-4 border-b border-slate-100 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-black bg-orange-100 text-orange-900">
                       <GraduationCap className="w-3.5 h-3.5" />
                       {c.curso}
                     </div>
-                    <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-lg">
-                      {c.total_horas.toFixed(1)} hrs totales
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {c.estado_cobertura === 'CUBIERTO' && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          ✓ Plan Cubierto ({c.total_horas.toFixed(1)}h / {c.horas_plan_estudio}h)
+                        </span>
+                      )}
+                      {c.estado_cobertura === 'DEFICIT' && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                          ⚠️ Déficit Plan (-{Math.abs(c.diferencia_horas_plan || 0).toFixed(1)}h | {c.porcentaje_cobertura_plan}%)
+                        </span>
+                      )}
+                      {c.estado_cobertura === 'SUPERAVIT' && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          ℹ️ Superávit (+{c.diferencia_horas_plan?.toFixed(1)}h | {c.porcentaje_cobertura_plan}%)
+                        </span>
+                      )}
+                      {(!c.estado_cobertura || c.estado_cobertura === 'SIN_PLAN') && (
+                        <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-lg">
+                          {c.total_horas.toFixed(1)} hrs totales
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold mt-1.5">
+                  {/* Plan de Estudio de Referencia Mineduc */}
+                  {c.plan_referencia && (
+                    <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200/70">
+                      <span className="text-slate-600 font-medium truncate max-w-[280px]">
+                        📋 <span className="font-semibold text-slate-800">{c.plan_referencia}</span>
+                      </span>
+                      <span className="font-mono font-bold text-slate-700">
+                        {c.horas_plan_estudio}h Mineduc
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Barra de Cobertura de Horas del Plan */}
+                  {c.horas_plan_estudio ? (
+                    <div className="space-y-1 pt-0.5">
+                      <div className="flex justify-between text-[10px] text-slate-500 font-semibold">
+                        <span>Horas Asignadas: {c.total_horas.toFixed(1)}h</span>
+                        <span>Cobertura: {c.porcentaje_cobertura_plan}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-200">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            c.estado_cobertura === 'DEFICIT'
+                              ? 'bg-amber-500'
+                              : c.estado_cobertura === 'SUPERAVIT'
+                              ? 'bg-indigo-500'
+                              : 'bg-emerald-500'
+                          }`}
+                          style={{ width: `${Math.min(100, c.porcentaje_cobertura_plan || 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold mt-1">
                     <span>{c.establishment} (RBD {c.rbd})</span>
                     {c.comuna && (
                       <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${getComunaBadgeColor(c.comuna)}`}>

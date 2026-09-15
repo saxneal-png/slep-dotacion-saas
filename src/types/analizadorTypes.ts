@@ -63,10 +63,19 @@ export interface CourseLoadSummary {
   curso: string;
   nivel: string;
   letra: string;
+  regimen?: 'JEC' | 'No JEC';
   rbd: string;
   establishment: string;
   comuna?: string;
   total_horas: number;
+  horas_plan_estudio?: number;
+  horas_obligatorias_plan?: number;
+  horas_libre_disposicion_plan?: number;
+  diferencia_horas_plan?: number;
+  porcentaje_cobertura_plan?: number;
+  estado_cobertura?: 'CUBIERTO' | 'DEFICIT' | 'SUPERAVIT' | 'SIN_PLAN';
+  plan_referencia?: string;
+  categoria_plan?: string;
   docentes: CourseTeacherItem[];
 }
 
