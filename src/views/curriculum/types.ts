@@ -86,13 +86,14 @@ export const NIVELES_MULTIGRADO_PRESETS = [
 ];
 
 export const NIVELES_EPJA_OFICIALES = [
-  { id: 'EPJA Básica - 1° Nivel Básico (1° a 4° Básico)', label: 'EPJA Básica - 1° Nivel (1° a 4° Básico - 20 HA)', horasDefecto: 20, ciclo: 'Básica Adultos' },
-  { id: 'EPJA Básica - 2° Nivel Básico (5° a 6° Básico)', label: 'EPJA Básica - 2° Nivel (5° a 6° Básico - 22 HA)', horasDefecto: 22, ciclo: 'Básica Adultos' },
-  { id: 'EPJA Básica - 3° Nivel Básico (7° a 8° Básico)', label: 'EPJA Básica - 3° Nivel (7° a 8° Básico - 22 HA)', horasDefecto: 22, ciclo: 'Básica Adultos' },
-  { id: 'EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)', label: 'EPJA Media HC - 1° Nivel (1° y 2° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
-  { id: 'EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)', label: 'EPJA Media HC - 2° Nivel (3° y 4° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
-  { id: 'EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)', label: 'EPJA Media TP - 1° Nivel (1° y 2° Medio TP - 32 HA)', horasDefecto: 32, ciclo: 'Media TP Adultos' },
-  { id: 'EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)', label: 'EPJA Media TP - 2° Nivel (3° y 4° Medio TP - 34 HA)', horasDefecto: 34, ciclo: 'Media TP Adultos' }
+  { id: 'Educación Básica - Nivel 1 (1° a 4° Básico)', label: 'Educación Básica - Nivel 1 (1° a 4° Básico - 10 HA)', horasDefecto: 10, ciclo: 'Básica Adultos' },
+  { id: 'Educación Básica - Nivel 2 (5° y 6° Básico)', label: 'Educación Básica - Nivel 2 (5° y 6° Básico - 16 HA / 24 HA)', horasDefecto: 16, ciclo: 'Básica Adultos' },
+  { id: 'Educación Básica - Nivel 3 (7° y 8° Básico)', label: 'Educación Básica - Nivel 3 (7° y 8° Básico - 16 HA / 24 HA)', horasDefecto: 16, ciclo: 'Básica Adultos' },
+  { id: 'Educación Media HC - Nivel 1 (1° y 2° Medio)', label: 'Educación Media HC - Nivel 1 (1° y 2° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
+  { id: 'Educación Media HC - Nivel 2 (3° y 4° Medio)', label: 'Educación Media HC - Nivel 2 (3° y 4° Medio - 26 HA)', horasDefecto: 26, ciclo: 'Media HC Adultos' },
+  { id: 'Educación Media TP en Oficios - Niveles 1 y 2 (1° a 4° Medio TP)', label: 'Educación Media TP en Oficios - Niveles 1 y 2 (26 HA)', horasDefecto: 26, ciclo: 'Media TP Oficios Adultos' },
+  { id: 'Educación Media TP en Especialidades - Nivel 1 (1° y 2° Medio TP)', label: 'Educación Media TP Especialidades - Nivel 1 (1° y 2° Medio - 24 HA)', horasDefecto: 24, ciclo: 'Media TP Especialidades Adultos' },
+  { id: 'Educación Media TP en Especialidades - Niveles 2 y 3 (3° y 4° Medio TP)', label: 'Educación Media TP Especialidades - Niveles 2 y 3 (3° y 4° Medio - 24 HA)', horasDefecto: 24, ciclo: 'Media TP Especialidades Adultos' }
 ];
 
 export const GRADOS_COMBINABLES = [

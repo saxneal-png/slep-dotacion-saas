@@ -394,7 +394,7 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
           {categoria === 'EPJA' && (
             <div className="space-y-3 p-3 bg-amber-50/60 rounded-xl border border-amber-200/70">
               <div>
-                <label className="block text-xs font-bold text-amber-900 mb-1">Nivel Oficial EPJA (Decretos 584 / 239)</label>
+                <label className="block text-xs font-bold text-amber-900 mb-1">Nivel Oficial EPJA (Bases Curriculares Decreto Supremo N° 10/2022)</label>
                 <select
                   value={nivel}
                   onChange={e => setNivel(e.target.value)}

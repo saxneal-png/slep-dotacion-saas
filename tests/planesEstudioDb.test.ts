@@ -25,5 +25,18 @@ describe('Planes de Estudio en Base de Datos SQLite', () => {
     expect(gastro4NoJec).toBeDefined();
     expect(gastro4NoJec?.totalHorasPlan).toBe(36);
     expect(gastro4NoJec?.horasLibreDisposicion).toBe(0);
+
+    // Planes EPJA en Base de Datos
+    const epjaB1 = await obtenerPlanEstudioPorNivelYRegimen('Educación Básica - Nivel 1 (1° a 4° Básico)', 'No JEC');
+    expect(epjaB1).toBeDefined();
+    expect(epjaB1?.totalHorasPlan).toBe(10);
+    expect(epjaB1?.asignaturas.length).toBe(2);
+
+    const epjaMediaHc = await obtenerPlanEstudioPorNivelYRegimen('Educación Media HC - Nivel 1 (1° y 2° Medio)', 'No JEC');
+    expect(epjaMediaHc).toBeDefined();
+    expect(epjaMediaHc?.totalHorasPlan).toBe(26);
+
+    const planesEpjaDb = await listarPlanesEstudio('EPJA');
+    expect(planesEpjaDb.length).toBeGreaterThanOrEqual(16);
   });
 });

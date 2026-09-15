@@ -718,117 +718,136 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
     ]
   },
   // ===========================================================================
-  // EDUCACIÓN DE PERSONAS JÓVENES Y ADULTAS (EPJA)
+  // EDUCACIÓN DE PERSONAS JÓVENES Y ADULTAS (EPJA - DECRETO SUPREMO N° 10/2022)
   // ===========================================================================
   "epja_basica_1_nivel": {
-    nombre: "EPJA Básica - 1° Nivel Básico (1° a 4° Básico)",
-    referenciaFuente: "Decretos Supremos N° 584/2007 y N° 239/2004",
+    nombre: "Educación Básica - Nivel 1 (1° a 4° Básico)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022)",
     regimen: {
-      JEC: { total: 24, libre: 4 },
-      No_JEC: { total: 20, libre: 0 }
+      JEC: { total: 10, libre: 0 },
+      No_JEC: { total: 10, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lengua Castellana y Comunicación", JEC: 7, No_JEC: 6 },
-      { nombre: "Educación Matemática", JEC: 7, No_JEC: 6 },
-      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 4 },
-      { nombre: "Estudios Sociales", JEC: 3, No_JEC: 4 }
+      { nombre: "Lenguaje y Comunicación", JEC: 5, No_JEC: 5 },
+      { nombre: "Matemática", JEC: 5, No_JEC: 5 }
     ]
   },
   "epja_basica_2_nivel": {
-    nombre: "EPJA Básica - 2° Nivel Básico (5° a 6° Básico)",
-    referenciaFuente: "Decretos Supremos N° 584/2007 y N° 239/2004",
+    nombre: "Educación Básica - Nivel 2 (5° y 6° Básico)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022)",
     regimen: {
-      JEC: { total: 26, libre: 4 },
-      No_JEC: { total: 22, libre: 0 }
+      JEC: { total: 24, libre: 0 },
+      No_JEC: { total: 16, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 6 },
-      { nombre: "Educación Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Lenguaje y Comunicación", JEC: 4, No_JEC: 4 },
+      { nombre: "Matemática", JEC: 4, No_JEC: 4 },
       { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
-      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 }
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Idioma Extranjero: Inglés (Opcional)", JEC: 4, No_JEC: 0 },
+      { nombre: "Formación en Oficios (Opcional)", JEC: 4, No_JEC: 0 }
     ]
   },
   "epja_basica_3_nivel": {
-    nombre: "EPJA Básica - 3° Nivel Básico (7° a 8° Básico)",
-    referenciaFuente: "Decretos Supremos N° 584/2007 y N° 239/2004",
+    nombre: "Educación Básica - Nivel 3 (7° y 8° Básico)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022)",
     regimen: {
-      JEC: { total: 26, libre: 4 },
-      No_JEC: { total: 22, libre: 0 }
+      JEC: { total: 24, libre: 0 },
+      No_JEC: { total: 16, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 6 },
-      { nombre: "Educación Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Lenguaje y Comunicación", JEC: 4, No_JEC: 4 },
+      { nombre: "Matemática", JEC: 4, No_JEC: 4 },
       { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
-      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 }
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Idioma Extranjero: Inglés (Opcional)", JEC: 4, No_JEC: 0 },
+      { nombre: "Formación en Oficios (Opcional)", JEC: 4, No_JEC: 0 }
     ]
   },
   "epja_media_hc_1_nivel": {
-    nombre: "EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)",
-    referenciaFuente: "Decreto Supremo N° 257/2009",
+    nombre: "Educación Media HC - Nivel 1 (1° y 2° Medio)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022)",
     regimen: {
-      JEC: { total: 30, libre: 4 },
+      JEC: { total: 26, libre: 0 },
       No_JEC: { total: 26, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 5 },
-      { nombre: "Educación Matemática", JEC: 6, No_JEC: 5 },
+      { nombre: "Lengua y Literatura", JEC: 4, No_JEC: 4 },
+      { nombre: "Matemática", JEC: 4, No_JEC: 4 },
       { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
-      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 3, No_JEC: 3 },
-      { nombre: "Filosofía y Psicología / Formación Ciudadana", JEC: 2, No_JEC: 2 },
-      { nombre: "Convivencia Social y Formación Instrumental", JEC: 1, No_JEC: 3 }
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Inglés", JEC: 4, No_JEC: 4 },
+      { nombre: "Formación Instrumental 1", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Instrumental 2", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Diferenciada HC", JEC: 2, No_JEC: 2 }
     ]
   },
   "epja_media_hc_2_nivel": {
-    nombre: "EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)",
-    referenciaFuente: "Decreto Supremo N° 257/2009",
+    nombre: "Educación Media HC - Nivel 2 (3° y 4° Medio)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022)",
     regimen: {
-      JEC: { total: 30, libre: 4 },
+      JEC: { total: 26, libre: 0 },
       No_JEC: { total: 26, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lengua Castellana y Comunicación", JEC: 6, No_JEC: 5 },
-      { nombre: "Educación Matemática", JEC: 6, No_JEC: 5 },
+      { nombre: "Lengua y Literatura", JEC: 4, No_JEC: 4 },
+      { nombre: "Matemática", JEC: 4, No_JEC: 4 },
       { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
-      { nombre: "Estudios Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 3, No_JEC: 3 },
-      { nombre: "Filosofía y Psicología / Formación Ciudadana", JEC: 2, No_JEC: 2 },
-      { nombre: "Convivencia Social y Formación Instrumental", JEC: 1, No_JEC: 3 }
+      { nombre: "Educación Ciudadana", JEC: 4, No_JEC: 4 },
+      { nombre: "Inglés", JEC: 4, No_JEC: 4 },
+      { nombre: "Formación Instrumental 1", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Instrumental 2", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Diferenciada HC", JEC: 2, No_JEC: 2 }
     ]
   },
-  "epja_media_tp_1_nivel": {
-    nombre: "EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)",
-    referenciaFuente: "Decreto Supremo N° 257/2009",
+  "epja_media_tp_oficios_1_2": {
+    nombre: "Educación Media TP en Oficios - Niveles 1 y 2 (1° a 4° Medio TP)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022)",
     regimen: {
-      JEC: { total: 36, libre: 4 },
-      No_JEC: { total: 32, libre: 0 }
+      JEC: { total: 26, libre: 0 },
+      No_JEC: { total: 26, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lengua Castellana y Comunicación", JEC: 4, No_JEC: 4 },
-      { nombre: "Educación Matemática", JEC: 4, No_JEC: 4 },
-      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 },
-      { nombre: "Estudios Sociales", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Convivencia Social", JEC: 2, No_JEC: 2 },
-      { nombre: "Formación Diferenciada Técnico-Profesional", JEC: 14, No_JEC: 14 }
+      { nombre: "Lengua y Literatura", JEC: 4, No_JEC: 4 },
+      { nombre: "Matemática", JEC: 4, No_JEC: 4 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
+      { nombre: "Historia, Geografía y Cs. Sociales / Educación Ciudadana", JEC: 4, No_JEC: 4 },
+      { nombre: "Inglés", JEC: 4, No_JEC: 4 },
+      { nombre: "Formación Instrumental (1 asignatura a elección)", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Diferenciada en Oficios", JEC: 4, No_JEC: 4 }
     ]
   },
-  "epja_media_tp_2_nivel": {
-    nombre: "EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)",
-    referenciaFuente: "Decreto Supremo N° 257/2009",
+  "epja_media_tp_especialidad_1": {
+    nombre: "Educación Media TP en Especialidades - Nivel 1 (1° y 2° Medio TP)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022)",
     regimen: {
-      JEC: { total: 38, libre: 4 },
-      No_JEC: { total: 34, libre: 0 }
+      JEC: { total: 24, libre: 0 },
+      No_JEC: { total: 24, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lengua Castellana y Comunicación", JEC: 4, No_JEC: 4 },
-      { nombre: "Educación Matemática", JEC: 4, No_JEC: 4 },
-      { nombre: "Estudios Sociales", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Convivencia Social", JEC: 2, No_JEC: 2 },
-      { nombre: "Formación Diferenciada Técnico-Profesional", JEC: 19, No_JEC: 19 }
+      { nombre: "Lengua y Literatura", JEC: 4, No_JEC: 4 },
+      { nombre: "Matemática", JEC: 4, No_JEC: 4 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Inglés", JEC: 4, No_JEC: 4 },
+      { nombre: "Formación Diferenciada TP (Módulos iniciales de la especialidad)", JEC: 4, No_JEC: 4 }
+    ]
+  },
+  "epja_media_tp_especialidad_2_3": {
+    nombre: "Educación Media TP en Especialidades - Niveles 2 y 3 (3° y 4° Medio TP)",
+    referenciaFuente: "Bases Curriculares EPJA (Decreto Supremo de Educación N° 10/2022 y Decreto N° 452/2013)",
+    regimen: {
+      JEC: { total: 24, libre: 0 },
+      No_JEC: { total: 24, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lengua y Literatura", JEC: 2, No_JEC: 2 },
+      { nombre: "Matemática", JEC: 2, No_JEC: 2 },
+      { nombre: "Educación Ciudadana", JEC: 2, No_JEC: 2 },
+      { nombre: "Ciencias Naturales", JEC: 2, No_JEC: 2 },
+      { nombre: "Inglés", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Instrumental (1 asignatura a elección)", JEC: 2, No_JEC: 2 },
+      { nombre: "Formación Diferenciada con Especialización (Módulos Técnicos)", JEC: 12, No_JEC: 12 }
     ]
   }
 };
@@ -950,14 +969,15 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   addSimplePlan("tp_elaboracion_alimentos_3", undefined, "MEDIA_TP");
   addSimplePlan("tp_elaboracion_alimentos_4", undefined, "MEDIA_TP");
 
-  // 5. EPJA (Educación de Adultos)
+  // 5. EPJA (Educación de Adultos - Decreto Supremo N° 10/2022)
   addSimplePlan("epja_basica_1_nivel", undefined, "EPJA");
   addSimplePlan("epja_basica_2_nivel", undefined, "EPJA");
   addSimplePlan("epja_basica_3_nivel", undefined, "EPJA");
   addSimplePlan("epja_media_hc_1_nivel", undefined, "EPJA");
   addSimplePlan("epja_media_hc_2_nivel", undefined, "EPJA");
-  addSimplePlan("epja_media_tp_1_nivel", undefined, "EPJA");
-  addSimplePlan("epja_media_tp_2_nivel", undefined, "EPJA");
+  addSimplePlan("epja_media_tp_oficios_1_2", undefined, "EPJA");
+  addSimplePlan("epja_media_tp_especialidad_1", undefined, "EPJA");
+  addSimplePlan("epja_media_tp_especialidad_2_3", undefined, "EPJA");
 
   return result;
 }
@@ -980,26 +1000,28 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
 
   let grupo = '';
 
-  // 1. EPJA - EDUCACIÓN DE ADULTOS
-  if (c.includes('adulto') || c.includes('epja') || c.includes('nivel basico') || c.includes('nivel medio')) {
-    if (c.includes('tp') || c.includes('tecnico') || c.includes('profesional')) {
-      if (c.includes('2') || c.includes('segundo') || c.includes('3') || c.includes('4')) {
-        grupo = "EPJA Media TP - 2° Nivel Medio (3° y 4° Medio TP)";
+  // 1. EPJA - EDUCACIÓN DE ADULTOS (Bases Curriculares Decreto 10/2022)
+  if (c.includes('adulto') || c.includes('epja') || c.includes('nivel basico') || c.includes('nivel medio') || c.includes('oficio')) {
+    if (c.includes('oficio')) {
+      grupo = "Educación Media TP en Oficios - Niveles 1 y 2 (1° a 4° Medio TP)";
+    } else if (c.includes('especialidad') || (c.includes('tp') && (c.includes('medio') || c.includes('nivel')))) {
+      if (c.includes('2') || c.includes('3') || c.includes('segundo') || c.includes('tercer') || c.includes('4') || c.includes('cuarto')) {
+        grupo = "Educación Media TP en Especialidades - Niveles 2 y 3 (3° y 4° Medio TP)";
       } else {
-        grupo = "EPJA Media TP - 1° Nivel Medio (1° y 2° Medio TP)";
+        grupo = "Educación Media TP en Especialidades - Nivel 1 (1° y 2° Medio TP)";
       }
     } else if (c.includes('medio') || c.includes('hc') || c.includes('human')) {
-      if (c.includes('2') || c.includes('segundo') || c.includes('3') || c.includes('4')) {
-        grupo = "EPJA Media HC - 2° Nivel Medio (3° y 4° Medio)";
+      if (c.includes('2') || c.includes('segundo') || c.includes('3') || c.includes('4') || c.includes('cuarto')) {
+        grupo = "Educación Media HC - Nivel 2 (3° y 4° Medio)";
       } else {
-        grupo = "EPJA Media HC - 1° Nivel Medio (1° y 2° Medio)";
+        grupo = "Educación Media HC - Nivel 1 (1° y 2° Medio)";
       }
     } else if (c.includes('3') || c.includes('tercer') || c.includes('7') || c.includes('8')) {
-      grupo = "EPJA Básica - 3° Nivel Básico (7° a 8° Básico)";
+      grupo = "Educación Básica - Nivel 3 (7° y 8° Básico)";
     } else if (c.includes('2') || c.includes('segundo') || c.includes('5') || c.includes('6')) {
-      grupo = "EPJA Básica - 2° Nivel Básico (5° a 6° Básico)";
+      grupo = "Educación Básica - Nivel 2 (5° y 6° Básico)";
     } else {
-      grupo = "EPJA Básica - 1° Nivel Básico (1° a 4° Básico)";
+      grupo = "Educación Básica - Nivel 1 (1° a 4° Básico)";
     }
   }
   // 2. ESPECIALIDADES TÉCNICO-PROFESIONALES ESPECÍFICAS
