@@ -150,11 +150,29 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
   }
 
   // Nivel Laboral / Educación Especial
-  const laboralMatch = clean.match(/^LABORAL\s*([0-9]+)?(?:\s*([A-Z]))?$/i);
-  if (laboralMatch) {
-    const num = laboralMatch[1] || '1';
-    const letra = laboralMatch[2] ? laboralMatch[2].toUpperCase() : 'U';
-    return { cursoCompleto: `Laboral ${num} ${letra}`, nivel: `Laboral ${num}`, letra, regimen: 'No JEC', esMultigrado: false };
+  if (/LABORAL/i.test(cleanNoAccents)) {
+    const numMatch = cleanNoAccents.match(/(?:[123]|PRIMER|SEGUNDO|TERCER)/i);
+    let num = '1';
+    if (numMatch) {
+      if (numMatch[0] === '2' || /SEGUNDO/i.test(numMatch[0])) num = '2';
+      else if (numMatch[0] === '3' || /TERCER/i.test(numMatch[0])) num = '3';
+    }
+    const letraMatch = clean.match(/\b([A-Z])\b$/);
+    const letra = letraMatch ? letraMatch[1] : 'A';
+    const nivel = `Nivel Laboral ${num} (Decreto N° 87/1990 y Normativa Especial)`;
+    return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'JEC', esMultigrado: false };
+  }
+
+  // Educación Especial Parvularia o Básica
+  if (/ESPECIAL/i.test(cleanNoAccents) || /DISCAPACIDAD/i.test(cleanNoAccents) || /ATENCION TEMPRANA/i.test(cleanNoAccents) || /TEL/i.test(cleanNoAccents)) {
+    const letraMatch = clean.match(/\b([A-Z])\b$/);
+    const letra = letraMatch ? letraMatch[1] : 'A';
+    if (/PARVUL|NT1|NT2|KINDER|TEMPRANA/i.test(cleanNoAccents)) {
+      const nivel = 'Educación Parvularia Especial (Decreto 83 / Decretos Supremos)';
+      return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'JEC', esMultigrado: false };
+    }
+    const nivel = 'Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)';
+    return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'JEC', esMultigrado: false };
   }
 
   return null;

@@ -14,7 +14,7 @@ export interface PlanEstudioNivel {
   horasLibreDisposicion: number;
   totalHorasPlan: number;
   asignaturasBase: AsignaturaPlan[];
-  categoria?: 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'EPJA' | 'MULTIGRADO' | 'OTRO';
+  categoria?: 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'EPJA' | 'ESPECIAL' | 'LABORAL' | 'MULTIGRADO' | 'OTRO';
   referenciaFuente?: string;
 }
 
@@ -849,6 +849,88 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       { nombre: "Formación Instrumental (1 asignatura a elección)", JEC: 2, No_JEC: 2 },
       { nombre: "Formación Diferenciada con Especialización (Módulos Técnicos)", JEC: 12, No_JEC: 12 }
     ]
+  },
+  // ===========================================================================
+  // EDUCACIÓN ESPECIAL (ORDINARIO N° 05/1470 Y DECRETO N° 83/2015)
+  // ===========================================================================
+  "especial_parvularia": {
+    nombre: "Educación Parvularia Especial (Decreto 83 / Decretos Supremos)",
+    referenciaFuente: "Ordinario N° 05/1470 (20/12/2018) y Decreto N° 83/2015",
+    regimen: {
+      JEC: { total: 28, libre: 4 },
+      No_JEC: { total: 22, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 8, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral / Lenguaje", JEC: 10, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 6, No_JEC: 6 },
+      { nombre: "Plan Específico / Estimulación Temprana", JEC: 4, No_JEC: 2 }
+    ]
+  },
+  "especial_basica_1_8": {
+    nombre: "Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)",
+    referenciaFuente: "Ordinario N° 05/1470 (20/12/2018) y Decreto N° 83/2015",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación / Lengua y Literatura", JEC: 8, No_JEC: 7 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 3 },
+      { nombre: "Artes Visuales y Música", JEC: 3, No_JEC: 2 },
+      { nombre: "Educación Física y Salud", JEC: 3, No_JEC: 2 },
+      { nombre: "Tecnología", JEC: 2, No_JEC: 1 },
+      { nombre: "Orientación", JEC: 1, No_JEC: 1 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 },
+      { nombre: "Plan Específico de Apoyo Especializado", JEC: 5, No_JEC: 3 }
+    ]
+  },
+  "laboral_1": {
+    nombre: "Nivel Laboral 1 (Decreto N° 87/1990 y Normativa Especial)",
+    referenciaFuente: "Ordinario N° 05/1470 y Decreto N° 87/1990 (Educación Especial Laboral)",
+    regimen: {
+      JEC: { total: 38, libre: 4 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Área Vocacional / Oficios Básicos", JEC: 18, No_JEC: 14 },
+      { nombre: "Área de Desarrollo Personal y Social", JEC: 6, No_JEC: 5 },
+      { nombre: "Área Cognitivo-Funcional (Lenguaje y Cálculo Funcional)", JEC: 6, No_JEC: 5 },
+      { nombre: "Educación Física, Recreación y Salud", JEC: 4, No_JEC: 3 },
+      { nombre: "Plan Específico / Autonomía en la Comunidad", JEC: 4, No_JEC: 3 }
+    ]
+  },
+  "laboral_2": {
+    nombre: "Nivel Laboral 2 (Decreto N° 87/1990 y Normativa Especial)",
+    referenciaFuente: "Ordinario N° 05/1470 y Decreto N° 87/1990 (Educación Especial Laboral)",
+    regimen: {
+      JEC: { total: 38, libre: 4 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Área Vocacional / Formación para el Trabajo", JEC: 20, No_JEC: 16 },
+      { nombre: "Área de Habilidades Laborales y Sociales", JEC: 6, No_JEC: 5 },
+      { nombre: "Área Funcional Instrumental Aplicada", JEC: 4, No_JEC: 3 },
+      { nombre: "Educación Física y Deportes Adaptados", JEC: 4, No_JEC: 3 },
+      { nombre: "Plan Específico de Inserción Laboral", JEC: 4, No_JEC: 3 }
+    ]
+  },
+  "laboral_3": {
+    nombre: "Nivel Laboral 3 (Decreto N° 87/1990 y Normativa Especial)",
+    referenciaFuente: "Ordinario N° 05/1470 y Decreto N° 87/1990 (Educación Especial Laboral)",
+    regimen: {
+      JEC: { total: 38, libre: 4 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Práctica y Especialización Laboral en Puesto de Trabajo", JEC: 22, No_JEC: 18 },
+      { nombre: "Área de Autonomía, Legislación y Deberes Ciudadanos", JEC: 4, No_JEC: 3 },
+      { nombre: "Habilidades para la Vida Independiente", JEC: 4, No_JEC: 3 },
+      { nombre: "Educación Física y Bienestar Laboral", JEC: 4, No_JEC: 3 },
+      { nombre: "Plan Específico / Acompañamiento Laboral", JEC: 4, No_JEC: 3 }
+    ]
   }
 };
 
@@ -979,6 +1061,13 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   addSimplePlan("epja_media_tp_especialidad_1", undefined, "EPJA");
   addSimplePlan("epja_media_tp_especialidad_2_3", undefined, "EPJA");
 
+  // 6. Educación Especial y Niveles Laborales (Ordinario N° 05/1470 & Decreto 83/2015 & Decreto 87/1990)
+  addSimplePlan("especial_parvularia", undefined, "ESPECIAL");
+  addSimplePlan("especial_basica_1_8", undefined, "ESPECIAL");
+  addSimplePlan("laboral_1", undefined, "LABORAL");
+  addSimplePlan("laboral_2", undefined, "LABORAL");
+  addSimplePlan("laboral_3", undefined, "LABORAL");
+
   return result;
 }
 
@@ -1100,7 +1189,27 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
         : "3° Medio - Especialidad Elaboración Industrial de Alimentos (Formación Diferenciada TP)";
     }
   }
-  // 3. CURSOS MULTIGRADO Y COMBINADOS
+  // 3. NIVELES LABORALES DE EDUCACIÓN ESPECIAL (Decreto 87/1990 y Ord. 1470)
+  else if (c.includes('laboral') || c.includes('taller laboral') || c.includes('oficio laboral')) {
+    if (c.includes('3') || c.includes('3°') || c.includes('tercer')) {
+      grupo = "Nivel Laboral 3 (Decreto N° 87/1990 y Normativa Especial)";
+    } else if (c.includes('2') || c.includes('2°') || c.includes('segundo')) {
+      grupo = "Nivel Laboral 2 (Decreto N° 87/1990 y Normativa Especial)";
+    } else {
+      grupo = "Nivel Laboral 1 (Decreto N° 87/1990 y Normativa Especial)";
+    }
+  }
+  // 4. EDUCACIÓN ESPECIAL PARVULARIA Y BÁSICA (Decreto 83 / Ordinario 1470)
+  else if (((/\bespecial\b/i.test(c) && !c.includes('especialidad')) || c.includes('dec. 83') || c.includes('dec 83') || c.includes('decreto 83') ||
+           c.includes('discapacidad') || c.includes('retardo') || c.includes('sordo') || c.includes('ciego') ||
+           c.includes('tel-') || c.includes('tel ') || c.includes('trastorno motor') || c.includes('autismo')) && !c.includes('medio') && !c.includes('tp')) {
+    if (c.includes('parvul') || c.includes('nt1') || c.includes('nt2') || c.includes('kinder') || c.includes('temprana')) {
+      grupo = "Educación Parvularia Especial (Decreto 83 / Decretos Supremos)";
+    } else {
+      grupo = "Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)";
+    }
+  }
+  // 5. CURSOS MULTIGRADO Y COMBINADOS
   else if (c.includes('multigrado') || c.includes('combinado') || c.includes('comb')) {
     if (c.includes('nt') || c.includes('kinder') || c.includes('parvular')) {
       grupo = "Multigrado Parvularia (NT1-NT2)";
@@ -1110,11 +1219,11 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
       grupo = "Educación Básica Multigrado / Combinada";
     }
   }
-  // 4. PARVULARIA REGULAR
+  // 6. PARVULARIA REGULAR
   else if ((c.includes('prekinder') || c.includes('kinder') || c.includes('nt1') || c.includes('nt2') || c.includes('parvular')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
     grupo = 'Educación Parvularia (NT1 y NT2)';
   }
-  // 5. BÁSICA Y MEDIA REGULAR
+  // 7. BÁSICA Y MEDIA REGULAR
   else if (c.includes('1°') || c.includes('2°') || c.includes('3°') || c.includes('4°') ||
       c.includes('1o') || c.includes('2o') || c.includes('3o') || c.includes('4o') ||
       c.includes('1 ') || c.includes('2 ') || c.includes('3 ') || c.includes('4 ')) {
@@ -1145,3 +1254,4 @@ export function obtenerPlanPorCurso(cursoNombre: string, regimen: 'JEC' | 'No JE
 
   return PLANES_MINEDUC.find(p => p.nivel === grupo) || null;
 }
+

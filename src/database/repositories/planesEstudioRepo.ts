@@ -7,7 +7,7 @@ export interface PlanEstudioRegistroDb {
   id: string;
   nivel: string;
   regimen: 'JEC' | 'No JEC';
-  categoria?: 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'PARVULARIA' | 'EPJA' | 'MULTIGRADO';
+  categoria?: 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'PARVULARIA' | 'EPJA' | 'MULTIGRADO' | 'ESPECIAL' | 'LABORAL' | 'OTRO';
   referenciaFuente?: string;
   horasObligatorias: number;
   horasLibreDisposicion: number;

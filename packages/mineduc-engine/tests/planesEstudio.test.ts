@@ -99,4 +99,42 @@ describe('Planes y Programas MINEDUC', () => {
     expect(planParvulariaReal?.categoria).toBe('PARVULARIA');
     expect(planParvulariaReal?.totalHorasPlan).toBe(22);
   });
+
+  it('resuelve correctamente cursos de Educación Especial y Niveles Laborales (Ord. 1470 & Dec. 83/87)', () => {
+    // 1. Parvularia Especial
+    const planParvEsp = obtenerPlanPorCurso('Parvularia Especial A', 'JEC');
+    expect(planParvEsp).toBeDefined();
+    expect(planParvEsp?.categoria).toBe('ESPECIAL');
+    expect(planParvEsp?.totalHorasPlan).toBe(28);
+    expect(planParvEsp?.horasLibreDisposicion).toBe(4);
+    expect(planParvEsp?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('estimulación') || a.nombre.toLowerCase().includes('específico'))).toBe(true);
+
+    // 2. Básica Especial (Dec. 83)
+    const planBasicaEsp = obtenerPlanPorCurso('3° Básico Especial (Decreto 83) B', 'JEC');
+    expect(planBasicaEsp).toBeDefined();
+    expect(planBasicaEsp?.categoria).toBe('ESPECIAL');
+    expect(planBasicaEsp?.totalHorasPlan).toBe(38);
+    expect(planBasicaEsp?.horasLibreDisposicion).toBe(6);
+    expect(planBasicaEsp?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('especializado'))).toBe(true);
+
+    // 3. Nivel Laboral 1
+    const planLab1 = obtenerPlanPorCurso('Nivel Laboral 1 A', 'JEC');
+    expect(planLab1).toBeDefined();
+    expect(planLab1?.categoria).toBe('LABORAL');
+    expect(planLab1?.totalHorasPlan).toBe(38);
+    expect(planLab1?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('vocacional') || a.nombre.toLowerCase().includes('oficios'))).toBe(true);
+
+    // 4. Nivel Laboral 2 No JEC
+    const planLab2NoJec = obtenerPlanPorCurso('Nivel Laboral 2', 'No JEC');
+    expect(planLab2NoJec).toBeDefined();
+    expect(planLab2NoJec?.categoria).toBe('LABORAL');
+    expect(planLab2NoJec?.totalHorasPlan).toBe(30);
+
+    // 5. Nivel Laboral 3 JEC
+    const planLab3 = obtenerPlanPorCurso('Laboral 3 C', 'JEC');
+    expect(planLab3).toBeDefined();
+    expect(planLab3?.categoria).toBe('LABORAL');
+    expect(planLab3?.totalHorasPlan).toBe(38);
+    expect(planLab3?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('práctica'))).toBe(true);
+  });
 });

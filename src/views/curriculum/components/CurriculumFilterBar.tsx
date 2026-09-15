@@ -1,11 +1,11 @@
-﻿import React from 'react';
+import React from 'react';
 import { Search } from 'lucide-react';
 
 interface CurriculumFilterBarProps {
   busqueda: string;
   onBusquedaChange: (s: string) => void;
-  filtroCiclo: 'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA';
-  onFiltroCicloChange: (f: 'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA') => void;
+  filtroCiclo: 'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA' | 'ESPECIAL';
+  onFiltroCicloChange: (f: 'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA' | 'ESPECIAL') => void;
   filtroRegimen: 'TODOS' | 'JEC' | 'No JEC';
   onFiltroRegimenChange: (r: 'TODOS' | 'JEC' | 'No JEC') => void;
   filtroCobertura: 'TODOS' | 'COMPLETO' | 'DEFICIT' | 'SOBRE';
@@ -50,6 +50,7 @@ export const CurriculumFilterBar: React.FC<CurriculumFilterBarProps> = ({
           <option value="MEDIA_TP">Media Técnico-Profesional</option>
           <option value="MULTIGRADO_COMBINADO">Multigrado / Combinados</option>
           <option value="EPJA">Educación de Adultos (EPJA)</option>
+          <option value="ESPECIAL">Educación Especial / Laboral</option>
         </select>
 
         <select

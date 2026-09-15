@@ -18,7 +18,9 @@ import {
   calcularDemandaNormativaPieCurso,
   autoAsignarHorasPieCursos,
   esModalidadAdultos,
-  esModalidadMultigradoOCombinado
+  esModalidadMultigradoOCombinado,
+  esModalidadEspecial,
+  esModalidadLaboral
 } from '@slep/mineduc-engine';
 import {
   ModalAsignarDocencia,
@@ -120,7 +122,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [cursoSeleccionadoPlan, setCursoSeleccionadoPlan] = useState<string>(cursos[0]?.id || '');
   const [tabCurso, setTabCurso] = useState<'docencia' | 'codocencia' | 'pie' | 'malla'>('docencia');
   const [busquedaCurso, setBusquedaCurso] = useState('');
-  const [filtroCicloCurso, setFiltroCicloCurso] = useState<'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA'>('TODOS');
+  const [filtroCicloCurso, setFiltroCicloCurso] = useState<'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA' | 'ESPECIAL'>('TODOS');
   const [filtroRegimenCurso, setFiltroRegimenCurso] = useState<'TODOS' | 'JEC' | 'No JEC'>('TODOS');
   const [filtroCoberturaCurso, setFiltroCoberturaCurso] = useState<'TODOS' | 'COMPLETO' | 'DEFICIT' | 'SOBRE'>('TODOS');
 
@@ -551,17 +553,19 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     const esTP = n.includes('tp') || n.includes('técnico') || n.includes('tecnico') || n.includes('profesional') || n.includes('especialidad') || (n.includes('medio') && (n.includes('parv') || n.includes('mecanic') || n.includes('electric') || n.includes('agropec') || n.includes('gastronom') || n.includes('administrac') || n.includes('programac')));
 
     if (filtroCicloCurso === 'PARVULARIA') {
-      matchCiclo = (n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || ((n.includes('párv') || n.includes('parv')) && !n.includes('medio') && !esTP)) && !esModalidadAdultos(c.nivel);
+      matchCiclo = (n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || ((n.includes('párv') || n.includes('parv')) && !n.includes('medio') && !esTP)) && !esModalidadAdultos(c.nivel) && !esModalidadEspecial(c.nivel);
     } else if (filtroCicloCurso === 'BASICA') {
-      matchCiclo = (n.includes('básico') || n.includes('basico') || n.includes('básica') || n.includes('basica')) && !esModalidadAdultos(c.nivel) && !c.esMultigrado && !c.esCombinado && !esModalidadMultigradoOCombinado(c.nivel);
+      matchCiclo = (n.includes('básico') || n.includes('basico') || n.includes('básica') || n.includes('basica')) && !esModalidadAdultos(c.nivel) && !c.esMultigrado && !c.esCombinado && !esModalidadMultigradoOCombinado(c.nivel) && !esModalidadEspecial(c.nivel);
     } else if (filtroCicloCurso === 'MEDIA_HC') {
-      matchCiclo = (n.includes('medio') || n.includes('media')) && !esTP && !esModalidadAdultos(c.nivel);
+      matchCiclo = (n.includes('medio') || n.includes('media')) && !esTP && !esModalidadAdultos(c.nivel) && !esModalidadEspecial(c.nivel);
     } else if (filtroCicloCurso === 'MEDIA_TP') {
-      matchCiclo = esTP && !esModalidadAdultos(c.nivel);
+      matchCiclo = esTP && !esModalidadAdultos(c.nivel) && !esModalidadEspecial(c.nivel);
     } else if (filtroCicloCurso === 'MULTIGRADO_COMBINADO') {
       matchCiclo = Boolean(c.esMultigrado || c.esCombinado || esModalidadMultigradoOCombinado(c.nivel));
     } else if (filtroCicloCurso === 'EPJA') {
       matchCiclo = Boolean(esModalidadAdultos(c.nivel) || c.tipoModalidad?.startsWith('EPJA'));
+    } else if (filtroCicloCurso === 'ESPECIAL') {
+      matchCiclo = Boolean(esModalidadEspecial(c.nivel) || c.tipoModalidad === 'ESPECIAL' || c.tipoModalidad === 'LABORAL' || esModalidadLaboral(c.nivel));
     }
 
     const matchRegimen = filtroRegimenCurso === 'TODOS' || c.regimen === filtroRegimenCurso;
@@ -840,6 +844,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           {plan?.categoria === 'MEDIA_TP' || c.nivel.toLowerCase().includes('tp') || c.nivel.toLowerCase().includes('especialidad') ? (
                             <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
                               Técnico-Profesional
+                            </span>
+                          ) : null}
+                          {esModalidadLaboral(c.nivel) || c.tipoModalidad === 'LABORAL' ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                              Nivel Laboral (Dec. 87)
+                            </span>
+                          ) : (esModalidadEspecial(c.nivel) || c.tipoModalidad === 'ESPECIAL') ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-teal-100 text-teal-800 font-bold border border-teal-200">
+                              Educación Especial (Dec. 83)
                             </span>
                           ) : null}
                         </div>

@@ -38,5 +38,25 @@ describe('Planes de Estudio en Base de Datos SQLite', () => {
 
     const planesEpjaDb = await listarPlanesEstudio('EPJA');
     expect(planesEpjaDb.length).toBeGreaterThanOrEqual(16);
+
+    // Planes Educación Especial y Laboral en Base de Datos
+    const especialBasica = await obtenerPlanEstudioPorNivelYRegimen('Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)', 'JEC');
+    expect(especialBasica).toBeDefined();
+    expect(especialBasica?.totalHorasPlan).toBe(38);
+    expect(especialBasica?.horasLibreDisposicion).toBe(6);
+    expect(especialBasica?.categoria).toBe('ESPECIAL');
+    expect(especialBasica?.asignaturas.some(a => a.nombre.toLowerCase().includes('especializado'))).toBe(true);
+
+    const laboral1 = await obtenerPlanEstudioPorNivelYRegimen('Nivel Laboral 1 (Decreto N° 87/1990 y Normativa Especial)', 'JEC');
+    expect(laboral1).toBeDefined();
+    expect(laboral1?.totalHorasPlan).toBe(38);
+    expect(laboral1?.categoria).toBe('LABORAL');
+    expect(laboral1?.asignaturas.some(a => a.nombre.toLowerCase().includes('vocacional'))).toBe(true);
+
+    const planesEspecialDb = await listarPlanesEstudio('ESPECIAL');
+    expect(planesEspecialDb.length).toBeGreaterThanOrEqual(4);
+
+    const planesLaboralDb = await listarPlanesEstudio('LABORAL');
+    expect(planesLaboralDb.length).toBeGreaterThanOrEqual(6);
   });
 });

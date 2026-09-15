@@ -96,6 +96,17 @@ export const NIVELES_EPJA_OFICIALES = [
   { id: 'Educación Media TP en Especialidades - Niveles 2 y 3 (3° y 4° Medio TP)', label: 'Educación Media TP Especialidades - Niveles 2 y 3 (3° y 4° Medio - 24 HA)', horasDefecto: 24, ciclo: 'Media TP Especialidades Adultos' }
 ];
 
+export const NIVELES_ESPECIAL_OFICIALES = [
+  { id: 'Educación Parvularia Especial (Decreto 83 / Decretos Supremos)', label: 'Parvularia Especial (Atención Temprana / NT1 / NT2 - 28 HA JEC / 22 HA)', ciclo: 'Parvularia Especial' },
+  { id: 'Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)', label: 'Básica Especial (1° a 8° Básico con Dec. 83 - 38 HA JEC / 30 HA)', ciclo: 'Básica Especial' },
+];
+
+export const NIVELES_LABORAL_OFICIALES = [
+  { id: 'Nivel Laboral 1 (Decreto N° 87/1990 y Normativa Especial)', label: 'Nivel Laboral 1 (Decreto 87 - 38 HA JEC / 30 HA)', ciclo: 'Laboral 1' },
+  { id: 'Nivel Laboral 2 (Decreto N° 87/1990 y Normativa Especial)', label: 'Nivel Laboral 2 (Decreto 87 - 38 HA JEC / 30 HA)', ciclo: 'Laboral 2' },
+  { id: 'Nivel Laboral 3 (Decreto N° 87/1990 y Normativa Especial)', label: 'Nivel Laboral 3 (Decreto 87 - 38 HA JEC / 30 HA)', ciclo: 'Laboral 3' },
+];
+
 export const GRADOS_COMBINABLES = [
   'Pre-Kínder', 'Kínder',
   '1° Básico', '2° Básico', '3° Básico', '4° Básico',
