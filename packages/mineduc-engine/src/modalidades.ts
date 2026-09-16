@@ -107,3 +107,32 @@ export function esModalidadMultigradoOCombinado(textoONivel: string): boolean {
   const t = textoONivel.toLowerCase();
   return t.includes('multigrado') || t.includes('combinado') || /^[1-8]°?\s*[-/]\s*[1-8]°?/.test(t);
 }
+
+export function esModalidadTp(textoONivel: string): boolean {
+  if (!textoONivel) return false;
+  const t = textoONivel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (t.includes('epja') || t.includes('adulto')) return false;
+  return (
+    t.includes('tp') ||
+    t.includes('tecnico') ||
+    t.includes('profesional') ||
+    t.includes('electric') ||
+    t.includes('programac') ||
+    t.includes('gastronom') ||
+    t.includes('parvulo') ||
+    t.includes('administrac') ||
+    t.includes('construcc') ||
+    t.includes('mecanic') ||
+    t.includes('agropec') ||
+    t.includes('elaboracion') ||
+    t.includes('alimento') ||
+    t.includes('vitivin') ||
+    t.includes('automotriz') ||
+    t.includes('electronica') ||
+    t.includes('enfermer') ||
+    t.includes('contabil') ||
+    t.includes('conectivid') ||
+    t.includes('redes')
+  );
+}
+

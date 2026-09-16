@@ -56,6 +56,7 @@ export interface CursoSae {
   esCombinado?: boolean;
   tipoModalidad?: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' | 'LABORAL';
   gradosCombinados?: string[]; // ej: ["1° Básico", "2° Básico"] o ["1° Nivel", "2° Nivel"]
+  especialidadTp?: string; // ej: "Electricidad", "Gastronomía", "Programación"
 }
 
 export type CalidadJuridicaDocente = 'TITULAR' | 'CONTRATA';

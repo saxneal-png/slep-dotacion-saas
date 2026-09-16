@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS cursos_sae (
   es_combinado INTEGER DEFAULT 0,
   tipo_modalidad TEXT DEFAULT 'REGULAR',
   grados_combinados_json TEXT,
+  especialidad_tp TEXT,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
 
@@ -219,6 +220,9 @@ export function runMigrations(db: Database): void {
   } catch (_) {}
   try {
     db.run("ALTER TABLE cursos_sae ADD COLUMN grados_combinados_json TEXT;");
+  } catch (_) {}
+  try {
+    db.run("ALTER TABLE cursos_sae ADD COLUMN especialidad_tp TEXT;");
   } catch (_) {}
   try {
     db.run("ALTER TABLE docentes ADD COLUMN horas_coordinacion_pie REAL DEFAULT 0;");

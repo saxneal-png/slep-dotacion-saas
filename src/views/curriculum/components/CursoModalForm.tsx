@@ -128,7 +128,8 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
       esMultigrado: esMulti,
       esCombinado: esComb,
       tipoModalidad: tipoMod,
-      gradosCombinados: categoria === 'COMBINADO' ? gradosCombinados : undefined
+      gradosCombinados: categoria === 'COMBINADO' ? gradosCombinados : undefined,
+      especialidadTp: categoria === 'TP' ? nivelFinal : undefined
     };
 
     if (categoria === 'COMBINADO' && modoCombinado === 'EXISTENTES' && cursosExistentesSeleccionados.length >= 2 && onCombinarCursos) {

@@ -138,13 +138,20 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
               required
               list="sugerencias-materias-modal"
               value={asignatura}
-              onChange={e => setAsignatura(e.target.value)}
-              placeholder="Ej. Lenguaje y Comunicación, Matemática..."
+              onChange={e => {
+                const val = e.target.value;
+                setAsignatura(val);
+                const match = planActivo?.asignaturasBase.find(a => a.nombre.toLowerCase() === val.toLowerCase());
+                if (match && !editandoAsig) {
+                  setHoras(match.horasSugeridas);
+                }
+              }}
+              placeholder="Ej. Lenguaje y Comunicación, Módulo de Especialidad..."
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none font-bold"
             />
             <datalist id="sugerencias-materias-modal">
               {planActivo?.asignaturasBase.map((asig: AsignaturaPlan, i: number) => (
-                <option key={i} value={asig.nombre} />
+                <option key={i} value={asig.nombre} label={`${asig.horasSugeridas} HA (Oficial MINEDUC)`} />
               ))}
             </datalist>
           </div>

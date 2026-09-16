@@ -3,7 +3,7 @@ import {
   BookOpen, Plus, Clock, Trash2, Layers, ShieldCheck, Users,
   Edit2, AlertCircle, CheckCircle2, UserCheck, Sparkles,
   BookCheck, AlertTriangle, ChevronRight, X, HeartHandshake,
-  Stethoscope, GraduationCap, School
+  Stethoscope, GraduationCap, School, Wrench
 } from 'lucide-react';
 import {
   Establecimiento,
@@ -20,7 +20,8 @@ import {
   esModalidadAdultos,
   esModalidadMultigradoOCombinado,
   esModalidadEspecial,
-  esModalidadLaboral
+  esModalidadLaboral,
+  esModalidadTp
 } from '@slep/mineduc-engine';
 import {
   ModalAsignarDocencia,
@@ -34,6 +35,7 @@ import { CursoNeeModal } from './curriculum/components/CursoNeeModal';
 import { MallaPlanPanel } from './curriculum/components/MallaPlanPanel';
 import { CurriculumStatsHeader } from './curriculum/components/CurriculumStatsHeader';
 import { CurriculumFilterBar } from './curriculum/components/CurriculumFilterBar';
+import { NIVELES_TP_ESPECIALIDADES } from './curriculum/types';
 
 export interface CurriculumDemandaViewProps {
   colegio: Establecimiento | null;
@@ -289,8 +291,17 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   const esModoTransversal = cursoSeleccionadoPlan === 'TRANSVERSAL';
   const cursoActivo = esModoTransversal ? null : (cursos.find(c => c.id === cursoSeleccionadoPlan) || cursos[0]);
-  const planActivo = cursoActivo ? obtenerPlanPorCurso(cursoActivo.nivel, cursoActivo.regimen) : null;
-  const horasPlanCurso = planActivo ? planActivo.totalHorasPlan : (cursoActivo?.regimen === 'JEC' ? 38 : 30);
+  const esCursoTp = Boolean(
+    cursoActivo && (
+      esModalidadTp(cursoActivo.nivel) ||
+      (cursoActivo.especialidadTp && esModalidadTp(cursoActivo.especialidadTp)) ||
+      /\btp\b/i.test(cursoActivo.nivel) ||
+      /t[eé]cnico/i.test(cursoActivo.nivel) ||
+      (colegio && /t[eé]cnico|industrial|comercial|polit[eé]cnico|agr[ií]cola/i.test(colegio.nombre) && /^[34]°?\s*medio/i.test(cursoActivo.nivel))
+    )
+  );
+  const planActivo = cursoActivo ? obtenerPlanPorCurso(cursoActivo.nivel, cursoActivo.regimen, cursoActivo.especialidadTp) : null;
+  const horasPlanCurso = planActivo ? planActivo.totalHorasPlan : (esCursoTp ? 42 : (cursoActivo?.regimen === 'JEC' ? 38 : 30));
 
   // Asignaciones transversales / institucionales (sin curso asociado)
   const asignacionesTransversales = useMemo(() => {
@@ -1149,6 +1160,39 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   <p className="text-xs text-slate-500 mt-0.5">
                     Plan MINEDUC: {horasPlanCurso} HA | Matrícula: {cursoActivo.matriculaProyectada} estudiantes | Aforo SAE: {cursoActivo.cupoSae}
                   </p>
+
+                  {esCursoTp && (
+                    <div className="mt-2.5 p-2.5 bg-orange-50/90 rounded-xl border border-orange-200/80 flex flex-wrap items-center gap-2.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-orange-950">
+                        <Wrench className="w-3.5 h-3.5 text-orange-600" />
+                        <span>Especialidad TP:</span>
+                      </div>
+                      <select
+                        value={cursoActivo.especialidadTp || cursoActivo.nivel}
+                        onChange={(e) => {
+                          const nuevaEsp = e.target.value;
+                          onGuardarCurso({
+                            ...cursoActivo,
+                            especialidadTp: nuevaEsp,
+                            nivel: nuevaEsp
+                          });
+                        }}
+                        className="px-2.5 py-1 text-xs font-semibold bg-white border border-orange-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-orange-500 max-w-md truncate"
+                      >
+                        <option value="">-- Seleccionar Especialidad Oficial MINEDUC --</option>
+                        {NIVELES_TP_ESPECIALIDADES.map((tp) => (
+                          <option key={tp} value={tp}>
+                            {tp}
+                          </option>
+                        ))}
+                      </select>
+                      {(!cursoActivo.especialidadTp && (cursoActivo.nivel.includes('Técnico-Profesional') || cursoActivo.nivel.toLowerCase().includes('tp'))) && (
+                        <span className="text-[11px] font-bold text-orange-700">
+                          ⚠️ Asigna una especialidad para ver los módulos técnicos de 42 HA.
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Controles de Ajuste Rápido del Curso */}
                   <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-slate-100">

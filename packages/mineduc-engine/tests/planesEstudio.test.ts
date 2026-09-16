@@ -59,7 +59,7 @@ describe('Planes y Programas MINEDUC', () => {
 
   it('verifica que todas las especialidades TP tienen distribución correcta de 42h JEC y 36h No-JEC', () => {
     const planesTP = PLANES_MINEDUC.filter(p => p.categoria === 'MEDIA_TP' && p.nivel.includes('Especialidad'));
-    expect(planesTP.length).toBe(50); // 25 planes diferenciados de especialidad x 2 regímenes (JEC y No JEC)
+    expect(planesTP.length).toBe(72); // 36 planes diferenciados de especialidad x 2 regímenes (JEC y No JEC)
 
     for (const plan of planesTP) {
       if (plan.regimen === 'JEC') {
@@ -74,6 +74,23 @@ describe('Planes y Programas MINEDUC', () => {
       const totalAsignaturas = plan.asignaturasBase.reduce((sum, a) => sum + (a.horasSugeridas || 0), 0);
       expect(totalAsignaturas).toBe(36);
     }
+  });
+
+  it('resuelve correctamente planes TP pasando curso y especialidadTp independiente', () => {
+    const planElec = obtenerPlanPorCurso('3° Medio TP A', 'JEC', 'Electricidad');
+    expect(planElec).toBeDefined();
+    expect(planElec?.nivel).toContain('Electricidad');
+    expect(planElec?.totalHorasPlan).toBe(42);
+
+    const planLog = obtenerPlanPorCurso('4° Medio TP B', 'JEC', 'Administración Logística');
+    expect(planLog).toBeDefined();
+    expect(planLog?.nivel).toContain('Logística');
+    expect(planLog?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('inventarios'))).toBe(true);
+
+    const planAuto = obtenerPlanPorCurso('3° Medio A', 'JEC', 'Mecánica Automotriz');
+    expect(planAuto).toBeDefined();
+    expect(planAuto?.nivel).toContain('Automotriz');
+    expect(planAuto?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('motores'))).toBe(true);
   });
 
   it('resuelve 3° y 4° Medio Especialidad Atención de Párvulos como MEDIA_TP y nunca como Parvularia', () => {

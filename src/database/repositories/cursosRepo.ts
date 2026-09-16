@@ -3,7 +3,7 @@ import { getDb, persistDb } from '../dbCore';
 
 export async function listarCursos(rbd: string, periodo: number = 2026): Promise<CursoSae[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY nivel, letra", [rbd, periodo, periodo]);
+  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY nivel, letra", [rbd, periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
     let talleresJec = undefined;
@@ -34,14 +34,15 @@ export async function listarCursos(rbd: string, periodo: number = 2026): Promise
       esMultigrado: esMulti,
       esCombinado: esComb,
       tipoModalidad: (row[15] as any) || (esMulti ? 'MULTIGRADO' : esComb ? 'COMBINADO' : 'REGULAR'),
-      gradosCombinados
+      gradosCombinados,
+      especialidadTp: row[17] ? String(row[17]) : undefined
     };
   });
 }
 
 export async function listarTodosLosCursos(periodo: number = 2026): Promise<CursoSae[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json FROM cursos_sae WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY rbd, nivel, letra", [periodo, periodo]);
+  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp FROM cursos_sae WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY rbd, nivel, letra", [periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
     let talleresJec = undefined;
@@ -70,9 +71,10 @@ export async function listarTodosLosCursos(periodo: number = 2026): Promise<Curs
       periodo: row[11] ? Number(row[11]) : 2026,
       regimenProporcion: (row[12] as any) || '65_35',
       esMultigrado: esMulti,
-      esCombinado: esComb,
+      esComb: esComb,
       tipoModalidad: (row[15] as any) || (esMulti ? 'MULTIGRADO' : esComb ? 'COMBINADO' : 'REGULAR'),
-      gradosCombinados
+      gradosCombinados,
+      especialidadTp: row[17] ? String(row[17]) : undefined
     };
   });
 }
@@ -87,8 +89,8 @@ export async function guardarCurso(c: CursoSae): Promise<void> {
   const esComb = c.esCombinado ? 1 : 0;
   const tipoMod = c.tipoModalidad || (c.esMultigrado ? 'MULTIGRADO' : c.esCombinado ? 'COMBINADO' : 'REGULAR');
   db.run(`
-    INSERT INTO cursos_sae (id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cursos_sae (id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rbd=excluded.rbd, nivel=excluded.nivel, letra=excluded.letra, regimen=excluded.regimen,
       sala_id=excluded.sala_id, cupo_sae=excluded.cupo_sae,
@@ -100,8 +102,9 @@ export async function guardarCurso(c: CursoSae): Promise<void> {
       es_multigrado=excluded.es_multigrado,
       es_combinado=excluded.es_combinado,
       tipo_modalidad=excluded.tipo_modalidad,
-      grados_combinados_json=excluded.grados_combinados_json;
-  `, [c.id, c.rbd, c.nivel, c.letra, c.regimen, c.salaId || null, c.cupoSae, c.matriculaProyectada, c.alumnosNeet, c.alumnosNeep, talleresJson, cursoPeriodo, regProp, esMulti, esComb, tipoMod, gradosJson]);
+      grados_combinados_json=excluded.grados_combinados_json,
+      especialidad_tp=excluded.especialidad_tp;
+  `, [c.id, c.rbd, c.nivel, c.letra, c.regimen, c.salaId || null, c.cupoSae, c.matriculaProyectada, c.alumnosNeet, c.alumnosNeep, talleresJson, cursoPeriodo, regProp, esMulti, esComb, tipoMod, gradosJson, c.especialidadTp || null]);
   persistDb();
 }
 
