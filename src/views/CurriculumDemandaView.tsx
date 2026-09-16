@@ -557,11 +557,21 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   // Cursos filtrados por búsqueda y filtros de ciclo / régimen / cobertura
   const cursosFiltrados = cursos.filter(c => {
     const q = busquedaCurso.toLowerCase().trim();
-    const matchTexto = q === '' || `${c.nivel} ${c.letra}`.toLowerCase().includes(q);
+    const matchTexto = q === '' || `${c.nivel} ${c.letra} ${c.especialidadTp || ''}`.toLowerCase().includes(q);
 
     let matchCiclo = true;
     const n = c.nivel.toLowerCase();
-    const esTP = n.includes('tp') || n.includes('técnico') || n.includes('tecnico') || n.includes('profesional') || n.includes('especialidad') || (n.includes('medio') && (n.includes('parv') || n.includes('mecanic') || n.includes('electric') || n.includes('agropec') || n.includes('gastronom') || n.includes('administrac') || n.includes('programac')));
+    const esLiceoTp = Boolean(colegio && /t[eé]cnico|industrial|comercial|polit[eé]cnico|agr[ií]cola/i.test(colegio.nombre));
+    const esTP = Boolean(
+      esModalidadTp(c.nivel) ||
+      (c.especialidadTp && esModalidadTp(c.especialidadTp)) ||
+      n.includes('tp') ||
+      n.includes('técnico') ||
+      n.includes('tecnico') ||
+      n.includes('profesional') ||
+      n.includes('especialidad') ||
+      (esLiceoTp && /^[34]°?\s*medio/i.test(c.nivel))
+    );
 
     if (filtroCicloCurso === 'PARVULARIA') {
       matchCiclo = (n.includes('nt1') || n.includes('nt2') || n.includes('kínder') || n.includes('kinder') || ((n.includes('párv') || n.includes('parv')) && !n.includes('medio') && !esTP)) && !esModalidadAdultos(c.nivel) && !esModalidadEspecial(c.nivel);
@@ -714,6 +724,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 <option value="MEDIA_TP">Media TP Regular</option>
                 <option value="MULTIGRADO_COMBINADO">Multigrado / Combinados</option>
                 <option value="EPJA">Adultos (EPJA)</option>
+                <option value="ESPECIAL">Educación Especial / Laboral</option>
               </select>
 
               {/* Régimen */}
@@ -852,7 +863,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                               EPJA
                             </span>
                           ) : null}
-                          {plan?.categoria === 'MEDIA_TP' || c.nivel.toLowerCase().includes('tp') || c.nivel.toLowerCase().includes('especialidad') ? (
+                          {plan?.categoria === 'MEDIA_TP' || esModalidadTp(c.nivel) || (c.especialidadTp && esModalidadTp(c.especialidadTp)) || c.nivel.toLowerCase().includes('tp') || c.nivel.toLowerCase().includes('especialidad') ? (
                             <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
                               Técnico-Profesional
                             </span>
@@ -861,7 +872,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                             <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
                               Nivel Laboral (Dec. 87)
                             </span>
-                          ) : (esModalidadEspecial(c.nivel) || c.tipoModalidad === 'ESPECIAL') ? (
+                          ) : ((esModalidadEspecial(c.nivel) || c.tipoModalidad === 'ESPECIAL') && !esModalidadTp(c.nivel) && !c.especialidadTp) ? (
                             <span className="text-[10px] px-1.5 py-0.2 rounded bg-teal-100 text-teal-800 font-bold border border-teal-200">
                               Educación Especial (Dec. 83)
                             </span>

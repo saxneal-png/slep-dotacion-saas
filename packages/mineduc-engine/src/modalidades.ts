@@ -92,8 +92,35 @@ export function esModalidadAdultos(textoONivel: string): boolean {
 
 export function esModalidadEspecial(textoONivel: string): boolean {
   if (!textoONivel) return false;
-  const t = textoONivel.toLowerCase();
-  return t.includes('especial') || t.includes('discapacidad') || t.includes('laboral') || t.includes('decreto 83') || t.includes('decreto 87') || t.includes('decreto 89') || t.includes('decreto 86') || t.includes('decreto 815') || t.includes('tel') || t.includes('autismo') || t.includes('multideficit') || t.includes('sordo');
+  const t = textoONivel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // Descartar la palabra "especialidad" para no confundir con especialidades Técnico-Profesionales
+  const tSinEspecialidad = t.replace(/especialidad(es)?/g, ' ');
+
+  // Si contiene "medio" o "tp" y no menciona explícitamente "decreto 83" o "retardo" o "discapacidad", no es Educación Especial
+  const esMediaOTp = (t.includes('medio') || t.includes('tp') || t.includes('tecnico') || t.includes('profesional')) &&
+                     !t.includes('decreto 83') && !t.includes('dec. 83') && !t.includes('dec 83') && !t.includes('discapacidad');
+  if (esMediaOTp) return false;
+
+  return (
+    /\bespecial\b/i.test(tSinEspecialidad) ||
+    tSinEspecialidad.includes('discapacidad') ||
+    tSinEspecialidad.includes('laboral') ||
+    tSinEspecialidad.includes('decreto 83') ||
+    tSinEspecialidad.includes('decreto 87') ||
+    tSinEspecialidad.includes('decreto 89') ||
+    tSinEspecialidad.includes('decreto 86') ||
+    tSinEspecialidad.includes('decreto 815') ||
+    tSinEspecialidad.includes('dec. 83') ||
+    tSinEspecialidad.includes('dec 83') ||
+    tSinEspecialidad.includes('tel-') ||
+    tSinEspecialidad.includes('tel ') ||
+    tSinEspecialidad.includes('trastorno') ||
+    tSinEspecialidad.includes('autismo') ||
+    tSinEspecialidad.includes('multideficit') ||
+    tSinEspecialidad.includes('retardo') ||
+    tSinEspecialidad.includes('sordo') ||
+    tSinEspecialidad.includes('ciego')
+  );
 }
 
 export function esModalidadLaboral(textoONivel: string): boolean {
@@ -116,10 +143,12 @@ export function esModalidadTp(textoONivel: string): boolean {
     t.includes('tp') ||
     t.includes('tecnico') ||
     t.includes('profesional') ||
+    t.includes('especialidad') ||
     t.includes('electric') ||
     t.includes('programac') ||
     t.includes('gastronom') ||
     t.includes('parvulo') ||
+    t.includes('atencion de parv') ||
     t.includes('administrac') ||
     t.includes('construcc') ||
     t.includes('mecanic') ||
@@ -130,9 +159,18 @@ export function esModalidadTp(textoONivel: string): boolean {
     t.includes('automotriz') ||
     t.includes('electronica') ||
     t.includes('enfermer') ||
+    t.includes('salud') ||
     t.includes('contabil') ||
     t.includes('conectivid') ||
-    t.includes('redes')
+    t.includes('redes') ||
+    t.includes('logistica') ||
+    t.includes('edificac') ||
+    t.includes('terminacion') ||
+    t.includes('obra vial') ||
+    t.includes('matricer') ||
+    t.includes('maquina') ||
+    t.includes('cocina') ||
+    t.includes('pasteler')
   );
 }
 

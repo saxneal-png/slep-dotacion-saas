@@ -4,6 +4,10 @@ import {
   obtenerPlanPorCurso,
   DATA_PLANES_ESTUDIO_MINEDUC
 } from '../src/planesEstudio';
+import {
+  esModalidadTp,
+  esModalidadEspecial
+} from '../src/modalidades';
 
 describe('Planes y Programas MINEDUC', () => {
   it('contiene los planes convertidos para los distintos niveles en JEC y No JEC', () => {
@@ -153,5 +157,34 @@ describe('Planes y Programas MINEDUC', () => {
     expect(planLab3?.categoria).toBe('LABORAL');
     expect(planLab3?.totalHorasPlan).toBe(38);
     expect(planLab3?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('práctica'))).toBe(true);
+  });
+
+  it('no confunde cursos de Especialidad TP con Educación Especial', () => {
+    const cursosTp = [
+      '3° Medio - Especialidad Electricidad (Formación Diferenciada TP)',
+      '4° Medio - Especialidad Gastronomía, Mención Cocina',
+      '3° Medio - Especialidad Programación (Formación Diferenciada TP)',
+      '4° Medio - Especialidad Administración, Mención Recursos Humanos',
+      '4° Medio - Especialidad Administración, Mención Logística',
+      '3° Medio - Especialidad Mecánica Automotriz (Plan Común de la Especialidad)',
+      '4° Medio - Especialidad Atención de Párvulos (Formación Diferenciada TP)'
+    ];
+
+    for (const c of cursosTp) {
+      expect(esModalidadTp(c)).toBe(true);
+      expect(esModalidadEspecial(c)).toBe(false);
+    }
+
+    const cursosEspeciales = [
+      'Educación Parvularia Especial',
+      'Educación Básica Especial (Decreto 83)',
+      'Nivel Laboral 1',
+      'Curso Especial TEL - Discapacidad Auditiva'
+    ];
+
+    for (const c of cursosEspeciales) {
+      expect(esModalidadEspecial(c)).toBe(true);
+      expect(esModalidadTp(c)).toBe(false);
+    }
   });
 });
