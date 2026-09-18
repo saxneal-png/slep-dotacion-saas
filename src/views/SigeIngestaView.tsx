@@ -13,6 +13,7 @@ interface SigeIngestaViewProps {
 
 const COMUNAS: ComunaValleDiguillin[] = [
   'Bulnes',
+  'Chillán',
   'Chillán Viejo',
   'El Carmen',
   'Pemuco',

@@ -1,11 +1,13 @@
-﻿import React from 'react';
+import React from 'react';
 import { X, ShieldCheck } from 'lucide-react';
+import { calcularDemandaNormativaPieCurso } from '@slep/mineduc-engine';
 
 interface CursoNeeModalProps {
   isOpen: boolean;
   onClose: () => void;
   cursoNivel: string;
   cursoLetra: string;
+  regimen?: 'JEC' | 'No JEC';
   editNeet: number;
   setEditNeet: (n: number) => void;
   editNeep: number;
@@ -18,6 +20,7 @@ export const CursoNeeModal: React.FC<CursoNeeModalProps> = ({
   onClose,
   cursoNivel,
   cursoLetra,
+  regimen = 'JEC',
   editNeet,
   setEditNeet,
   editNeep,
@@ -25,6 +28,9 @@ export const CursoNeeModal: React.FC<CursoNeeModalProps> = ({
   onGuardar
 }) => {
   if (!isOpen) return null;
+
+  const isJec = regimen === 'JEC';
+  const demanda = calcularDemandaNormativaPieCurso(editNeet, editNeep, isJec);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
@@ -68,10 +74,14 @@ export const CursoNeeModal: React.FC<CursoNeeModalProps> = ({
             />
           </div>
 
-          <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg text-emerald-900">
-            <p className="font-bold mb-1">Cálculo Automático de Demanda:</p>
-            <p>• {editNeet > 0 ? '10 hrs cronológicas docentes (NEET)' : '0 hrs NEET'}</p>
-            <p>• {editNeep > 0 ? '3 hrs adicionales (NEEP)' : '0 hrs NEEP'}</p>
+          <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg text-emerald-900 space-y-1">
+            <p className="font-bold mb-1 flex items-center justify-between">
+              <span>Demanda Normativa Decreto 170:</span>
+              <span className="font-mono">{demanda.horasTotalCronologicas}h total</span>
+            </p>
+            <p className="text-[11px]">• Ed. Diferencial: <strong>{demanda.horasDiferencialHHMM} hrs ({demanda.horasDiferencialDecimal}h)</strong></p>
+            <p className="text-[11px]">• Asistente PAE: <strong>{demanda.horasPaeHHMM} hrs ({demanda.horasPaeDecimal}h)</strong></p>
+            <p className="text-[11px]">• Co-docencia Art. 86: <strong>{demanda.horasTrabajoColaborativoCronologicas} hrs</strong></p>
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t">

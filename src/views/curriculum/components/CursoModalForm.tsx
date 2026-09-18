@@ -83,11 +83,11 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
     let nivelFinal = nivel;
     let esMulti = false;
     let esComb = false;
-    let tipoMod: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' | 'LABORAL' = 'REGULAR';
+    let tipoMod: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'MEDIA_TP' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' | 'LABORAL' = 'REGULAR';
 
     if (categoria === 'TP') {
       esMulti = false;
-      tipoMod = 'REGULAR';
+      tipoMod = 'MEDIA_TP';
       nivelFinal = nivel;
     } else if (categoria === 'MULTIGRADO') {
       esMulti = true;
@@ -501,7 +501,7 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Letra / Identificador</label>
               <input
@@ -520,8 +520,19 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
                 onChange={e => setRegimen(e.target.value as any)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
               >
-                <option value="JEC">Jornada Escolar Completa (JEC)</option>
-                <option value="No JEC">Media Jornada (Sin JEC)</option>
+                <option value="JEC">JEC (Completa)</option>
+                <option value="No JEC">Media Jornada</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Proporción Ley 20.903</label>
+              <select
+                value={regimenProporcion}
+                onChange={e => setRegimenProporcion(e.target.value as any)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
+              >
+                <option value="65_35">65/35 (General)</option>
+                <option value="60_40">60/40 (Vulnerable &ge;80%)</option>
               </select>
             </div>
           </div>

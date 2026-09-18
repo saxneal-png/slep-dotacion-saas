@@ -15,18 +15,20 @@ import {
   GraduationCap,
   AlertTriangle
 } from 'lucide-react';
-import type { DocenteConsolidadoTerritorial, ContratoDocenteColegio } from '../types';
+import type { DocenteConsolidadoTerritorial, ContratoDocenteColegio, CursoSae } from '../types';
 
 interface DocenteFichaDetalleModalProps {
   isOpen: boolean;
   onClose: () => void;
   docenteConsolidado: DocenteConsolidadoTerritorial | null;
+  cursos?: CursoSae[];
 }
 
 export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> = ({
   isOpen,
   onClose,
-  docenteConsolidado
+  docenteConsolidado,
+  cursos = []
 }) => {
   if (!isOpen || !docenteConsolidado) return null;
 
@@ -570,25 +572,30 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {c.asignaciones.map((asig, aIdx) => (
-                                <tr key={aIdx} className="hover:bg-slate-50/60">
-                                  <td className="px-3 py-2 font-medium text-slate-800">
-                                    Curso ID: {asig.cursoId}
-                                  </td>
-                                  <td className="px-3 py-2 text-slate-700">
-                                    {asig.asignatura}
-                                  </td>
-                                  <td className="px-3 py-2 text-center font-bold text-blue-700">
-                                    {asig.horasPedagogicasAula} HA
-                                  </td>
+                              {c.asignaciones.map((asig, aIdx) => {
+                                const cursoMatch = cursos.find(cu => cu.id === asig.cursoId);
+                                const nombreCurso = cursoMatch ? `${cursoMatch.nivel} ${cursoMatch.letra}` : asig.cursoId === 'TRANSVERSAL' ? 'Taller Transversal' : asig.cursoId;
+                                return (
+                                  <tr key={aIdx} className="hover:bg-slate-50/60">
+                                    <td className="px-3 py-2 font-medium text-slate-800">
+                                      <span className="font-bold text-slate-800">{nombreCurso}</span>
+                                      {cursoMatch?.regimen && <span className="text-[10px] text-slate-400 block">{cursoMatch.regimen}</span>}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-700">
+                                      {asig.asignatura}
+                                    </td>
+                                    <td className="px-3 py-2 text-center font-bold text-blue-700">
+                                      {asig.horasPedagogicasAula} HA
+                                    </td>
                                   <td className="px-3 py-2 text-center font-mono text-slate-500">
                                     {formatMins(asig.horasPedagogicasAula * 45)}
                                   </td>
                                   <td className="px-3 py-2 text-slate-500">
                                     {asig.tieneCoDocente ? 'Co-Docencia' : asig.esTallerJec ? 'Taller JEC' : 'Aula Regular'}
                                   </td>
-                                </tr>
-                              ))}
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>

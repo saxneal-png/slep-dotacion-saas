@@ -982,6 +982,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         isOpen={Boolean(docenteFicha)}
         onClose={() => setDocenteFicha(null)}
         docenteConsolidado={docenteFicha}
+        cursos={cursos}
       />
     </div>
   );

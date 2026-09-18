@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Scale, Users, BookOpen, Clock, ShieldCheck, LayoutGrid,
-  FileSpreadsheet, Printer, ArrowRightLeft, FileUp, Sparkles,
+  FileSpreadsheet, Printer, ArrowRightLeft, FileUp, FileDown, Sparkles,
   Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2, ShieldAlert
 } from 'lucide-react';
 import {
@@ -20,7 +20,8 @@ import { SalasSaeView } from './SalasSaeView';
 import { MatrizExcelImportModal } from '../components/MatrizExcelImportModal';
 import { ComparadorPeriodosModal } from '../components/ComparadorPeriodosModal';
 import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
-import { FileDown } from 'lucide-react';
+import { ExportarEstablecimientoModal } from '../components/ExportarEstablecimientoModal';
+import { ImportarEstablecimientoModal } from '../components/ImportarEstablecimientoModal';
 
 export interface ColegioWorkspaceViewProps {
   colegio: Establecimiento;
@@ -85,6 +86,8 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
   const [modalVaciarSeguroAbierto, setModalVaciarSeguroAbierto] = useState(false);
+  const [modalExportarEstablecimientoAbierto, setModalExportarEstablecimientoAbierto] = useState(false);
+  const [modalImportarEstablecimientoAbierto, setModalImportarEstablecimientoAbierto] = useState(false);
   const [menuAvanzadoAbierto, setMenuAvanzadoAbierto] = useState(false);
 
   const handleEjecutarVaciarDotacion = async () => {
@@ -260,24 +263,31 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             </div>
 
             <button
+              onClick={() => setModalExportarEstablecimientoAbierto(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold shadow transition-all"
+              title="Exportar dotación de este establecimiento (.slep.json)"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>Exportar .slep.json</span>
+            </button>
+
+            <button
+              onClick={() => setModalImportarEstablecimientoAbierto(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition-all"
+              title="Importar dotación de establecimiento (.slep.json)"
+            >
+              <FileUp className="w-4 h-4" />
+              <span>Importar</span>
+            </button>
+
+            <button
               onClick={onExportarExcel}
-              className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow transition-all"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow transition-all"
               title="Exportar archivo consolidado de todo el territorio SLEP"
             >
               <FileSpreadsheet className="w-4 h-4" />
               <span>Consolidado SLEP</span>
             </button>
-
-            {onLimpiarDotacionColegio && (
-              <button
-                onClick={() => setModalVaciarSeguroAbierto(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-700 rounded-xl text-xs font-semibold transition-all border border-slate-200 hover:border-red-200"
-                title={`Zona de Seguridad: Vaciar dotación de ${colegio.nombre} periodo ${periodoActivo}`}
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-slate-400 hover:text-red-600" />
-                <span>Vaciar Dotación</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -422,7 +432,10 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             colegio={colegio}
             cursos={cursos}
             docentes={docentes}
+            asignaciones={asignaciones}
             onGuardarCurso={onGuardarCurso}
+            onGuardarAsignacion={onGuardarAsignacion}
+            onEliminarAsignacion={onEliminarAsignacion}
           />
         )}
 
@@ -439,6 +452,28 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
       </div>
 
       {/* Modales de Gestión de Dotación */}
+      <ExportarEstablecimientoModal
+        isOpen={modalExportarEstablecimientoAbierto}
+        onClose={() => setModalExportarEstablecimientoAbierto(false)}
+        establecimiento={colegio}
+        periodo={periodoActivo || 2026}
+        cursos={cursos}
+        docentes={docentes}
+        salas={salas}
+        asignaciones={asignaciones}
+      />
+
+      <ImportarEstablecimientoModal
+        isOpen={modalImportarEstablecimientoAbierto}
+        onClose={() => setModalImportarEstablecimientoAbierto(false)}
+        todosLosColegios={todosLosColegios}
+        colegioActivo={colegio}
+        periodoActivo={periodoActivo || 2026}
+        onImportSuccess={() => {
+          if (onRefreshData) onRefreshData();
+        }}
+      />
+
       <MatrizExcelImportModal
         isOpen={modalMatrizAbierto}
         onClose={() => setModalMatrizAbierto(false)}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sparkles, AlertCircle, CheckCircle, Users, Clock, ShieldCheck } from 'lucide-react';
-import { Establecimiento, CursoSae, Docente } from '../types';
+import { Establecimiento, CursoSae, Docente, AsignacionHoraria } from '../types';
 import {
   calcularDemandaNormativaPieCurso,
   autoAsignarHorasPieCursos
@@ -10,14 +10,20 @@ interface PieAuditorViewProps {
   colegio: Establecimiento | null;
   cursos: CursoSae[];
   docentes: Docente[];
+  asignaciones?: AsignacionHoraria[];
   onGuardarCurso: (curso: CursoSae) => void;
+  onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void;
+  onEliminarAsignacion?: (id: string) => Promise<void> | void;
 }
 
 export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   colegio,
   cursos,
   docentes,
-  onGuardarCurso
+  asignaciones = [],
+  onGuardarCurso,
+  onGuardarAsignacion,
+  onEliminarAsignacion
 }) => {
   if (!colegio) {
     return (
@@ -31,13 +37,22 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const demandasCursos = cursos.map(c => {
     const isJec = c.regimen === 'JEC';
     const dem = calcularDemandaNormativaPieCurso(c.alumnosNeet, c.alumnosNeep, isJec);
-    return { curso: c, demanda: dem };
+    const asigsCurso = asignaciones.filter(a => a.cursoId === c.id);
+    const asigsPie = asigsCurso.filter(a => 
+      Boolean(a.horasCronologicasPie) || 
+      a.esCoDocencia || 
+      (a.tipoApoyo && /pie|diferencial|recurso|co-docencia|pae/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura))
+    );
+    const horasPieAsignadasCurso = asigsPie.reduce((s, a) => s + (a.horasCronologicasPie || a.horasPedagogicasAula * 0.75), 0);
+    return { curso: c, demanda: dem, asigsPie, horasPieAsignadasCurso };
   });
 
   const totalDemandaEdDiferencial = demandasCursos.reduce((sum, d) => sum + d.demanda.horasDiferencialDecimal, 0);
   const totalDemandaPae = demandasCursos.reduce((sum, d) => sum + d.demanda.horasPaeDecimal, 0);
   const totalDemandaColab = demandasCursos.reduce((sum, d) => sum + d.demanda.horasTrabajoColaborativoCronologicas, 0);
   const totalHorasPieGeneral = totalDemandaEdDiferencial + totalDemandaPae;
+  const totalHorasPieAsignadas = demandasCursos.reduce((sum, d) => sum + d.horasPieAsignadasCurso, 0);
 
   // Docentes PIE disponibles en el establecimiento
   const docentesDiferenciales = docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL');
@@ -112,83 +127,114 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                 <th className="px-4 py-3 text-center bg-blue-50/50 text-blue-950 font-bold">Asistente PAE</th>
                 <th className="px-4 py-3 text-center">Trabajo Colab. (Art. 86)</th>
                 <th className="px-4 py-3 text-center font-bold">Total Cronológico</th>
+                <th className="px-4 py-3 text-center bg-emerald-50/50 text-emerald-950 font-bold">Horas Asignadas</th>
+                <th className="px-4 py-3 text-center">Cobertura</th>
                 <th className="px-4 py-3">Cumplimiento Aforo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {demandasCursos.map(({ curso, demanda }) => (
-                <tr key={curso.id} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-3 font-bold text-slate-800">
-                    {curso.nivel} {curso.letra}
-                  </td>
+              {demandasCursos.map(({ curso, demanda, horasPieAsignadasCurso, asigsPie }) => {
+                const diff = horasPieAsignadasCurso - demanda.horasTotalCronologicas;
+                const porcentaje = demanda.horasTotalCronologicas > 0 
+                  ? Math.round((horasPieAsignadasCurso / demanda.horasTotalCronologicas) * 100) 
+                  : 100;
 
-                  <td className="px-4 py-3 text-center">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border">
-                      {curso.regimen}
-                    </span>
-                  </td>
+                return (
+                  <tr key={curso.id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3 font-bold text-slate-800">
+                      {curso.nivel} {curso.letra}
+                    </td>
 
-                  <td className="px-4 py-3 text-center">
-                    <input
-                      type="number"
-                      min="0"
-                      max="10"
-                      value={curso.alumnosNeet}
-                      onChange={e => {
-                        onGuardarCurso({ ...curso, alumnosNeet: parseInt(e.target.value) || 0 });
-                      }}
-                      className={`w-14 text-center border rounded px-1.5 py-0.5 font-bold ${
-                        curso.alumnosNeet > 5 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
-                      }`}
-                    />
-                  </td>
-
-                  <td className="px-4 py-3 text-center">
-                    <input
-                      type="number"
-                      min="0"
-                      max="5"
-                      value={curso.alumnosNeep}
-                      onChange={e => {
-                        onGuardarCurso({ ...curso, alumnosNeep: parseInt(e.target.value) || 0 });
-                      }}
-                      className={`w-14 text-center border rounded px-1.5 py-0.5 font-bold ${
-                        curso.alumnosNeep > 2 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
-                      }`}
-                    />
-                  </td>
-
-                  <td className="px-4 py-3 text-center font-bold text-orange-700 bg-orange-50/30">
-                    {demanda.horasDiferencialHHMM} hrs ({demanda.horasDiferencialDecimal}h)
-                  </td>
-
-                  <td className="px-4 py-3 text-center font-bold text-blue-700 bg-blue-50/30">
-                    {demanda.horasPaeHHMM} hrs ({demanda.horasPaeDecimal}h)
-                  </td>
-
-                  <td className="px-4 py-3 text-center font-semibold text-slate-700">
-                    3.0 hrs
-                  </td>
-
-                  <td className="px-4 py-3 text-center font-black text-[#002B49]">
-                    {demanda.horasTotalCronologicas} hrs
-                  </td>
-
-                  <td className="px-4 py-3">
-                    {demanda.cumpleAforo ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700 text-[11px] font-semibold">
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                        Aforo Decreto 170 OK
+                    <td className="px-4 py-3 text-center">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border">
+                        {curso.regimen}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-red-700 text-[11px] font-bold">
-                        <AlertCircle className="w-3.5 h-3.5 text-red-600" />
-                        Aforo Excedido (Requiere Ord.)
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+
+                    <td className="px-4 py-3 text-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        value={curso.alumnosNeet}
+                        onChange={e => {
+                          onGuardarCurso({ ...curso, alumnosNeet: parseInt(e.target.value) || 0 });
+                        }}
+                        className={`w-14 text-center border rounded px-1.5 py-0.5 font-bold ${
+                          curso.alumnosNeet > 5 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
+                        }`}
+                      />
+                    </td>
+
+                    <td className="px-4 py-3 text-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max="5"
+                        value={curso.alumnosNeep}
+                        onChange={e => {
+                          onGuardarCurso({ ...curso, alumnosNeep: parseInt(e.target.value) || 0 });
+                        }}
+                        className={`w-14 text-center border rounded px-1.5 py-0.5 font-bold ${
+                          curso.alumnosNeep > 2 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
+                        }`}
+                      />
+                    </td>
+
+                    <td className="px-4 py-3 text-center font-bold text-orange-700 bg-orange-50/30">
+                      {demanda.horasDiferencialHHMM} hrs ({demanda.horasDiferencialDecimal}h)
+                    </td>
+
+                    <td className="px-4 py-3 text-center font-bold text-blue-700 bg-blue-50/30">
+                      {demanda.horasPaeHHMM} hrs ({demanda.horasPaeDecimal}h)
+                    </td>
+
+                    <td className="px-4 py-3 text-center font-semibold text-slate-700">
+                      3.0 hrs
+                    </td>
+
+                    <td className="px-4 py-3 text-center font-black text-[#002B49]">
+                      {demanda.horasTotalCronologicas} hrs
+                    </td>
+
+                    <td className="px-4 py-3 text-center font-bold text-emerald-800 bg-emerald-50/30">
+                      {horasPieAsignadasCurso > 0 ? `${horasPieAsignadasCurso.toFixed(1)} hrs` : <span className="text-slate-400 font-normal italic">0.0 hrs</span>}
+                    </td>
+
+                    <td className="px-4 py-3 text-center">
+                      {demanda.horasTotalCronologicas === 0 ? (
+                        <span className="text-[10px] text-slate-400">Sin demanda</span>
+                      ) : porcentaje >= 100 ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          {porcentaje}% Cubierto
+                        </span>
+                      ) : porcentaje > 0 ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          {porcentaje}% Parcial
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                          0% Sin Asignar
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {demanda.cumpleAforo ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-700 text-[11px] font-semibold">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          Aforo Decreto 170 OK
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-red-700 text-[11px] font-bold">
+                          <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                          Aforo Excedido (Requiere Ord.)
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

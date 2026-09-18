@@ -108,17 +108,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 }) => {
   // Modal de Curso Avanzado
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
-  const [categoriaModalCurso, setCategoriaModalCurso] = useState<'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA'>('REGULAR');
-  const [nivel, setNivel] = useState('1° Básico');
-  const [gradosCombinadosSeleccionados, setGradosCombinadosSeleccionados] = useState<string[]>(['1° Básico', '2° Básico']);
-  const [nombrePersonalizadoCombinado, setNombrePersonalizadoCombinado] = useState('');
-  const [letra, setLetra] = useState('A');
-  const [regimen, setRegimen] = useState<'JEC' | 'No JEC'>('JEC');
-  const [regimenProporcionModal, setRegimenProporcionModal] = useState<'65_35' | '60_40'>('65_35');
-  const [cupoSae, setCupoSae] = useState(38);
-  const [matriculaProyectada, setMatriculaProyectada] = useState(35);
-  const [alumnosNeet, setAlumnosNeet] = useState(5);
-  const [alumnosNeep, setAlumnosNeep] = useState(2);
 
   // Curso seleccionado y subpestaña activa
   const [cursoSeleccionadoPlan, setCursoSeleccionadoPlan] = useState<string>(cursos[0]?.id || '');
@@ -243,51 +232,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     }
     return mapa;
   }, [docentes, asignaciones]);
-
-  const handleCrearCurso = (e: React.FormEvent) => {
-    e.preventDefault();
-    let nivelFinal = nivel;
-    let esMulti = false;
-    let esComb = false;
-    let tipoMod: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' = 'REGULAR';
-
-    if (categoriaModalCurso === 'MULTIGRADO') {
-      esMulti = true;
-      tipoMod = 'MULTIGRADO';
-      nivelFinal = nivel;
-    } else if (categoriaModalCurso === 'COMBINADO') {
-      esComb = true;
-      tipoMod = 'COMBINADO';
-      nivelFinal = nombrePersonalizadoCombinado.trim() || `Curso Combinado (${gradosCombinadosSeleccionados.join(' - ')})`;
-    } else if (categoriaModalCurso === 'EPJA') {
-      esMulti = false;
-      nivelFinal = nivel;
-      if (nivel.includes('Media TP')) tipoMod = 'EPJA_MEDIA_TP';
-      else if (nivel.includes('Media HC')) tipoMod = 'EPJA_MEDIA_HC';
-      else tipoMod = 'EPJA_BASICA';
-    }
-
-    const nuevo: CursoSae = {
-      id: `curso-${Date.now()}`,
-      rbd: colegio.rbd,
-      periodo: periodoActivo,
-      nivel: nivelFinal,
-      letra: letra.trim().toUpperCase() || 'U',
-      regimen,
-      regimenProporcion: regimenProporcionModal,
-      cupoSae: Number(cupoSae),
-      matriculaProyectada: Number(matriculaProyectada),
-      alumnosNeet: Number(alumnosNeet),
-      alumnosNeep: Number(alumnosNeep),
-      esMultigrado: esMulti,
-      esCombinado: esComb,
-      tipoModalidad: tipoMod,
-      gradosCombinados: categoriaModalCurso === 'COMBINADO' ? gradosCombinadosSeleccionados : undefined
-    };
-    onGuardarCurso(nuevo);
-    setModalCursoOpen(false);
-    setCursoSeleccionadoPlan(nuevo.id);
-  };
 
   const esModoTransversal = cursoSeleccionadoPlan === 'TRANSVERSAL';
   const cursoActivo = esModoTransversal ? null : (cursos.find(c => c.id === cursoSeleccionadoPlan) || cursos[0]);
@@ -648,12 +592,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              setCategoriaModalCurso('REGULAR');
-              setNivel('1° Básico');
-              setRegimen('JEC');
-              setModalCursoOpen(true);
-            }}
+            onClick={() => setModalCursoOpen(true)}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -1996,6 +1935,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
           onClose={() => setModalNeeOpen(false)}
           cursoNivel={cursoActivo.nivel}
           cursoLetra={cursoActivo.letra}
+          regimen={cursoActivo.regimen}
           editNeet={editNeet}
           setEditNeet={setEditNeet}
           editNeep={editNeep}

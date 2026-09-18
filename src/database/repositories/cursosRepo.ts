@@ -71,7 +71,7 @@ export async function listarTodosLosCursos(periodo: number = 2026): Promise<Curs
       periodo: row[11] ? Number(row[11]) : 2026,
       regimenProporcion: (row[12] as any) || '65_35',
       esMultigrado: esMulti,
-      esComb: esComb,
+      esCombinado: esComb,
       tipoModalidad: (row[15] as any) || (esMulti ? 'MULTIGRADO' : esComb ? 'COMBINADO' : 'REGULAR'),
       gradosCombinados,
       especialidadTp: row[17] ? String(row[17]) : undefined

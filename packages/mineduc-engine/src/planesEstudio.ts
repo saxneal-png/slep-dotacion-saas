@@ -1507,7 +1507,7 @@ export function obtenerPlanPorCurso(
       if (c.includes('1°') || c.includes('2°') || c.includes('1o') || c.includes('2o') || c.includes('1 ') || c.includes('2 ')) {
         grupo = '1° y 2° Medio';
       } else if (c.includes('tp') || c.includes('tecnico') || c.includes('profesional')) {
-        grupo = '3° y 4° Medio (Técnico-Profesional)';
+        grupo = '3° y 4° Medio Técnico-Profesional (Plan Común de Formación General)';
       } else if (c.includes('artistic')) {
         grupo = '3° y 4° Medio (Artístico)';
       } else {

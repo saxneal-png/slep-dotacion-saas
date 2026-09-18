@@ -58,6 +58,11 @@ export async function getDb(): Promise<Database> {
   }
 
   dbInstance = db;
+  try {
+    dbInstance.run("PRAGMA foreign_keys = ON;");
+  } catch (e) {
+    console.warn('Advertencia al habilitar PRAGMA foreign_keys:', e);
+  }
   runMigrations(dbInstance);
   persistDb();
   return dbInstance;
@@ -120,12 +125,27 @@ export async function exportarBaseDatosSqlite(): Promise<Uint8Array> {
 /**
  * Restaura la base de datos SQLite directamente desde un archivo binario (.sqlite / .db)
  */
+/**
+ * Restaura la base de datos SQLite directamente desde un archivo binario (.sqlite / .db)
+ */
 export async function importarBaseDatosSqlite(bytes: Uint8Array): Promise<void> {
-  const SQL = await initSqlJs({
-    locateFile: file => `./${file}`
-  });
-  dbInstance = new SQL.Database(bytes);
-  runMigrations(dbInstance);
+  let SQL: any;
+  try {
+    const wasmBytes = getEmbeddedSqlWasm();
+    const arrayBuffer = wasmBytes.buffer.slice(
+      wasmBytes.byteOffset,
+      wasmBytes.byteOffset + wasmBytes.byteLength
+    ) as ArrayBuffer;
+    SQL = await initSqlJs({ wasmBinary: arrayBuffer });
+  } catch (err) {
+    SQL = await initSqlJs({ locateFile: file => `./${file}` });
+  }
+  const db = new SQL.Database(bytes);
+  dbInstance = db;
+  try {
+    db.run("PRAGMA foreign_keys = ON;");
+  } catch (_) {}
+  runMigrations(db);
   persistDb();
 }
 /**
@@ -176,6 +196,7 @@ export async function reiniciarTodaLaBaseDatos(): Promise<void> {
   db.run("DELETE FROM docentes");
   db.run("DELETE FROM salas_infraestructura");
   db.run("DELETE FROM establecimientos");
+  db.run("DELETE FROM planes_estudio_mineduc");
 
   try {
     await deleteIdbBytes(STORAGE_KEY);
@@ -186,5 +207,6 @@ export async function reiniciarTodaLaBaseDatos(): Promise<void> {
     console.error('Error clearing SQLite database storage:', e);
   }
 
+  runMigrations(db);
   persistDb();
 }
