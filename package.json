@@ -12,7 +12,10 @@
     "build": "tsc -b && vite build && esbuild electron/main.ts --bundle --platform=node --external:electron --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs",
     "electron:dev": "vite",
     "pack": "electron-builder --dir",
-    "dist": "npm run build && electron-builder --win portable"
+    "dist": "npm run build && electron-builder --win",
+    "dist:nsis": "npm run build && electron-builder --win nsis",
+    "dist:zip": "npm run build && electron-builder --win zip",
+    "dist:portable": "npm run build && electron-builder --win portable"
   },
   "workspaces": [
     "packages/*"
@@ -64,9 +67,22 @@
     ],
     "win": {
       "target": [
+        "nsis",
+        "zip",
         "portable"
       ],
       "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Consolidador Dotación SLEP",
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName} Portable ${version}.${ext}"
     }
   }
 }
