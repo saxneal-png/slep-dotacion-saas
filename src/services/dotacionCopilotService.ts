@@ -8,6 +8,7 @@ import {
 import { calcularDiagnosticoColegio, DiagnosticoColegioCompleto } from './dotacionCalculationService';
 import { geminiFetch } from './geminiApiClient';
 import { normalizarRut, formatearRut } from '../utils/rutUtils';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 
 export interface CopilotMessage {
   id: string;
@@ -97,16 +98,20 @@ export function construirContextoDotacion(
     }
   }
 
+  // Identificar Director(a) del establecimiento desde la ficha o catálogo maestro
+  const catSchool = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === establecimiento.rbd);
+  const directorOficial = establecimiento.director || catSchool?.director || 'No especificado en ficha';
+  const directorNorm = directorOficial.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
   // Generar resumen en texto estructurado optimizado para prompts LLM
   const b = diagnostico.balanzaGeneral;
   const asignaturasDeficit = diagnostico.diagnosticoPorEspecialidad.filter(esp => esp.balance < 0);
   const asignaturasSuperavit = diagnostico.diagnosticoPorEspecialidad.filter(esp => esp.balance > 0);
-  const docentesConSobreasignacion = diagnostico.estadoDocentes.filter(ed => ed.estaSobreasignado);
-  const docentesConArt69 = docentesColegio.filter(d => d.aplicaArticulo69);
 
   let resumen = `=== INFORMACIÓN GENERAL DEL ESTABLECIMIENTO ===\n`;
   resumen += `• Nombre: ${establecimiento.nombre} (RBD: ${establecimiento.rbd})\n`;
   resumen += `• Comuna: ${establecimiento.comuna} | Período: ${periodo}\n`;
+  resumen += `• Director(a) Titular / Encargado(a): ${directorOficial}\n`;
   resumen += `• Régimen: ${establecimiento.regimen} | % Alumnos Prioritarios: ${establecimiento.porcentajePrioritarios}% (Régimen Docente: ${establecimiento.porcentajePrioritarios >= 80 ? '60/40' : '65/35'})\n`;
   resumen += `• Matrícula Total Proyectada: ${b.totalMatriculaProyectada} alumnos en ${b.totalCursos} cursos | Cupos SAE: ${b.totalCuposSae}\n\n`;
 
@@ -116,7 +121,10 @@ export function construirContextoDotacion(
   resumen += `• Horas Lectivas Efectivamente Asignadas: ${b.horasLectivasAsignadas} HA\n`;
   resumen += `• Balance Neto de Dotación: ${b.superavitDeficitLectivo >= 0 ? '+' : ''}${b.superavitDeficitLectivo} HA (${b.superavitDeficitLectivo >= 0 ? 'SUPERÁVIT' : 'DÉFICIT'})\n`;
   resumen += `• Total Horas de Contrato Contratadas: ${b.horasContratadasTotales} hrs\n`;
-  resumen += `  - Directivas: ${b.horasDirectivasTotales}h | Inspectoría: ${b.horasInspectorGeneralTotales}h | UTP: ${b.horasTecnicoPedagogicasTotales}h | Coordinación: ${b.horasCoordinacionTotales}h\n`;
+  resumen += `  - Horas Directivas (Dirección/Subdirección): ${b.horasDirectivasTotales}h\n`;
+  resumen += `  - Inspectoría General: ${b.horasInspectorGeneralTotales}h\n`;
+  resumen += `  - Jefe/Apoyo Técnico Pedagógico (UTP): ${b.horasTecnicoPedagogicasTotales}h\n`;
+  resumen += `  - Coordinaciones y Apoyos: ${b.horasCoordinacionTotales}h\n`;
   resumen += `• Demanda PIE (Decreto 170): ${b.horasPieDemandadas} hrs cronológicas | Colaborativas: ${b.horasColaborativasDemandadas} hrs\n\n`;
 
   if (asignaturasDeficit.length > 0) {
@@ -135,20 +143,52 @@ export function construirContextoDotacion(
     resumen += `\n`;
   }
 
-  resumen += `=== PLANTA DOCENTE (${docentesColegio.length} DOCENTES) ===\n`;
+  resumen += `=== PLANTA DOCENTE Y EQUIPO DIRECTIVO (${docentesColegio.length} FUNCIONARIOS) ===\n`;
   for (const ed of diagnostico.estadoDocentes) {
     const d = ed.docente;
     const subGral = (d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0);
     const sep = (d.horasSepTitular || 0) + (d.horasSepContrata || 0);
     const pie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
+
+    const docNombreCompleto = `${d.nombres} ${d.apellidos}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const docApellidosNombres = `${d.apellidos} ${d.nombres}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const isDirector = Boolean(
+      (directorNorm !== 'no especificado en ficha' && directorNorm !== '' && (docNombreCompleto.includes(directorNorm) || directorNorm.includes(docNombreCompleto) || docApellidosNombres.includes(directorNorm))) ||
+      /director|directora|rector/i.test(d.cargoInstitucional || '') ||
+      /director|directora/i.test(d.funcionPrincipal || '')
+    );
+
+    const cargoEfectivo = isDirector
+      ? 'DIRECTOR(A)'
+      : (d.cargoInstitucional || (d.estamento === 'DIRECTIVO' ? 'CARGO DIRECTIVO' : (d.estamento === 'TECNICO_PEDAGOGICO' ? 'TÉCNICO PEDAGÓGICO / UTP' : (d.estamento === 'DOCENTE_DIFERENCIAL' ? 'DOCENTE DIFERENCIAL (PIE)' : 'DOCENTE DE AULA'))));
+
+    const hDir = d.horasDirectivas || (isDirector ? d.horasContrato : 0);
+    const hInsp = d.horasInspectorGeneral || 0;
+    const hTec = d.horasTecnicoPedagogicas || 0;
+    const hCoord = d.horasCoordinacion || 0;
+
+    const desgloseNoAula = [];
+    if (hDir > 0) desgloseNoAula.push(`Directivas ${hDir}h`);
+    if (hInsp > 0) desgloseNoAula.push(`Inspectoría ${hInsp}h`);
+    if (hTec > 0) desgloseNoAula.push(`UTP ${hTec}h`);
+    if (hCoord > 0) desgloseNoAula.push(`Coord ${hCoord}h`);
+    const desgloseStr = desgloseNoAula.length > 0 ? ` [Funciones Fuera de Aula: ${desgloseNoAula.join(', ')}]` : '';
+
     const estadoAlerta = ed.estaSobreasignado ? ` [🚨 SOBREASIGNADO +${ed.excesoHoras} HA]` : ` [✓ Correcto]`;
     const art69 = d.aplicaArticulo69 ? ` [Art. 69 Activo]` : '';
+    const directivoTag = isDirector
+      ? ` [⭐ DIRECTORA/DIRECTOR - Exento/a de docencia de aula por Estatuto Docente DFL 1 / Ley 20.903]`
+      : (d.estamento === 'DIRECTIVO' || hDir > 0 ? ` [⭐ DIRECTIVO]` : '');
+
     const sinAsignarDetalle = [];
-    if ((ed.horasSepSinAsignar || 0) > 0) sinAsignarDetalle.push(`SEP sin asignar: ${ed.horasSepSinAsignar}h`);
-    if ((ed.horasPieSinAsignar || 0) > 0) sinAsignarDetalle.push(`PIE sin asignar: ${ed.horasPieSinAsignar}h`);
-    if ((ed.horasSubvGeneralSinAsignar || 0) > 0) sinAsignarDetalle.push(`Subv sin asignar: ${ed.horasSubvGeneralSinAsignar}h`);
+    if (!isDirector && ed.horasAulaRegular === 0 && d.horasContrato > 0 && hDir === 0 && hInsp === 0 && hTec === 0) {
+      if ((ed.horasSepSinAsignar || 0) > 0) sinAsignarDetalle.push(`SEP sin asignar: ${ed.horasSepSinAsignar}h`);
+      if ((ed.horasPieSinAsignar || 0) > 0) sinAsignarDetalle.push(`PIE sin asignar: ${ed.horasPieSinAsignar}h`);
+      if ((ed.horasSubvGeneralSinAsignar || 0) > 0) sinAsignarDetalle.push(`Subv sin asignar: ${ed.horasSubvGeneralSinAsignar}h`);
+    }
     const sinAsignarStr = sinAsignarDetalle.length > 0 ? ` [⚠️ ${sinAsignarDetalle.join(', ')}]` : '';
-    resumen += `• ${d.nombres} ${d.apellidos} (${d.run}) - ${d.calidadJuridica} (${d.horasContrato}h: Subv ${subGral}h, SEP ${sep}h, PIE ${pie}h). Horas Aula Asignadas: ${ed.horasAulaRegular || 0} HA / Máx ${ed.horasLectivasMaximas} HA. Vacantes: ${ed.horasVacantes}h.${estadoAlerta}${art69}${sinAsignarStr}\n`;
+
+    resumen += `• ${d.nombres} ${d.apellidos} (${d.run}) [Cargo: ${cargoEfectivo}] - ${d.calidadJuridica} (${d.horasContrato}h: Subv ${subGral}h, SEP ${sep}h, PIE ${pie}h). Horas Aula Asignadas: ${ed.horasAulaRegular || 0} HA / Máx ${ed.horasLectivasMaximas} HA.${desgloseStr}${directivoTag}${estadoAlerta}${art69}${sinAsignarStr}\n`;
   }
   resumen += `\n`;
 
@@ -216,7 +256,54 @@ export function responderConsultaLocalmente(
   const b = contexto.diagnostico.balanzaGeneral;
   const est = contexto.establecimiento;
 
-  // 1. Preguntas de Balance General / Déficit / Superávit
+  // 1. Preguntas sobre Directores, Equipo Directivo y Horas Directivas
+  if (q.includes('director') || q.includes('directora') || q.includes('directiv') || q.includes('quien dirige') || q.includes('liderazgo') || q.includes('inspector') || q.includes('utp') || q.includes('jefe utp')) {
+    const catSchool = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === est.rbd);
+    const dirNombre = est.director || catSchool?.director || 'Director/a Titular del Establecimiento';
+    const dirNorm = dirNombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+    const directivos = contexto.diagnostico.estadoDocentes.filter(ed => {
+      const d = ed.docente;
+      const nomCompleto = `${d.nombres} ${d.apellidos}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      const apNomCompleto = `${d.apellidos} ${d.nombres}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      const isDir = Boolean(dirNorm && (nomCompleto.includes(dirNorm) || dirNorm.includes(nomCompleto) || apNomCompleto.includes(dirNorm)));
+      const isCargoDir = Boolean(d.cargoInstitucional && /director|directora|rector|inspector|utp/i.test(d.cargoInstitucional));
+      const hasHorasDir = (d.horasDirectivas || 0) > 0 || (d.horasInspectorGeneral || 0) > 0 || (d.horasTecnicoPedagogicas || 0) > 0;
+      return isDir || isCargoDir || hasHorasDir || d.estamento === 'DIRECTIVO' || d.estamento === 'TECNICO_PEDAGOGICO';
+    });
+
+    let detalleDirectivos = '';
+    if (directivos.length > 0) {
+      detalleDirectivos = directivos.map(ed => {
+        const d = ed.docente;
+        const nomCompleto = `${d.nombres} ${d.apellidos}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        const isDir = Boolean(dirNorm && nomCompleto.includes(dirNorm)) || /director|directora|rector/i.test(d.cargoInstitucional || '');
+        const cargo = isDir ? 'DIRECTORA / DIRECTOR' : (d.cargoInstitucional || (d.estamento === 'DIRECTIVO' ? 'EQUIPO DIRECTIVO' : 'TÉCNICO PEDAGÓGICO / UTP'));
+        const hDir = d.horasDirectivas || (isDir ? d.horasContrato : 0);
+        const hInsp = d.horasInspectorGeneral || 0;
+        const hUtp = d.horasTecnicoPedagogicas || 0;
+        return `• **${d.nombres} ${d.apellidos}** (${d.run}):\n` +
+          `  - **Cargo:** ${cargo}\n` +
+          `  - **Jornada Contractual:** ${d.horasContrato} hrs cronológicas (${d.calidadJuridica})\n` +
+          `  - **Distribución de Horas:** Directivas: ${hDir}h | Inspectoría: ${hInsp}h | UTP: ${hUtp}h | Aula: ${ed.horasAulaRegular} HA\n` +
+          `  - **Estado Normativo:** ✅ Conforme a Estatuto Docente DFL 1 (Función de Liderazgo y Gestión Institucional).`;
+      }).join('\n\n');
+    } else {
+      detalleDirectivos = `• **Director(a) Designado(a):** **${dirNombre}**\n  - El establecimiento cuenta con ${b.horasDirectivasTotales} hrs directivas registradas en la balanza general.`;
+    }
+
+    return `### Equipo Directivo y Gestión Institucional — ${est.nombre} (${contexto.periodo})\n\n` +
+      `Bajo la normativa del **Estatuto Docente (DFL 1/1996)** y la **Ley N° 20.903**, la función directiva superior lidera la conducción pedagógica e institucional del establecimiento educacional:\n\n` +
+      `* **Director(a) Titular / Encargado(a):** **${dirNombre}**\n` +
+      `* **Total Horas Directivas Institucionales:** **${b.horasDirectivasTotales} hrs** (Dirección y Subdirección)\n` +
+      `* **Total Horas Inspectoría General:** **${b.horasInspectorGeneralTotales} hrs**\n` +
+      `* **Total Horas Técnico-Pedagógicas (UTP):** **${b.horasTecnicoPedagogicasTotales} hrs**\n\n` +
+      `**Nómina de Funcionarios Directivos y Técnicos:**\n\n` +
+      detalleDirectivos + `\n\n` +
+      `> ℹ️ *Resguardo Legal (DFL 1 / Ley 20.903):* Los cargos de Dirección y Subdirección con jornada exclusiva de gestión institucional (0 Horas Aula) están exceptuados de las proporciones lectivas de aula 65/35 o 60/40, estando su contrato 100% resguardado para liderazgo escolar.`;
+  }
+
+  // 2. Preguntas de Balance General / Déficit / Superávit
   if (q.includes('balance') || q.includes('balanza') || q.includes('deficit') || q.includes('superavit') || q.includes('horas faltan') || q.includes('horas sobran') || q.includes('resumen general')) {
     const estado = b.superavitDeficitLectivo > 0 
       ? `🟢 **Superávit de +${b.superavitDeficitLectivo} Horas Aula (HA)**`
@@ -241,7 +328,7 @@ export function responderConsultaLocalmente(
       defTxt;
   }
 
-  // 2. Preguntas sobre Sobreasignación / Exceso de horas aula
+  // 3. Preguntas sobre Sobreasignación / Exceso de horas aula
   if (q.includes('sobreasigna') || q.includes('exceso') || q.includes('limite') || q.includes('infractor') || q.includes('tope aula')) {
     const sobreasignados = contexto.diagnostico.estadoDocentes.filter(e => e.estaSobreasignado);
     if (sobreasignados.length === 0) {
@@ -260,7 +347,7 @@ export function responderConsultaLocalmente(
       `> **Recomendación UATP:** Reasignar las horas excedentes a docentes con horas vacantes o ajustar las funciones no lectivas según la Ley 20.903.`;
   }
 
-  // 3. Preguntas sobre Docentes Compartidos / Multi-Escuela / 44 Horas
+  // 4. Preguntas sobre Docentes Compartidos / Multi-Escuela / 44 Horas
   if (q.includes('compartido') || q.includes('multi') || q.includes('44') || q.includes('otro colegio') || q.includes('otra escuela') || q.includes('territorio')) {
     if (contexto.docentesMultiEscuela.length === 0) {
       return `### Docentes Multi-Establecimiento — ${est.nombre}\n\n` +
@@ -279,7 +366,7 @@ export function responderConsultaLocalmente(
       `Se detectaron **${contexto.docentesMultiEscuela.length} docentes** de ${est.nombre} que también prestan servicios en otras dependencias del territorio:\n\n${items}`;
   }
 
-  // 4. Preguntas sobre Artículo 69 (Reducción horaria)
+  // 5. Preguntas sobre Artículo 69 (Reducción horaria)
   if (q.includes('articulo 69') || q.includes('art 69') || q.includes('artículo 69') || q.includes('reduccion') || q.includes('beneficio edad')) {
     const art69Docentes = contexto.docentes.filter(d => d.aplicaArticulo69);
     if (art69Docentes.length === 0) {
@@ -299,7 +386,7 @@ export function responderConsultaLocalmente(
       `Hay **${art69Docentes.length} docentes** con el beneficio registrado:\n\n${items}`;
   }
 
-  // 5. Preguntas sobre Financiamiento (Subvención General, SEP, PIE)
+  // 6. Preguntas sobre Financiamiento (Subvención General, SEP, PIE)
   if (q.includes('sep') || q.includes('pie') || q.includes('financiamiento') || q.includes('fondos') || q.includes('titular') || q.includes('contrata')) {
     let totSubvTit = 0, totSubvCtta = 0, totSepTit = 0, totSepCtta = 0, totPieTit = 0, totPieCtta = 0;
     for (const d of contexto.docentes) {
@@ -325,7 +412,7 @@ export function responderConsultaLocalmente(
       `> ℹ️ *Normativa MINEDUC:* Las horas del Plan de Estudio regular deben cubrirse exclusivamente con Subvención General. Los fondos SEP y PIE deben destinarse a reforzamiento, co-docencia y apoyos especializados.`;
   }
 
-  // 6. Preguntas sobre Matrícula y Cursos
+  // 7. Preguntas sobre Matrícula y Cursos
   if (q.includes('matricula') || q.includes('cupo') || q.includes('cursos') || q.includes('alumnos') || q.includes('sae')) {
     return `### Matrícula y Oferta Educativa — ${est.nombre} (${contexto.periodo})\n\n` +
       `* **Matrícula Proyectada Total:** **${b.totalMatriculaProyectada} alumnos**\n` +
@@ -340,14 +427,15 @@ export function responderConsultaLocalmente(
   return `### Resumen Ejecutivo de Dotación — ${est.nombre} (${contexto.periodo})\n\n` +
     `Hola. Estoy analizando en tiempo real la dotación de **${est.nombre}** para el período **${contexto.periodo}**.\n\n` +
     `* **Balanza Horaria:** ${b.superavitDeficitLectivo >= 0 ? `Superávit de +${b.superavitDeficitLectivo} HA` : `Déficit de ${Math.abs(b.superavitDeficitLectivo)} HA`}\n` +
-    `* **Planta Docente:** ${contexto.docentes.length} docentes (${b.horasContratadasTotales} horas de contrato totales)\n` +
+    `* **Planta Docente y Directivos:** ${contexto.docentes.length} funcionarios (${b.horasContratadasTotales} horas de contrato totales, ${b.horasDirectivasTotales}h directivas)\n` +
     `* **Matrícula:** ${b.totalMatriculaProyectada} alumnos en ${contexto.cursos.length} cursos\n\n` +
     `**Preguntas rápidas que puedes hacerme:**\n` +
+    `• *"¿Quién es el director/a y cómo está distribuida su jornada?"*\n` +
+    `• *"¿Cuáles son las horas directivas y técnicas del establecimiento?"*\n` +
     `• *"¿Qué asignaturas tienen déficit de horas?"*\n` +
     `• *"¿Hay docentes sobreasignados según la Ley 20.903?"*\n` +
     `• *"¿Qué profesores tienen contrato en otros colegios del SLEP?"*\n` +
-    `• *"Mostrar distribución de fondos Subvención General, SEP y PIE"*\n` +
-    `• *(Con Gemini AI activado)* *"Redacta una propuesta de reasignación horaria"*`;
+    `• *(Con Gemini AI activado)* *"Redacta un informe de balance de dotación para el Director Ejecutivo"*`;
 }
 
 /**
@@ -369,7 +457,10 @@ export async function consultarCopilotGemini(
   const systemInstruction = `Eres "¡Qué no va a saber! IA", el asistente inteligente oficial de dotación docente, legislación educacional chilena y planificación escolar del Servicio Local de Educación Pública (SLEP) Valle Diguillín.
 
 Tus conocimientos clave son:
-1. Ley 20.903 (Carrera Docente y Proporción 65/35 y 60/40 en establecimientos con 80% o más de alumnos prioritarios).
+1. Estatuto Docente DFL 1/1996 y Ley 20.903:
+   - Los cargos de Director(a), Subdirector(a) e Inspector(a) General constituyen la FUNCIÓN DIRECTIVA SUPERIOR del establecimiento.
+   - Los directores y directivos con dedicación institucional (ej. 44 horas cronológicas y 0 Horas Aula de docencia) están 100% apegados a la ley para funciones de liderazgo y gestión escolar, y están EXCEPTUADOS de impartir horas lectivas frente a alumnos. No representan "horas de aula vacantes ni desocupadas".
+   - Proporción 65/35 (general) y 60/40 (en establecimientos con 80% o más de alumnos prioritarios) aplicable a docentes de aula.
 2. DFL 1 Estatuto Docente (Límite legal territorial de 44 horas semanales, horas no lectivas, Artículo 69 para docentes mayores con 30 años de servicio).
 3. Decreto 548 (Aforos físicos de salas: 1.11 m²/alumno en aula regular, 1.50 m² en párvulos, 1.80 m² en talleres).
 4. Decreto 170 (Programa de Integración Escolar PIE: apoyos y horas de trabajo colaborativo).
@@ -380,6 +471,7 @@ ESTADO ACTUAL DE LA DOTACIÓN QUE ESTÁS ANALIZANDO:
 ${contexto.resumenTexto}
 
 INSTRUCCIONES DE RESPUESTA:
+- Cuando te pregunten por el Director(a) o Equipo Directivo, identifica con precisión su nombre, cargo, horas de contrato y su fundamento legal bajo el DFL 1 (gestión y liderazgo directivo).
 - Responde siempre de forma precisa, ejecutiva, fundamentada en los datos reales suministrados arriba y citando la normativa aplicable cuando sea pertinente.
 - Utiliza formato Markdown con títulos, listas con viñetas, negritas y tablas cuando ayude a la claridad.
 - Si te piden redactar una propuesta o informe, proporciona un texto profesional listo para ser presentado a directores de establecimientos o al Director Ejecutivo del SLEP.

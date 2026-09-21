@@ -15,16 +15,16 @@ Debes clasificar cada una de las siguientes funciones, asignaturas o cargos esco
 
 2. "TECNICA" (Gestión pedagógica no docente y apoyos):
    - Coordinación PIE, Trabajo Colaborativo PIE, Encargado(a) CRA, Coordinación CRA, Enlaces, Coordinación Enlaces/TIC.
-   - Apoyo UTP, Apoyo Técnico, Orientador(a), Orientadora/orientador, Jefe UTP, Jefa UTP, Dirección, Equipo Directivo, Rector, Rectora.
+   - Apoyo UTP, Apoyo Técnico, Orientador(a), Orientadora/orientador, Jefe UTP, Jefa UTP, Curriculista, Evaluador(a).
    - Coordinación de ciclo, coordinación de departamento, coordinación matemática, coordinación lenguaje, coordinación convivencia escolar, coordinación extraescolar, coordinación medio ambiente, coordinación EPJA.
-   - Encargado(a) SEP, Encargado(a) PIAE, Curriculista, Sala de Recursos.
-   - Apoyo Técnico Administrativo, Encargado de informática, Planificación, Comunidades CAP.
+   - Encargado(a) SEP, Encargado(a) PIAE, Sala de Recursos, Apoyo Técnico Administrativo, Encargado de informática, Planificación, Comunidades CAP.
    - Funciones no lectivas art 69.
-   - Regla de Oro: Toda actividad fuera del aula que no sea directiva ni proporción lectiva debe ser considerada técnica.
+   - Regla de Oro: Toda actividad fuera del aula de carácter técnico-pedagógico o de apoyo escolar debe ser considerada técnica.
 
-3. "DIRECTIVA" (Liderazgo y dirección institucional):
-   - Director, Directora, Encargado de Escuela, Inspector General, Inspectora General, Subdirector, Subdirectora.
-   - Regla de Oro: Solo director, subdirector e inspector general constituyen horas Directivas.
+3. "DIRECTIVA" (Liderazgo y dirección institucional superior DFL 1):
+   - Director, Directora, Dirección, Dirección del Establecimiento, Gestión Directiva, Equipo Directivo, Rector, Rectora.
+   - Inspector General, Inspectora General, Inspección General, Subdirector, Subdirectora, Encargado(a) de Escuela.
+   - Regla de Oro: Las funciones directivas superiores de conducción escolar, subdirección e inspectoría general constituyen horas DIRECTIVAS.
 
 Tratamiento de texto e IA:
 - Analizar el texto de cada actividad

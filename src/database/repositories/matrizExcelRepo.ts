@@ -2,6 +2,7 @@ import { MatrizExcelParseResult, CursoSae, Docente, AsignacionHoraria } from '..
 import { listarCursos, guardarCurso } from './cursosRepo';
 import { guardarDocente } from './docentesRepo';
 import { guardarAsignacion } from './asignacionesRepo';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
 
 export async function guardarMatrizExcelEnDb(
   result: MatrizExcelParseResult,
@@ -42,11 +43,47 @@ export async function guardarMatrizExcelEnDb(
   let docentesGuardados = 0;
   const docenteMap = new Map<string, Docente>();
 
+  const catalogoSchool = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === rbdDestino);
+  const directorCatalogNorm = (catalogoSchool?.director || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
   for (const d of result.docentes) {
     const calidadJuridica = (d.contrataSubGral > 0 || d.contrataSep > 0 || d.contrataPie > 0) &&
       (d.titularSubGral === 0 && d.titularSep === 0 && d.titularPie === 0) ? 'CONTRATA' : 'TITULAR';
-    const estamento = (d.titularPie > 0 || d.contrataPie > 0) ? 'DOCENTE_DIFERENCIAL' : 'DOCENTE_AULA';
     const totalHorasAula = d.totalHa || d.asignaciones.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+
+    const docNomNorm = `${d.nombres} ${d.apellidos}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const docApNomNorm = `${d.apellidos} ${d.nombres}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const obsNorm = (d.observaciones || '').toLowerCase();
+
+    let estamento: any = (d.titularPie > 0 || d.contrataPie > 0) ? 'DOCENTE_DIFERENCIAL' : 'DOCENTE_AULA';
+    let cargoInstitucional: string | undefined = undefined;
+    let horasDirectivas = 0;
+    let horasInspector = 0;
+    let horasUtp = 0;
+
+    const esDirector = Boolean(
+      (directorCatalogNorm && (docNomNorm.includes(directorCatalogNorm) || directorCatalogNorm.includes(docNomNorm) || docApNomNorm.includes(directorCatalogNorm))) ||
+      /director|directora|rector/i.test(obsNorm) ||
+      /director|directora/i.test(d.nombres) ||
+      /director|directora/i.test(d.apellidos)
+    );
+
+    const esInspector = /inspector/i.test(obsNorm);
+    const esUtp = /utp|tecnico/i.test(obsNorm);
+
+    if (esDirector && totalHorasAula === 0) {
+      estamento = 'DIRECTIVO';
+      cargoInstitucional = 'DIRECTOR(A)';
+      horasDirectivas = d.horasContrato;
+    } else if (esInspector && totalHorasAula === 0) {
+      estamento = 'DIRECTIVO';
+      cargoInstitucional = 'INSPECTOR(A) GENERAL';
+      horasInspector = d.horasContrato;
+    } else if (esUtp && totalHorasAula === 0) {
+      estamento = 'TECNICO_PEDAGOGICO';
+      cargoInstitucional = 'JEFE(A) UTP';
+      horasUtp = d.horasContrato;
+    }
 
     const docObj: Docente = {
       id: `doc_${rbdDestino}_${periodoDestino}_${d.run}`,
@@ -57,6 +94,7 @@ export async function guardarMatrizExcelEnDb(
       apellidos: d.apellidos,
       calidadJuridica,
       estamento,
+      cargoInstitucional,
       horasContrato: d.horasContrato,
       horasSubvencionGeneralTitular: d.titularSubGral,
       horasSubvencionGeneralContrata: d.contrataSubGral,
@@ -64,6 +102,9 @@ export async function guardarMatrizExcelEnDb(
       horasSepContrata: d.contrataSep,
       horasPieTitular: d.titularPie,
       horasPieContrata: d.contrataPie,
+      horasDirectivas,
+      horasInspectorGeneral: horasInspector,
+      horasTecnicoPedagogicas: horasUtp,
       horasAula: totalHorasAula
     };
 

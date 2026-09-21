@@ -193,13 +193,30 @@ export function calcularDiagnosticoColegio(
       hCoordEfectivo = doc.funcionesNoAula.filter(f => f.tipo === 'COORDINACION' || f.tipo === 'CONVIVENCIA' || f.tipo === 'CRA' || f.tipo === 'ENLACES' || f.tipo === 'EXTRAESCOLAR' || f.tipo === 'GREMIAL' || f.tipo === 'ADMINISTRATIVA' || f.tipo === 'OTRA').reduce((s, f) => s + Number(f.horas || 0), 0);
     }
 
+    // Inferencia automática de horas institucionales para Directores, Inspectores y Jefes UTP
+    const docNombreCompleto = `${doc.nombres} ${doc.apellidos}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const docApellidosNombres = `${doc.apellidos} ${doc.nombres}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const directorColegioNorm = (est?.director || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const esDirectorPorNombre = Boolean(directorColegioNorm && (docNombreCompleto.includes(directorColegioNorm) || directorColegioNorm.includes(docNombreCompleto) || docApellidosNombres.includes(directorColegioNorm)));
+    const esCargoDirector = Boolean(doc.cargoInstitucional && /director|directora|rector/i.test(doc.cargoInstitucional)) || doc.estamento === 'DIRECTIVO';
+    const esInspectorGeneral = Boolean(doc.cargoInstitucional && /inspector/i.test(doc.cargoInstitucional));
+    const esJefeUtp = Boolean(doc.cargoInstitucional && /utp|tecnico pedag/i.test(doc.cargoInstitucional)) || doc.estamento === 'TECNICO_PEDAGOGICO';
+
+    const docenteAsigs = asignaciones.filter(a => a.docenteId === doc.id);
+    if (hDirEfectivo === 0 && (esDirectorPorNombre || esCargoDirector) && docenteAsigs.length === 0) {
+      hDirEfectivo = doc.horasContrato;
+    } else if (hInspEfectivo === 0 && esInspectorGeneral && docenteAsigs.length === 0) {
+      hInspEfectivo = doc.horasContrato;
+    } else if (hTecEfectivo === 0 && esJefeUtp && docenteAsigs.length === 0) {
+      hTecEfectivo = doc.horasContrato;
+    }
+
     horasDirectivasTotales += hDirEfectivo;
     horasInspectorGeneralTotales += hInspEfectivo;
     horasTecnicoPedagogicasTotales += hTecEfectivo;
     horasCoordinacionTotales += hCoordEfectivo;
 
     // Clasificar asignaciones del docente en este establecimiento
-    const docenteAsigs = asignaciones.filter(a => a.docenteId === doc.id);
     const coDocenteAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
 
     const asigsCoDocencia = [

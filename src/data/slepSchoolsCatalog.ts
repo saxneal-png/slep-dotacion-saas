@@ -5,6 +5,7 @@ export interface SlepSchoolCatalogItem {
   nombre: string;
   comuna: ComunaValleDiguillin;
   tipo: 'LICEO' | 'ESCUELA' | 'COLEGIO' | 'JARDIN' | 'SALA_CUNA';
+  director?: string;
 }
 
 /**
@@ -18,7 +19,7 @@ export const SLEP_VALLE_DIGUILLIN_SCHOOLS: SlepSchoolCatalogItem[] = [
   { rbd: '3644', nombre: 'ESCUELA NUEVA ESPERANZA', comuna: 'Chillán', tipo: 'ESCUELA' },
   { rbd: '3645', nombre: 'LICEO VIDA NUEVA', comuna: 'Chillán', tipo: 'LICEO' },
   { rbd: '3649', nombre: 'ESCUELA ESPECIAL LAS ACACIAS', comuna: 'Chillán', tipo: 'ESCUELA' },
-  { rbd: '3656', nombre: 'LICEO POLIVALENTE JUAN PACHECO ALTAMIRANO', comuna: 'Chillán Viejo', tipo: 'LICEO' },
+  { rbd: '3656', nombre: 'LICEO POLIVALENTE JUAN PACHECO ALTAMIRANO', comuna: 'Chillán Viejo', tipo: 'LICEO', director: 'Verónica Knothe Badillo' },
   { rbd: '3657', nombre: 'LICEO LIBERTADOR BERNARDO O´HIGGINS RIQUELME', comuna: 'Chillán', tipo: 'LICEO' },
   { rbd: '3659', nombre: 'ESCUELA ARTURO MERINO BENITEZ', comuna: 'Chillán', tipo: 'ESCUELA' },
   { rbd: '3660', nombre: 'ESCUELA GABRIELA MISTRAL', comuna: 'Chillán', tipo: 'ESCUELA' },
