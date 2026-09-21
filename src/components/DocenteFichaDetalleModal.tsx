@@ -13,9 +13,11 @@ import {
   Layers, 
   Coins, 
   GraduationCap,
-  AlertTriangle
+  AlertTriangle,
+  Printer
 } from 'lucide-react';
 import type { DocenteConsolidadoTerritorial, ContratoDocenteColegio, CursoSae } from '../types';
+import { imprimirFichaDocente } from '../services/docenteFichaImpresionService';
 
 interface DocenteFichaDetalleModalProps {
   isOpen: boolean;
@@ -55,12 +57,21 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
       >
         {/* Cabecera Principal */}
         <div className="bg-[#002B49] text-white p-6 relative">
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <button
+              onClick={() => imprimirFichaDocente(doc, undefined, cursos)}
+              title="Imprimir / Guardar en PDF"
+              className="p-1.5 rounded-lg bg-blue-600/80 hover:bg-blue-600 text-white transition-colors"
+            >
+              <Printer className="w-5 h-5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pr-8">
             <div className="flex items-start gap-4">
@@ -613,16 +624,25 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
           <div className="text-xs text-slate-500">
             Total territorial SLEP: <strong>{doc.horasTotalesSlep} horas semanales</strong>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors"
-          >
-            Cerrar Ficha
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => imprimirFichaDocente(doc, undefined, cursos)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+            >
+              <Printer className="w-4 h-4" />
+              Imprimir Ficha Oficial
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors"
+            >
+              Cerrar Ficha
+            </button>
+          </div>
         </div>
       </div>
     </div>

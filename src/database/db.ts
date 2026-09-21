@@ -74,3 +74,10 @@ export {
   poblarPlanesEstudioEnDb
 } from './repositories/planesEstudioRepo';
 export type { PlanEstudioRegistroDb } from './repositories/planesEstudioRepo';
+
+export {
+  registrarEventoAuditoria,
+  listarEventosAuditoria
+} from './repositories/auditoriaRepo';
+export type { EventoAuditoria } from './repositories/auditoriaRepo';
+

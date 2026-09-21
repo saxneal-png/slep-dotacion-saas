@@ -23,7 +23,9 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-icons': ['lucide-react'],
-          'vendor-xlsx': ['xlsx']
+          'vendor-xlsx': ['xlsx'],
+          'vendor-exceljs': ['exceljs'],
+          'vendor-sql': ['sql.js']
         }
       }
     }

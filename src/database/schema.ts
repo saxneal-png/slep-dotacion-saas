@@ -121,6 +121,18 @@ CREATE TABLE IF NOT EXISTS planes_estudio_mineduc (
   total_horas_plan REAL NOT NULL,
   asignaturas_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS auditoria_cambios (
+  id TEXT PRIMARY KEY,
+  rbd TEXT NOT NULL,
+  periodo INTEGER NOT NULL DEFAULT 2026,
+  tipo_evento TEXT NOT NULL,
+  entidad TEXT NOT NULL,
+  entidad_id TEXT,
+  descripcion TEXT NOT NULL,
+  detalles_json TEXT,
+  fecha_hora TEXT NOT NULL
+);
 `;
 
 export function runMigrations(db: Database): void {
@@ -262,7 +274,8 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_asignaciones_curso ON asignaciones_horarias(curso_id);',
     'CREATE INDEX IF NOT EXISTS idx_asignaciones_docente ON asignaciones_horarias(docente_id);',
     'CREATE INDEX IF NOT EXISTS idx_salas_rbd ON salas_infraestructura(rbd);',
-    'CREATE INDEX IF NOT EXISTS idx_planes_estudio ON planes_estudio_mineduc(nivel, regimen);'
+    'CREATE INDEX IF NOT EXISTS idx_planes_estudio ON planes_estudio_mineduc(nivel, regimen);',
+    'CREATE INDEX IF NOT EXISTS idx_auditoria_rbd_periodo ON auditoria_cambios(rbd, periodo);'
   ];
 
   for (const idxSql of indexes) {

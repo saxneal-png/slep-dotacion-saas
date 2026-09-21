@@ -83,7 +83,9 @@ export function getUltimaHoraGuardado(): string {
   return lastPersistTime;
 }
 
-export function persistDb(): void {
+let persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushPersist(): void {
   if (!dbInstance) return;
   try {
     const data = dbInstance.export();
@@ -111,6 +113,22 @@ export function persistDb(): void {
       ? 'Límite de almacenamiento local excedido. Por favor exporta una copia SQLite como respaldo.'
       : (e?.message || 'Error de persistencia');
     persistListeners.forEach(l => l('error', new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }), msg));
+  }
+}
+
+export function persistDb(forceImmediate = false): void {
+  if (persistDebounceTimer) {
+    clearTimeout(persistDebounceTimer);
+    persistDebounceTimer = null;
+  }
+
+  if (forceImmediate) {
+    flushPersist();
+  } else {
+    persistDebounceTimer = setTimeout(() => {
+      persistDebounceTimer = null;
+      flushPersist();
+    }, 300);
   }
 }
 
