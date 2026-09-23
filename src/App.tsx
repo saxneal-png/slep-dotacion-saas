@@ -3,6 +3,8 @@ import { Header } from './components/Header';
 import { SchoolNavigatorModal } from './components/SchoolNavigatorModal';
 import { SaveBackupModal } from './components/SaveBackupModal';
 import { DotacionCopilotDrawer } from './components/DotacionCopilotDrawer';
+import { ModalTraspasoDotacion } from './components/ModalTraspasoDotacion';
+import { ComparadorPeriodosModal } from './components/ComparadorPeriodosModal';
 import { Sparkles } from 'lucide-react';
 
 const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
@@ -83,10 +85,12 @@ export const App: React.FC = () => {
   const [vistaActiva, setVistaActiva] = useState<string>('cartera');
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
 
-  // Modales Steve Jobs: Navegador Rápido, Centro de Respaldos y Copilot IA
+  // Modales Steve Jobs: Navegador Rápido, Centro de Respaldos, Copilot IA y Traspaso
   const [modalNavegadorAbierto, setModalNavegadorAbierto] = useState(false);
   const [modalRespaldosAbierto, setModalRespaldosAbierto] = useState(false);
   const [modalCopilotAbierto, setModalCopilotAbierto] = useState(false);
+  const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
+  const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
   const [estadoGuardado, setEstadoGuardado] = useState<'saved' | 'error'>('saved');
   const [errorGuardado, setErrorGuardado] = useState<string | undefined>(undefined);
   const [ultimaHoraGuardado, setUltimaHoraGuardado] = useState<string>(getUltimaHoraGuardado());
@@ -565,6 +569,8 @@ export const App: React.FC = () => {
         ultimaHoraGuardado={ultimaHoraGuardado}
         periodoActivo={periodoActivo}
         onTogglePeriodo={handleTogglePeriodo}
+        onAbrirComparadorPeriodos={() => setModalComparadorAbierto(true)}
+        onAbrirTraspasoPeriodos={() => setModalTraspasoAbierto(true)}
         onAbrirCopilot={() => setModalCopilotAbierto(true)}
       />
 
@@ -822,6 +828,33 @@ export const App: React.FC = () => {
         asignaciones={asignaciones}
         todosLosDocentesTerritorio={todosLosDocentes}
         todosLosEstablecimientos={colegios}
+      />
+
+      {/* Modal Wizard de Traspaso y Proyección 2026 -> 2027 */}
+      <ModalTraspasoDotacion
+        isOpen={modalTraspasoAbierto}
+        onClose={() => setModalTraspasoAbierto(false)}
+        colegioActivo={colegioActivo}
+        colegios={colegios}
+        periodoOrigen={2026}
+        periodoDestino={2027}
+        onTraspasoCompletado={async (rbd, destino) => {
+          await cargarDatos(destino);
+          if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, destino);
+          mostrarMensaje(`✓ Traspaso completado exitosamente para el periodo ${destino}.`);
+        }}
+      />
+
+      {/* Modal Comparador Periodos */}
+      <ComparadorPeriodosModal
+        isOpen={modalComparadorAbierto}
+        onClose={() => setModalComparadorAbierto(false)}
+        colegioActivo={colegioActivo}
+        colegios={colegios}
+        onPeriodoActualizado={async () => {
+          await cargarDatos(periodoActivo);
+          if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+        }}
       />
 
       {/* Botón Flotante Permanente Estilo Steve Jobs: ¡Qué no va a saber! IA */}

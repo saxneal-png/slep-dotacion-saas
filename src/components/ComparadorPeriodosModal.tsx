@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Scale, ArrowRight, ArrowUpRight, ArrowDownRight, Minus, Users,
   BookOpen, Clock, Layers, Sparkles, X, Search, Filter, AlertCircle,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Establecimiento, ComparativaPeriodosResult } from '../types';
 import { getComparativaPeriodos, proyectarPeriodoColegio } from '../database/db';
+import { ModalTraspasoDotacion } from './ModalTraspasoDotacion';
 
 interface ComparadorPeriodosModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export const ComparadorPeriodosModal: React.FC<ComparadorPeriodosModalProps> = (
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [filtroTipo, setFiltroTipo] = useState<string>('TODOS');
   const [searchTerm, setSearchTerm] = useState('');
+  const [wizardTraspasoAbierto, setWizardTraspasoAbierto] = useState(false);
 
   const cargarComparativa = async (rbd: string) => {
     if (!rbd) return;
@@ -157,17 +159,18 @@ export const ComparadorPeriodosModal: React.FC<ComparadorPeriodosModalProps> = (
                     <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
                     <div>
                       <strong className="block font-bold">La Dotación 2027 aún no ha sido proyectada para este colegio.</strong>
-                      <span className="text-amber-300/80">Puedes proyectarla en un clic promoviendo la cohorte 2026 hacia el año escolar 2027.</span>
+                      <span className="text-amber-300/80">Puedes proyectarla con el asistente guiado de cohortes SAE y planta docente DFL 1.</span>
                     </div>
                   </div>
-                  <button
-                    onClick={handleEjecutarProyeccion}
-                    disabled={projecting}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex-shrink-0"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>{projecting ? 'Proyectando...' : 'Proyectar Dotación 2027'}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setWizardTraspasoAbierto(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex-shrink-0"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-300" />
+                      <span>Asistente de Traspaso Guiado</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -450,6 +453,21 @@ export const ComparadorPeriodosModal: React.FC<ComparadorPeriodosModalProps> = (
             </button>
           </div>
         </div>
+
+        {/* Modal Wizard Traspaso */}
+        <ModalTraspasoDotacion
+          isOpen={wizardTraspasoAbierto}
+          onClose={() => setWizardTraspasoAbierto(false)}
+          colegioActivo={colegioObj || colegioActivo}
+          colegios={colegios}
+          periodoOrigen={2026}
+          periodoDestino={2027}
+          onTraspasoCompletado={(rbd) => {
+            setWizardTraspasoAbierto(false);
+            cargarComparativa(rbd);
+            if (onPeriodoActualizado) onPeriodoActualizado();
+          }}
+        />
       </div>
     </div>
   );

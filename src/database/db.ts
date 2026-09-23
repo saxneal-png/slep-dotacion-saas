@@ -81,3 +81,13 @@ export {
 } from './repositories/auditoriaRepo';
 export type { EventoAuditoria } from './repositories/auditoriaRepo';
 
+export {
+  diagnosticarTraspasoColegio,
+  ejecutarTraspasoPeriodoColegio
+} from '../services/traspasoDotacionService';
+export type {
+  OpcionesTraspasoPeriodo,
+  DiagnosticoPrevioTraspaso,
+  ResultadoTraspasoPeriodo
+} from '../services/traspasoDotacionService';
+

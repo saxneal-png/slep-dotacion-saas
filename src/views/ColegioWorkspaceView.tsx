@@ -19,6 +19,7 @@ import { PieAuditorView } from './PieAuditorView';
 import { SalasSaeView } from './SalasSaeView';
 import { MatrizExcelImportModal } from '../components/MatrizExcelImportModal';
 import { ComparadorPeriodosModal } from '../components/ComparadorPeriodosModal';
+import { ModalTraspasoDotacion } from '../components/ModalTraspasoDotacion';
 import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
 import { ExportarEstablecimientoModal } from '../components/ExportarEstablecimientoModal';
 import { ImportarEstablecimientoModal } from '../components/ImportarEstablecimientoModal';
@@ -85,6 +86,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'cursos' | 'pie' | 'salas'>('balanza');
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
+  const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
   const [modalVaciarSeguroAbierto, setModalVaciarSeguroAbierto] = useState(false);
   const [modalExportarEstablecimientoAbierto, setModalExportarEstablecimientoAbierto] = useState(false);
   const [modalImportarEstablecimientoAbierto, setModalImportarEstablecimientoAbierto] = useState(false);
@@ -179,6 +181,16 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             >
               <Scale className="w-4 h-4 text-indigo-600" />
               <span>Comparar 2026 / 2027</span>
+            </button>
+
+            {/* Hero 4: Traspaso de Dotación */}
+            <button
+              onClick={() => setModalTraspasoAbierto(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20"
+              title="Asistente guiado de traspaso de dotación 2026 a 2027"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+              <span>Traspaso 2026 ➔ 2027</span>
             </button>
 
             {/* Menú Desplegable de Más Opciones y Exportaciones */}
@@ -505,6 +517,18 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         asignacionesCount={asignaciones.length}
         onConfirmarVaciar={handleEjecutarVaciarDotacion}
         onExportarRespaldoPrevio={onExportarDotacionColegio ? () => onExportarDotacionColegio(colegio, periodoActivo) : undefined}
+      />
+
+      <ModalTraspasoDotacion
+        isOpen={modalTraspasoAbierto}
+        onClose={() => setModalTraspasoAbierto(false)}
+        colegioActivo={colegio}
+        colegios={todosLosColegios}
+        periodoOrigen={2026}
+        periodoDestino={2027}
+        onTraspasoCompletado={() => {
+          if (onRefreshData) onRefreshData();
+        }}
       />
     </div>
   );

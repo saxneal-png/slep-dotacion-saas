@@ -104,7 +104,26 @@ export async function guardarCurso(c: CursoSae): Promise<void> {
       tipo_modalidad=excluded.tipo_modalidad,
       grados_combinados_json=excluded.grados_combinados_json,
       especialidad_tp=excluded.especialidad_tp;
-  `, [c.id, c.rbd, c.nivel, c.letra, c.regimen, c.salaId || null, c.cupoSae, c.matriculaProyectada, c.alumnosNeet, c.alumnosNeep, talleresJson, cursoPeriodo, regProp, esMulti, esComb, tipoMod, gradosJson, c.especialidadTp || null]);
+  `, [
+    c.id,
+    c.rbd,
+    c.nivel,
+    c.letra,
+    c.regimen,
+    c.salaId || null,
+    c.cupoSae || 0,
+    c.matriculaProyectada || 0,
+    c.alumnosNeet || 0,
+    c.alumnosNeep || 0,
+    talleresJson,
+    cursoPeriodo,
+    regProp,
+    esMulti,
+    esComb,
+    tipoMod,
+    gradosJson,
+    c.especialidadTp || null
+  ]);
   persistDb();
 }
 

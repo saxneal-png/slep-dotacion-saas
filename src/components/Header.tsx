@@ -21,6 +21,7 @@ interface HeaderProps {
   periodoActivo: number;
   onTogglePeriodo: (p: number) => void;
   onAbrirComparadorPeriodos?: () => void;
+  onAbrirTraspasoPeriodos?: () => void;
   onAbrirImportadorMatriz?: () => void;
   onAbrirCopilot?: () => void;
 }
@@ -40,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   periodoActivo,
   onTogglePeriodo,
   onAbrirComparadorPeriodos,
+  onAbrirTraspasoPeriodos,
   onAbrirImportadorMatriz,
   onAbrirCopilot
 }) => {
@@ -254,6 +256,19 @@ export const Header: React.FC<HeaderProps> = ({
                         {estadoGuardado === 'saved' ? 'Guardado' : 'Error'}
                       </span>
                     </button>
+
+                    {onAbrirTraspasoPeriodos && (
+                      <button
+                        onClick={() => {
+                          onAbrirTraspasoPeriodos();
+                          setToolsOpen(false);
+                        }}
+                        className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold text-indigo-300 hover:bg-indigo-950/60 transition-colors mt-0.5"
+                      >
+                        <Sparkles className="w-4 h-4 text-indigo-400" />
+                        <span>Asistente de Traspaso 2026 ➔ 2027</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
