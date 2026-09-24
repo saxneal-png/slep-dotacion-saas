@@ -91,12 +91,13 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   const modulosDetallados = [
-    { id: 'sige',       label: 'Ingesta SIGE (MINEDUC)',       icon: FileUp,     desc: 'Carga de nóminas oficiales' },
-    { id: 'pie',        label: 'Auditoría PIE (Dec. 170)',      icon: PieChart,   desc: 'Cuadre horas diferencial y PAE' },
-    { id: 'salas_sae',  label: 'Salas & Cupos SAE (Dec. 548)', icon: LayoutGrid, desc: 'Aforos y desdoblamientos' },
-    { id: 'curriculum', label: 'Planes Curriculares MINEDUC',   icon: BookOpen,   desc: 'Matrices de estudio oficiales' },
-    { id: 'docentes',   label: 'Docentes & Ley 20.903',         icon: Users,      desc: 'Control 65/35 y sobreasignación' },
-    { id: 'balanza',    label: 'Balanza & Diagnóstico',          icon: Scale,      desc: 'Superávit y déficit horario' },
+    { id: 'planes_estudio', label: 'Catálogo de Planes & EPJA 2024', icon: BookOpen,   desc: 'Matrices MINEDUC y Dto. 10/2022' },
+    { id: 'sige',           label: 'Ingesta SIGE (MINEDUC)',         icon: FileUp,     desc: 'Carga de nóminas oficiales' },
+    { id: 'pie',            label: 'Auditoría PIE (Dec. 170)',        icon: PieChart,   desc: 'Cuadre horas diferencial y PAE' },
+    { id: 'salas_sae',      label: 'Salas & Cupos SAE (Dec. 548)',   icon: LayoutGrid, desc: 'Aforos y desdoblamientos' },
+    { id: 'curriculum',     label: 'Planes Curriculares MINEDUC',     icon: BookOpen,   desc: 'Matrices de estudio por curso' },
+    { id: 'docentes',       label: 'Docentes & Ley 20.903',           icon: Users,      desc: 'Control 65/35 y sobreasignación' },
+    { id: 'balanza',        label: 'Balanza & Diagnóstico',            icon: Scale,      desc: 'Superávit y déficit horario' },
   ];
 
   const esModuloSecundario = modulosDetallados.some(m => m.id === vistaActiva);
@@ -388,6 +389,7 @@ export const Header: React.FC<HeaderProps> = ({
                 { id: 'colegios_asesorados', label: 'Asesorados', icon: UserCheck },
                 { id: 'cartera',             label: 'Cartera',    icon: Building2 },
                 { id: 'workflow',            label: 'Espacio Escolar', icon: ClipboardCheck },
+                { id: 'planes_estudio',      label: 'Planes & EPJA', icon: BookOpen },
                 { id: 'consolidador',        label: 'Consolidado',icon: Layers },
                 { id: 'estadisticas',        label: 'Estadísticas',icon: BarChart3 },
                 { id: 'analizador',          label: 'Analizador', icon: Sparkles },

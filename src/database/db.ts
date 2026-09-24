@@ -72,9 +72,13 @@ export {
 
 export {
   listarPlanesEstudio,
+  obtenerPlanEstudioPorId,
   obtenerPlanEstudioPorNivelYRegimen,
   guardarPlanEstudio,
-  poblarPlanesEstudioEnDb
+  eliminarPlanEstudio,
+  adjuntarPlanACursos,
+  poblarPlanesEstudioEnDb,
+  PLAN_EPJA_2024_OFICIAL_JSON
 } from './repositories/planesEstudioRepo';
 export type { PlanEstudioRegistroDb } from './repositories/planesEstudioRepo';
 

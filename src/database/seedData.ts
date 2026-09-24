@@ -11,7 +11,8 @@ import {
   guardarCurso,
   guardarDocente,
   guardarAsignacion,
-  listarEstablecimientos
+  listarEstablecimientos,
+  poblarPlanesEstudioEnDb
 } from './db';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 
@@ -38,6 +39,7 @@ export async function sincronizarCatalogoEstablecimientos(): Promise<void> {
 
 export async function checkAndSeedInitialData(): Promise<void> {
   await sincronizarCatalogoEstablecimientos();
+  await poblarPlanesEstudioEnDb();
 
   const existing = await listarEstablecimientos();
   // Si ya contiene los datos de prueba o pilotos, continuar

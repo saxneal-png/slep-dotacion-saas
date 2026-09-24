@@ -57,6 +57,52 @@ export interface CursoSae {
   tipoModalidad?: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'MEDIA_TP' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' | 'LABORAL';
   gradosCombinados?: string[]; // ej: ["1° Básico", "2° Básico"] o ["1° Nivel", "2° Nivel"]
   especialidadTp?: string; // ej: "Electricidad", "Gastronomía", "Programación"
+  planEstudioId?: string; // ID del plan de estudio curricular adjunto
+}
+
+export interface AsignaturaPlanEstudio {
+  id?: string;
+  nombre: string;
+  horasSemanales: number;
+  horasAnuales?: number;
+  caracter?: 'Obligatoria' | 'Opcional' | 'Electiva' | 'Instrumental';
+  ambito?: string;
+}
+
+export interface AmbitoFormativoPlan {
+  ambito: string;
+  caracter: string;
+  horasSemanalesSubtotal: number;
+  horasAnualesSubtotal?: number;
+  asignaturas?: AsignaturaPlanEstudio[];
+  catalogoAsignaturasElegibles?: string[];
+  descripcion?: string;
+}
+
+export interface PlanEstudioCurricular {
+  id: string;
+  nivel: string;
+  equivalenciaRegular?: string;
+  regimen: 'JEC' | 'No JEC';
+  categoria: 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'EPJA' | 'ESPECIAL' | 'LABORAL' | 'MULTIGRADO' | 'OTRO';
+  documento?: string;
+  decretoSupremo?: string;
+  ministerio?: string;
+  duracionAnoLectivoSemanas?: number;
+  totalHorasSemanalesObligatorias: number;
+  totalHorasAnualesObligatorias?: number;
+  totalHorasSemanalesConOpcionales?: number;
+  totalHorasAnualesConOpcionales?: number;
+  horasLibreDisposicion?: number;
+  totalHorasPlan?: number;
+  ambitosFormativos?: AmbitoFormativoPlan[];
+  asignaturas: AsignaturaPlanEstudio[];
+  organizacionModular?: {
+    modulosObligatorios: number;
+    modulosElectivos: number;
+    duracionModuloSemanas: number;
+  };
+  esPersonalizado?: boolean;
 }
 
 export type CalidadJuridicaDocente = 'TITULAR' | 'CONTRATA';

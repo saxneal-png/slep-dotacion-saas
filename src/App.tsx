@@ -20,6 +20,7 @@ const SigeIngestaView = React.lazy(() => import('./views/SigeIngestaView').then(
 const ColegioWorkspaceView = React.lazy(() => import('./views/ColegioWorkspaceView').then(m => ({ default: m.ColegioWorkspaceView })));
 const AnalizadorDotacionView = React.lazy(() => import('./views/AnalizadorDotacionView').then(m => ({ default: m.AnalizadorDotacionView })));
 const EstadisticasView = React.lazy(() => import('./views/EstadisticasView').then(m => ({ default: m.EstadisticasView })));
+const PlanesEstudioView = React.lazy(() => import('./views/PlanesEstudioView').then(m => ({ default: m.PlanesEstudioView })));
 
 import {
   Establecimiento,
@@ -726,6 +727,21 @@ export const App: React.FC = () => {
             onGuardarAsignacion={handleGuardarAsignacion}
             onEliminarAsignacion={handleEliminarAsignacion}
             periodoActivo={periodoActivo}
+          />
+        )}
+
+        {vistaActiva === 'planes_estudio' && (
+          <PlanesEstudioView
+            colegios={colegios}
+            colegioActivo={colegioActivo}
+            todosLosCursos={todosLosCursos}
+            periodoActivo={periodoActivo}
+            onSelectColegio={handleSelectColegio}
+            onAbrirWorkflow={(est) => {
+              handleSelectColegio(est);
+              setVistaActiva('workflow');
+            }}
+            onRefreshCursos={() => cargarDatos(periodoActivo)}
           />
         )}
 
