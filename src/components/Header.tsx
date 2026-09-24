@@ -5,6 +5,7 @@ import {
   Database, Search, Sparkles, BarChart3, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { Establecimiento } from '../types';
+import { subscribePersist, getUltimaHoraGuardado } from '../database/db';
 
 interface HeaderProps {
   colegioActivo: Establecimiento | null;
@@ -16,8 +17,8 @@ interface HeaderProps {
   inconsistenciasCount: number;
   onAbrirNavegadorColegios: () => void;
   onAbrirCentroRespaldos: () => void;
-  estadoGuardado: 'saved' | 'error';
-  ultimaHoraGuardado: string;
+  estadoGuardado?: 'saved' | 'error';
+  ultimaHoraGuardado?: string;
   periodoActivo: number;
   onTogglePeriodo: (p: number) => void;
   onAbrirComparadorPeriodos?: () => void;
@@ -36,8 +37,6 @@ export const Header: React.FC<HeaderProps> = ({
   inconsistenciasCount,
   onAbrirNavegadorColegios,
   onAbrirCentroRespaldos,
-  estadoGuardado,
-  ultimaHoraGuardado,
   periodoActivo,
   onTogglePeriodo,
   onAbrirComparadorPeriodos,
@@ -46,7 +45,17 @@ export const Header: React.FC<HeaderProps> = ({
   onAbrirCopilot
 }) => {
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [internalEstadoGuardado, setInternalEstadoGuardado] = useState<'saved' | 'error'>('saved');
+  const [internalUltimaHora, setInternalUltimaHora] = useState<string>(getUltimaHoraGuardado());
   const toolsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const unsub = subscribePersist((status, time) => {
+      setInternalEstadoGuardado(status);
+      setInternalUltimaHora(time);
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -253,7 +262,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <span>Centro de Respaldos SQLite</span>
                       </div>
                       <span className="text-[10px] font-mono text-emerald-400">
-                        {estadoGuardado === 'saved' ? 'Guardado' : 'Error'}
+                        {internalEstadoGuardado === 'saved' ? 'Guardado' : 'Error'}
                       </span>
                     </button>
 

@@ -84,11 +84,22 @@ export function getUltimaHoraGuardado(): string {
 }
 
 let persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let isDbDirty = false;
+
+// Auto-guardado en cierre o desenfoque de ventana
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    if (isDbDirty) {
+      flushPersist();
+    }
+  });
+}
 
 function flushPersist(): void {
-  if (!dbInstance) return;
+  if (!dbInstance || !isDbDirty) return;
   try {
     const data = dbInstance.export();
+    isDbDirty = false;
     lastPersistTime = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     if (typeof indexedDB !== 'undefined') {
@@ -117,6 +128,8 @@ function flushPersist(): void {
 }
 
 export function persistDb(forceImmediate = false): void {
+  isDbDirty = true;
+
   if (persistDebounceTimer) {
     clearTimeout(persistDebounceTimer);
     persistDebounceTimer = null;
@@ -127,8 +140,12 @@ export function persistDb(forceImmediate = false): void {
   } else {
     persistDebounceTimer = setTimeout(() => {
       persistDebounceTimer = null;
-      flushPersist();
-    }, 300);
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(() => flushPersist(), { timeout: 1000 });
+      } else {
+        flushPersist();
+      }
+    }, 1500);
   }
 }
 

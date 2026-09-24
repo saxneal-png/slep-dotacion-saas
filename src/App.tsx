@@ -91,25 +91,12 @@ export const App: React.FC = () => {
   const [modalCopilotAbierto, setModalCopilotAbierto] = useState(false);
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
-  const [estadoGuardado, setEstadoGuardado] = useState<'saved' | 'error'>('saved');
-  const [errorGuardado, setErrorGuardado] = useState<string | undefined>(undefined);
-  const [ultimaHoraGuardado, setUltimaHoraGuardado] = useState<string>(getUltimaHoraGuardado());
   const [periodoActivo, setPeriodoActivo] = useState<number>(2026);
 
   const mostrarMensaje = (mensaje: string, tipo: 'success' | 'error' = 'success') => {
     setNotificacion({ tipo, mensaje });
     setTimeout(() => setNotificacion(null), 4000);
   };
-
-  // Suscripción al monitor de persistencia SQLite
-  useEffect(() => {
-    const unsub = subscribePersist((status, time, err) => {
-      setEstadoGuardado(status);
-      setUltimaHoraGuardado(time);
-      if (err) setErrorGuardado(err);
-    });
-    return unsub;
-  }, []);
 
   // Atajos de teclado globales: Ctrl+K / Cmd+K (Navegador) y Ctrl+J / Cmd+J (Copilot IA)
   useEffect(() => {
@@ -565,8 +552,6 @@ export const App: React.FC = () => {
         inconsistenciasCount={consolidacionMaster.inconsistencias.length}
         onAbrirNavegadorColegios={() => setModalNavegadorAbierto(true)}
         onAbrirCentroRespaldos={() => setModalRespaldosAbierto(true)}
-        estadoGuardado={estadoGuardado}
-        ultimaHoraGuardado={ultimaHoraGuardado}
         periodoActivo={periodoActivo}
         onTogglePeriodo={handleTogglePeriodo}
         onAbrirComparadorPeriodos={() => setModalComparadorAbierto(true)}
@@ -798,9 +783,6 @@ export const App: React.FC = () => {
       <SaveBackupModal
         isOpen={modalRespaldosAbierto}
         onClose={() => setModalRespaldosAbierto(false)}
-        ultimaHoraGuardado={ultimaHoraGuardado}
-        estadoGuardado={estadoGuardado}
-        errorGuardado={errorGuardado}
         colegios={colegios}
         colegioActivo={colegioActivo}
         periodoActivo={periodoActivo}

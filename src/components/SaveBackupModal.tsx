@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Download, 
   Upload, 
@@ -15,12 +15,13 @@ import {
   RotateCcw
 } from 'lucide-react';
 import type { Establecimiento, CursoSae, SalaInfraestructura, Docente, AsignacionHoraria } from '../types';
+import { subscribePersist, getUltimaHoraGuardado } from '../database/db';
 
 export interface SaveBackupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  ultimaHoraGuardado: string;
-  estadoGuardado: 'saved' | 'error';
+  ultimaHoraGuardado?: string;
+  estadoGuardado?: 'saved' | 'error';
   errorGuardado?: string;
   colegios: Establecimiento[];
   colegioActivo?: Establecimiento | null;
@@ -40,9 +41,9 @@ export interface SaveBackupModalProps {
 export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
   isOpen,
   onClose,
-  ultimaHoraGuardado,
-  estadoGuardado,
-  errorGuardado,
+  ultimaHoraGuardado: propUltimaHora,
+  estadoGuardado: propEstado,
+  errorGuardado: propError,
   colegios,
   colegioActivo,
   periodoActivo = 2026,
@@ -58,6 +59,23 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
   onReiniciarBaseDatos
 }) => {
   const [isImporting, setIsImporting] = useState(false);
+  const [localEstado, setLocalEstado] = useState<'saved' | 'error'>(propEstado || 'saved');
+  const [localHora, setLocalHora] = useState<string>(propUltimaHora || getUltimaHoraGuardado());
+  const [localError, setLocalError] = useState<string | undefined>(propError);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = subscribePersist((status, time, err) => {
+      setLocalEstado(status);
+      setLocalHora(time);
+      if (err) setLocalError(err);
+    });
+    return unsub;
+  }, [isOpen]);
+
+  const estadoGuardado = propEstado || localEstado;
+  const ultimaHoraGuardado = propUltimaHora || localHora;
+  const errorGuardado = propError || localError;
 
   if (!isOpen) return null;
 

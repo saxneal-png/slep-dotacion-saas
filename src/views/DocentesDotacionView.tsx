@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { 
   Users, 
   Plus, 
@@ -73,6 +73,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
   // Filtros de búsqueda de docentes
   const [busquedaDocente, setBusquedaDocente] = useState('');
+  const deferredBusqueda = useDeferredValue(busquedaDocente);
   const [filtroEstamento, setFiltroEstamento] = useState<string>('TODOS');
   const [filtroEstadoCarga, setFiltroEstadoCarga] = useState<'TODOS' | 'SOBREASIGNADOS' | 'HOLGURA' | 'EXACTO'>('TODOS');
   const [filtroCalidad, setFiltroCalidad] = useState<'TODOS' | 'TITULAR' | 'CONTRATA'>('TODOS');
@@ -354,7 +355,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   // Filtrado de docentes para búsqueda rápida
   const docentesFiltrados = useMemo(() => {
     return docentesAuditados.filter(({ docente: d, auditMulti, valSobre, esImprocedenteFinanciamiento, docTerritorial }) => {
-      const q = busquedaDocente.toLowerCase().trim();
+      const q = deferredBusqueda.toLowerCase().trim();
       const matchTexto = q === '' ||
         `${d.nombres} ${d.apellidos}`.toLowerCase().includes(q) ||
         d.run.toLowerCase().includes(q) ||
@@ -396,7 +397,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       if (ordenDocentes === 'VACANTES_DESC') return (b.calculo?.horasPedagogicasVacantes || 0) - (a.calculo?.horasPedagogicasVacantes || 0);
       return 0;
     });
-  }, [docentesAuditados, busquedaDocente, filtroEstamento, filtroEstadoCarga, filtroCalidad, filtroFinanciamiento, filtroMultiEscuela, ordenDocentes]);
+  }, [docentesAuditados, deferredBusqueda, filtroEstamento, filtroEstadoCarga, filtroCalidad, filtroFinanciamiento, filtroMultiEscuela, ordenDocentes]);
 
   return (
     <div className="space-y-6">
