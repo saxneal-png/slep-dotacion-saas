@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, School, ArrowRight, X, Building2, Users, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Search, School, ArrowRight, X, Building2, Users, AlertTriangle, CheckCircle2, UserCheck } from 'lucide-react';
 import type { Establecimiento } from '../types';
 import type { DiagnosticoColegioCompleto } from '../services/dotacionCalculationService';
+import { cargarConfiguracionGeneral } from '../services/configuracionGeneralService';
 
 export interface SchoolNavigatorModalProps {
   isOpen: boolean;
@@ -22,8 +23,10 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
   diagnosticos = [],
   onCrearNuevoColegio
 }) => {
+  const [config] = useState(() => cargarConfiguracionGeneral());
   const [query, setQuery] = useState('');
   const [selectedComuna, setSelectedComuna] = useState<string>('ALL');
+  const [soloMisAsesorias, setSoloMisAsesorias] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,13 +40,19 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
   }, [isOpen]);
 
   const filteredColegios = colegios.filter(c => {
+    if (soloMisAsesorias && config.asesorActivoNombre) {
+      if (!c.asesorUatp || c.asesorUatp.toLowerCase().trim() !== config.asesorActivoNombre.toLowerCase().trim()) {
+        return false;
+      }
+    }
     if (selectedComuna !== 'ALL' && c.comuna !== selectedComuna) return false;
     if (!query) return true;
     const q = query.toLowerCase();
     return (
       c.nombre.toLowerCase().includes(q) ||
       c.rbd.toString().includes(q) ||
-      (c.comuna && c.comuna.toLowerCase().includes(q))
+      (c.comuna && c.comuna.toLowerCase().includes(q)) ||
+      (c.asesorUatp && c.asesorUatp.toLowerCase().includes(q))
     );
   });
 
@@ -106,9 +115,28 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
           </button>
         </div>
 
-        {/* Chips de Filtro Rápido por Comuna */}
+        {/* Chips de Filtro Rápido por Asesor y Comuna */}
         <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border-b border-slate-100 overflow-x-auto text-[11px]">
-          <span className="text-slate-400 font-bold shrink-0">Comuna:</span>
+          {config.asesorActivoNombre && (
+            <button
+              type="button"
+              onClick={() => {
+                setSoloMisAsesorias(!soloMisAsesorias);
+                setSelectedIndex(0);
+              }}
+              className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md font-bold shrink-0 transition-colors ${
+                soloMisAsesorias
+                  ? 'bg-orange-600 text-white shadow-xs'
+                  : 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'
+              }`}
+              title={`Filtrar solo escuelas asignadas a ${config.asesorActivoNombre}`}
+            >
+              <UserCheck className="w-3 h-3" />
+              <span>Mis Colegios ({config.asesorActivoNombre.split(' ')[0]})</span>
+            </button>
+          )}
+
+          <span className="text-slate-400 font-bold shrink-0 ml-1">Comuna:</span>
           {['ALL', 'Bulnes', 'Chillán', 'Chillán Viejo', 'El Carmen', 'Pemuco', 'San Ignacio', 'Yungay'].map(com => (
             <button
               key={com}

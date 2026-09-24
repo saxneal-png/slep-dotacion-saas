@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Building2, FileSpreadsheet, Layers, ClipboardCheck, ChevronDown,
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
-  Database, Search, Sparkles, BarChart3, CheckCircle2, AlertCircle
+  Database, Search, Sparkles, BarChart3, CheckCircle2, AlertCircle,
+  UserCheck, Settings
 } from 'lucide-react';
 import { Establecimiento } from '../types';
 import { subscribePersist, getUltimaHoraGuardado } from '../database/db';
@@ -25,6 +26,7 @@ interface HeaderProps {
   onAbrirTraspasoPeriodos?: () => void;
   onAbrirImportadorMatriz?: () => void;
   onAbrirCopilot?: () => void;
+  onAbrirConfiguraciones?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -42,7 +44,8 @@ export const Header: React.FC<HeaderProps> = ({
   onAbrirComparadorPeriodos,
   onAbrirTraspasoPeriodos,
   onAbrirImportadorMatriz,
-  onAbrirCopilot
+  onAbrirCopilot,
+  onAbrirConfiguraciones
 }) => {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [internalEstadoGuardado, setInternalEstadoGuardado] = useState<'saved' | 'error'>('saved');
@@ -104,6 +107,19 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* 2. Navegación Maestro Estilo Apple Segmented Pill */}
           <nav className="hidden lg:flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-700/60 shadow-inner space-x-1">
+            <button
+              onClick={() => onSelectVista('colegios_asesorados')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                vistaActiva === 'colegios_asesorados'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              }`}
+              title="Apartado Colegios Asesorados por Asesor UATP"
+            >
+              <UserCheck className="w-3.5 h-3.5 text-orange-400" />
+              <span>Colegios Asesorados</span>
+            </button>
+
             <button
               onClick={() => onSelectVista('cartera')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -229,6 +245,21 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
+            {/* Botón de Acceso Directo a Configuraciones */}
+            {onAbrirConfiguraciones && (
+              <button
+                onClick={onAbrirConfiguraciones}
+                className={`p-2 rounded-xl border text-xs font-semibold transition-all ${
+                  vistaActiva === 'configuraciones'
+                    ? 'bg-orange-500 text-white border-orange-400 shadow-md'
+                    : 'bg-slate-800/90 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+                title="Centro de Configuraciones Generales"
+              >
+                <Settings className="w-4 h-4 text-orange-400" />
+              </button>
+            )}
+
             {/* Menú Unificado: Herramientas & Opciones */}
             <div className="relative" ref={toolsRef}>
               <button
@@ -248,14 +279,32 @@ export const Header: React.FC<HeaderProps> = ({
               {toolsOpen && (
                 <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl py-2 z-50 divide-y divide-slate-800 animate-fade-in">
                   
-                  {/* Sección de Guardado & Respaldos */}
+                  {/* Sección de Configuraciones & Respaldos */}
                   <div className="p-2">
+                    {onAbrirConfiguraciones && (
+                      <button
+                        onClick={() => {
+                          onAbrirConfiguraciones();
+                          setToolsOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-orange-300 hover:bg-slate-800 transition-colors"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Settings className="w-4 h-4 text-orange-400" />
+                          <span>Configuraciones Generales</span>
+                        </div>
+                        <span className="text-[10px] bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded font-bold">
+                          Ajustes
+                        </span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => {
                         onAbrirCentroRespaldos();
                         setToolsOpen(false);
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors"
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:bg-slate-800 transition-colors mt-0.5"
                     >
                       <div className="flex items-center space-x-2">
                         <Database className="w-4 h-4 text-emerald-400" />

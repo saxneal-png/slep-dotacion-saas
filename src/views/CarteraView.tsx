@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database, FileSpreadsheet, Eraser, Search, RotateCcw, X } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database, FileSpreadsheet, Eraser, Search, RotateCcw, X, UserCheck } from 'lucide-react';
 import { Establecimiento, ComunaValleDiguillin, RegimenJornada } from '../types';
 import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
+import { cargarConfiguracionGeneral } from '../services/configuracionGeneralService';
 
 interface CarteraViewProps {
   colegios: Establecimiento[];
@@ -19,6 +20,7 @@ interface CarteraViewProps {
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void>;
   onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
   onExportarMatrizExcelColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
+  onAbrirColegiosAsesorados?: () => void;
 }
 
 const COMUNAS: ComunaValleDiguillin[] = [
@@ -46,8 +48,10 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
   periodoActivo = 2026,
   onLimpiarDotacionColegio,
   onExportarDotacionColegio,
-  onExportarMatrizExcelColegio
+  onExportarMatrizExcelColegio,
+  onAbrirColegiosAsesorados
 }) => {
+  const [config] = useState(() => cargarConfiguracionGeneral());
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEst, setEditingEst] = useState<Establecimiento | null>(null);
   const [colegioParaVaciar, setColegioParaVaciar] = useState<Establecimiento | null>(null);
@@ -56,15 +60,29 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
   const [selectedComunaFilter, setSelectedComunaFilter] = useState<string>('ALL');
   const [selectedRegimenFilter, setSelectedRegimenFilter] = useState<string>('ALL');
   const [selectedProporcionFilter, setSelectedProporcionFilter] = useState<string>('ALL');
+  const [selectedAsesorFilter, setSelectedAsesorFilter] = useState<string>('ALL');
   const [selectedOrden, setSelectedOrden] = useState<string>('NOMBRE_ASC');
 
-  const hayFiltrosActivos = searchTerm !== '' || selectedComunaFilter !== 'ALL' || selectedRegimenFilter !== 'ALL' || selectedProporcionFilter !== 'ALL';
+  // Lista de asesores únicos
+  const listaAsesores = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of colegios) {
+      if (c.asesorUatp && c.asesorUatp.trim()) set.add(c.asesorUatp.trim());
+    }
+    for (const a of config.asesoresRegistrados) {
+      if (a.nombre.trim()) set.add(a.nombre.trim());
+    }
+    return Array.from(set).sort();
+  }, [colegios, config.asesoresRegistrados]);
+
+  const hayFiltrosActivos = searchTerm !== '' || selectedComunaFilter !== 'ALL' || selectedRegimenFilter !== 'ALL' || selectedProporcionFilter !== 'ALL' || selectedAsesorFilter !== 'ALL';
 
   const limpiarFiltros = () => {
     setSearchTerm('');
     setSelectedComunaFilter('ALL');
     setSelectedRegimenFilter('ALL');
     setSelectedProporcionFilter('ALL');
+    setSelectedAsesorFilter('ALL');
     setSelectedOrden('NOMBRE_ASC');
   };
 
@@ -73,6 +91,11 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
     if (selectedRegimenFilter !== 'ALL' && c.regimen !== selectedRegimenFilter) return false;
     if (selectedProporcionFilter === '60_40' && c.porcentajePrioritarios < 80) return false;
     if (selectedProporcionFilter === '65_35' && c.porcentajePrioritarios >= 80) return false;
+    if (selectedAsesorFilter === 'SIN_ASIGNAR') {
+      if (c.asesorUatp && c.asesorUatp.trim() !== '') return false;
+    } else if (selectedAsesorFilter !== 'ALL') {
+      if (!c.asesorUatp || c.asesorUatp.toLowerCase().trim() !== selectedAsesorFilter.toLowerCase().trim()) return false;
+    }
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
     return (
@@ -224,6 +247,18 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
             />
           </label>
 
+          {/* Botón Acceso Directo a Colegios Asesorados */}
+          {onAbrirColegiosAsesorados && (
+            <button
+              onClick={onAbrirColegiosAsesorados}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all border border-blue-400/30"
+              title="Ir al Apartado Especializado Colegios Asesorados"
+            >
+              <UserCheck className="w-4 h-4 text-orange-300" />
+              <span>Colegios Asesorados</span>
+            </button>
+          )}
+
           {/* Botón Exportar Cartera .slep */}
           <button
             onClick={onExportarCarteraSlep}
@@ -247,8 +282,34 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
 
       {/* Barra de Filtros Multifactor y Búsqueda Optimizada */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-          {/* 1. Comuna */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+          
+          {/* 1. Asesor UATP */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+              <UserCheck className="w-3 h-3 text-indigo-500" /> Asesor UATP
+            </label>
+            <select
+              value={selectedAsesorFilter}
+              onChange={(e) => setSelectedAsesorFilter(e.target.value)}
+              className="w-full text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:ring-2 focus:ring-orange-500 focus:bg-white"
+            >
+              <option value="ALL">Todos los Asesores</option>
+              {config.asesorActivoNombre && (
+                <option value={config.asesorActivoNombre}>
+                  👤 Mi Cartera ({config.asesorActivoNombre.split(' ')[0]})
+                </option>
+              )}
+              <option value="SIN_ASIGNAR">⚠️ Sin Asesor Asignado</option>
+              {listaAsesores.map((asesor) => (
+                <option key={asesor} value={asesor}>
+                  {asesor}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 2. Comuna */}
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
               <Building2 className="w-3 h-3 text-slate-400" /> Comuna
@@ -270,7 +331,7 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
             </select>
           </div>
 
-          {/* 2. Régimen Jornada */}
+          {/* 3. Régimen Jornada */}
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
               <School className="w-3 h-3 text-slate-400" /> Régimen Jornada
@@ -287,7 +348,7 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
             </select>
           </div>
 
-          {/* 3. Tramo Proporción Ley 20.903 */}
+          {/* 4. Tramo Proporción Ley 20.903 */}
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
               Tramo Ley 20.903
@@ -303,7 +364,7 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
             </select>
           </div>
 
-          {/* 4. Ordenamiento */}
+          {/* 5. Ordenamiento */}
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
               Ordenar por

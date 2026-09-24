@@ -425,3 +425,53 @@ export interface ComparativaPeriodosResult {
   }[];
 }
 
+export interface PerfilAsesor {
+  id: string;
+  nombre: string;
+  email: string;
+  telefono?: string;
+  cargo?: string;
+  comunasPreferentes?: ComunaValleDiguillin[];
+  colorBadge?: string;
+}
+
+export interface ParametrosMineducConfig {
+  umbralPrioritarios60_40: number; // Por defecto: 80%
+  duracionHoraPedagogicaMin: number; // Por defecto: 45 min
+  minutosRecreoPorHora: number; // Por defecto: 10 min
+  topeHorasDocenteSlep: number; // Por defecto: 44 hrs
+  horasPieDocenteBasePorCurso: number; // Por defecto: 3 hrs
+  horasPaeBasePorCurso: number; // Por defecto: 7 hrs
+  validacionesEstrictas: boolean; // Advertencias de sobreasignación y restricciones
+  restringirFinanciamientoSepPieEnPlanComun: boolean;
+}
+
+export interface GeminiConfig {
+  apiKey: string;
+  model: string; // 'gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'
+  analizarTodosAlExportar: boolean;
+  modoEstrictoCopilot: boolean;
+  temperatura: number;
+}
+
+export interface PreferenciasUiConfig {
+  periodoPredeterminado: PeriodoGestion;
+  vistaInicial: string; // 'cartera' | 'colegios_asesorados' | 'workflow' | 'consolidador' | 'estadisticas' | 'analizador'
+  densidadTablas: 'compacta' | 'comoda';
+  mostrarAlertasFlotantes: boolean;
+  animacionesHabilitadas: boolean;
+}
+
+export interface ConfiguracionGeneral {
+  asesorActivoId: string;
+  asesorActivoNombre: string;
+  asesorActivoEmail: string;
+  asesorActivoTelefono?: string;
+  asesorActivoCargo?: string;
+  asesoresRegistrados: PerfilAsesor[];
+  parametrosMineduc: ParametrosMineducConfig;
+  gemini: GeminiConfig;
+  ui: PreferenciasUiConfig;
+  ultimaModificacion?: string;
+}
+

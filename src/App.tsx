@@ -8,6 +8,8 @@ import { ComparadorPeriodosModal } from './components/ComparadorPeriodosModal';
 import { Sparkles } from 'lucide-react';
 
 const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
+const ColegiosAsesoradosView = React.lazy(() => import('./views/ColegiosAsesoradosView').then(m => ({ default: m.ColegiosAsesoradosView })));
+const ConfiguracionesGeneralesView = React.lazy(() => import('./views/ConfiguracionesGeneralesView').then(m => ({ default: m.ConfiguracionesGeneralesView })));
 const SalasSaeView = React.lazy(() => import('./views/SalasSaeView').then(m => ({ default: m.SalasSaeView })));
 const CurriculumDemandaView = React.lazy(() => import('./views/CurriculumDemandaView').then(m => ({ default: m.CurriculumDemandaView })));
 const PieAuditorView = React.lazy(() => import('./views/PieAuditorView').then(m => ({ default: m.PieAuditorView })));
@@ -64,6 +66,7 @@ import { checkAndSeedInitialData } from './database/seedData';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { generarExcelConsolidadoSlep } from './services/excelReportService';
 import { generarExcelMatrizDotacionColegio } from './services/excelMatrizDotacionService';
+import { cargarConfiguracionGeneral } from './services/configuracionGeneralService';
 
 export const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -82,7 +85,14 @@ export const App: React.FC = () => {
   const [todosLosDocentes, setTodosLosDocentes] = useState<Docente[]>([]);
   const [todasLasAsignaciones, setTodasLasAsignaciones] = useState<AsignacionHoraria[]>([]);
 
-  const [vistaActiva, setVistaActiva] = useState<string>('cartera');
+  const [vistaActiva, setVistaActiva] = useState<string>(() => {
+    try {
+      const cfg = cargarConfiguracionGeneral();
+      return cfg.ui?.vistaInicial || 'colegios_asesorados';
+    } catch {
+      return 'colegios_asesorados';
+    }
+  });
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
 
   // Modales Steve Jobs: Navegador Rápido, Centro de Respaldos, Copilot IA y Traspaso
@@ -557,6 +567,7 @@ export const App: React.FC = () => {
         onAbrirComparadorPeriodos={() => setModalComparadorAbierto(true)}
         onAbrirTraspasoPeriodos={() => setModalTraspasoAbierto(true)}
         onAbrirCopilot={() => setModalCopilotAbierto(true)}
+        onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
       />
 
       {/* Toast Notificación */}
@@ -578,6 +589,41 @@ export const App: React.FC = () => {
             </div>
           }
         >
+        {vistaActiva === 'colegios_asesorados' && (
+          <ColegiosAsesoradosView
+            colegios={colegios}
+            colegioActivo={colegioActivo}
+            onSelectColegio={handleSelectColegio}
+            onAbrirWorkflow={(est) => {
+              handleSelectColegio(est);
+              setVistaActiva('workflow');
+            }}
+            onExportarDotacionColegio={handleExportarDotacionColegio}
+            onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
+            todosLosCursos={todosLosCursos}
+            todosLosDocentes={todosLosDocentes}
+            todasLasSalas={todasLasSalas}
+            todasLasAsignaciones={todasLasAsignaciones}
+            periodoActivo={periodoActivo}
+            onGuardarColegio={handleGuardarColegio}
+            onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
+          />
+        )}
+
+        {vistaActiva === 'configuraciones' && (
+          <ConfiguracionesGeneralesView
+            colegios={colegios}
+            onColegiosActualizados={async () => {
+              await cargarDatos(periodoActivo);
+            }}
+            onExportarSqlite={handleExportarSqlite}
+            onImportarSqlite={handleImportarSqlite}
+            onExportarCarteraSlep={handleExportarCarteraSlep}
+            onImportarCarteraSlep={handleImportarCarteraSlep}
+            onVolver={() => setVistaActiva('colegios_asesorados')}
+          />
+        )}
+
         {vistaActiva === 'cartera' && (
           <CarteraView
             colegios={colegios}
@@ -598,6 +644,7 @@ export const App: React.FC = () => {
             onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
             onExportarDotacionColegio={handleExportarDotacionColegio}
             onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
+            onAbrirColegiosAsesorados={() => setVistaActiva('colegios_asesorados')}
           />
         )}
 
