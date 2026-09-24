@@ -114,4 +114,53 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
     expect(c1?.asesorUatp).toBe('Marcela Navarrete Díaz');
     expect(c2?.asesorUatp).toBe('Marcela Navarrete Díaz');
   });
+
+  it('permite actualizar la cartera exacta de colegios asignados a un asesor (actualizarColegiosDeAsesor)', async () => {
+    await getDb();
+    const colegioA: Establecimiento = {
+      id: 'est-portfolio-1',
+      rbd: '88801',
+      nombre: 'Colegio A',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 70,
+      asesorUatp: 'Rodrigo Fuentes Uribe'
+    };
+    const colegioB: Establecimiento = {
+      id: 'est-portfolio-2',
+      rbd: '88802',
+      nombre: 'Colegio B',
+      comuna: 'El Carmen',
+      regimen: 'JEC',
+      porcentajePrioritarios: 80,
+      asesorUatp: 'Rodrigo Fuentes Uribe'
+    };
+    const colegioC: Establecimiento = {
+      id: 'est-portfolio-3',
+      rbd: '88803',
+      nombre: 'Colegio C',
+      comuna: 'Yungay',
+      regimen: 'JEC',
+      porcentajePrioritarios: 75,
+      asesorUatp: 'Sin Asignar'
+    };
+
+    await guardarEstablecimiento(colegioA);
+    await guardarEstablecimiento(colegioB);
+    await guardarEstablecimiento(colegioC);
+
+    const lista = await listarEstablecimientos();
+    // Asignar solo 88802 y 88803 a Rodrigo Fuentes Uribe (desasigna 88801)
+    const { actualizarColegiosDeAsesor } = await import('../src/services/configuracionGeneralService');
+    await actualizarColegiosDeAsesor('Rodrigo Fuentes Uribe', ['88802', '88803'], lista);
+
+    const actualizados = await listarEstablecimientos();
+    const cA = actualizados.find(c => c.rbd === '88801');
+    const cB = actualizados.find(c => c.rbd === '88802');
+    const cC = actualizados.find(c => c.rbd === '88803');
+
+    expect(cA?.asesorUatp).toBeUndefined();
+    expect(cB?.asesorUatp).toBe('Rodrigo Fuentes Uribe');
+    expect(cC?.asesorUatp).toBe('Rodrigo Fuentes Uribe');
+  });
 });

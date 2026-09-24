@@ -203,6 +203,26 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     };
   }, [colegiosFiltrados, diagnosticosMap, todosLosDocentes, periodoActivo]);
 
+  // Cambiar asesor individual de un colegio directamente
+  const handleCambiarAsesorColegio = async (est: Establecimiento, nuevoAsesor: string) => {
+    const asesorValor = nuevoAsesor === 'SIN_ASIGNAR' || nuevoAsesor.trim() === '' ? undefined : nuevoAsesor.trim();
+    try {
+      const actualizado: Establecimiento = {
+        ...est,
+        asesorUatp: asesorValor
+      };
+      await onGuardarColegio(actualizado);
+      setMensajeFeedback(
+        asesorValor
+          ? `✓ "${est.nombre}" reasignado a ${asesorValor}.`
+          : `✓ "${est.nombre}" marcado como Sin Asignar.`
+      );
+      setTimeout(() => setMensajeFeedback(null), 3000);
+    } catch (e: any) {
+      alert(`Error al reasignar colegio: ${e.message || e}`);
+    }
+  };
+
   // Manejador para reasignación masiva
   const handleEjecutarReasignacionBatch = async () => {
     if (colegiosSeleccionadosBatch.length === 0 || !asesorDestinoBatch) return;
@@ -370,16 +390,16 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
               </div>
             </div>
 
-            {perfilAsesorSeleccionado.comunasPreferentes && perfilAsesorSeleccionado.comunasPreferentes.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Comunas:</span>
-                {perfilAsesorSeleccionado.comunasPreferentes.map(c => (
-                  <span key={c} className="bg-slate-800 text-blue-300 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-slate-700">
-                    {c}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onAbrirConfiguraciones}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 hover:text-white text-xs font-bold rounded-xl border border-indigo-400/30 transition-colors shadow-xs"
+                title="Administrar los colegios asignados a este asesor"
+              >
+                <Building2 className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Gestionar Colegios de Cartera</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -622,11 +642,22 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                       </h3>
                     </div>
 
-                    {/* Badge de Asesor */}
+                    {/* Selector / Badge de Asesor Individual */}
                     <div className="text-right flex-shrink-0">
-                      <span className="inline-block text-[9px] font-semibold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg border border-slate-200 max-w-[120px] truncate" title={est.asesorUatp || 'Sin Asignar'}>
-                        👤 {est.asesorUatp || 'Sin Asignar'}
-                      </span>
+                      <select
+                        value={est.asesorUatp || 'SIN_ASIGNAR'}
+                        onChange={(e) => handleCambiarAsesorColegio(est, e.target.value)}
+                        aria-label={`Asignar asesor a ${est.nombre}`}
+                        className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-[10px] font-bold rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[140px] truncate transition-colors shadow-xs"
+                        title="Cambiar asesor asignado a este colegio"
+                      >
+                        <option value="SIN_ASIGNAR">⚠️ Sin Asignar</option>
+                        {todosLosAsesores.map((a) => (
+                          <option key={a.id || a.nombre} value={a.nombre}>
+                            👤 {a.nombre}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
@@ -760,9 +791,19 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                       </td>
                       <td className="p-3 font-medium">{est.comuna}</td>
                       <td className="p-3">
-                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-medium border border-slate-200">
-                          {est.asesorUatp || 'Sin Asignar'}
-                        </span>
+                        <select
+                          value={est.asesorUatp || 'SIN_ASIGNAR'}
+                          onChange={(e) => handleCambiarAsesorColegio(est, e.target.value)}
+                          aria-label={`Asignar asesor a ${est.nombre}`}
+                          className="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-[11px] font-bold rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[150px] truncate transition-colors shadow-xs"
+                        >
+                          <option value="SIN_ASIGNAR">⚠️ Sin Asignar</option>
+                          {todosLosAsesores.map((a) => (
+                            <option key={a.id || a.nombre} value={a.nombre}>
+                              👤 {a.nombre}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="p-3 text-center font-bold">{diag?.balanzaGeneral.totalCursos || 0}</td>
                       <td className="p-3 text-center">{diag?.balanzaGeneral.totalMatriculaProyectada || 0}</td>

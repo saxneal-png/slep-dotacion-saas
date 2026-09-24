@@ -284,6 +284,42 @@ export async function reasignarColegiosMasivo(
 }
 
 /**
+ * Actualiza la lista exacta de colegios asignados a un asesor UATP.
+ * Asigna los colegios seleccionados y desasigna los que fueron removidos de su cartera.
+ */
+export async function actualizarColegiosDeAsesor(
+  asesorNombre: string,
+  rbdsSeleccionados: string[],
+  colegiosActuales: Establecimiento[]
+): Promise<void> {
+  const rbdSet = new Set(rbdsSeleccionados.map(r => r.trim()));
+  const asesorNorm = asesorNombre.trim().toLowerCase();
+
+  for (const est of colegiosActuales) {
+    const estRbd = est.rbd.trim();
+    const estAsesor = (est.asesorUatp || '').trim().toLowerCase();
+
+    if (rbdSet.has(estRbd)) {
+      // Debe pertenecer a este asesor
+      if (estAsesor !== asesorNorm) {
+        await guardarEstablecimiento({
+          ...est,
+          asesorUatp: asesorNombre.trim()
+        });
+      }
+    } else {
+      // Si antes pertenecía a este asesor y ya no está seleccionado, se desasigna
+      if (estAsesor === asesorNorm) {
+        await guardarEstablecimiento({
+          ...est,
+          asesorUatp: undefined
+        });
+      }
+    }
+  }
+}
+
+/**
  * Restablece todas las configuraciones a sus valores de fábrica.
  */
 export function restablecerConfiguracionPorDefecto(): ConfiguracionGeneral {

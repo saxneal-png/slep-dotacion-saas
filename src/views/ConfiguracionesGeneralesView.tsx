@@ -3,7 +3,7 @@ import {
   Settings, UserCheck, Shield, Sparkles, Sliders, Database, Save, RotateCcw,
   Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, Key, ExternalLink,
   Bot, Eye, HelpCircle, FileSpreadsheet, HardDrive, RefreshCw, Check,
-  Mail, Phone, MapPin, Building2, Layers, Users
+  Mail, Phone, MapPin, Building2, Layers, Users, Search
 } from 'lucide-react';
 import {
   ConfiguracionGeneral,
@@ -21,7 +21,8 @@ import {
   eliminarPerfilAsesor,
   establecerAsesorActivo,
   restablecerConfiguracionPorDefecto,
-  reasignarColegiosMasivo
+  reasignarColegiosMasivo,
+  actualizarColegiosDeAsesor
 } from '../services/configuracionGeneralService';
 import { sincronizarCatalogoEstablecimientos } from '../database/seedData';
 
@@ -69,6 +70,10 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
   const [formCargoAsesor, setFormCargoAsesor] = useState('Asesor Técnico Pedagógico UATP');
   const [formComunasAsesor, setFormComunasAsesor] = useState<ComunaValleDiguillin[]>([]);
   const [formColorBadge, setFormColorBadge] = useState('#2563eb');
+  const [formColegiosAsignados, setFormColegiosAsignados] = useState<string[]>([]);
+  const [busquedaColegioModal, setBusquedaColegioModal] = useState('');
+  const [filtroComunaModal, setFiltroComunaModal] = useState<string>('ALL');
+  const [guardandoAsesor, setGuardandoAsesor] = useState(false);
 
   const mostrarMensaje = (msg: string) => {
     setMensajeGuardado(msg);
@@ -175,6 +180,9 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
     setFormCargoAsesor('Asesor Técnico Pedagógico UATP');
     setFormComunasAsesor([]);
     setFormColorBadge('#2563eb');
+    setFormColegiosAsignados([]);
+    setBusquedaColegioModal('');
+    setFiltroComunaModal('ALL');
     setModalAsesorAbierto(true);
   };
 
@@ -186,28 +194,69 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
     setFormCargoAsesor(asesor.cargo || 'Asesor Técnico Pedagógico UATP');
     setFormComunasAsesor(asesor.comunasPreferentes || []);
     setFormColorBadge(asesor.colorBadge || '#2563eb');
+    
+    // Colegios actualmente asignados a este asesor
+    const rbdsAsignados = colegios
+      .filter(c => c.asesorUatp?.toLowerCase().trim() === asesor.nombre.toLowerCase().trim())
+      .map(c => c.rbd);
+    setFormColegiosAsignados(rbdsAsignados);
+    setBusquedaColegioModal('');
+    setFiltroComunaModal('ALL');
     setModalAsesorAbierto(true);
   };
 
-  const handleGuardarModalAsesor = (e: React.FormEvent) => {
+  const handleGuardarModalAsesor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formNombreAsesor.trim()) return;
 
-    const asesorGuardar: PerfilAsesor = {
-      id: asesorEnEdicion ? asesorEnEdicion.id : `asesor-${Date.now()}`,
-      nombre: formNombreAsesor.trim(),
-      email: formEmailAsesor.trim(),
-      telefono: formTelefonoAsesor.trim() || undefined,
-      cargo: formCargoAsesor.trim() || undefined,
-      comunasPreferentes: formComunasAsesor,
-      colorBadge: formColorBadge
-    };
+    setGuardandoAsesor(true);
+    try {
+      const asesorGuardar: PerfilAsesor = {
+        id: asesorEnEdicion ? asesorEnEdicion.id : `asesor-${Date.now()}`,
+        nombre: formNombreAsesor.trim(),
+        email: formEmailAsesor.trim(),
+        telefono: formTelefonoAsesor.trim() || undefined,
+        cargo: formCargoAsesor.trim() || undefined,
+        comunasPreferentes: formComunasAsesor,
+        colorBadge: formColorBadge
+      };
 
-    const configActualizada = guardarPerfilAsesor(asesorGuardar);
-    setConfig(configActualizada);
-    setModalAsesorAbierto(false);
-    mostrarMensaje(`✓ Asesor "${asesorGuardar.nombre}" guardado correctamente.`);
+      const configActualizada = guardarPerfilAsesor(asesorGuardar);
+      setConfig(configActualizada);
+
+      // Actualizar asignación exacta de colegios por RBD
+      await actualizarColegiosDeAsesor(asesorGuardar.nombre, formColegiosAsignados, colegios);
+
+      if (onColegiosActualizados) {
+        await onColegiosActualizados();
+      }
+
+      setModalAsesorAbierto(false);
+      mostrarMensaje(`✓ Asesor "${asesorGuardar.nombre}" y su cartera de ${formColegiosAsignados.length} colegios guardados correctamente.`);
+    } catch (err: any) {
+      alert(`Error al guardar asesor y cartera de colegios: ${err.message || err}`);
+    } finally {
+      setGuardandoAsesor(false);
+    }
   };
+
+  const toggleColegioEnModal = (rbd: string) => {
+    setFormColegiosAsignados(prev =>
+      prev.includes(rbd) ? prev.filter(r => r !== rbd) : [...prev, rbd]
+    );
+  };
+
+  const colegiosFiltradosModal = colegios.filter(c => {
+    if (filtroComunaModal !== 'ALL' && c.comuna !== filtroComunaModal) return false;
+    if (busquedaColegioModal.trim()) {
+      const q = busquedaColegioModal.toLowerCase().trim();
+      const mNom = c.nombre.toLowerCase().includes(q);
+      const mRbd = c.rbd.toLowerCase().includes(q);
+      const mCom = (c.comuna || '').toLowerCase().includes(q);
+      return mNom || mRbd || mCom;
+    }
+    return true;
+  });
 
   const handleEliminarAsesor = (asesorId: string, asesorNombre: string) => {
     if (confirm(`¿Estás seguro de eliminar al asesor "${asesorNombre}" de la lista registrada?`)) {
@@ -529,10 +578,15 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
                       )}
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-200/70 flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-700">
-                        🏫 {colegiosAsignados.length} colegios
-                      </span>
+                    <div className="mt-4 pt-3 border-t border-slate-200/70 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => abrirModalEditarAsesor(asesor)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-lg transition-colors border border-indigo-200/60"
+                        title="Gestionar y asignar colegios a este asesor"
+                      >
+                        <Building2 className="w-3.5 h-3.5" />
+                        <span>Gestionar Colegios ({colegiosAsignados.length})</span>
+                      </button>
 
                       <div className="flex items-center gap-1">
                         <button
@@ -1051,96 +1105,275 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
         </div>
       )}
 
-      {/* Modal Agregar / Editar Asesor UATP */}
+      {/* Modal Agregar / Editar Asesor UATP con Asignación de Colegios (RBDs) */}
       {modalAsesorAbierto && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200 space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 animate-in zoom-in-95 duration-200 space-y-4 my-8">
             
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-indigo-600" />
-                {asesorEnEdicion ? 'Editar Asesor UATP' : 'Registrar Nuevo Asesor UATP'}
-              </h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">
+                    {asesorEnEdicion ? `Editar Asesor: ${asesorEnEdicion.nombre}` : 'Registrar Nuevo Asesor UATP'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Configura los datos del asesor y asigna directamente los establecimientos (RBDs) de su cartera.
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setModalAsesorAbierto(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+                className="text-slate-400 hover:text-slate-600 text-xl font-bold p-1 rounded-lg hover:bg-slate-100"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleGuardarModalAsesor} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nombre Completo *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej: Carolina Henríquez Soto"
-                  value={formNombreAsesor}
-                  onChange={(e) => setFormNombreAsesor(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+            <form onSubmit={handleGuardarModalAsesor} className="space-y-4">
+              
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* COLUMNA IZQUIERDA: DATOS PERSONALES DEL ASESOR (5 cols) */}
+                <div className="lg:col-span-5 space-y-3 pr-0 lg:pr-2 border-b lg:border-b-0 lg:border-r border-slate-200/80 pb-4 lg:pb-0">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Datos del Asesor UATP</span>
+                  </h4>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Correo Institucional *</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="carolina.henriquez@slepvallediguillin.cl"
-                  value={formEmailAsesor}
-                  onChange={(e) => setFormEmailAsesor(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Nombre Completo *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Carolina Henríquez Soto"
+                      value={formNombreAsesor}
+                      onChange={(e) => setFormNombreAsesor(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono</label>
-                <input
-                  type="text"
-                  placeholder="+56 9 8765 4321"
-                  value={formTelefonoAsesor}
-                  onChange={(e) => setFormTelefonoAsesor(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Correo Institucional *</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="carolina.henriquez@slepvallediguillin.cl"
+                      value={formEmailAsesor}
+                      onChange={(e) => setFormEmailAsesor(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Cargo Institucional</label>
-                <input
-                  type="text"
-                  placeholder="Asesor Técnico Pedagógico UATP"
-                  value={formCargoAsesor}
-                  onChange={(e) => setFormCargoAsesor(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono</label>
+                    <input
+                      type="text"
+                      placeholder="+56 9 8765 4321"
+                      value={formTelefonoAsesor}
+                      onChange={(e) => setFormTelefonoAsesor(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Comunas Preferentes</label>
-                <div className="grid grid-cols-2 gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200 max-h-32 overflow-y-auto">
-                  {COMUNAS_DISPONIBLES.map((c) => {
-                    const checked = formComunasAsesor.includes(c);
-                    return (
-                      <label key={c} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setFormComunasAsesor(prev =>
-                              prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
-                            );
-                          }}
-                          className="rounded text-indigo-600 focus:ring-indigo-500"
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Cargo Institucional</label>
+                    <input
+                      type="text"
+                      placeholder="Asesor Técnico Pedagógico UATP"
+                      value={formCargoAsesor}
+                      onChange={(e) => setFormCargoAsesor(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Color Distintivo Badge</label>
+                    <div className="flex items-center gap-2">
+                      {['#2563eb', '#7c3aed', '#059669', '#ea580c', '#db2777', '#0891b2', '#475569'].map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setFormColorBadge(c)}
+                          className={`w-6 h-6 rounded-full transition-transform ${formColorBadge === c ? 'scale-125 ring-2 ring-offset-2 ring-slate-800 shadow-md' : 'opacity-70 hover:opacity-100'}`}
+                          style={{ backgroundColor: c }}
                         />
-                        <span>{c}</span>
-                      </label>
-                    );
-                  })}
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Comunas de Referencia</label>
+                    <div className="grid grid-cols-2 gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200 max-h-28 overflow-y-auto">
+                      {COMUNAS_DISPONIBLES.map((c) => {
+                        const checked = formComunasAsesor.includes(c);
+                        return (
+                          <label key={c} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setFormComunasAsesor(prev =>
+                                  prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
+                                );
+                              }}
+                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span>{c}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
+
+                {/* COLUMNA DERECHA: ASIGNACIÓN DE COLEGIOS INDIVIDUALES (RBDs) (7 cols) */}
+                <div className="lg:col-span-7 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-indigo-600" />
+                        <span>Cartera de Colegios Asignados ({formColegiosAsignados.length})</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-500">
+                        Marca los colegios que asesorará. Los asesores gestionan colegios específicos, no comunas completas.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const visibles = colegiosFiltradosModal.map(c => c.rbd);
+                          const todosSeleccionados = visibles.every(r => formColegiosAsignados.includes(r));
+                          if (todosSeleccionados) {
+                            setFormColegiosAsignados(prev => prev.filter(r => !visibles.includes(r)));
+                          } else {
+                            setFormColegiosAsignados(prev => Array.from(new Set([...prev, ...visibles])));
+                          }
+                        }}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        {colegiosFiltradosModal.every(c => formColegiosAsignados.includes(c.rbd))
+                          ? 'Deseleccionar visibles'
+                          : `Marcar visibles (${colegiosFiltradosModal.length})`}
+                      </button>
+                      {formColegiosAsignados.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setFormColegiosAsignados([])}
+                          className="text-[11px] font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded-lg transition-colors"
+                        >
+                          Limpiar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Filtro y Buscador de Colegios */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Buscar por RBD o nombre..."
+                        value={busquedaColegioModal}
+                        onChange={(e) => setBusquedaColegioModal(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <select
+                      value={filtroComunaModal}
+                      onChange={(e) => setFiltroComunaModal(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="ALL">Todas las Comunas</option>
+                      {COMUNAS_DISPONIBLES.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Lista con Checkboxes de los 121 Establecimientos */}
+                  <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50/50 space-y-1">
+                    {colegiosFiltradosModal.length === 0 ? (
+                      <p className="text-xs text-center text-slate-400 py-6">
+                        No se encontraron establecimientos con ese filtro.
+                      </p>
+                    ) : (
+                      colegiosFiltradosModal.map((est) => {
+                        const checked = formColegiosAsignados.includes(est.rbd);
+                        const asesorActual = (est.asesorUatp || '').trim();
+                        const esDeOtro = asesorActual && asesorActual.toLowerCase() !== formNombreAsesor.trim().toLowerCase();
+
+                        return (
+                          <label
+                            key={est.rbd}
+                            className={`flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer text-xs ${
+                              checked
+                                ? 'bg-indigo-50/80 border-indigo-300 ring-1 ring-indigo-400/40'
+                                : 'bg-white border-slate-200/80 hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleColegioEnModal(est.rbd)}
+                                className="rounded text-indigo-600 focus:ring-indigo-500 flex-shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono text-[10px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded border border-slate-200">
+                                    RBD {est.rbd}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-slate-500">
+                                    • {est.comuna}
+                                  </span>
+                                </div>
+                                <div className="font-bold text-slate-900 truncate mt-0.5" title={est.nombre}>
+                                  {est.nombre}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex-shrink-0 text-right">
+                              {checked ? (
+                                <span className="bg-indigo-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                  Asignado
+                                </span>
+                              ) : esDeOtro ? (
+                                <span className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-semibold px-1.5 py-0.5 rounded truncate max-w-[110px] inline-block" title={`Asignado a ${asesorActual}`}>
+                                  {asesorActual}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-amber-600 font-semibold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                  Disponible
+                                </span>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="text-[11px] text-slate-500 flex items-center justify-between px-1">
+                    <span>Total en sistema: {colegios.length} escuelas</span>
+                    <span className="font-bold text-indigo-700">
+                      {formColegiosAsignados.length} en la cartera de {formNombreAsesor || 'este asesor'}
+                    </span>
+                  </div>
+
+                </div>
+
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              {/* Botones Pie de Modal */}
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModalAsesorAbierto(false)}
@@ -1150,11 +1383,20 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+                  disabled={guardandoAsesor || !formNombreAsesor.trim()}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
                 >
-                  {asesorEnEdicion ? 'Actualizar Asesor' : 'Guardar Asesor'}
+                  <Save className="w-3.5 h-3.5" />
+                  <span>
+                    {guardandoAsesor
+                      ? 'Guardando...'
+                      : asesorEnEdicion
+                      ? `Guardar Cambios (${formColegiosAsignados.length} colegios)`
+                      : `Crear Asesor (${formColegiosAsignados.length} colegios)`}
+                  </span>
                 </button>
               </div>
+
             </form>
 
           </div>
