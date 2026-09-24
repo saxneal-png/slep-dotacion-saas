@@ -48,7 +48,10 @@ export {
   listarAsignaciones,
   listarTodasLasAsignaciones,
   guardarAsignacion,
-  eliminarAsignacion
+  guardarAsignacionesBatch,
+  eliminarAsignacion,
+  limpiarAsignacionesDeColegio,
+  reconciliarYLimpiarAsignacionesEnDb
 } from './repositories/asignacionesRepo';
 
 export {

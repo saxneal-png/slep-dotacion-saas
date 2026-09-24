@@ -30,6 +30,8 @@ import {
 } from '../components/CurriculumAsignacionModals';
 import { ModalCombinarCursos } from '../components/ModalCombinarCursos';
 import { ModalDescombinarCurso } from '../components/ModalDescombinarCurso';
+import { ModalReconciliarMalla } from '../components/ModalReconciliarMalla';
+import { analizarSincronizacionDotacion } from '../services/reconciliacionDotacionService';
 import { CursoModalForm } from './curriculum/components/CursoModalForm';
 import { CursoNeeModal } from './curriculum/components/CursoNeeModal';
 import { MallaPlanPanel } from './curriculum/components/MallaPlanPanel';
@@ -47,6 +49,7 @@ export interface CurriculumDemandaViewProps {
   onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
   periodoActivo?: number;
+  onSincronizarMalla?: () => Promise<void> | void;
 }
 
 const NIVELES_REGULARES = [
@@ -104,10 +107,19 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   onEliminarCurso,
   onGuardarAsignacion,
   onEliminarAsignacion,
-  periodoActivo = 2026
+  periodoActivo = 2026,
+  onSincronizarMalla
 }) => {
   // Modal de Curso Avanzado
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
+  // Modal de Reconciliación Nómina-Malla
+  const [modalReconciliarOpen, setModalReconciliarOpen] = useState(false);
+
+  // Diagnóstico en tiempo real de coherencia Nómina vs Malla
+  const diagSincronizacion = useMemo(() => {
+    if (!colegio) return null;
+    return analizarSincronizacionDotacion(colegio, docentes, cursos, asignaciones);
+  }, [colegio, docentes, cursos, asignaciones]);
 
   // Curso seleccionado y subpestaña activa
   const [cursoSeleccionadoPlan, setCursoSeleccionadoPlan] = useState<string>(cursos[0]?.id || '');
@@ -580,6 +592,26 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
             </div>
           </div>
 
+          {/* Botón Reconciliar / Sincronizar con Nómina Ley */}
+          <button
+            type="button"
+            onClick={() => setModalReconciliarOpen(true)}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer border ${
+              diagSincronizacion && !diagSincronizacion.estaSincronizado
+                ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 animate-pulse'
+                : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+            }`}
+            title="Sincronizar la Malla Curricular con la última Nómina Ley de docentes"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Sincronizar con Nómina Ley</span>
+            {diagSincronizacion && (diagSincronizacion.huerfanasCount > 0 || diagSincronizacion.duplicadasCount > 0) && (
+              <span className="px-1.5 py-0.2 bg-white text-amber-900 rounded-full text-[10px] font-black">
+                {diagSincronizacion.huerfanasCount + diagSincronizacion.duplicadasCount}
+              </span>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setModalCombinarOpen(true)}
@@ -600,6 +632,27 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Banner de Diagnóstico / Alerta Preventiva de Duplicados o Precargas Obsoletas */}
+      {diagSincronizacion && !diagSincronizacion.estaSincronizado && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-950">
+              <strong className="font-bold block">Discrepancias detectadas con la Nómina Ley:</strong>
+              <span>{diagSincronizacion.resumenMensaje} Para evitar duplicación de horas o revisar todo manualmente, puedes sincronizar en 1 clic.</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setModalReconciliarOpen(true)}
+            className="shrink-0 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Reconciliar Ahora</span>
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Columna Izquierda: Lista de Cursos del Colegio con Badges de Docencia y PIE */}
@@ -1969,6 +2022,22 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         onClose={() => setModalDescombinarState({ isOpen: false, curso: null })}
         curso={modalDescombinarState.curso}
         onConfirmarDescombinacion={handleConfirmarDescombinarCurso}
+      />
+
+      {/* MODAL 7: RECONCILIACIÓN Y SINCRONIZACIÓN NÓMINA-MALLA */}
+      <ModalReconciliarMalla
+        isOpen={modalReconciliarOpen}
+        onClose={() => setModalReconciliarOpen(false)}
+        colegio={colegio}
+        cursos={cursos}
+        docentes={docentes}
+        asignaciones={asignaciones}
+        periodoActivo={periodoActivo}
+        onSincronizacionCompletada={async () => {
+          if (onSincronizarMalla) {
+            await onSincronizarMalla();
+          }
+        }}
       />
     </div>
   );

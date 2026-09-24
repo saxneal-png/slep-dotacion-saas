@@ -163,3 +163,71 @@ export async function eliminarAsignacion(id: string): Promise<void> {
   db.run("DELETE FROM asignaciones_horarias WHERE id = ?", [id]);
   persistDb();
 }
+
+/**
+ * Elimina todas las asignaciones horarias de un establecimiento para un periodo dado.
+ */
+export async function limpiarAsignacionesDeColegio(rbd: string, periodo: number = 2026): Promise<number> {
+  const db = await getDb();
+  const countBeforeRes = db.exec("SELECT COUNT(*) FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+  const countBefore = countBeforeRes.length && countBeforeRes[0].values.length ? Number(countBeforeRes[0].values[0][0]) : 0;
+  
+  db.run("DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+  persistDb();
+  return countBefore;
+}
+
+/**
+ * Purga asignaciones huérfanas (que apuntan a docentes o cursos que ya no existen en este colegio/periodo)
+ * y consolida asignaciones exactamente duplicadas.
+ */
+export async function reconciliarYLimpiarAsignacionesEnDb(rbd: string, periodo: number = 2026): Promise<{ huerfanasEliminadas: number; duplicadasEliminadas: number }> {
+  const db = await getDb();
+  const countBeforeRes = db.exec("SELECT COUNT(*) FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+  const countBefore = countBeforeRes.length && countBeforeRes[0].values.length ? Number(countBeforeRes[0].values[0][0]) : 0;
+
+  // 1. Eliminar asignaciones huérfanas de docentes que no están en la nómina activa de este colegio
+  db.run(`
+    DELETE FROM asignaciones_horarias 
+    WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
+      AND docente_id != 'SIN_DOCENTE' AND docente_id != '' 
+      AND docente_id NOT IN (
+        SELECT id FROM docentes 
+        WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
+      )
+  `, [rbd, periodo, periodo, rbd, periodo, periodo]);
+
+  // 2. Eliminar asignaciones huérfanas de cursos que ya no existen en este colegio
+  db.run(`
+    DELETE FROM asignaciones_horarias 
+    WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
+      AND curso_id != 'TRANSVERSAL' AND curso_id != 'SIN_CURSO'
+      AND curso_id NOT IN (
+        SELECT id FROM cursos_sae 
+        WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
+      )
+  `, [rbd, periodo, periodo, rbd, periodo, periodo]);
+
+  const countAfterHuerfanasRes = db.exec("SELECT COUNT(*) FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+  const countAfterHuerfanas = countAfterHuerfanasRes.length && countAfterHuerfanasRes[0].values.length ? Number(countAfterHuerfanasRes[0].values[0][0]) : 0;
+  const huerfanasEliminadas = Math.max(0, countBefore - countAfterHuerfanas);
+
+  // 3. Deduplicar asignaciones idénticas (mismo curso, docente, asignatura, tipo de apoyo y horas)
+  db.run(`
+    DELETE FROM asignaciones_horarias
+    WHERE id NOT IN (
+      SELECT MIN(id)
+      FROM asignaciones_horarias
+      WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
+      GROUP BY curso_id, docente_id, asignatura, COALESCE(tipo_apoyo, ''), horas_pedagogicas_aula
+    )
+    AND rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026));
+  `, [rbd, periodo, periodo, rbd, periodo, periodo]);
+
+  const countFinalRes = db.exec("SELECT COUNT(*) FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+  const countFinal = countFinalRes.length && countFinalRes[0].values.length ? Number(countFinalRes[0].values[0][0]) : 0;
+  const duplicadasEliminadas = Math.max(0, countAfterHuerfanas - countFinal);
+
+  persistDb();
+  return { huerfanasEliminadas, duplicadasEliminadas };
+}

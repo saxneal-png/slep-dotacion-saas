@@ -436,6 +436,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             onGuardarAsignacion={onGuardarAsignacion}
             onEliminarAsignacion={onEliminarAsignacion}
             periodoActivo={periodoActivo}
+            onSincronizarMalla={onRefreshData}
           />
         )}
 
