@@ -8,37 +8,57 @@ export default {
   theme: {
     extend: {
       colors: {
-        slep: {
-          blue: '#002B49',
-          lightBlue: '#006699',
-          accent: '#E35205',
-          gold: '#C69214',
-          bg: '#F4F7F9',
-          card: '#FFFFFF',
-          border: '#E2E8F0',
-          text: '#1E293B',
-          muted: '#64748B'
+        // Colores semánticos vía CSS variables — funcionan con TODOS los temas
+        brand: {
+          primary:      'var(--brand-primary)',
+          light:        'var(--brand-primary-light)',
+          accent:       'var(--brand-accent)',
+          gold:         'var(--brand-gold)',
         },
-        theme: {
-          canvas: 'var(--canvas-bg)',
-          card: 'var(--surface-card)',
-          cardHover: 'var(--surface-card-hover)',
-          elevated: 'var(--surface-elevated)',
-          border: 'var(--border-subtle)',
-          borderStrong: 'var(--border-strong)',
-          textPrimary: 'var(--text-primary)',
-          textSecondary: 'var(--text-secondary)',
-          textMuted: 'var(--text-muted)',
-          primary: 'var(--brand-primary)',
-          primaryLight: 'var(--brand-primary-light)',
-          accent: 'var(--brand-accent)',
-          gold: 'var(--brand-gold)',
-          success: 'var(--status-success)',
-          warning: 'var(--status-warning)',
-          danger: 'var(--status-danger)',
-          pie: 'var(--status-pie)',
-          sep: 'var(--status-sep)'
-        }
+        canvas:         'var(--canvas-bg)',
+        surface: {
+          card:         'var(--surface-card)',
+          hover:        'var(--surface-card-hover)',
+          elevated:     'var(--surface-elevated)',
+        },
+        border: {
+          subtle:       'var(--border-subtle)',
+          strong:       'var(--border-strong)',
+        },
+        content: {
+          primary:      'var(--text-primary)',
+          secondary:    'var(--text-secondary)',
+          muted:        'var(--text-muted)',
+        },
+        hdr: {
+          bg:           'var(--header-bg)',
+          text:         'var(--header-text)',
+          muted:        'var(--header-muted)',
+          border:       'var(--header-border)',
+          activeBg:     'var(--nav-active-bg)',
+          activeText:   'var(--nav-active-text)',
+          idleText:     'var(--nav-idle-text)',
+          hoverBg:      'var(--nav-hover-bg)',
+        },
+        status: {
+          success:      'var(--status-success)',
+          warning:      'var(--status-warning)',
+          danger:       'var(--status-danger)',
+          pie:          'var(--status-pie)',
+          sep:          'var(--status-sep)',
+        },
+        // Colores legacy para no romper código existente
+        slep: {
+          blue:         '#007AFF',
+          lightBlue:    '#5AC8FA',
+          accent:       '#FF6B35',
+          gold:         '#C69214',
+          bg:           '#F5F5F7',
+          card:         '#FFFFFF',
+          border:       '#D2D2D7',
+          text:         '#1D1D1F',
+          muted:        '#6E6E73',
+        },
       },
       boxShadow: {
         'glow-primary': '0 0 20px -3px var(--glow-primary)',

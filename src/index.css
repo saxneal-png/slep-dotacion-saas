@@ -3,215 +3,282 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   SISTEMA DE TEMAS Y VARIABLES CSS SEMÁNTICAS (MINEDUC / SLEP)
+   SISTEMA DE TEMAS COMPLETO Y DE ALTO CONTRASTE (FILOSOFÍA STEVE JOBS)
    ========================================================================== */
 
-:root, [data-theme="slep-republicano"] {
-  --canvas-bg: #f8fafc;
-  --surface-card: #ffffff;
-  --surface-card-hover: #f1f5f9;
-  --surface-elevated: #ffffff;
-  --border-subtle: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  
-  --brand-primary: #002b49;        /* Azul SLEP Oficial */
-  --brand-primary-light: #006699;  /* Azul Claro */
-  --brand-accent: #e35205;         /* Naranja Institucional */
-  --brand-gold: #c69214;           /* Dorado de Honor */
-  
-  --status-success: #10b981;
-  --status-warning: #f59e0b;
-  --status-danger: #e11d48;
-  --status-pie: #8b5cf6;
-  --status-sep: #0284c7;
+/* --------------------------------------------------------------------------
+   FALLBACK GLOBAL (:root) & TEMA 1 – INSTITUCIONAL SLEP (Claro Apple)
+   -------------------------------------------------------------------------- */
+:root,
+[data-theme="slep-republicano"] {
+  /* Fondos */
+  --canvas-bg:          #F8FAFC;
+  --surface-card:       #FFFFFF;
+  --surface-card-hover: #F1F5F9;
+  --surface-elevated:   #FFFFFF;
 
-  --glow-primary: rgba(0, 102, 153, 0.2);
+  /* Bordes */
+  --border-subtle:      #CBD5E1;
+  --border-strong:      #94A3B8;
+
+  /* Textos */
+  --text-primary:       #0F172A;
+  --text-secondary:     #334155;
+  --text-muted:         #475569;
+
+  /* Marca & Acentos */
+  --brand-primary:      #007AFF;
+  --brand-primary-light:#0056B3;
+  --brand-primary-rgb:  0, 122, 255;
+  --brand-accent:       #E35205;
+  --brand-gold:         #B45309;
+
+  /* Cabecera */
+  --header-bg:          #0F172A;
+  --header-text:        #FFFFFF;
+  --header-muted:       #E2E8F0;
+  --header-border:      #334155;
+  --nav-active-bg:      #007AFF;
+  --nav-active-text:    #FFFFFF;
+  --nav-idle-text:      #F1F5F9;
+  --nav-hover-bg:       #1E293B;
+
+  /* Estados */
+  --status-success:     #15803D;
+  --status-warning:     #B45309;
+  --status-danger:      #DC2626;
+  --status-pie:         #7E22CE;
+  --status-sep:         #0369A1;
+
+  --glow-primary:       rgba(0, 122, 255, 0.22);
 }
 
+/* --------------------------------------------------------------------------
+   TEMA 2 – EXECUTIVE DARK (Oscuro Apple)
+   -------------------------------------------------------------------------- */
 [data-theme="executive-dark"] {
-  --canvas-bg: #090d16;
-  --surface-card: #0f172a;
-  --surface-card-hover: #1e293b;
-  --surface-elevated: #1e293b;
-  --border-subtle: #1e293b;
-  --border-strong: #334155;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  
-  --brand-primary: #38bdf8;
-  --brand-primary-light: #7dd3fc;
-  --brand-accent: #f97316;
-  --brand-gold: #fbbf24;
-  
-  --status-success: #34d399;
-  --status-warning: #fbbf24;
-  --status-danger: #fb7185;
-  --status-pie: #a78bfa;
-  --status-sep: #38bdf8;
+  --canvas-bg:          #0B0F19;
+  --surface-card:       #131C2E;
+  --surface-card-hover: #1E293B;
+  --surface-elevated:   #1E293B;
 
-  --glow-primary: rgba(56, 189, 248, 0.25);
+  --border-subtle:      #334155;
+  --border-strong:      #475569;
+
+  --text-primary:       #FFFFFF;
+  --text-secondary:     #F1F5F9;
+  --text-muted:         #CBD5E1;
+
+  --brand-primary:      #0A84FF;
+  --brand-primary-light:#60A5FA;
+  --brand-primary-rgb:  10, 132, 255;
+  --brand-accent:       #FB923C;
+  --brand-gold:         #FBBF24;
+
+  --header-bg:          #0B0F19;
+  --header-text:        #FFFFFF;
+  --header-muted:       #CBD5E1;
+  --header-border:      #334155;
+  --nav-active-bg:      #0A84FF;
+  --nav-active-text:    #FFFFFF;
+  --nav-idle-text:      #F1F5F9;
+  --nav-hover-bg:       #1E293B;
+
+  --status-success:     #4ADE80;
+  --status-warning:     #FBBF24;
+  --status-danger:      #F87171;
+  --status-pie:         #C084FC;
+  --status-sep:         #38BDF8;
+
+  --glow-primary:       rgba(10, 132, 255, 0.28);
 }
 
+/* --------------------------------------------------------------------------
+   TEMA 3 – WARM EARTH (Tierra y Madera Cálida)
+   -------------------------------------------------------------------------- */
+[data-theme="warm-earth"] {
+  --canvas-bg:          #FAF6F0;
+  --surface-card:       #FFFFFF;
+  --surface-card-hover: #F5EFEB;
+  --surface-elevated:   #FFFFFF;
+
+  --border-subtle:      #D7CCC8;
+  --border-strong:      #BCAAA4;
+
+  --text-primary:       #1C1917;
+  --text-secondary:     #292524;
+  --text-muted:         #44403C;
+
+  --brand-primary:      #9C5722;
+  --brand-primary-light:#78350F;
+  --brand-primary-rgb:  156, 87, 34;
+  --brand-accent:       #C2410C;
+  --brand-gold:         #B45309;
+
+  --header-bg:          #1C1917;
+  --header-text:        #FFFFFF;
+  --header-muted:       #E7E5E4;
+  --header-border:      #44403C;
+  --nav-active-bg:      #9C5722;
+  --nav-active-text:    #FFFFFF;
+  --nav-idle-text:      #F5F5F4;
+  --nav-hover-bg:       #292524;
+
+  --status-success:     #166534;
+  --status-warning:     #9A3412;
+  --status-danger:      #991B1B;
+  --status-pie:         #6B21A8;
+  --status-sep:         #075985;
+
+  --glow-primary:       rgba(156, 87, 34, 0.22);
+}
+
+/* --------------------------------------------------------------------------
+   TEMA 4 – EMERALD NORDIC (Nórdico Esmeralda)
+   -------------------------------------------------------------------------- */
 [data-theme="emerald-nordic"] {
-  --canvas-bg: #f4fbf7;
-  --surface-card: #ffffff;
-  --surface-card-hover: #ebf8f2;
-  --surface-elevated: #ffffff;
-  --border-subtle: #d1fae5;
-  --border-strong: #a7f3d0;
-  --text-primary: #064e3b;
-  --text-secondary: #047857;
-  --text-muted: #6ee7b7;
-  
-  --brand-primary: #059669;
-  --brand-primary-light: #10b981;
-  --brand-accent: #d97706;
-  --brand-gold: #eab308;
-  
-  --status-success: #059669;
-  --status-warning: #d97706;
-  --status-danger: #dc2626;
-  --status-pie: #7c3aed;
-  --status-sep: #0284c7;
+  --canvas-bg:          #F0FDF4;
+  --surface-card:       #FFFFFF;
+  --surface-card-hover: #DCFCE7;
+  --surface-elevated:   #FFFFFF;
 
-  --glow-primary: rgba(5, 150, 105, 0.2);
+  --border-subtle:      #BBF7D0;
+  --border-strong:      #86EFAC;
+
+  --text-primary:       #064E3B;
+  --text-secondary:     #065F46;
+  --text-muted:         #047857;
+
+  --brand-primary:      #059669;
+  --brand-primary-light:#047857;
+  --brand-primary-rgb:  5, 150, 105;
+  --brand-accent:       #D97706;
+  --brand-gold:         #CA8A04;
+
+  --header-bg:          #064E3B;
+  --header-text:        #FFFFFF;
+  --header-muted:       #D1FAE5;
+  --header-border:      #047857;
+  --nav-active-bg:      #059669;
+  --nav-active-text:    #FFFFFF;
+  --nav-idle-text:      #ECFDF5;
+  --nav-hover-bg:       #065F46;
+
+  --status-success:     #059669;
+  --status-warning:     #D97706;
+  --status-danger:      #DC2626;
+  --status-pie:         #7C3AED;
+  --status-sep:         #0284C7;
+
+  --glow-primary:       rgba(5, 150, 105, 0.22);
 }
 
+/* --------------------------------------------------------------------------
+   TEMA 5 – HIGH CONTRAST (Accesibilidad WCAG AAA)
+   -------------------------------------------------------------------------- */
 [data-theme="high-contrast"] {
-  --canvas-bg: #ffffff;
-  --surface-card: #ffffff;
-  --surface-card-hover: #f4f4f5;
-  --surface-elevated: #ffffff;
-  --border-subtle: #000000;
-  --border-strong: #000000;
-  --text-primary: #000000;
-  --text-secondary: #18181b;
-  --text-muted: #27272a;
-  
-  --brand-primary: #000000;
-  --brand-primary-light: #09090b;
-  --brand-accent: #c2410c;
-  --brand-gold: #854d0e;
-  
-  --status-success: #15803d;
-  --status-warning: #b45309;
-  --status-danger: #b91c1c;
-  --status-pie: #6d28d9;
-  --status-sep: #0369a1;
+  --canvas-bg:          #FFFFFF;
+  --surface-card:       #FFFFFF;
+  --surface-card-hover: #F4F4F5;
+  --surface-elevated:   #FFFFFF;
 
-  --glow-primary: rgba(0, 0, 0, 0.3);
+  --border-subtle:      #000000;
+  --border-strong:      #000000;
+
+  --text-primary:       #000000;
+  --text-secondary:     #000000;
+  --text-muted:         #18181B;
+
+  --brand-primary:      #0040C7;
+  --brand-primary-light:#002F94;
+  --brand-primary-rgb:  0, 64, 199;
+  --brand-accent:       #B91C1C;
+  --brand-gold:         #854D0E;
+
+  --header-bg:          #000000;
+  --header-text:        #FFFFFF;
+  --header-muted:       #FFFFFF;
+  --header-border:      #52525B;
+  --nav-active-bg:      #0040C7;
+  --nav-active-text:    #FFFFFF;
+  --nav-idle-text:      #FFFFFF;
+  --nav-hover-bg:       #27272A;
+
+  --status-success:     #15803D;
+  --status-warning:     #B45309;
+  --status-danger:      #B91C1C;
+  --status-pie:         #581C87;
+  --status-sep:         #0369A1;
+
+  --glow-primary:       rgba(0, 64, 199, 0.35);
 }
 
+/* ==========================================================================
+   BASE & TYPOGRAPHY
+   ========================================================================== */
 @layer base {
+  html {
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
   body {
     background-color: var(--canvas-bg);
     color: var(--text-primary);
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary);
   }
 }
 
 /* ==========================================================================
-   UTILIDADES ARTESANALES DE ALTA GAMA (MICROINTERACCIONES & GLASSMORPHISM)
+   COMPONENTES SEMÁNTICOS
    ========================================================================== */
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-}
-
-[data-theme="executive-dark"] .glass-panel {
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(30, 41, 59, 0.9);
+.app-header {
+  background-color: var(--header-bg) !important;
+  color: var(--header-text) !important;
+  border-bottom: 1px solid var(--header-border) !important;
 }
 
 .card-elevated {
   background-color: var(--surface-card);
   border: 1px solid var(--border-subtle);
   border-radius: 1rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 1px 3px 0 rgba(0, 0, 0, 0.06),
+    0 1px 2px -1px rgba(0, 0, 0, 0.04);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
 .card-elevated:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 10px 25px -4px rgba(0, 43, 73, 0.06), 0 4px 10px -2px rgba(0, 43, 73, 0.03);
+  box-shadow:
+    0 8px 24px -4px rgba(var(--brand-primary-rgb), 0.12),
+    0 3px 8px -2px rgba(0, 0, 0, 0.06);
 }
 
-[data-theme="executive-dark"] .card-elevated:hover {
-  box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.4), 0 4px 10px -2px rgba(0, 0, 0, 0.3);
+.glass-panel {
+  background: rgba(255, 255, 255, 0.90);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid var(--border-subtle);
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
 }
 
-/* Scrollbars estilizadas y delgadas */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border-strong);
   border-radius: 9999px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-[data-theme="executive-dark"] ::-webkit-scrollbar-thumb {
-  background: #334155;
-}
-
-[data-theme="executive-dark"] ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
-
-@media print {
-  header,
-  nav,
-  button,
-  .no-print {
-    display: none !important;
-  }
-
-  body {
-    background: white !important;
-    color: black !important;
-    padding: 0 !important;
-  }
-
-  main {
-    max-width: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  .shadow-sm,
-  .shadow-md,
-  .shadow-lg,
-  .shadow-xl,
-  .shadow-2xl,
-  .card-elevated {
-    box-shadow: none !important;
-    border-color: #cbd5e1 !important;
-  }
-
-  .p-5, .p-6, tr {
-    page-break-inside: avoid;
-  }
+  background: var(--text-secondary);
 }

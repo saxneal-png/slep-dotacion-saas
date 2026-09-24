@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import {
   Users, Building2, Search, Filter, ArrowRight, FileSpreadsheet, Download,
   CheckCircle2, AlertTriangle, AlertCircle, ShieldCheck, Sparkles, SlidersHorizontal,
-  LayoutGrid, List, UserCheck, RefreshCw, ChevronRight, Mail, Phone, MapPin,
-  HelpCircle, ExternalLink, Settings, Plus, Check, ArrowUpDown, X
+  LayoutGrid, List, UserCheck, RefreshCw, ChevronRight, ChevronDown, Mail, Phone, MapPin,
+  HelpCircle, ExternalLink, Settings, Plus, Check, ArrowUpDown, X, Globe, User
 } from 'lucide-react';
 import { Establecimiento, CursoSae, Docente, AsignacionHoraria, PerfilAsesor } from '../types';
 import { DiagnosticoColegioCompleto, calcularDiagnosticoColegio } from '../services/dotacionCalculationService';
@@ -53,7 +53,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   const [procesandoReasignacion, setProcesandoReasignacion] = useState(false);
   const [mensajeFeedback, setMensajeFeedback] = useState<string | null>(null);
 
-  // Lista de nombres únicos de asesores
+  // Lista de asesores únicos
   const todosLosAsesores = useMemo(() => {
     const map = new Map<string, PerfilAsesor>();
     for (const a of config.asesoresRegistrados) {
@@ -140,6 +140,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     let horasContratadasTotal = 0;
     let horasAulaDemandadasTotal = 0;
     let horasLectivasAsignadasTotal = 0;
+    let balanceNeto = 0;
     let colegiosConDeficit = 0;
     let colegiosConSuperavit = 0;
     let colegiosEquilibrados = 0;
@@ -150,31 +151,30 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     for (const est of colegiosFiltrados) {
       const diag = diagnosticosMap.get(est.rbd);
       if (diag) {
-        matriculaTotal += diag.balanzaGeneral.totalMatriculaProyectada;
-        cursosTotal += diag.balanzaGeneral.totalCursos;
-        cuposSaeTotal += diag.balanzaGeneral.totalCuposSae;
-        horasContratadasTotal += diag.balanzaGeneral.horasContratadasTotales;
-        horasAulaDemandadasTotal += diag.balanzaGeneral.horasAulaDemandadasCurriculo;
-        horasLectivasAsignadasTotal += diag.balanzaGeneral.horasLectivasAsignadas;
+        matriculaTotal += diag.balanzaGeneral.totalMatriculaProyectada || 0;
+        cursosTotal += diag.balanzaGeneral.totalCursos || 0;
+        cuposSaeTotal += diag.balanzaGeneral.totalCuposSae || 0;
+        horasContratadasTotal += diag.balanzaGeneral.horasContratadasTotales || 0;
+        horasAulaDemandadasTotal += diag.balanzaGeneral.horasAulaDemandadasCurriculo || 0;
+        horasLectivasAsignadasTotal += diag.balanzaGeneral.horasLectivasAsignadas || 0;
         
-        const alertasCount = (diag.balanzaGeneral.sobreasignacionesAlertas?.length || 0) +
-          (diag.balanzaGeneral.alertasInfraestructura?.length || 0) +
-          (diag.balanzaGeneral.alertasAforoPie?.length || 0);
-        totalInconsistencias += alertasCount;
-
-        const bal = diag.balanzaGeneral.superavitDeficitLectivo;
+        const bal = diag.balanzaGeneral.superavitDeficitLectivo || 0;
+        balanceNeto += bal;
         if (bal < 0) colegiosConDeficit++;
         else if (bal > 0) colegiosConSuperavit++;
         else colegiosEquilibrados++;
+
+        totalInconsistencias += (diag.balanzaGeneral.sobreasignacionesAlertas?.length || 0) +
+          (diag.balanzaGeneral.alertasInfraestructura?.length || 0) +
+          (diag.balanzaGeneral.alertasAforoPie?.length || 0);
       }
 
-      const docsColegio = todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo));
-      for (const d of docsColegio) {
-        docentesSet.add(d.run);
+      for (const d of todosLosDocentes) {
+        if (d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo)) {
+          docentesSet.add(d.run);
+        }
       }
     }
-
-    const balanceNeto = horasLectivasAsignadasTotal - horasAulaDemandadasTotal;
 
     return {
       totalColegios: colegiosFiltrados.length,
@@ -244,7 +244,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-12">
       
       {/* Toast Feedback */}
       {mensajeFeedback && (
@@ -254,124 +254,141 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
         </div>
       )}
 
-      {/* Hero Banner Ejecutivo Bento */}
-      <div className="bg-gradient-to-br from-[#002B49] via-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-soft-lg border border-slate-700/80 relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+      {/* ── 1. COMANDO EJECUTIVO UATP (Apple Clean Design) ── */}
+      <div className="card-elevated p-5 sm:p-6 bg-gradient-to-r from-surface-card via-surface-card to-slate-50/50 dark:to-slate-900/50 border border-border-subtle relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
           
-          {/* Título & Contexto */}
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-bold tracking-wide uppercase">
-              <UserCheck className="w-3.5 h-3.5 text-blue-400" />
-              <span>Supervisión UATP & Cartera Focalizada</span>
+          {/* Título & Badge Institucional */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-[11px] font-extrabold uppercase tracking-wider">
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>Supervisión Territorial UATP</span>
+              </span>
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                • {colegios.length} Establecimientos en Territorio
+              </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              Apartado Colegios Asesorados
+            
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Control de Dotación & Asesorías Escolares
             </h1>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Supervisión de dotación docente, aforos y cumplimiento normativo MINEDUC para la cartera de establecimientos.
+            <p className="text-xs text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed">
+              Monitoreo analítico de horas lectivas, contratos Ley 20.903 y balance horario por asesor técnico.
             </p>
           </div>
 
-          {/* Selector de Asesor & Acciones */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          {/* Selector de Cartera & Botonera Artesanal */}
+          <div className="flex flex-wrap items-center gap-2">
             
-            {/* Botón Acceso Rápido: Mi Cartera */}
-            <button
-              onClick={() => setAsesorFiltro(config.asesorActivoNombre)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] ${
-                asesorFiltro === config.asesorActivoNombre
-                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-orange-500/20 ring-2 ring-orange-400/50'
-                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80'
-              }`}
-              title="Filtrar por mi usuario asignado"
-            >
-              <UserCheck className="w-4 h-4 text-orange-300" />
-              <span>Mis Colegios ({config.asesorActivoNombre.split(' ')[0]})</span>
-            </button>
-
-            {/* Dropdown Selector de Asesor */}
-            <div className="relative">
-              <select
-                value={asesorFiltro}
-                onChange={(e) => setAsesorFiltro(e.target.value)}
-                aria-label="Filtrar por Asesor Técnico UATP"
-                className="appearance-none bg-slate-900/90 border border-slate-700 hover:border-blue-400 text-white font-semibold text-xs rounded-xl px-4 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors shadow-sm cursor-pointer"
+            {/* Segmented Control de Cartera */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+              <button
+                onClick={() => setAsesorFiltro(config.asesorActivoNombre)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                  asesorFiltro === config.asesorActivoNombre
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/60 dark:hover:bg-slate-700'
+                }`}
               >
-                <option value="TODOS">🌐 Todo el Territorio ({colegios.length} Colegios)</option>
-                <option value="SIN_ASIGNAR">⚠️ Establecimientos Sin Asignar</option>
-                <optgroup label="Asesores UATP">
-                  {todosLosAsesores.map((asesor) => (
-                    <option key={asesor.id || asesor.nombre} value={asesor.nombre}>
-                      👤 {asesor.nombre} ({colegios.filter(c => c.asesorUatp?.toLowerCase().trim() === asesor.nombre.toLowerCase().trim()).length} colegios)
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Mis Colegios</span>
+              </button>
+
+              <button
+                onClick={() => setAsesorFiltro('TODOS')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                  asesorFiltro === 'TODOS'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/60 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>Todo ({colegios.length})</span>
+              </button>
+
+              {/* Selector Desplegable de Asesor */}
+              <div className="relative">
+                <select
+                  value={asesorFiltro === config.asesorActivoNombre || asesorFiltro === 'TODOS' ? '' : asesorFiltro}
+                  onChange={(e) => {
+                    if (e.target.value) setAsesorFiltro(e.target.value);
+                  }}
+                  aria-label="Seleccionar otro asesor"
+                  className={`appearance-none bg-transparent pl-2.5 pr-7 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors focus:outline-none ${
+                    asesorFiltro !== config.asesorActivoNombre && asesorFiltro !== 'TODOS'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <option value="" disabled className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
+                    Otro asesor...
+                  </option>
+                  <option value="SIN_ASIGNAR" className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
+                    ⚠️ Sin Asignar
+                  </option>
+                  {todosLosAsesores.map((a) => (
+                    <option key={a.id || a.nombre} value={a.nombre} className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
+                      👤 {a.nombre}
                     </option>
                   ))}
-                </optgroup>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
-                <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-60" />
               </div>
             </div>
 
-            {/* Botón Reasignación en Lote */}
+            {/* Reasignar Lote */}
             <button
               onClick={() => {
                 setColegiosSeleccionadosBatch([]);
                 setModalReasignarAbierto(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm border border-indigo-400/40 active:scale-[0.98]"
-              title="Reasignar colegios masivamente"
+              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-2xl border border-indigo-200 dark:border-indigo-800 transition-all shadow-xs active:scale-[0.98]"
+              title="Reasignar colegios en lote"
             >
               <ArrowUpDown className="w-3.5 h-3.5" />
-              <span>Reasignar Lote</span>
+              <span className="hidden sm:inline">Reasignar Lote</span>
             </button>
 
-            {/* Botón Configuración */}
+            {/* Ajustes */}
             <button
               onClick={onAbrirConfiguraciones}
-              className="p-2 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all border border-slate-700/80 shadow-sm"
-              title="Abrir Centro de Configuraciones Generales"
+              className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-2xl border border-slate-200 dark:border-slate-700 transition-all shadow-xs"
+              title="Configuraciones UATP"
             >
-              <Settings className="w-4 h-4 text-slate-300" />
+              <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
             </button>
 
           </div>
 
         </div>
 
-        {/* Ficha del Asesor Seleccionado */}
+        {/* Ficha Dinámica del Asesor Seleccionado */}
         {perfilAsesorSeleccionado && (
-          <div className="mt-6 pt-5 border-t border-slate-700/80 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div className="mt-4 pt-4 border-t border-border-subtle flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-3">
               <div
-                className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm text-white shadow-md ring-2 ring-white/10"
-                style={{ backgroundColor: perfilAsesorSeleccionado.colorBadge || '#2563eb' }}
+                className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs text-white shadow-sm ring-1 ring-black/10"
+                style={{ backgroundColor: perfilAsesorSeleccionado.colorBadge || '#007AFF' }}
               >
                 {perfilAsesorSeleccionado.nombre.split(' ').map(n => n[0]).slice(0, 2).join('')}
               </div>
               <div>
-                <div className="font-bold text-white text-sm flex items-center gap-2">
-                  {perfilAsesorSeleccionado.nombre}
-                  {perfilAsesorSeleccionado.nombre === config.asesorActivoNombre && (
-                    <span className="bg-orange-500/20 text-orange-300 border border-orange-400/40 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                      Asesor Activo
-                    </span>
-                  )}
+                <div className="font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>{perfilAsesorSeleccionado.nombre}</span>
+                  <span className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                    {colegiosFiltrados.length} escuelas asignadas
+                  </span>
                 </div>
-                <div className="text-slate-300 text-[11px] flex items-center gap-3 mt-0.5">
-                  <span className="flex items-center gap-1">
-                    <Mail className="w-3 h-3 text-slate-400" />
+                <div className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-3 mt-0.5">
+                  <span className="flex items-center gap-1 font-medium">
+                    <Mail className="w-3 h-3" />
                     {perfilAsesorSeleccionado.email}
                   </span>
                   {perfilAsesorSeleccionado.telefono && (
-                    <span className="flex items-center gap-1">
-                      <Phone className="w-3 h-3 text-slate-400" />
+                    <span className="flex items-center gap-1 font-medium">
+                      <Phone className="w-3 h-3" />
                       {perfilAsesorSeleccionado.telefono}
-                    </span>
-                  )}
-                  {perfilAsesorSeleccionado.cargo && (
-                    <span className="text-slate-400 font-medium">
-                      • {perfilAsesorSeleccionado.cargo}
                     </span>
                   )}
                 </div>
@@ -380,116 +397,120 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
 
             <button
               onClick={onAbrirConfiguraciones}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 hover:text-white text-xs font-bold rounded-xl border border-indigo-400/30 transition-all shadow-xs"
+              className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
             >
-              <Building2 className="w-3.5 h-3.5 text-indigo-300" />
-              <span>Gestionar Cartera de Asesor</span>
+              <span>Gestionar perfil de asesor</span>
+              <ChevronRight className="w-3 h-3" />
             </button>
           </div>
         )}
       </div>
 
-      {/* Grid de Métricas KPI Bento */}
+      {/* ── 2. DASHBOARD KPI (Bento Grid) ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         
         {/* 1. Colegios */}
-        <div className="card-elevated p-4 flex flex-col justify-between group">
+        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-blue-400 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Establecimientos</span>
-            <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Escuelas</span>
+            <div className="p-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
               <Building2 className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums font-mono">{metricasAsesor.totalColegios}</span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">colegios en cartera</span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.totalColegios}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">en esta cartera</span>
           </div>
         </div>
 
         {/* 2. Docentes */}
-        <div className="card-elevated p-4 flex flex-col justify-between group">
+        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-indigo-400 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Docentes</span>
-            <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Docentes</span>
+            <div className="p-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
               <Users className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums font-mono">{metricasAsesor.docentesTotal}</span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">docentes en dotación</span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.docentesTotal}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">profesionales activos</span>
           </div>
         </div>
 
         {/* 3. Cursos */}
-        <div className="card-elevated p-4 flex flex-col justify-between group">
+        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-emerald-400 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Cursos & SAE</span>
-            <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Cursos & SAE</span>
+            <div className="p-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
               <LayoutGrid className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums font-mono">{metricasAsesor.cursosTotal}</span>
-            <span className="text-[10px] text-slate-400 block mt-0.5 tabular-nums">{metricasAsesor.matriculaTotal} matrícula total</span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.cursosTotal}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5 tabular-nums">
+              {metricasAsesor.matriculaTotal} matrícula total
+            </span>
           </div>
         </div>
 
         {/* 4. Horas Contrato */}
-        <div className="card-elevated p-4 flex flex-col justify-between group">
+        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-purple-400 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Horas Contrato</span>
-            <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Horas Contrato</span>
+            <div className="p-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
               <ShieldCheck className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums font-mono">{metricasAsesor.horasContratadasTotal}</span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">hrs semanales SLEP</span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.horasContratadasTotal}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">hrs cronológicas SLEP</span>
           </div>
         </div>
 
-        {/* 5. Balance Lectivo */}
-        <div className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
+        {/* 5. Balance Territorial */}
+        <div className={`p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs ${
           metricasAsesor.balanceNeto < 0
-            ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/60 text-rose-900 dark:text-rose-200'
+            ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-900 text-rose-950 dark:text-rose-100'
             : metricasAsesor.balanceNeto > 0
-            ? 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/60 text-blue-900 dark:text-blue-200'
-            : 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-200'
+            ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-900 text-blue-950 dark:text-blue-100'
+            : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-900 text-emerald-950 dark:text-emerald-100'
         }`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Balance Neto</span>
-            <ArrowUpDown className="w-4 h-4 opacity-75" />
+            <span className="text-[10px] font-extrabold uppercase tracking-wider">Balance Horario</span>
+            <ArrowUpDown className="w-4 h-4 opacity-80" />
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-black tabular-nums font-mono">
+            <span className="text-2xl font-black tabular-nums">
               {metricasAsesor.balanceNeto > 0 ? `+${metricasAsesor.balanceNeto}` : metricasAsesor.balanceNeto}h
             </span>
-            <span className="text-[10px] opacity-75 block mt-0.5">
+            <span className="text-[11px] font-bold opacity-80 block mt-0.5">
               {metricasAsesor.colegiosConDeficit} déficit / {metricasAsesor.colegiosConSuperavit} superávit
             </span>
           </div>
         </div>
 
-        {/* 6. Alertas */}
-        <div className="card-elevated p-4 flex flex-col justify-between group">
+        {/* 6. Salud Normativa */}
+        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-amber-400 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Alertas Normativas</span>
-            <div className={`p-1.5 rounded-lg ${metricasAsesor.totalInconsistencias > 0 ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-600' : 'bg-slate-50 dark:bg-slate-800 text-slate-400'}`}>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Salud Normativa</span>
+            <div className={`p-1.5 rounded-xl ${metricasAsesor.totalInconsistencias > 0 ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600'}`}>
               <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3">
-            <span className={`text-2xl font-black tabular-nums font-mono ${metricasAsesor.totalInconsistencias > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
+            <span className={`text-2xl font-black tabular-nums ${metricasAsesor.totalInconsistencias > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
               {metricasAsesor.totalInconsistencias}
             </span>
-            <span className="text-[10px] text-slate-400 block mt-0.5">alertas Ley 20.903 / PIE</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">
+              {metricasAsesor.totalInconsistencias === 0 ? '✓ 100% Cuadrado' : 'alertas por auditar'}
+            </span>
           </div>
         </div>
 
       </div>
 
-      {/* Barra Unificada de Filtros y Búsqueda */}
-      <div className="card-elevated p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* ── 3. BARRA DE FILTROS & BÚSQUEDA ── */}
+      <div className="card-elevated p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
         
         {/* Buscador */}
         <div className="relative flex-1 max-w-md">
@@ -499,7 +520,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
             placeholder="Buscar por RBD, nombre, director o comuna..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+            className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
           />
           {searchTerm && (
             <button
@@ -519,7 +540,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
             value={selectedComuna}
             onChange={(e) => setSelectedComuna(e.target.value)}
             aria-label="Filtrar por comuna"
-            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
           >
             <option value="ALL">Todas las Comunas</option>
             <option value="Bulnes">Bulnes</option>
@@ -536,7 +557,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
             value={selectedRegimen}
             onChange={(e) => setSelectedRegimen(e.target.value)}
             aria-label="Filtrar por régimen"
-            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
           >
             <option value="ALL">Todo Régimen</option>
             <option value="JEC">JEC</option>
@@ -549,13 +570,18 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
             value={selectedEstadoBalance}
             onChange={(e) => setSelectedEstadoBalance(e.target.value)}
             aria-label="Filtrar por estado de balance"
-            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
           >
             <option value="ALL">Todos los Estados</option>
             <option value="DEFICIT">🔴 Con Déficit</option>
             <option value="SUPERAVIT">🔵 Con Superávit</option>
             <option value="EQUILIBRADO">🟢 Cuadre Exacto</option>
           </select>
+
+          {/* Contador de resultados */}
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 px-2">
+            {colegiosFiltrados.length} escuelas
+          </span>
 
           {/* Switcher Modo Vista Grid / Table */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -583,13 +609,13 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
 
       </div>
 
-      {/* Contenedor de Establecimientos (Grid o Tabla) */}
+      {/* ── 4. LISTADO DE ESTABLECIMIENTOS ── */}
       {colegiosFiltrados.length === 0 ? (
         <div className="card-elevated p-12 text-center max-w-lg mx-auto">
           <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4 text-slate-400">
             <Building2 className="w-8 h-8" />
           </div>
-          <h3 className="text-base font-bold text-slate-800 dark:text-white">No se encontraron establecimientos</h3>
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">No se encontraron establecimientos</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             No hay colegios que coincidan con los filtros para "{asesorFiltro}".
           </p>
@@ -622,42 +648,43 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
             return (
               <div
                 key={est.id || est.rbd}
-                className={`card-elevated p-5 flex flex-col justify-between group relative transition-all ${
-                  esActivo ? 'border-blue-500 ring-2 ring-blue-500/20' : ''
+                className={`card-elevated p-5 flex flex-col justify-between group relative transition-all duration-200 hover:-translate-y-0.5 ${
+                  esActivo ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md' : ''
                 }`}
               >
                 <div>
                   
-                  {/* Encabezado */}
+                  {/* Header de la tarjeta */}
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-lg border border-slate-200/80 dark:border-slate-700">
+                        <span className="font-mono text-[10px] font-black bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700">
                           RBD {est.rbd}
                         </span>
-                        <span className="text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-lg border border-blue-100 dark:border-blue-900/40">
+                        <span className="text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800">
                           {est.comuna}
                         </span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
                           es60_40
-                            ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-900/40'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                            ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
                         }`}>
                           {es60_40 ? '60/40' : '65/35'}
                         </span>
                       </div>
-                      <h3 className="font-bold text-slate-900 dark:text-white text-sm mt-2.5 line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                      
+                      <h3 className="font-black text-slate-900 dark:text-white text-sm mt-2.5 line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-tight">
                         {est.nombre}
                       </h3>
                     </div>
 
-                    {/* Asesor Pill Selector */}
+                    {/* Asesor Asignado Selector */}
                     <div className="text-right flex-shrink-0">
                       <select
                         value={est.asesorUatp || 'SIN_ASIGNAR'}
                         onChange={(e) => handleCambiarAsesorColegio(est, e.target.value)}
                         aria-label={`Asignar asesor a ${est.nombre}`}
-                        className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-bold rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[130px] truncate transition-colors"
+                        className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[10px] font-extrabold rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[130px] truncate transition-colors"
                       >
                         <option value="SIN_ASIGNAR">⚠️ Sin Asignar</option>
                         {todosLosAsesores.map((a) => (
@@ -671,26 +698,26 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
 
                   {/* Director */}
                   {est.director && (
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
-                      <span className="font-medium text-slate-700 dark:text-slate-300">Dir:</span> {est.director}
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 truncate">
+                      <span className="font-bold text-slate-700 dark:text-slate-200">Dir:</span> {est.director}
                     </p>
                   )}
 
-                  {/* Métricas Mini */}
-                  <div className="grid grid-cols-3 gap-2 mt-4 p-2.5 bg-slate-50/80 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
+                  {/* 3 Pilares de Métricas */}
+                  <div className="grid grid-cols-3 gap-2 mt-4 p-2.5 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Cursos</span>
-                      <span className="text-xs font-black text-slate-800 dark:text-white tabular-nums font-mono">{diag?.balanzaGeneral.totalCursos || 0}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">Cursos</span>
+                      <span className="text-xs font-black text-slate-900 dark:text-white tabular-nums">{diag?.balanzaGeneral.totalCursos || 0}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Docentes</span>
-                      <span className="text-xs font-black text-slate-800 dark:text-white tabular-nums font-mono">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">Docentes</span>
+                      <span className="text-xs font-black text-slate-900 dark:text-white tabular-nums">
                         {todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo)).length}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Balance</span>
-                      <span className={`text-xs font-black tabular-nums font-mono ${
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">Balance</span>
+                      <span className={`text-xs font-black tabular-nums ${
                         bal < 0 ? 'text-rose-600 dark:text-rose-400' : bal > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
                       }`}>
                         {bal > 0 ? `+${bal}` : bal}h
@@ -698,9 +725,9 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Alertas */}
+                  {/* Alertas Normativas */}
                   {tieneAlertas && (
-                    <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/50 text-amber-800 dark:text-amber-300 text-[11px] font-semibold">
+                    <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-[11px] font-bold">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                       <span className="truncate">{totalAlertas} alertas normativas</span>
                     </div>
@@ -708,20 +735,20 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
 
                 </div>
 
-                {/* Acciones */}
+                {/* Barra de Acciones */}
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => onExportarDotacionColegio(est, periodoActivo)}
-                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors"
-                      title="Exportar Dotación .slep"
+                      className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors"
+                      title="Exportar Dotación (.slep)"
                     >
                       <Download className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => onExportarMatrizExcelColegio(est, periodoActivo)}
-                      className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors"
-                      title="Exportar Matriz Oficial Excel (.xlsx)"
+                      className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors"
+                      title="Descargar Matriz Oficial Excel (.xlsx)"
                     >
                       <FileSpreadsheet className="w-4 h-4" />
                     </button>
@@ -732,7 +759,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                       onSelectColegio(est);
                       onAbrirWorkflow(est);
                     }}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-blue-600 dark:bg-slate-800 dark:hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-all shadow-sm active:scale-[0.98]"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl transition-all shadow-sm active:scale-[0.98]"
                   >
                     <span>Espacio Escolar</span>
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -748,7 +775,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
         <div className="card-elevated overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 uppercase font-bold text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-700">
+              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 uppercase font-black text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-700">
                 <tr>
                   <th className="p-3 w-10 text-center">
                     <input
@@ -759,100 +786,71 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                       className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                   </th>
-                  <th className="p-3">RBD</th>
-                  <th className="p-3">Establecimiento</th>
+                  <th className="p-3">RBD & Establecimiento</th>
                   <th className="p-3">Comuna</th>
-                  <th className="p-3">Asesor UATP</th>
-                  <th className="p-3 text-center">Cursos</th>
-                  <th className="p-3 text-center">Matrícula</th>
+                  <th className="p-3">Régimen</th>
                   <th className="p-3 text-center">Docentes</th>
-                  <th className="p-3 text-center">Hrs Contrato</th>
+                  <th className="p-3 text-center">Cursos</th>
                   <th className="p-3 text-center">Balance</th>
-                  <th className="p-3 text-center">Régimen</th>
+                  <th className="p-3">Asesor UATP</th>
                   <th className="p-3 text-right">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {colegiosFiltrados.map((est) => {
                   const diag = diagnosticosMap.get(est.rbd);
                   const bal = diag?.balanzaGeneral.superavitDeficitLectivo || 0;
-                  const docsColegio = todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo));
-                  const isChecked = colegiosSeleccionadosBatch.includes(est.rbd);
-
+                  const seleccionado = colegiosSeleccionadosBatch.includes(est.rbd);
                   return (
-                    <tr key={est.id || est.rbd} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                    <tr key={est.id || est.rbd} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                       <td className="p-3 text-center">
                         <input
                           type="checkbox"
-                          aria-label={`Seleccionar ${est.nombre}`}
-                          checked={isChecked}
+                          checked={seleccionado}
                           onChange={() => toggleSeleccionColegio(est.rbd)}
                           className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                       </td>
-                      <td className="p-3 font-mono font-bold text-slate-900 dark:text-white tabular-nums">{est.rbd}</td>
                       <td className="p-3">
                         <div className="font-bold text-slate-900 dark:text-white">{est.nombre}</div>
-                        {est.director && <div className="text-[10px] text-slate-400">Dir: {est.director}</div>}
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">RBD: {est.rbd}</div>
                       </td>
-                      <td className="p-3 font-medium">{est.comuna}</td>
+                      <td className="p-3 font-semibold text-slate-700 dark:text-slate-300">{est.comuna}</td>
                       <td className="p-3">
-                        <select
-                          value={est.asesorUatp || 'SIN_ASIGNAR'}
-                          onChange={(e) => handleCambiarAsesorColegio(est, e.target.value)}
-                          aria-label={`Asignar asesor a ${est.nombre}`}
-                          className="bg-slate-100 dark:bg-slate-800 border border-slate-300/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[140px] truncate"
-                        >
-                          <option value="SIN_ASIGNAR">⚠️ Sin Asignar</option>
-                          {todosLosAsesores.map((a) => (
-                            <option key={a.id || a.nombre} value={a.nombre}>
-                              👤 {a.nombre}
-                            </option>
-                          ))}
-                        </select>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                          {est.regimen}
+                        </span>
                       </td>
-                      <td className="p-3 text-center font-bold tabular-nums font-mono">{diag?.balanzaGeneral.totalCursos || 0}</td>
-                      <td className="p-3 text-center tabular-nums font-mono">{diag?.balanzaGeneral.totalMatriculaProyectada || 0}</td>
-                      <td className="p-3 text-center font-bold tabular-nums font-mono">{docsColegio.length}</td>
-                      <td className="p-3 text-center font-bold tabular-nums font-mono">{diag?.balanzaGeneral.horasContratadasTotales || 0}h</td>
+                      <td className="p-3 text-center font-black tabular-nums">
+                        {todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo)).length}
+                      </td>
+                      <td className="p-3 text-center font-black tabular-nums">
+                        {diag?.balanzaGeneral.totalCursos || 0}
+                      </td>
                       <td className="p-3 text-center">
-                        <span className={`font-black px-2 py-0.5 rounded-lg tabular-nums font-mono ${
-                          bal < 0 ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300' : bal > 0 ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-black tabular-nums ${
+                          bal < 0 ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' :
+                          bal > 0 ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300' :
+                          'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                         }`}>
                           {bal > 0 ? `+${bal}` : bal}h
                         </span>
                       </td>
-                      <td className="p-3 text-center">
-                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded font-semibold">
-                          {est.regimen} ({est.porcentajePrioritarios >= 80 ? '60/40' : '65/35'})
+                      <td className="p-3">
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          {est.asesorUatp || '⚠️ Sin Asignar'}
                         </span>
                       </td>
                       <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => onExportarDotacionColegio(est, periodoActivo)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg transition-colors"
-                            title="Exportar Dotación .slep"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onExportarMatrizExcelColegio(est, periodoActivo)}
-                            className="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg transition-colors"
-                            title="Exportar Matriz Excel"
-                          >
-                            <FileSpreadsheet className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              onSelectColegio(est);
-                              onAbrirWorkflow(est);
-                            }}
-                            className="px-2.5 py-1 bg-slate-900 hover:bg-blue-600 text-white rounded-lg font-bold text-[11px] transition-all"
-                          >
-                            Abrir
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => {
+                            onSelectColegio(est);
+                            onAbrirWorkflow(est);
+                          }}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-xs"
+                        >
+                          Abrir
+                        </button>
                       </td>
                     </tr>
                   );
@@ -863,101 +861,60 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
         </div>
       )}
 
-      {/* Modal Reasignación Masiva */}
+      {/* ── 5. MODAL REASIGNACIÓN EN LOTE ── */}
       {modalReasignarAbierto && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-xl w-full p-6 animate-scale-in space-y-4">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
+          <div className="card-elevated max-w-md w-full p-6 shadow-2xl space-y-4 border border-border-subtle animate-scale-in">
+            <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
               <div className="flex items-center gap-2">
-                <ArrowUpDown className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                <h3 className="font-bold text-slate-900 dark:text-white text-base">Reasignación Masiva de Colegios</h3>
+                <ArrowUpDown className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-black text-slate-900 dark:text-white text-base">Reasignar Colegios en Lote</h3>
               </div>
               <button
                 onClick={() => setModalReasignarAbierto(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              Selecciona los establecimientos a reasignar y elige el asesor de destino.
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Selecciona el asesor de destino para los <strong>{colegiosSeleccionadosBatch.length}</strong> colegios seleccionados.
             </p>
 
-            {/* Asesor Destino */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">
                 Asesor UATP de Destino:
               </label>
               <select
                 value={asesorDestinoBatch}
                 onChange={(e) => setAsesorDestinoBatch(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-bold rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500"
               >
-                {todosLosAsesores.map(a => (
+                <option value="SIN_ASIGNAR">⚠️ Dejar como Sin Asignar</option>
+                {todosLosAsesores.map((a) => (
                   <option key={a.id || a.nombre} value={a.nombre}>
-                    👤 {a.nombre} ({a.cargo || 'Asesor UATP'})
+                    👤 {a.nombre}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Lista de Establecimientos */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Establecimientos ({colegiosSeleccionadosBatch.length} seleccionados):
-                </label>
-                <button
-                  type="button"
-                  onClick={handleSeleccionarTodosLosFiltrados}
-                  className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
-                >
-                  {colegiosSeleccionadosBatch.length === colegiosFiltrados.length ? 'Deseleccionar todos' : 'Seleccionar todos los visibles'}
-                </button>
-              </div>
-
-              <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl p-2 divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-                {colegios.map(est => {
-                  const isChecked = colegiosSeleccionadosBatch.includes(est.rbd);
-                  return (
-                    <label key={est.rbd} className="flex items-center justify-between p-2 hover:bg-slate-100/80 dark:hover:bg-slate-800 rounded-lg cursor-pointer text-xs">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleSeleccionColegio(est.rbd)}
-                          className="rounded text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="font-bold text-slate-900 dark:text-white">{est.nombre}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">(RBD {est.rbd})</span>
-                      </div>
-                      <span className="text-[10px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">
-                        {est.asesorUatp || 'Sin Asignar'}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-subtle">
               <button
                 onClick={() => setModalReasignarAbierto(false)}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold"
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 rounded-xl"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleEjecutarReasignacionBatch}
-                disabled={colegiosSeleccionadosBatch.length === 0 || procesandoReasignacion}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-[0.98]"
+                disabled={procesandoReasignacion || colegiosSeleccionadosBatch.length === 0}
+                className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl shadow-md"
               >
-                {procesandoReasignacion ? 'Reasignando...' : `Confirmar Asignación (${colegiosSeleccionadosBatch.length})`}
+                {procesandoReasignacion ? 'Reasignando...' : `Confirmar (${colegiosSeleccionadosBatch.length})`}
               </button>
             </div>
-
           </div>
         </div>
       )}

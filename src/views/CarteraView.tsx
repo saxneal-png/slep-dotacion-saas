@@ -1,5 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database, FileSpreadsheet, Eraser, Search, RotateCcw, X, UserCheck, ChevronRight, MoreVertical } from 'lucide-react';
+import {
+  Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database,
+  FileSpreadsheet, Eraser, Search, RotateCcw, X, UserCheck, ChevronRight, MoreVertical,
+  CheckCircle2, ArrowUpDown, Filter, Download
+} from 'lucide-react';
 import { Establecimiento, ComunaValleDiguillin, RegimenJornada } from '../types';
 import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
 import { cargarConfiguracionGeneral } from '../services/configuracionGeneralService';
@@ -186,53 +190,50 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-12">
       
-      {/* Hero Cartera */}
-      <div className="card-elevated p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      {/* ── 1. HEADER DE CARTERA TERRITORIAL ── */}
+      <div className="card-elevated p-5 sm:p-6 bg-gradient-to-r from-surface-card via-surface-card to-slate-50/50 dark:to-slate-900/50 border border-border-subtle flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+            <span className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
               <Building2 className="w-5 h-5" />
-            </div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+            </span>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
               Cartera Territorial de Colegios UATP
-            </h2>
+            </h1>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Gestión y catálogo de los {colegios.length} establecimientos educacionales del SLEP Valle Diguillín.
+          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+            Gestión y catálogo de los <strong>{colegios.length}</strong> establecimientos educacionales del SLEP Valle Diguillín.
           </p>
         </div>
 
-        {/* Toolbar de Acciones Consolidadas */}
+        {/* Acciones Principales */}
         <div className="flex flex-wrap items-center gap-2">
-          
           <button
             onClick={onAbrirModuloSige}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-xl transition-all border border-purple-200 dark:border-purple-800/60 active:scale-[0.98]"
-            title="Importar plantilla SIGE"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-all shadow-xs"
           >
-            <FileSpreadsheet className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <FileUp className="w-3.5 h-3.5" />
             <span>Ingestar SIGE</span>
           </button>
 
           <button
             onClick={onExportarCarteraSlep}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition-all border border-slate-200 dark:border-slate-700 active:scale-[0.98]"
-            title="Exportar archivo portable con toda la cartera"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition-all shadow-xs"
           >
-            <FileDown className="w-4 h-4 text-slate-500" />
-            <span>Exportar Cartera (.slep)</span>
+            <FileDown className="w-3.5 h-3.5" />
+            <span>Exportar (.slep)</span>
           </button>
 
-          <label className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl cursor-pointer transition-all border border-slate-200 dark:border-slate-700 active:scale-[0.98]">
-            <FileUp className="w-4 h-4 text-slate-500" />
+          <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition-all shadow-xs cursor-pointer">
+            <FileUp className="w-3.5 h-3.5" />
             <span>Importar (.slep)</span>
             <input
               type="file"
               accept=".slep,.json"
               className="hidden"
-              onChange={e => {
+              onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) onImportarCarteraSlep(file);
               }}
@@ -241,321 +242,302 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
 
           <button
             onClick={abrirModalNuevo}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-[0.98]"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Colegio</span>
           </button>
-
         </div>
       </div>
 
-      {/* Barra de Filtros Multifactor */}
+      {/* ── 2. BARRA DE FILTROS AVANZADOS ── */}
       <div className="card-elevated p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
           
           {/* Asesor */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 flex items-center gap-1">
-              <UserCheck className="w-3 h-3 text-indigo-500" /> Asesor UATP
+            <label className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 block mb-1">
+              Asesor UATP
             </label>
             <select
               value={selectedAsesorFilter}
               onChange={(e) => setSelectedAsesorFilter(e.target.value)}
-              className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl p-2 focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="ALL">Todos los Asesores</option>
-              {config.asesorActivoNombre && (
-                <option value={config.asesorActivoNombre}>
-                  👤 Mi Cartera ({config.asesorActivoNombre.split(' ')[0]})
-                </option>
-              )}
-              <option value="SIN_ASIGNAR">⚠️ Sin Asesor</option>
-              {listaAsesores.map((asesor) => (
-                <option key={asesor} value={asesor}>
-                  {asesor}
-                </option>
+              <option value="SIN_ASIGNAR">⚠️ Sin Asignar</option>
+              {listaAsesores.map((a) => (
+                <option key={a} value={a}>👤 {a}</option>
               ))}
             </select>
           </div>
 
           {/* Comuna */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 flex items-center gap-1">
-              <Building2 className="w-3 h-3 text-slate-400" /> Comuna
+            <label className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 block mb-1">
+              Comuna
             </label>
             <select
               value={selectedComunaFilter}
               onChange={(e) => setSelectedComunaFilter(e.target.value)}
-              className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl p-2 focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="ALL">Todas las Comunas ({colegios.length})</option>
-              {COMUNAS.map((com) => {
-                const count = colegios.filter((c) => c.comuna === com).length;
-                return (
-                  <option key={com} value={com}>
-                    {com} ({count})
-                  </option>
-                );
-              })}
+              {COMUNAS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
-          {/* Régimen Jornada */}
+          {/* Régimen */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 flex items-center gap-1">
-              <School className="w-3 h-3 text-slate-400" /> Régimen Jornada
+            <label className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 block mb-1">
+              Régimen Jornada
             </label>
             <select
               value={selectedRegimenFilter}
               onChange={(e) => setSelectedRegimenFilter(e.target.value)}
-              className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl p-2 focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="ALL">Todos los Regímenes</option>
-              <option value="JEC">Solo JEC</option>
-              <option value="No JEC">Solo No JEC</option>
+              <option value="JEC">JEC</option>
+              <option value="No JEC">No JEC</option>
               <option value="Mixto">Mixto</option>
             </select>
           </div>
 
           {/* Tramo Ley 20.903 */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
+            <label className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 block mb-1">
               Tramo Ley 20.903
             </label>
             <select
               value={selectedProporcionFilter}
               onChange={(e) => setSelectedProporcionFilter(e.target.value)}
-              className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl p-2 focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="ALL">Todos los Tramos</option>
-              <option value="60_40">Régimen 60/40 (≥80% Prioritarios)</option>
-              <option value="65_35">Régimen 65/35 (&lt;80% Prioritarios)</option>
+              <option value="65_35">65/35 (General)</option>
+              <option value="60_40">60/40 (≥80% Prioritarios)</option>
             </select>
           </div>
 
-          {/* Orden */}
+          {/* Ordenar Por */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
-              Ordenar por
+            <label className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 block mb-1">
+              Ordenar Por
             </label>
             <select
               value={selectedOrden}
               onChange={(e) => setSelectedOrden(e.target.value)}
-              className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl p-2 focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
-              <option value="NOMBRE_ASC">Nombre (A → Z)</option>
-              <option value="NOMBRE_DESC">Nombre (Z → A)</option>
-              <option value="RBD_ASC">RBD (Ascendente)</option>
-              <option value="COMUNA_ASC">Comuna (A → Z)</option>
+              <option value="NOMBRE_ASC">Nombre (A — Z)</option>
+              <option value="NOMBRE_DESC">Nombre (Z — A)</option>
+              <option value="RBD_ASC">RBD (Menor a Mayor)</option>
+              <option value="COMUNA_ASC">Comuna</option>
             </select>
           </div>
 
         </div>
 
-        {/* Buscador & Contadores */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <div className="relative w-full sm:w-96">
+        {/* Buscador Rápido y Limpiar */}
+        <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
+              placeholder="Buscar por RBD, nombre, director o asesor..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por RBD, nombre, director o asesor..."
-              className="w-full pl-8 pr-8 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-slate-100 placeholder-slate-400"
+              className="w-full pl-9 pr-8 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 w-full sm:w-auto justify-between sm:justify-end">
-            <span>
-              Mostrando <strong className="text-slate-800 dark:text-white tabular-nums">{filteredColegios.length}</strong> de {colegios.length} escuelas
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+              Mostrando <strong>{filteredColegios.length}</strong> de {colegios.length} escuelas
             </span>
             {hayFiltrosActivos && (
               <button
                 onClick={limpiarFiltros}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 rounded-lg border border-orange-200 dark:border-orange-800/60 transition-colors"
-                title="Limpiar filtros"
+                className="text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline px-2 py-1"
               >
-                <RotateCcw className="w-3 h-3" />
-                <span>Restablecer</span>
+                Limpiar Filtros
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Grilla de Colegios */}
+      {/* ── 3. GRID DE COLEGIOS ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredColegios.map(est => {
-          const isSelected = colegioActivo?.id === est.id;
-          const es6040 = est.porcentajePrioritarios >= 80;
-
+        {filteredColegios.map((est) => {
+          const es60_40 = est.porcentajePrioritarios >= 80;
           return (
             <div
-              key={est.id}
-              className={`card-elevated p-5 flex flex-col justify-between group relative transition-all ${
-                isSelected ? 'border-orange-500 ring-2 ring-orange-400/20' : ''
-              }`}
+              key={est.id || est.rbd}
+              className="card-elevated p-5 flex flex-col justify-between group relative transition-all duration-200 hover:-translate-y-0.5"
             >
               <div>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono">
+                {/* Header Card */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-[10px] font-black bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700">
                       RBD {est.rbd}
                     </span>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-1.5 line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                      {est.nombre}
-                    </h3>
+                    <span className="text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800">
+                      {est.comuna}
+                    </span>
                   </div>
-
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
-                    es6040
-                      ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-900/40'
-                      : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40'
+                    es60_40
+                      ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
                   }`}>
-                    {es6040 ? '60/40' : '65/35'}
+                    {es60_40 ? '60/40' : '65/35'}
                   </span>
                 </div>
 
-                <div className="mt-3.5 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">Comuna:</span>
-                    <span>{est.comuna}</span>
-                  </div>
+                <h3 className="font-black text-slate-900 dark:text-white text-sm mt-2.5 line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-tight">
+                  {est.nombre}
+                </h3>
 
-                  <div className="flex items-center gap-1.5">
-                    <School className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">Jornada:</span>
-                    <span className="font-bold">{est.regimen}</span>
-                    <span className="text-slate-400 text-[10px]">({est.porcentajePrioritarios}% SEP)</span>
-                  </div>
+                {est.director && (
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 truncate">
+                    <span className="font-bold text-slate-700 dark:text-slate-200">Dir:</span> {est.director}
+                  </p>
+                )}
 
-                  {est.director && (
-                    <div className="flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="font-semibold text-slate-700 dark:text-slate-200">Dir:</span>
-                      <span className="truncate">{est.director}</span>
-                    </div>
-                  )}
+                <div className="mt-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 font-bold">Asesor UATP:</span>
+                    <span className="font-black text-slate-800 dark:text-slate-200 truncate max-w-[150px]">
+                      {est.asesorUatp || '⚠️ Sin Asignar'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] mt-1">
+                    <span className="text-slate-500 font-bold">Régimen:</span>
+                    <span className="font-bold text-slate-700 dark:text-slate-300">{est.regimen}</span>
+                  </div>
                 </div>
               </div>
 
+              {/* Botonera de Acciones */}
               <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      onSelectColegio(est);
-                      if (onAbrirWorkflow) onAbrirWorkflow(est);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-blue-600 dark:bg-slate-800 dark:hover:bg-blue-600 text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
-                  >
-                    <span>Espacio Escolar</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
                 <div className="flex items-center gap-1">
-                  {onExportarMatrizExcelColegio && (
-                    <button
-                      onClick={() => onExportarMatrizExcelColegio(est, periodoActivo)}
-                      className="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg transition-colors"
-                      title="Exportar Matriz Excel (.xlsx)"
-                    >
-                      <FileSpreadsheet className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => abrirModalEditar(est)}
+                    className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors"
+                    title="Editar datos del colegio"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                  </button>
 
                   {onExportarDotacionColegio && (
                     <button
                       onClick={() => onExportarDotacionColegio(est, periodoActivo)}
-                      className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg transition-colors"
-                      title="Exportar .slep"
+                      className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors"
+                      title="Exportar Dotación .slep"
                     >
-                      <FileDown className="w-4 h-4" />
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {onExportarMatrizExcelColegio && (
+                    <button
+                      onClick={() => onExportarMatrizExcelColegio(est, periodoActivo)}
+                      className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors"
+                      title="Descargar Matriz Oficial Excel (.xlsx)"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
                     </button>
                   )}
 
                   {onLimpiarDotacionColegio && (
                     <button
                       onClick={() => setColegioParaVaciar(est)}
-                      className="p-1.5 text-slate-400 hover:text-amber-600 rounded-lg transition-colors"
-                      title="Vaciar dotación"
+                      className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
+                      title="Vaciar dotación escolar"
                     >
-                      <Eraser className="w-4 h-4" />
+                      <Eraser className="w-3.5 h-3.5" />
                     </button>
                   )}
-
-                  <button
-                    onClick={() => abrirModalEditar(est)}
-                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors"
-                    title="Editar colegio"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      if (confirm(`¿Eliminar ${est.nombre} de la cartera?`)) {
-                        await onEliminarColegio(est.id);
-                      }
-                    }}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
-                    title="Eliminar colegio"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
+
+                <button
+                  onClick={() => {
+                    onSelectColegio(est);
+                    if (onAbrirWorkflow) onAbrirWorkflow(est);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl transition-all shadow-sm active:scale-[0.98]"
+                >
+                  <span>Espacio Escolar</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Modal Creación / Edición */}
+      {/* Modal Nuevo / Editar Colegio */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 animate-scale-in">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
-              {editingEst ? 'Editar Establecimiento' : 'Nuevo Establecimiento en Cartera'}
-            </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
+          <div className="card-elevated max-w-lg w-full p-6 shadow-2xl space-y-4 border border-border-subtle animate-scale-in">
+            <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-blue-600" />
+                <h3 className="font-black text-slate-900 dark:text-white text-base">
+                  {editingEst ? 'Editar Establecimiento' : 'Nuevo Establecimiento'}
+                </h3>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
             {formError && (
-              <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs rounded-xl">
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-200 text-xs font-bold">
                 {formError}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">RBD MINEDUC *</label>
+                  <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                    RBD
+                  </label>
                   <input
                     type="text"
                     required
                     value={formRbd}
-                    onChange={e => setFormRbd(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 font-mono font-bold"
-                    placeholder="Ej: 3888"
+                    onChange={(e) => setFormRbd(e.target.value)}
+                    disabled={!!editingEst}
+                    placeholder="Ej: 3451"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Comuna *</label>
+                  <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                    Comuna
+                  </label>
                   <select
                     value={formComuna}
-                    onChange={e => setFormComuna(e.target.value as ComunaValleDiguillin)}
-                    className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => setFormComuna(e.target.value as ComunaValleDiguillin)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                   >
-                    {COMUNAS.map(c => (
+                    {COMUNAS.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -563,73 +545,89 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nombre Oficial Establecimiento *</label>
+                <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                  Nombre del Establecimiento
+                </label>
                 <input
                   type="text"
                   required
                   value={formNombre}
-                  onChange={e => setFormNombre(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  placeholder="Ej: Colegio Bicentenario Politécnico Víctor Jara"
+                  onChange={(e) => setFormNombre(e.target.value)}
+                  placeholder="Ej: Liceo Bicentenario Manuel Bulnes"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Régimen de Jornada *</label>
+                  <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                    Régimen Jornada
+                  </label>
                   <select
                     value={formRegimen}
-                    onChange={e => setFormRegimen(e.target.value as any)}
-                    className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => setFormRegimen(e.target.value as RegimenJornada)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                   >
-                    <option value="JEC">JEC (Completa)</option>
-                    <option value="No JEC">No JEC (Media)</option>
+                    <option value="JEC">JEC</option>
+                    <option value="No JEC">No JEC</option>
                     <option value="Mixto">Mixto</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Prioritarios SEP (%) *</label>
+                  <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                    % Alumnos Prioritarios
+                  </label>
                   <input
                     type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
-                    required
+                    min={0}
+                    max={100}
                     value={formPrioritarios}
-                    onChange={e => setFormPrioritarios(parseFloat(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => setFormPrioritarios(Number(e.target.value))}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                   />
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-                    {formPrioritarios >= 80 ? '✓ Aplica 60/40 (SEP)' : 'Aplica 65/35'}
-                  </span>
                 </div>
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Director(a)</label>
+                <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                  Director(a) del Establecimiento
+                </label>
                 <input
                   type="text"
                   value={formDirector}
-                  onChange={e => setFormDirector(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  placeholder="Nombre del director"
+                  onChange={(e) => setFormDirector(e.target.value)}
+                  placeholder="Nombre del Director"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div>
+                <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                  Asesor(a) UATP Asignado
+                </label>
+                <input
+                  type="text"
+                  value={formAsesor}
+                  onChange={(e) => setFormAsesor(e.target.value)}
+                  placeholder="Nombre del Asesor UATP"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-subtle">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-xl shadow-sm hover:from-orange-600 hover:to-amber-600 active:scale-[0.98]"
+                  className="px-5 py-2 text-xs font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md"
                 >
-                  {editingEst ? 'Guardar Cambios' : 'Crear Colegio'}
+                  Guardar
                 </button>
               </div>
             </form>
@@ -637,9 +635,10 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
         </div>
       )}
 
-      {colegioParaVaciar && (
+      {/* Modal Vaciar Dotación */}
+      {colegioParaVaciar && onLimpiarDotacionColegio && (
         <ConfirmarVaciarDotacionModal
-          isOpen={Boolean(colegioParaVaciar)}
+          isOpen={!!colegioParaVaciar}
           onClose={() => setColegioParaVaciar(null)}
           colegio={colegioParaVaciar}
           periodoActivo={periodoActivo}
@@ -647,11 +646,10 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
           docentesCount={0}
           asignacionesCount={0}
           onConfirmarVaciar={async () => {
-            if (onLimpiarDotacionColegio && colegioParaVaciar) {
-              await onLimpiarDotacionColegio(periodoActivo, colegioParaVaciar.rbd);
-            }
+            await onLimpiarDotacionColegio(periodoActivo, colegioParaVaciar.rbd);
+            setColegioParaVaciar(null);
           }}
-          onExportarRespaldoPrevio={onExportarDotacionColegio && colegioParaVaciar ? () => onExportarDotacionColegio(colegioParaVaciar, periodoActivo) : undefined}
+          onExportarRespaldoPrevio={onExportarDotacionColegio ? () => onExportarDotacionColegio(colegioParaVaciar, periodoActivo) : undefined}
         />
       )}
 
