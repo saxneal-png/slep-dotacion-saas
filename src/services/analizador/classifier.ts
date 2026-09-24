@@ -230,12 +230,23 @@ const LOCAL_DICT: Record<string, string> = {
   'rectora': 'TECNICA',
 };
 
+import { getTodasLasAsignaturasConocidas } from './planesEstudioBridge';
+
 export function classifyLocal(text: string): { category: 'AULA' | 'TECNICA' | 'DIRECTIVA'; source: string; confidence: number } | null {
   const norm = normalizeText(text);
 
-  // Coincidencia exacta
+  // Coincidencia exacta en diccionario
   if (LOCAL_DICT[norm]) {
     return { category: LOCAL_DICT[norm] as 'AULA' | 'TECNICA' | 'DIRECTIVA', source: 'Regla Local (Diccionario)', confidence: 1.0 };
+  }
+
+  // Coincidencia con asignaturas de Planes de Estudio en Base de Datos (EPJA 2024, TP, Básica, Media)
+  const asignaturasConocidas = getTodasLasAsignaturasConocidas();
+  for (const asig of asignaturasConocidas) {
+    const asigNorm = normalizeText(asig);
+    if (asigNorm === norm || (norm.length > 5 && (asigNorm.includes(norm) || norm.includes(asigNorm)))) {
+      return { category: 'AULA', source: 'Catálogo de Planes de Estudio (Base de Datos)', confidence: 0.98 };
+    }
   }
 
   // Patrones directivos estrictos

@@ -3,8 +3,9 @@ import {
   Settings, UserCheck, Shield, Sparkles, Sliders, Database, Save, RotateCcw,
   Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, Key, ExternalLink,
   Bot, Eye, HelpCircle, FileSpreadsheet, HardDrive, RefreshCw, Check,
-  Mail, Phone, MapPin, Building2, Layers, Users, Search
+  Mail, Phone, MapPin, Building2, Layers, Users, Search, BookOpen
 } from 'lucide-react';
+import { PlanesEstudioConfigTab } from './configuraciones/PlanesEstudioConfigTab';
 import {
   ConfiguracionGeneral,
   PerfilAsesor,
@@ -56,7 +57,7 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
   onVolver
 }) => {
   const [config, setConfig] = useState<ConfiguracionGeneral>(() => cargarConfiguracionGeneral());
-  const [tabActiva, setTabActiva] = useState<'perfil' | 'normativa' | 'ia' | 'ui' | 'db'>('perfil');
+  const [tabActiva, setTabActiva] = useState<'perfil' | 'normativa' | 'planes' | 'ia' | 'ui' | 'db'>('perfil');
   const [mensajeGuardado, setMensajeGuardado] = useState<string | null>(null);
   const [probandoGemini, setProbandoGemini] = useState(false);
   const [resultadoTestGemini, setResultadoTestGemini] = useState<{ exito: boolean; mensaje: string } | null>(null);
@@ -361,6 +362,18 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
         >
           <Shield className="w-4 h-4 text-emerald-600" />
           <span>Normativa & Motor MINEDUC</span>
+        </button>
+
+        <button
+          onClick={() => setTabActiva('planes')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            tabActiva === 'planes'
+              ? 'bg-white text-blue-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+          }`}
+        >
+          <BookOpen className="w-4 h-4 text-orange-600" />
+          <span>Planes de Estudio & Ingesta</span>
         </button>
 
         <button
@@ -765,6 +778,11 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
           </div>
 
         </div>
+      )}
+
+      {/* PESTAÑA PLANES DE ESTUDIO & INGESTA */}
+      {tabActiva === 'planes' && (
+        <PlanesEstudioConfigTab />
       )}
 
       {/* 3. PESTAÑA GEMINI IA & COPILOT */}

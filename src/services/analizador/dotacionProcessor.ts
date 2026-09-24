@@ -1,6 +1,7 @@
 import { parseExcelBrowser } from './excelParser';
 import { classifyActivitiesHybrid } from './classifier';
 import { buildTeacherConsolidatedLoads, buildCourseLoadSummaries } from './courseExtractor';
+import { inicializarPlanesEstudioAnalizador } from './planesEstudioBridge';
 import type {
   SchoolSummary,
   TeacherRecord,
@@ -16,6 +17,9 @@ export async function processDotacionFilesClient(
   modelName: string,
   customPrompt?: string
 ): Promise<ConsolidatedResponse> {
+  // Sincronizar catálogo de planes de estudio desde SQLite para enriquecer el análisis
+  await inicializarPlanesEstudioAnalizador();
+
   const allTeachers: TeacherRecord[] = [];
   const schoolsMap = new Map<string, SchoolSummary>();
   const processedFiles: string[] = [];

@@ -1,5 +1,6 @@
 import { TeacherRecord, TeacherConsolidatedLoad, HomologacionItem, TipoHoraInstitucional } from '../../types/analizadorTypes';
 import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
+import { buscarPlanEstudioAnalizador, getAsignaturasSugeridasPorPlanAnalizador } from './planesEstudioBridge';
 
 /**
  * Asignaturas oficiales agrupadas por nivel según Decretos y Bases Curriculares MINEDUC.
@@ -101,10 +102,14 @@ export const ASIGNATURAS_OFICIALES_POR_NIVEL: Record<string, string[]> = {
 
 /**
  * Obtiene la lista de asignaturas oficiales sugeridas para un curso o nivel determinado.
- * Utiliza dinámicamente el catálogo oficial de planes de estudio Mineduc (incluyendo TP y EPJA).
+ * Utiliza dinámicamente el catálogo oficial de planes de estudio Mineduc (incluyendo TP, EPJA 2024 y personalizados).
  */
 export function getAsignaturasSugeridasParaNivel(nivel: string): string[] {
   if (nivel) {
+    const sugeridas = getAsignaturasSugeridasPorPlanAnalizador(nivel);
+    if (sugeridas && sugeridas.length > 0) {
+      return sugeridas;
+    }
     const plan = obtenerPlanPorCurso(nivel);
     if (plan && plan.asignaturasBase && plan.asignaturasBase.length > 0) {
       const asignaturasPlan = plan.asignaturasBase.map(a => a.nombre);
@@ -182,8 +187,48 @@ export function homologarAsignaturaPorRegla(
   const norm = normalizeStr(rawSubject);
   const normNivel = normalizeStr(nivel);
 
-  // 0. Si el curso tiene un plan oficial específico (TP, EPJA, Básica, Media), verificar coincidencia directa con las asignaturas del plan
+  // 0. Si el curso tiene un plan de estudio en la base de datos (TP, EPJA 2024, Básica, Media), verificar coincidencia directa
   if (nivel) {
+    const planDinamico = buscarPlanEstudioAnalizador(nivel);
+    if (planDinamico && planDinamico.asignaturas) {
+      const matchExact = planDinamico.asignaturas.find(
+        (a) => normalizeStr(a.nombre) === norm
+      );
+      if (matchExact) {
+        return {
+          asignaturaOficial: matchExact.nombre,
+          confianza: 'ALTA',
+          justificacion: `Asignatura oficial del plan ${planDinamico.nivel} (${planDinamico.decretoSupremo || 'MINEDUC'})`,
+        };
+      }
+      // Búsqueda parcial / difusa en asignaturas del plan dinámico
+      const matchPartial = planDinamico.asignaturas.find(
+        (a) => norm.length > 4 && (normalizeStr(a.nombre).includes(norm) || norm.includes(normalizeStr(a.nombre)))
+      );
+      if (matchPartial) {
+        return {
+          asignaturaOficial: matchPartial.nombre,
+          confianza: 'ALTA',
+          justificacion: `Módulo / Asignatura coincidente del plan ${planDinamico.nivel}`,
+        };
+      }
+      // Búsqueda en catálogo de asignaturas elegibles de ámbitos formativos (EPJA 2024 / TP)
+      if (planDinamico.ambitosFormativos) {
+        for (const amb of planDinamico.ambitosFormativos) {
+          if (amb.catalogoAsignaturasElegibles) {
+            const elegMatch = amb.catalogoAsignaturasElegibles.find(e => normalizeStr(e) === norm || normalizeStr(e).includes(norm) || norm.includes(normalizeStr(e)));
+            if (elegMatch) {
+              return {
+                asignaturaOficial: elegMatch,
+                confianza: 'ALTA',
+                justificacion: `Asignatura formativa del ámbito "${amb.ambito}" (${planDinamico.nivel})`,
+              };
+            }
+          }
+        }
+      }
+    }
+
     const plan = obtenerPlanPorCurso(nivel);
     if (plan && plan.asignaturasBase) {
       const matchExact = plan.asignaturasBase.find(

@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   Loader2,
   Table,
-  GraduationCap
+  GraduationCap,
+  BookOpen
 } from 'lucide-react';
 import { FileUpload } from '../components/analizador/FileUpload';
 import { KpiCards } from '../components/analizador/KpiCards';
@@ -23,6 +24,7 @@ import { CourseTeacherLoadView } from '../components/analizador/CourseTeacherLoa
 import { ApiKeyModal } from '../components/analizador/ApiKeyModal';
 import { PromptModal } from '../components/analizador/PromptModal';
 import { TraspasoDotacionModal } from '../components/analizador/TraspasoDotacionModal';
+import { inicializarPlanesEstudioAnalizador, getPlanesEstudioAnalizadorCache } from '../services/analizador/planesEstudioBridge';
 import { processDotacionFilesClient, recalculateSchoolTotals } from '../services/analizador/dotacionProcessor';
 import { exportConsolidatedExcelBrowser, exportCsvBrowser } from '../services/analizador/excelExporter';
 import {
@@ -98,6 +100,13 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
   const [savingDb, setSavingDb] = useState(false);
   const [isTraspasoModalOpen, setIsTraspasoModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [totalPlanesCurriculares, setTotalPlanesCurriculares] = useState<number>(0);
+
+  useEffect(() => {
+    inicializarPlanesEstudioAnalizador().then((p) => {
+      setTotalPlanesCurriculares(p.length);
+    });
+  }, []);
 
   const [schools, setSchools] = useState<SchoolSummary[]>(() => {
     try {
@@ -404,6 +413,10 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-orange-100 text-orange-800">
                 Motor Híbrido SLEP
+              </span>
+              <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1" title="Planes curriculares sincronizados con SQLite">
+                <BookOpen className="w-3 h-3 text-emerald-700" />
+                {totalPlanesCurriculares > 0 ? `${totalPlanesCurriculares} Planes SQLite` : 'Planes MINEDUC & EPJA'}
               </span>
               <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-100 text-blue-800 flex items-center gap-1">
                 <Sparkles className="w-3 h-3" />

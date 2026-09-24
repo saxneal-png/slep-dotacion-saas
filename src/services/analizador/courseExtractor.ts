@@ -1,5 +1,6 @@
 import { TeacherCourseAssignment, CourseLoadSummary, TeacherConsolidatedLoad, TeacherRecord } from '../../types/analizadorTypes';
 import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
+import { buscarPlanEstudioAnalizador } from './planesEstudioBridge';
 
 export interface NormalizedCourseInfo {
   cursoCompleto: string;
@@ -23,7 +24,12 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
   }
 
   // 1. EPJA - Educación de Adultos (Bases Curriculares Decreto Supremo N° 10/2022)
-  if (/(?:EPJA|ADULTO)/i.test(cleanNoAccents) || /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(cleanNoAccents) || /OFICIO/i.test(cleanNoAccents)) {
+  if (
+    /(?:EPJA|ADULTO)/i.test(cleanNoAccents) ||
+    /(?:PRIMER|SEGUNDO|TERCER|[123]°?)\s*NIVEL/i.test(cleanNoAccents) ||
+    /NIVEL\s*(?:PRIMER|SEGUNDO|TERCER|[123]°?)/i.test(cleanNoAccents) ||
+    /OFICIO/i.test(cleanNoAccents)
+  ) {
     const letraMatch = clean.match(/\b([A-Z])\b$/);
     const letra = letraMatch ? letraMatch[1] : 'A';
     if (/OFICIO/i.test(cleanNoAccents)) {
@@ -173,6 +179,20 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
     }
     const nivel = 'Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)';
     return { cursoCompleto: `${nivel} ${letra}`, nivel, letra, regimen: 'JEC', esMultigrado: false };
+  }
+
+  // Fallback: Si coincide directamente con un plan de estudio registrado en la base de datos
+  const planDirecto = buscarPlanEstudioAnalizador(clean);
+  if (planDirecto && planDirecto.nivel) {
+    const letraMatch = clean.match(/\b([A-Z])\b$/);
+    const letra = letraMatch ? letraMatch[1] : 'A';
+    return {
+      cursoCompleto: `${planDirecto.nivel} ${letra}`,
+      nivel: planDirecto.nivel,
+      letra,
+      regimen: planDirecto.regimen || 'JEC',
+      esMultigrado: Boolean(planDirecto.categoria === 'MULTIGRADO' || planDirecto.nivel.toLowerCase().includes('multigrado'))
+    };
   }
 
   return null;
@@ -439,19 +459,21 @@ export function buildCourseLoadSummaries(teachers: TeacherRecord[]): CourseLoadS
     }
   }
 
-  // Enriquecer cada curso con la comparación frente al Plan de Estudio Oficial Mineduc
+  // Enriquecer cada curso con la comparación frente al Plan de Estudio (Base de Datos Dinámica / MINEDUC)
   courseMap.forEach((cEntry) => {
-    const plan = obtenerPlanPorCurso(cEntry.nivel, cEntry.regimen || 'JEC') || obtenerPlanPorCurso(cEntry.curso, cEntry.regimen || 'JEC');
-    if (plan) {
-      cEntry.horas_plan_estudio = plan.totalHorasPlan;
-      cEntry.horas_obligatorias_plan = plan.horasObligatorias;
-      cEntry.horas_libre_disposicion_plan = plan.horasLibreDisposicion;
-      cEntry.plan_referencia = plan.nivel;
-      cEntry.categoria_plan = plan.categoria;
+    const planDinamico = buscarPlanEstudioAnalizador(cEntry.nivel, cEntry.regimen || 'JEC') || buscarPlanEstudioAnalizador(cEntry.curso, cEntry.regimen || 'JEC');
+    const totalHorasPlan = planDinamico ? (planDinamico.totalHorasPlan || planDinamico.totalHorasSemanalesObligatorias) : 0;
 
-      const diff = Math.round((cEntry.total_horas - plan.totalHorasPlan) * 100) / 100;
+    if (planDinamico && totalHorasPlan > 0) {
+      cEntry.horas_plan_estudio = totalHorasPlan;
+      cEntry.horas_obligatorias_plan = planDinamico.totalHorasSemanalesObligatorias;
+      cEntry.horas_libre_disposicion_plan = planDinamico.horasLibreDisposicion || 0;
+      cEntry.plan_referencia = planDinamico.nivel;
+      cEntry.categoria_plan = planDinamico.categoria;
+
+      const diff = Math.round((cEntry.total_horas - totalHorasPlan) * 100) / 100;
       cEntry.diferencia_horas_plan = diff;
-      cEntry.porcentaje_cobertura_plan = plan.totalHorasPlan > 0 ? Math.round((cEntry.total_horas / plan.totalHorasPlan) * 100) : 100;
+      cEntry.porcentaje_cobertura_plan = Math.round((cEntry.total_horas / totalHorasPlan) * 100);
 
       if (Math.abs(diff) <= 0.5) {
         cEntry.estado_cobertura = 'CUBIERTO';
@@ -461,7 +483,28 @@ export function buildCourseLoadSummaries(teachers: TeacherRecord[]): CourseLoadS
         cEntry.estado_cobertura = 'SUPERAVIT';
       }
     } else {
-      cEntry.estado_cobertura = 'SIN_PLAN';
+      const plan = obtenerPlanPorCurso(cEntry.nivel, cEntry.regimen || 'JEC') || obtenerPlanPorCurso(cEntry.curso, cEntry.regimen || 'JEC');
+      if (plan) {
+        cEntry.horas_plan_estudio = plan.totalHorasPlan;
+        cEntry.horas_obligatorias_plan = plan.horasObligatorias;
+        cEntry.horas_libre_disposicion_plan = plan.horasLibreDisposicion;
+        cEntry.plan_referencia = plan.nivel;
+        cEntry.categoria_plan = plan.categoria;
+
+        const diff = Math.round((cEntry.total_horas - plan.totalHorasPlan) * 100) / 100;
+        cEntry.diferencia_horas_plan = diff;
+        cEntry.porcentaje_cobertura_plan = plan.totalHorasPlan > 0 ? Math.round((cEntry.total_horas / plan.totalHorasPlan) * 100) : 100;
+
+        if (Math.abs(diff) <= 0.5) {
+          cEntry.estado_cobertura = 'CUBIERTO';
+        } else if (diff < -0.5) {
+          cEntry.estado_cobertura = 'DEFICIT';
+        } else {
+          cEntry.estado_cobertura = 'SUPERAVIT';
+        }
+      } else {
+        cEntry.estado_cobertura = 'SIN_PLAN';
+      }
     }
   });
 
