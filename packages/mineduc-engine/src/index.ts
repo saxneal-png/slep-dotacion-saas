@@ -7,3 +7,4 @@ export * from './normativaPieAuditor';
 export * from './planesEstudio';
 export * from './capacidadSae';
 export * from './modalidades';
+export * from './calculoAsistentes';

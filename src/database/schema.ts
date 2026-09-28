@@ -134,6 +134,32 @@ CREATE TABLE IF NOT EXISTS auditoria_cambios (
   detalles_json TEXT,
   fecha_hora TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS asistentes_educacion (
+  id TEXT PRIMARY KEY,
+  rbd TEXT NOT NULL,
+  periodo INTEGER NOT NULL DEFAULT 2026,
+  run TEXT NOT NULL,
+  nombres TEXT NOT NULL,
+  apellidos TEXT NOT NULL,
+  cargo_funcion TEXT NOT NULL,
+  estamento TEXT NOT NULL,
+  horas_contrato REAL NOT NULL,
+  horas_subvencion_general_indefinido REAL DEFAULT 0,
+  horas_subvencion_general_plazo_fijo REAL DEFAULT 0,
+  horas_sep_indefinido REAL DEFAULT 0,
+  horas_sep_plazo_fijo REAL DEFAULT 0,
+  horas_pie_indefinido REAL DEFAULT 0,
+  horas_pie_plazo_fijo REAL DEFAULT 0,
+  es_dupla_psicosocial INTEGER DEFAULT 0,
+  es_equipo_pie INTEGER DEFAULT 0,
+  es_tecnico_parvulo INTEGER DEFAULT 0,
+  es_auxiliar_servicio INTEGER DEFAULT 0,
+  es_inspector_patio INTEGER DEFAULT 0,
+  observaciones TEXT,
+  activo INTEGER DEFAULT 1,
+  FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
+);
 `;
 
 export function runMigrations(db: Database): void {
@@ -279,7 +305,10 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_asignaciones_docente ON asignaciones_horarias(docente_id);',
     'CREATE INDEX IF NOT EXISTS idx_salas_rbd ON salas_infraestructura(rbd);',
     'CREATE INDEX IF NOT EXISTS idx_planes_estudio ON planes_estudio_mineduc(nivel, regimen);',
-    'CREATE INDEX IF NOT EXISTS idx_auditoria_rbd_periodo ON auditoria_cambios(rbd, periodo);'
+    'CREATE INDEX IF NOT EXISTS idx_auditoria_rbd_periodo ON auditoria_cambios(rbd, periodo);',
+    'CREATE INDEX IF NOT EXISTS idx_asistentes_rbd_periodo ON asistentes_educacion(rbd, periodo);',
+    'CREATE INDEX IF NOT EXISTS idx_asistentes_run ON asistentes_educacion(run);',
+    'CREATE INDEX IF NOT EXISTS idx_asistentes_estamento ON asistentes_educacion(estamento);'
   ];
 
   for (const idxSql of indexes) {

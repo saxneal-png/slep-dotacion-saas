@@ -98,3 +98,14 @@ export type {
   ResultadoTraspasoPeriodo
 } from '../services/traspasoDotacionService';
 
+export {
+  listarAsistentes,
+  listarTodosLosAsistentesTerritorio,
+  obtenerAsistentePorId,
+  guardarAsistente,
+  guardarAsistentesBatch,
+  eliminarAsistente,
+  eliminarAsistentesColegioPeriodo
+} from './repositories/asistentesRepo';
+
+

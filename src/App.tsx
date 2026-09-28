@@ -21,13 +21,15 @@ const ColegioWorkspaceView = React.lazy(() => import('./views/ColegioWorkspaceVi
 const AnalizadorDotacionView = React.lazy(() => import('./views/AnalizadorDotacionView').then(m => ({ default: m.AnalizadorDotacionView })));
 const EstadisticasView = React.lazy(() => import('./views/EstadisticasView').then(m => ({ default: m.EstadisticasView })));
 const PlanesEstudioView = React.lazy(() => import('./views/PlanesEstudioView').then(m => ({ default: m.PlanesEstudioView })));
+const AsistentesDotacionView = React.lazy(() => import('./views/AsistentesDotacionView').then(m => ({ default: m.AsistentesDotacionView })));
 
 import {
   Establecimiento,
   SalaInfraestructura,
   CursoSae,
   Docente,
-  AsignacionHoraria
+  AsignacionHoraria,
+  AsistenteEducacion
 } from './types';
 
 import {
@@ -50,6 +52,11 @@ import {
   listarAsignaciones,
   guardarAsignacion,
   eliminarAsignacion,
+  listarAsistentes,
+  listarTodosLosAsistentesTerritorio,
+  guardarAsistente,
+  guardarAsistentesBatch,
+  eliminarAsistente,
   exportarCarteraCompleta,
   exportarDotacionEstablecimiento,
   importarCartera,
@@ -79,12 +86,14 @@ export const App: React.FC = () => {
   const [cursos, setCursos] = useState<CursoSae[]>([]);
   const [docentes, setDocentes] = useState<Docente[]>([]);
   const [asignaciones, setAsignaciones] = useState<AsignacionHoraria[]>([]);
+  const [asistentes, setAsistentes] = useState<AsistenteEducacion[]>([]);
 
   // Datos globales territoriales (100% de los colegios)
   const [todasLasSalas, setTodasLasSalas] = useState<SalaInfraestructura[]>([]);
   const [todosLosCursos, setTodosLosCursos] = useState<CursoSae[]>([]);
   const [todosLosDocentes, setTodosLosDocentes] = useState<Docente[]>([]);
   const [todasLasAsignaciones, setTodasLasAsignaciones] = useState<AsignacionHoraria[]>([]);
+  const [todosLosAsistentes, setTodosLosAsistentes] = useState<AsistenteEducacion[]>([]);
 
   const [vistaActiva, setVistaActiva] = useState<string>(() => {
     try {
@@ -145,6 +154,9 @@ export const App: React.FC = () => {
       const allAsigs = await listarTodasLasAsignaciones(p);
       setTodasLasAsignaciones(allAsigs);
 
+      const allAsist = await listarTodosLosAsistentesTerritorio(p);
+      setTodosLosAsistentes(allAsist);
+
       if (listEst.length > 0) {
         const defaultEst = colegioActivo || listEst[0];
         setColegioActivo(defaultEst);
@@ -163,10 +175,12 @@ export const App: React.FC = () => {
     const c = await listarCursos(rbd, p);
     const d = await listarDocentes(rbd, p);
     const a = await listarAsignaciones(rbd, p);
+    const ast = await listarAsistentes(rbd, p);
     setSalas(s);
     setCursos(c);
     setDocentes(d);
     setAsignaciones(a);
+    setAsistentes(ast);
   };
 
   const handleTogglePeriodo = async (nuevoPeriodo: number) => {
@@ -299,6 +313,31 @@ export const App: React.FC = () => {
     const all = await listarTodasLasAsignaciones(periodoActivo);
     setTodasLasAsignaciones(all);
     mostrarMensaje('Asignación eliminada.');
+  };
+
+  const handleGuardarAsistente = async (a: AsistenteEducacion) => {
+    await guardarAsistente(a);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const all = await listarTodosLosAsistentesTerritorio(periodoActivo);
+    setTodosLosAsistentes(all);
+    mostrarMensaje(`Asistente ${a.nombres} guardado exitosamente.`);
+  };
+
+  const handleGuardarAsistentesBatch = async (batch: AsistenteEducacion[], reemplazar: boolean = false) => {
+    if (!colegioActivo) return;
+    await guardarAsistentesBatch(batch, colegioActivo.rbd, periodoActivo, reemplazar);
+    await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const all = await listarTodosLosAsistentesTerritorio(periodoActivo);
+    setTodosLosAsistentes(all);
+    mostrarMensaje(`Se guardaron ${batch.length} asistentes exitosamente.`);
+  };
+
+  const handleEliminarAsistente = async (id: string) => {
+    await eliminarAsistente(id);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    const all = await listarTodosLosAsistentesTerritorio(periodoActivo);
+    setTodosLosAsistentes(all);
+    mostrarMensaje('Asistente eliminado de la dotación.');
   };
 
   // Exportar Cartera .slep
@@ -657,6 +696,7 @@ export const App: React.FC = () => {
               cursos={cursos}
               docentes={docentes}
               asignaciones={asignaciones}
+              asistentes={asistentes}
               diagnostico={diagnosticoColegioActivo}
               onGuardarSala={handleGuardarSala}
               onEliminarSala={handleEliminarSala}
@@ -664,6 +704,9 @@ export const App: React.FC = () => {
               onEliminarCurso={handleEliminarCurso}
               onGuardarDocente={handleGuardarDocente}
               onEliminarDocente={handleEliminarDocente}
+              onGuardarAsistente={handleGuardarAsistente}
+              onGuardarAsistentesBatch={handleGuardarAsistentesBatch}
+              onEliminarAsistente={handleEliminarAsistente}
               onGuardarAsignacion={handleGuardarAsignacion}
               onEliminarAsignacion={handleEliminarAsignacion}
               onAbrirModuloSige={() => setVistaActiva('sige')}
@@ -767,6 +810,19 @@ export const App: React.FC = () => {
             todosLosColegios={colegios}
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
+          />
+        )}
+
+        {vistaActiva === 'asistentes' && colegioActivo && (
+          <AsistentesDotacionView
+            colegio={colegioActivo}
+            asistentes={asistentes}
+            matricula={cursos.reduce((sum, c) => sum + (c.matriculaProyectada || 0), 0)}
+            salasParvulo={salas.filter((s) => s.tipo === 'PARVULARIA').length}
+            periodoActivo={periodoActivo}
+            onGuardarAsistente={handleGuardarAsistente}
+            onGuardarAsistentesBatch={handleGuardarAsistentesBatch}
+            onEliminarAsistente={handleEliminarAsistente}
           />
         )}
 

@@ -9,11 +9,13 @@ import {
   SalaInfraestructura,
   CursoSae,
   Docente,
-  AsignacionHoraria
+  AsignacionHoraria,
+  AsistenteEducacion
 } from '../types';
 import { DiagnosticoColegioCompleto } from '../services/dotacionCalculationService';
 import { BalanzaDiagnosticoView } from './BalanzaDiagnosticoView';
 import { DocentesDotacionView } from './DocentesDotacionView';
+import { AsistentesDotacionView } from './AsistentesDotacionView';
 import { CurriculumDemandaView } from './CurriculumDemandaView';
 import { PieAuditorView } from './PieAuditorView';
 import { SalasSaeView } from './SalasSaeView';
@@ -30,6 +32,7 @@ export interface ColegioWorkspaceViewProps {
   cursos: CursoSae[];
   docentes: Docente[];
   asignaciones: AsignacionHoraria[];
+  asistentes?: AsistenteEducacion[];
   diagnostico: DiagnosticoColegioCompleto | null;
   onGuardarSala: (s: SalaInfraestructura) => Promise<void> | void;
   onEliminarSala: (id: string) => Promise<void> | void;
@@ -37,6 +40,9 @@ export interface ColegioWorkspaceViewProps {
   onEliminarCurso: (id: string) => Promise<void> | void;
   onGuardarDocente: (d: Docente) => Promise<void> | void;
   onEliminarDocente: (id: string) => Promise<void> | void;
+  onGuardarAsistente?: (a: AsistenteEducacion) => Promise<void> | void;
+  onGuardarAsistentesBatch?: (asistentes: AsistenteEducacion[], reemplazar?: boolean) => Promise<void> | void;
+  onEliminarAsistente?: (id: string) => Promise<void> | void;
   onGuardarAsignacion: (a: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion: (id: string) => Promise<void> | void;
   onAbrirModuloSige: () => void;
@@ -60,6 +66,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   cursos,
   docentes,
   asignaciones,
+  asistentes = [],
   diagnostico,
   onGuardarSala,
   onEliminarSala,
@@ -67,6 +74,9 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onEliminarCurso,
   onGuardarDocente,
   onEliminarDocente,
+  onGuardarAsistente,
+  onGuardarAsistentesBatch,
+  onEliminarAsistente,
   onGuardarAsignacion,
   onEliminarAsignacion,
   onAbrirModuloSige,
@@ -83,7 +93,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onExportarMatrizExcelColegio,
   onAbrirCopilot
 }) => {
-  const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'cursos' | 'pie' | 'salas'>('balanza');
+  const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
@@ -103,7 +113,8 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 
   const tabs = [
     { id: 'balanza' as const, label: 'Balanza & Diagnóstico', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` },
-    { id: 'docentes' as const, label: 'Nómina & Ley 20.903', icon: Users, badge: `${docentes.length}` },
+    { id: 'docentes' as const, label: 'Nómina Docente (Ley 20.903)', icon: Users, badge: `${docentes.length}` },
+    { id: 'asistentes' as const, label: 'Asistentes Educación', icon: Users, badge: `${asistentes.length}` },
     { id: 'cursos' as const, label: 'Cursos & Planes MINEDUC', icon: BookOpen, badge: `${cursos.length}` },
     { id: 'pie' as const, label: 'Auditoría PIE (Dec. 170)', icon: ShieldCheck, badge: `${bg?.horasPieDemandadas || 0}h` },
     { id: 'salas' as const, label: 'Salas & Aforo SAE (Dec. 548)', icon: LayoutGrid, badge: `${salas.length}` }
@@ -420,6 +431,19 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             cursos={cursos}
             onGuardarAsignacion={onGuardarAsignacion}
             onEliminarAsignacion={onEliminarAsignacion}
+          />
+        )}
+
+        {tabActiva === 'asistentes' && onGuardarAsistente && onEliminarAsistente && (
+          <AsistentesDotacionView
+            colegio={colegio}
+            asistentes={asistentes}
+            matricula={cursos.reduce((sum, c) => sum + (c.matriculaProyectada || 0), 0)}
+            salasParvulo={salas.filter((s) => s.tipo === 'PARVULARIA').length}
+            periodoActivo={periodoActivo}
+            onGuardarAsistente={onGuardarAsistente}
+            onGuardarAsistentesBatch={onGuardarAsistentesBatch}
+            onEliminarAsistente={onEliminarAsistente}
           />
         )}
 

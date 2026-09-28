@@ -4,6 +4,7 @@ import {
   CursoSae,
   Docente,
   AsignacionHoraria,
+  AsistenteEducacion,
   ComparativaPeriodosResult,
   ResumenPeriodo
 } from '../../types';
@@ -13,6 +14,7 @@ import { listarSalas, guardarSala } from './salasRepo';
 import { listarCursos, guardarCurso } from './cursosRepo';
 import { listarDocentes, listarTodosLosDocentesTerritorio, guardarDocente } from './docentesRepo';
 import { listarAsignaciones, listarTodasLasAsignaciones, guardarAsignacion } from './asignacionesRepo';
+import { listarAsistentes, listarTodosLosAsistentesTerritorio, guardarAsistente } from './asistentesRepo';
 import { calcularDiagnosticoColegio } from '../../services/dotacionCalculationService';
 import { normalizarRut } from '../../utils/rutUtils';
 
@@ -31,6 +33,7 @@ export async function exportarDotacionEstablecimiento(
   const cursos = await listarCursos(rbd, periodo);
   const docentes = await listarDocentes(rbd, periodo);
   const asignaciones = await listarAsignaciones(rbd, periodo);
+  const asistentes = await listarAsistentes(await getDb(), rbd, periodo);
 
   return {
     tipo: 'DOTACION_ESTABLECIMIENTO',
@@ -46,7 +49,8 @@ export async function exportarDotacionEstablecimiento(
     salas,
     cursos,
     docentes,
-    asignaciones
+    asignaciones,
+    asistentes
   };
 }
 
@@ -69,6 +73,7 @@ export async function exportarCarteraCompleta(asesorNombre: string, asesorEmail:
 
   const docentes = await listarTodosLosDocentesTerritorio();
   const asignaciones = await listarTodasLasAsignaciones();
+  const asistentes = await listarTodosLosAsistentesTerritorio(db);
 
   return {
     tipo: 'CARTERA_TERRITORIAL',
@@ -79,7 +84,8 @@ export async function exportarCarteraCompleta(asesorNombre: string, asesorEmail:
     salas,
     cursos,
     docentes,
-    asignaciones
+    asignaciones,
+    asistentes
   };
 }
 
@@ -161,6 +167,18 @@ export async function importarCartera(data: any): Promise<{
       }
     }
 
+    // 7. Guardar asistentes de la educación
+    if (Array.isArray(data.asistentes)) {
+      const db = await getDb();
+      for (const ast of data.asistentes) {
+        try {
+          await guardarAsistente(db, { ...ast, rbd: est.rbd, periodo });
+        } catch (e: any) {
+          errores.push(`Error en asistente ${ast.run}: ${e.message}`);
+        }
+      }
+    }
+
     return {
       importados: 1,
       colegiosNombres: [est.nombre],
@@ -218,6 +236,17 @@ export async function importarCartera(data: any): Promise<{
           await guardarAsignacion(asig);
         } catch (e: any) {
           errores.push(`Error en asignación: ${e.message}`);
+        }
+      }
+    }
+
+    if (Array.isArray(data.asistentes)) {
+      const db = await getDb();
+      for (const ast of data.asistentes) {
+        try {
+          await guardarAsistente(db, ast);
+        } catch (e: any) {
+          errores.push(`Error en asistente ${ast.run}: ${e.message}`);
         }
       }
     }

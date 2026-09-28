@@ -97,6 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'salas_sae',      label: 'Salas & Cupos SAE (Dec. 548)',   icon: LayoutGrid, desc: 'Aforos y desdoblamientos' },
     { id: 'curriculum',     label: 'Planes Curriculares MINEDUC',     icon: BookOpen,   desc: 'Matrices de estudio por curso' },
     { id: 'docentes',       label: 'Docentes & Ley 20.903',           icon: Users,      desc: 'Control 65/35 y sobreasignación' },
+    { id: 'asistentes',     label: 'Asistentes de la Educación',      icon: Users,      desc: 'Ley 21.109, Duplas SEP y PIE' },
     { id: 'balanza',        label: 'Balanza & Diagnóstico',            icon: Scale,      desc: 'Superávit y déficit horario' },
   ];
 

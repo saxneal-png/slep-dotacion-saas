@@ -521,3 +521,6 @@ export interface ConfiguracionGeneral {
   ultimaModificacion?: string;
 }
 
+export * from './asistentesTypes';
+
+
