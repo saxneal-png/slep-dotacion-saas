@@ -863,9 +863,9 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
 
       {/* ── 5. MODAL REASIGNACIÓN EN LOTE ── */}
       {modalReasignarAbierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
-          <div className="card-elevated max-w-md w-full p-6 shadow-2xl space-y-4 border border-border-subtle animate-scale-in">
-            <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="card-elevated max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar p-6 shadow-2xl space-y-4 border border-border-subtle animate-scale-in my-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
               <div className="flex items-center gap-2">
                 <ArrowUpDown className="w-5 h-5 text-indigo-600" />
                 <h3 className="font-black text-slate-900 dark:text-white text-base">Reasignar Colegios en Lote</h3>

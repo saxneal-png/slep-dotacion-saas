@@ -620,7 +620,7 @@ export const App: React.FC = () => {
       )}
 
       {/* Contenedor Principal de Vistas */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-[1720px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
         <React.Suspense
           fallback={
             <div className="flex flex-col items-center justify-center min-h-[400px] py-16 space-y-4 animate-in fade-in">

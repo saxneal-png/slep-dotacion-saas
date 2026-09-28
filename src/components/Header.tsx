@@ -116,8 +116,8 @@ export const Header: React.FC<HeaderProps> = ({
       className="text-white border-b shadow-md sticky top-0 z-40 backdrop-blur-md transition-colors duration-200"
       style={{ backgroundColor: 'var(--header-bg, #0F172A)', borderColor: 'var(--header-border, #334155)' }}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3">
+      <div className="max-w-[1720px] mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 gap-2 sm:gap-3">
 
           {/* ── 1. Logo / Branding ── */}
           <div

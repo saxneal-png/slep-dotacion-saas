@@ -141,10 +141,10 @@ export const ModalCombinarCursos: React.FC<ModalCombinarCursosProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 border border-slate-200 my-8 animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] border border-slate-200 my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Cabecera */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="p-5 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100">
               <Layers className="w-5 h-5" />
@@ -169,7 +169,8 @@ export const ModalCombinarCursos: React.FC<ModalCombinarCursosProps> = ({
 
         {!pasoConfirmacion ? (
           /* PASO 1: SELECCIÓN Y CONFIGURACIÓN */
-          <form onSubmit={handleProcederAConfirmacion} className="space-y-4 pt-4">
+          <form onSubmit={handleProcederAConfirmacion} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar text-xs">
             {/* Buscador y botones de selección rápida */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
@@ -336,21 +337,22 @@ export const ModalCombinarCursos: React.FC<ModalCombinarCursosProps> = ({
                   </div>
                 </div>
               )}
+              </div>
             </div>
 
-            {/* Botones de acción */}
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            {/* Botones de acción Paso 1 */}
+            <div className="shrink-0 p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={handleCerrar}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={seleccionados.length < 2}
-                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                className={`flex items-center gap-1.5 px-5 py-2 text-xs font-bold rounded-xl transition-all ${
                   seleccionados.length >= 2
                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md cursor-pointer'
                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
@@ -363,60 +365,62 @@ export const ModalCombinarCursos: React.FC<ModalCombinarCursosProps> = ({
           </form>
         ) : (
           /* PASO 2: CONFIRMACIÓN EXPLÍCITA */
-          <div className="space-y-4 pt-4">
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-amber-950 space-y-1">
-                <h4 className="font-bold text-amber-900">
-                  ¿Confirmas la combinación de los siguientes cursos?
-                </h4>
-                <p>
-                  Esta acción unificará los cursos seleccionados en un único curso combinado. Las asignaciones docentes existentes se traspasarán al nuevo curso y los cursos de origen se eliminarán.
-                </p>
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar text-xs">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-950 space-y-1">
+                  <h4 className="font-bold text-amber-900">
+                    ¿Confirmas la combinación de los siguientes cursos?
+                  </h4>
+                  <p>
+                    Esta acción unificará los cursos seleccionados en un único curso combinado. Las asignaciones docentes existentes se traspasarán al nuevo curso y los cursos de origen se eliminarán.
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* Detalle de la Operación */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs">
-              <div className="font-bold text-slate-800 flex items-center justify-between border-b pb-2">
-                <span>Cursos de Origen que se Fusionarán ({cursosSeleccionados.length}):</span>
-                <span className="text-[11px] text-slate-500 font-normal">Se eliminarán tras la unión</span>
-              </div>
-              <ul className="space-y-1 max-h-28 overflow-y-auto pr-1">
-                {cursosSeleccionados.map(c => (
-                  <li key={c.id} className="flex items-center justify-between text-slate-700 bg-white p-2 rounded border border-slate-200 text-[11px]">
-                    <span className="font-bold">{c.nivel} {c.letra}</span>
-                    <span className="text-slate-500">{c.matriculaProyectada} estudiantes • {c.regimen}</span>
-                  </li>
-                ))}
-              </ul>
+              {/* Detalle de la Operación */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs">
+                <div className="font-bold text-slate-800 flex items-center justify-between border-b pb-2">
+                  <span>Cursos de Origen que se Fusionarán ({cursosSeleccionados.length}):</span>
+                  <span className="text-[11px] text-slate-500 font-normal">Se eliminarán tras la unión</span>
+                </div>
+                <ul className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                  {cursosSeleccionados.map(c => (
+                    <li key={c.id} className="flex items-center justify-between text-slate-700 bg-white p-2 rounded border border-slate-200 text-[11px]">
+                      <span className="font-bold">{c.nivel} {c.letra}</span>
+                      <span className="text-slate-500">{c.matriculaProyectada} estudiantes • {c.regimen}</span>
+                    </li>
+                  ))}
+                </ul>
 
-              <div className="border-t pt-2 space-y-1">
-                <div className="font-bold text-slate-800">Nuevo Curso Combinado que se Creará:</div>
-                <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-200 flex items-center justify-between">
-                  <div>
-                    <div className="font-black text-indigo-950 text-sm">
-                      {nombrePersonalizado.trim() || nombreSugerido} {letra}
+                <div className="border-t pt-2 space-y-1">
+                  <div className="font-bold text-slate-800">Nuevo Curso Combinado que se Creará:</div>
+                  <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-200 flex items-center justify-between">
+                    <div>
+                      <div className="font-black text-indigo-950 text-sm">
+                        {nombrePersonalizado.trim() || nombreSugerido} {letra}
+                      </div>
+                      <div className="text-[11px] text-indigo-800">
+                        Jornada: {regimen} • Proporción: {regimenProporcion === '60_40' ? '60/40' : '65/35'}
+                      </div>
                     </div>
-                    <div className="text-[11px] text-indigo-800">
-                      Jornada: {regimen} • Proporción: {regimenProporcion === '60_40' ? '60/40' : '65/35'}
+                    <div className="text-right">
+                      <div className="font-black text-slate-900 text-sm">{totalMatricula} estudiantes</div>
+                      <div className="text-[11px] text-purple-700 font-bold">{totalNeet}T • {totalNeep}P PIE</div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-black text-slate-900 text-sm">{totalMatricula} estudiantes</div>
-                    <div className="text-[11px] text-purple-700 font-bold">{totalNeet}T • {totalNeep}P PIE</div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Botones de confirmación final */}
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            <div className="shrink-0 p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setPasoConfirmacion(false)}
                 disabled={procesando}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               >
                 ← Volver a Modificar
               </button>
@@ -426,7 +430,7 @@ export const ModalCombinarCursos: React.FC<ModalCombinarCursosProps> = ({
                   type="button"
                   onClick={handleCerrar}
                   disabled={procesando}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -434,7 +438,7 @@ export const ModalCombinarCursos: React.FC<ModalCombinarCursosProps> = ({
                   type="button"
                   onClick={handleEjecutarCombinacion}
                   disabled={procesando}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-md transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
                 >
                   {procesando ? (
                     <span>Combinando cursos...</span>

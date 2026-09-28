@@ -56,7 +56,7 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
         onClick={e => e.stopPropagation()}
       >
         {/* Cabecera Principal */}
-        <div className="bg-[#002B49] text-white p-6 relative">
+        <div className="bg-[#002B49] text-white p-6 relative shrink-0">
           <div className="absolute top-4 right-4 flex items-center gap-2">
             <button
               onClick={() => imprimirFichaDocente(doc, undefined, cursos)}
@@ -126,7 +126,7 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
         </div>
 
         {/* Cuerpo con Scroll */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
           {/* Tarjetas KPI de Distribución General de Tiempo */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-blue-50/70 p-3.5 rounded-xl border border-blue-100">
@@ -624,7 +624,7 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500">
             Total territorial SLEP: <strong>{doc.horasTotalesSlep} horas semanales</strong>
           </div>

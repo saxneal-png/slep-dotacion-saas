@@ -43,10 +43,10 @@ export const ModalDescombinarCurso: React.FC<ModalDescombinarCursoProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 my-8 animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] border border-slate-200 my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Cabecera */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="p-5 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-purple-50 text-purple-700 rounded-xl border border-purple-100">
               <Layers className="w-5 h-5" />
@@ -69,7 +69,7 @@ export const ModalDescombinarCurso: React.FC<ModalDescombinarCursoProps> = ({
           </button>
         </div>
 
-        <div className="space-y-4 pt-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar text-xs">
           {/* Advertencia */}
           <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -129,33 +129,33 @@ export const ModalDescombinarCurso: React.FC<ModalDescombinarCursoProps> = ({
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Botones de Acción */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={procesando}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleEjecutar}
-              disabled={procesando}
-              className="flex items-center gap-1.5 px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-lg shadow-md transition-all cursor-pointer"
-            >
-              {procesando ? (
-                <span>Descombinando curso...</span>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Confirmar y Descombinar</span>
-                </>
-              )}
-            </button>
-          </div>
+        {/* Botones de Acción */}
+        <div className="shrink-0 p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={procesando}
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleEjecutar}
+            disabled={procesando}
+            className="flex items-center gap-1.5 px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+          >
+            {procesando ? (
+              <span>Descombinando curso...</span>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Confirmar y Descombinar</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>

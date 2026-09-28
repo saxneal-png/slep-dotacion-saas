@@ -252,11 +252,11 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
         onClick={onClose}
       />
 
-      <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-        <div className="w-screen max-w-2xl bg-white dark:bg-slate-900 shadow-2xl flex flex-col border-l border-slate-200 dark:border-slate-800 transition-transform duration-300 ease-out">
+      <div className="fixed inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10">
+        <div className="w-screen max-w-full sm:max-w-xl md:max-w-2xl bg-white dark:bg-slate-900 shadow-2xl flex flex-col border-l border-slate-200 dark:border-slate-800 transition-transform duration-300 ease-out">
           
           {/* Header */}
-          <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 border-b border-blue-900/40 text-white flex items-center justify-between shadow-sm">
+          <div className="px-4 sm:px-6 py-4 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 border-b border-blue-900/40 text-white flex items-center justify-between shadow-sm shrink-0">
             <div className="flex items-center space-x-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/30 flex-shrink-0">
                 <Sparkles className="w-5 h-5 text-white animate-pulse" />
@@ -314,7 +314,7 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
           </div>
 
           {/* Sugerencias Rápidas / Chips */}
-          <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 overflow-x-auto scrollbar-none flex items-center space-x-2">
+          <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 overflow-x-auto scrollbar-none flex items-center space-x-2 shrink-0">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex-shrink-0 flex items-center">
               <HelpCircle className="w-3 h-3 mr-1" />
               Sugerencias:
@@ -332,7 +332,7 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
           </div>
 
           {/* Message List */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-slate-50/50 dark:bg-slate-950/40">
+          <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-slate-50/50 dark:bg-slate-950/40 custom-scrollbar">
             {messages.map(msg => (
               <div
                 key={msg.id}
@@ -462,7 +462,7 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
           </div>
 
           {/* Input Area */}
-          <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
+          <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0">
             <div className="relative rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus-within:border-blue-500 dark:focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all shadow-inner">
               <textarea
                 ref={inputRef}
@@ -504,9 +504,9 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
 
       {/* Modal de Configuración Gemini */}
       {modalConfigAbierto && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 my-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
               <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-100 font-bold">
                 <Sparkles className="w-5 h-5 text-blue-500" />
                 <span>Configuración de Gemini AI</span>

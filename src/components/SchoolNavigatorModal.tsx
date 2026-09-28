@@ -85,13 +85,13 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
       <div 
-        className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+        className="w-full max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Barra de Búsqueda estilo Spotlight */}
-        <div className="flex items-center px-4 py-3.5 border-b border-slate-100 gap-3 bg-slate-50/50">
+        <div className="flex items-center px-4 py-3.5 border-b border-slate-100 gap-3 bg-slate-50/50 shrink-0">
           <Search className="w-5 h-5 text-slate-400 shrink-0" />
           <input
             ref={inputRef}
@@ -116,7 +116,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
         </div>
 
         {/* Chips de Filtro Rápido por Asesor y Comuna */}
-        <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border-b border-slate-100 overflow-x-auto text-[11px]">
+        <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border-b border-slate-100 overflow-x-auto text-[11px] shrink-0">
           {config.asesorActivoNombre && (
             <button
               type="button"
@@ -157,7 +157,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
         </div>
 
         {/* Lista de Establecimientos */}
-        <div className="max-h-[380px] overflow-y-auto p-2 space-y-1 divide-y divide-slate-50">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 divide-y divide-slate-50 custom-scrollbar">
           {filteredColegios.length === 0 ? (
             <div className="text-center py-10 text-slate-400">
               <School className="w-10 h-10 mx-auto mb-2 text-slate-300 stroke-[1.5]" />
@@ -265,7 +265,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
         </div>
 
         {/* Footer con Atajos de Teclado y Botón Crear */}
-        <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+        <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
           <div className="flex items-center gap-2">
             {onCrearNuevoColegio && (
               <button

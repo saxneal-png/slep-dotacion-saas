@@ -104,9 +104,9 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] border border-slate-200 my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+        <div className="p-5 pb-4 border-b border-slate-200 flex items-center justify-between shrink-0">
           <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-orange-600" />
             {editandoAsig ? 'Editar Asignación / Taller' : (esModoTransversal ? 'Crear Taller Transversal' : 'Asignar Docente / Asignatura')}
@@ -120,7 +120,8 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-4">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs custom-scrollbar">
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Destino / Ámbito</label>
             <input
@@ -258,18 +259,19 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
               </label>
             </div>
           </div>
+          </div>
 
-          <div className="flex justify-end gap-2 pt-3 border-t">
+          <div className="shrink-0 p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow"
+              className="px-5 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl shadow-md transition-all cursor-pointer"
             >
               {editandoAsig ? 'Guardar Cambios' : 'Asignar Docencia'}
             </button>
@@ -371,9 +373,9 @@ export const ModalAsignarCoDocencia: React.FC<ModalCoDocenciaProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] border border-slate-200 my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+        <div className="p-5 pb-4 border-b border-slate-200 flex items-center justify-between shrink-0">
           <h3 className="text-base font-bold text-indigo-950 flex items-center gap-2">
             <Users className="w-5 h-5 text-indigo-600" />
             {editandoAsig ? 'Editar Co-Docencia / Apoyo' : 'Asignar Co-Docencia / Agrupación Flexible'}
@@ -387,115 +389,117 @@ export const ModalAsignarCoDocencia: React.FC<ModalCoDocenciaProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-4">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
-            <input
-              type="text"
-              disabled
-              value={`${cursoActivo.nivel} ${cursoActivo.letra} (${cursoActivo.regimen})`}
-              className="w-full px-3 py-2 border rounded-lg bg-indigo-50/70 text-indigo-950 font-bold"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Modalidad de Apoyo / Co-Enseñanza *</label>
-            <select
-              value={tipoModalidad}
-              onChange={e => setTipoModalidad(e.target.value as any)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
-            >
-              <option value="AGRUPACION_FLEXIBLE">Agrupación Flexible (División de subgrupos en aula)</option>
-              <option value="CO_DOCENCIA">Co-Docencia Regular (2° Docente en sala simultáneo)</option>
-              <option value="REFUERZO_AULA">Refuerzo Pedagógico en Sala (Nivelación)</option>
-              <option value="APOYO_DOCENTE">Apoyo Docente / Asistente Pedagógico</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Asignatura o Área Apoyada *</label>
-            <input
-              type="text"
-              required
-              list="sugerencias-materias-codoc-modal"
-              value={asignatura}
-              onChange={e => setAsignatura(e.target.value)}
-              placeholder="Ej. Lenguaje y Comunicación, Matemática..."
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold"
-            />
-            <datalist id="sugerencias-materias-codoc-modal">
-              {planActivo?.asignaturasBase.map((asig: AsignaturaPlan, i: number) => (
-                <option key={i} value={asig.nombre} />
-              ))}
-            </datalist>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">
-              Docente o Funcionario de Apoyo *
-            </label>
-            <select
-              required
-              value={docenteId}
-              onChange={e => setDocenteId(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
-            >
-              <option value="">-- Seleccionar Docente / Funcionario --</option>
-              {docentes.map(d => {
-                const disp = disponibilidadDocentes.get(d.id);
-                return (
-                  <option key={d.id} value={d.id}>
-                    {d.nombres} {d.apellidos} ({d.estamento}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs custom-scrollbar">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Horas Pedagógicas (HA) *</label>
+              <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
               <input
-                type="number"
-                min="1"
-                max="44"
-                required
-                value={horas}
-                onChange={e => setHoras(parseInt(e.target.value) || 0)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-center font-bold text-indigo-700 text-base"
+                type="text"
+                disabled
+                value={`${cursoActivo.nivel} ${cursoActivo.letra} (${cursoActivo.regimen})`}
+                className="w-full px-3 py-2 border rounded-lg bg-indigo-50/70 text-indigo-950 font-bold"
               />
-              <p className="text-[10px] text-slate-400 mt-1">1 HA = 45 minutos</p>
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Fuente Financiamiento</label>
+              <label className="block font-semibold text-slate-700 mb-1">Modalidad de Apoyo / Co-Enseñanza *</label>
               <select
-                value={esSep ? 'SEP' : 'SUB_GEN'}
-                onChange={e => setEsSep(e.target.value === 'SEP')}
+                value={tipoModalidad}
+                onChange={e => setTipoModalidad(e.target.value as any)}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
               >
-                <option value="SUB_GEN">Subvención General</option>
-                <option value="SEP">SEP (Refuerzo/PME)</option>
+                <option value="AGRUPACION_FLEXIBLE">Agrupación Flexible (División de subgrupos en aula)</option>
+                <option value="CO_DOCENCIA">Co-Docencia Regular (2° Docente en sala simultáneo)</option>
+                <option value="REFUERZO_AULA">Refuerzo Pedagógico en Sala (Nivelación)</option>
+                <option value="APOYO_DOCENTE">Apoyo Docente / Asistente Pedagógico</option>
               </select>
-              <p className="text-[10px] text-slate-400 mt-1">{esSep ? 'Exento prop. 65/35' : 'Carga regular'}</p>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Asignatura o Área Apoyada *</label>
+              <input
+                type="text"
+                required
+                list="sugerencias-materias-codoc-modal"
+                value={asignatura}
+                onChange={e => setAsignatura(e.target.value)}
+                placeholder="Ej. Lenguaje y Comunicación, Matemática..."
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold"
+              />
+              <datalist id="sugerencias-materias-codoc-modal">
+                {planActivo?.asignaturasBase.map((asig: AsignaturaPlan, i: number) => (
+                  <option key={i} value={asig.nombre} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Docente o Funcionario de Apoyo *
+              </label>
+              <select
+                required
+                value={docenteId}
+                onChange={e => setDocenteId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+              >
+                <option value="">-- Seleccionar Docente / Funcionario --</option>
+                {docentes.map(d => {
+                  const disp = disponibilidadDocentes.get(d.id);
+                  return (
+                    <option key={d.id} value={d.id}>
+                      {d.nombres} {d.apellidos} ({d.estamento}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Horas Pedagógicas (HA) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="44"
+                  required
+                  value={horas}
+                  onChange={e => setHoras(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-center font-bold text-indigo-700 text-base"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">1 HA = 45 minutos</p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Fuente Financiamiento</label>
+                <select
+                  value={esSep ? 'SEP' : 'SUB_GEN'}
+                  onChange={e => setEsSep(e.target.value === 'SEP')}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium"
+                >
+                  <option value="SUB_GEN">Subvención General</option>
+                  <option value="SEP">SEP (Refuerzo/PME)</option>
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1">{esSep ? 'Exento prop. 65/35' : 'Carga regular'}</p>
+              </div>
+            </div>
+
+            <div className="p-2.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-[11px]">
+              ℹ️ Esta asignación sumará a la carga horaria del docente seleccionado, pero <strong>no inflará las {horasPlanCurso} HA del Plan de Estudio del curso</strong>.
             </div>
           </div>
 
-          <div className="p-2.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-[11px]">
-            ℹ️ Esta asignación sumará a la carga horaria del docente seleccionado, pero <strong>no inflará las {horasPlanCurso} HA del Plan de Estudio del curso</strong>.
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t">
+          <div className="shrink-0 p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow"
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all cursor-pointer"
             >
               {editandoAsig ? 'Guardar Cambios' : 'Asignar Co-Docencia'}
             </button>
@@ -586,9 +590,9 @@ export const ModalAsignarPie: React.FC<ModalPieProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] border border-slate-200 my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+        <div className="p-5 pb-4 border-b border-slate-200 flex items-center justify-between shrink-0">
           <h3 className="text-base font-bold text-purple-950 flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-purple-600" />
             {editandoAsig ? 'Editar Apoyo PIE' : 'Asignar Apoyo PIE / Co-Docencia'}
@@ -602,124 +606,126 @@ export const ModalAsignarPie: React.FC<ModalPieProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs mt-4">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
-            <input
-              type="text"
-              disabled
-              value={`${cursoActivo.nivel} ${cursoActivo.letra} (${demandaPieCurso.neetCount} NEET / ${demandaPieCurso.neepCount} NEEP)`}
-              className="w-full px-3 py-2 border rounded-lg bg-purple-50 text-purple-900 font-bold"
-            />
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs custom-scrollbar">
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Curso Destino</label>
+              <input
+                type="text"
+                disabled
+                value={`${cursoActivo.nivel} ${cursoActivo.letra} (${demandaPieCurso.neetCount} NEET / ${demandaPieCurso.neepCount} NEEP)`}
+                className="w-full px-3 py-2 border rounded-lg bg-purple-50 text-purple-900 font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Tipo de Apoyo Decreto 170 *</label>
+              <select
+                value={tipoApoyo}
+                onChange={e => setTipoApoyo(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+              >
+                {TIPOS_APOYO_PIE.map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Profesional / Asistente Asignado *
+              </label>
+              <select
+                required
+                value={docenteId}
+                onChange={e => setDocenteId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+              >
+                <option value="">-- Seleccionar Profesional o Asistente --</option>
+                <optgroup label="Educadoras Diferenciales (PIE)">
+                  {docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL').map(d => {
+                    const disp = disponibilidadDocentes.get(d.id);
+                    return (
+                      <option key={d.id} value={d.id}>
+                        {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                      </option>
+                    );
+                  })}
+                </optgroup>
+                <optgroup label="Asistentes Profesionales PAE (Fono/Psico/TO)">
+                  {docentes.filter(d => d.estamento === 'PROFESIONAL_PAE').map(d => {
+                    const disp = disponibilidadDocentes.get(d.id);
+                    return (
+                      <option key={d.id} value={d.id}>
+                        {d.nombres} {d.apellidos} ({d.titulo || 'PAE'}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                      </option>
+                    );
+                  })}
+                </optgroup>
+                <optgroup label="Asistentes Técnicos en Educación Especial / Aula">
+                  {docentes.filter(d => d.estamento === 'TECNICO_ESPECIAL' || d.estamento === 'ASISTENTE_AULA').map(d => {
+                    const disp = disponibilidadDocentes.get(d.id);
+                    return (
+                      <option key={d.id} value={d.id}>
+                        {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                      </option>
+                    );
+                  })}
+                </optgroup>
+                <optgroup label="Docentes de Aula Regular (Co-docencia / Colaborativo)">
+                  {docentes.filter(d => d.estamento === 'DOCENTE_AULA').map(d => {
+                    const disp = disponibilidadDocentes.get(d.id);
+                    return (
+                      <option key={d.id} value={d.id}>
+                        {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Descripción / Asignatura Articulada</label>
+              <input
+                type="text"
+                value={asignatura}
+                onChange={e => setAsignatura(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+                placeholder="Ej: Apoyo PIE Lenguaje y Matemática"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Horas Cronológicas Semanales *</label>
+              <input
+                type="number"
+                min="1"
+                max="44"
+                step="0.5"
+                required
+                value={horas}
+                onChange={e => setHoras(parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-700 text-base"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Equivale aprox. a {Math.round(horas * 1.333)} horas pedagógicas de aula (HA).
+              </p>
+            </div>
           </div>
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Tipo de Apoyo Decreto 170 *</label>
-            <select
-              value={tipoApoyo}
-              onChange={e => setTipoApoyo(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
-            >
-              {TIPOS_APOYO_PIE.map(t => (
-                <option key={t.id} value={t.id}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">
-              Profesional / Asistente Asignado *
-            </label>
-            <select
-              required
-              value={docenteId}
-              onChange={e => setDocenteId(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
-            >
-              <option value="">-- Seleccionar Profesional o Asistente --</option>
-              <optgroup label="Educadoras Diferenciales (PIE)">
-                {docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL').map(d => {
-                  const disp = disponibilidadDocentes.get(d.id);
-                  return (
-                    <option key={d.id} value={d.id}>
-                      {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                    </option>
-                  );
-                })}
-              </optgroup>
-              <optgroup label="Asistentes Profesionales PAE (Fono/Psico/TO)">
-                {docentes.filter(d => d.estamento === 'PROFESIONAL_PAE').map(d => {
-                  const disp = disponibilidadDocentes.get(d.id);
-                  return (
-                    <option key={d.id} value={d.id}>
-                      {d.nombres} {d.apellidos} ({d.titulo || 'PAE'}) - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                    </option>
-                  );
-                })}
-              </optgroup>
-              <optgroup label="Asistentes Técnicos en Educación Especial / Aula">
-                {docentes.filter(d => d.estamento === 'TECNICO_ESPECIAL' || d.estamento === 'ASISTENTE_AULA').map(d => {
-                  const disp = disponibilidadDocentes.get(d.id);
-                  return (
-                    <option key={d.id} value={d.id}>
-                      {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                    </option>
-                  );
-                })}
-              </optgroup>
-              <optgroup label="Docentes de Aula Regular (Co-docencia / Colaborativo)">
-                {docentes.filter(d => d.estamento === 'DOCENTE_AULA').map(d => {
-                  const disp = disponibilidadDocentes.get(d.id);
-                  return (
-                    <option key={d.id} value={d.id}>
-                      {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                    </option>
-                  );
-                })}
-              </optgroup>
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Descripción / Asignatura Articulada</label>
-            <input
-              type="text"
-              value={asignatura}
-              onChange={e => setAsignatura(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
-              placeholder="Ej: Apoyo PIE Lenguaje y Matemática"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Horas Cronológicas Semanales *</label>
-            <input
-              type="number"
-              min="1"
-              max="44"
-              step="0.5"
-              required
-              value={horas}
-              onChange={e => setHoras(parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-700 text-base"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              Equivale aprox. a {Math.round(horas * 1.333)} horas pedagógicas de aula (HA).
-            </p>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t">
+          <div className="shrink-0 p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow"
+              className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md transition-all cursor-pointer"
             >
               {editandoAsig ? 'Guardar Cambios' : 'Asignar Apoyo PIE'}
             </button>
