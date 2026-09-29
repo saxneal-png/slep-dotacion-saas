@@ -189,6 +189,7 @@ export interface TraspasoResult {
   cursosCreados: number;
   docentesGuardados: number;
   asignacionesGuardadas: number;
+  asistentesGuardados?: number;
   alertas: string[];
 }
 

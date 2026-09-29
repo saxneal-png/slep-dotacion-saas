@@ -35,6 +35,7 @@ import {
   buildHomologacionList,
   getAsignaturasSugeridasParaNivel
 } from '../../services/analizador/homologationService';
+import type { AsistenteAnalizadoRecord } from '../../services/analizador/asistentesClassifier';
 import { ejecutarTraspasoDotacionAnalizador } from '../../database/db';
 
 interface TraspasoDotacionModalProps {
@@ -44,6 +45,7 @@ interface TraspasoDotacionModalProps {
   teachers: TeacherRecord[];
   courses: CourseLoadSummary[];
   teacherLoads: TeacherConsolidatedLoad[];
+  asistentes?: AsistenteAnalizadoRecord[];
   apiKey?: string;
   selectedModel: string;
   onTransferSuccess: (result: TraspasoResult, targetRbd?: string) => void;
@@ -56,6 +58,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
   teachers,
   courses,
   teacherLoads,
+  asistentes = [],
   apiKey,
   selectedModel,
   onTransferSuccess,
@@ -220,6 +223,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
         teachers,
         courses,
         teacherLoads,
+        asistentes,
       });
 
       setResult(res);
@@ -278,7 +282,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
             )}
 
             {/* KPIs y Resumen de Cuadratura */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className={`grid gap-3 ${asistentes.length > 0 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
                 <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Colegios</div>
                 <div className="text-xl font-black text-slate-800 mt-0.5">{selectedRbds.length}</div>
@@ -291,6 +295,12 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
                 <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Docentes</div>
                 <div className="text-xl font-black text-slate-800 mt-0.5">{teacherLoads.length}</div>
               </div>
+              {asistentes.length > 0 && (
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
+                  <div className="text-[11px] font-semibold text-purple-700 uppercase tracking-wider">Asistentes</div>
+                  <div className="text-xl font-black text-purple-900 mt-0.5">{asistentes.length}</div>
+                </div>
+              )}
               <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
                 <div className="text-[11px] font-semibold text-orange-700 uppercase tracking-wider">Horas Aula Totales</div>
                 <div className="text-xl font-black text-orange-900 mt-0.5">{Math.round(totalHorasAsignadas)} hrs</div>
@@ -735,7 +745,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
             </div>
 
             {result && (
-              <div className="grid grid-cols-3 gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
+              <div className={`grid gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 text-center ${typeof result.asistentesGuardados === 'number' && result.asistentesGuardados > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
                 <div>
                   <div className="text-[10px] uppercase font-bold text-slate-400">Cursos</div>
                   <div className="text-xl font-black text-slate-800">{result.cursosCreados}</div>
@@ -748,6 +758,12 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
                   <div className="text-[10px] uppercase font-bold text-slate-400">Asignaciones</div>
                   <div className="text-xl font-black text-orange-600">{result.asignacionesGuardadas}</div>
                 </div>
+                {typeof result.asistentesGuardados === 'number' && result.asistentesGuardados > 0 && (
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-purple-500">Asistentes</div>
+                    <div className="text-xl font-black text-purple-700">{result.asistentesGuardados}</div>
+                  </div>
+                )}
               </div>
             )}
 

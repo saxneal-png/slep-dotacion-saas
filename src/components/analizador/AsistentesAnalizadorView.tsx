@@ -27,7 +27,7 @@ import {
   RawAsistenteInput
 } from '../../services/analizador/asistentesClassifier';
 import { AsistenteEducacion, EstamentoAsistente, Establecimiento } from '../../types';
-import { guardarAsistentesBatch, listarEstablecimientos } from '../../database/db';
+import { guardarAsistentesBatch, listarEstablecimientos, guardarEstablecimiento } from '../../database/db';
 import { LevantamientoCoeficienteModal } from './LevantamientoCoeficienteModal';
 
 export interface AsistentesAnalizadorViewProps {
@@ -36,7 +36,7 @@ export interface AsistentesAnalizadorViewProps {
   selectedModel: string;
   onUpdateAsistentes: (actualizados: AsistenteAnalizadoRecord[]) => void;
   onSyncWithDatabase?: () => Promise<void>;
-  onNavigateToColegio?: (rbd: string) => void;
+  onNavigateToColegio?: (rbd: string, tab?: string) => void;
   onOpenApiKeyModal: () => void;
 }
 
@@ -179,15 +179,33 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
     }
   };
 
+  const [lastSavedRbd, setLastSavedRbd] = useState<string | null>(null);
+
   const handleGuardarEnBaseDatos = async () => {
     if (asistentes.length === 0) return;
     setIsSavingDb(true);
 
     try {
+      const existingColegios = await listarEstablecimientos();
+      const existingRbdSet = new Set(existingColegios.map((c) => c.rbd));
+
       // Agrupar asistentes por RBD
       const mapPorRbd = new Map<string, AsistenteEducacion[]>();
 
-      asistentes.forEach((a) => {
+      for (const a of asistentes) {
+        // Asegurar que el colegio exista
+        if (a.rbd && !existingRbdSet.has(a.rbd)) {
+          await guardarEstablecimiento({
+            id: `est-${a.rbd}`,
+            rbd: a.rbd,
+            nombre: a.establishment || `Establecimiento RBD ${a.rbd}`,
+            comuna: (a.comuna as any) || 'Chillán',
+            regimen: 'JEC',
+            porcentajePrioritarios: 75,
+          });
+          existingRbdSet.add(a.rbd);
+        }
+
         const item: AsistenteEducacion = {
           id: a.id,
           rbd: a.rbd,
@@ -217,7 +235,7 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
           mapPorRbd.set(a.rbd, []);
         }
         mapPorRbd.get(a.rbd)!.push(item);
-      });
+      }
 
       for (const [rbd, lista] of mapPorRbd.entries()) {
         await guardarAsistentesBatch(lista, rbd, 2026, true);
@@ -227,7 +245,9 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
         await onSyncWithDatabase();
       }
 
-      showToast(`Se guardaron exitosamente ${asistentes.length} asistentes en la Base de Datos.`);
+      const primerRbd = mapPorRbd.keys().next().value || null;
+      setLastSavedRbd(primerRbd);
+      showToast(`¡Traspaso exitoso! Se guardaron ${asistentes.length} asistentes en SQLite (Período 2026).`);
     } catch (e: any) {
       showToast(`Error al guardar en base de datos: ${e.message}`, 'error');
     } finally {
@@ -515,6 +535,21 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
               </>
             )}
           </button>
+
+          {/* Botón Ir a Dotación Escolar */}
+          {onNavigateToColegio && (filtroColegio !== 'TODOS' || lastSavedRbd) && (
+            <button
+              onClick={() => {
+                const targetRbd = filtroColegio !== 'TODOS' ? filtroColegio : lastSavedRbd!;
+                onNavigateToColegio(targetRbd, 'asistentes');
+              }}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white shadow-md shadow-orange-500/25 flex items-center gap-1.5 transition-all active:scale-[0.98]"
+              title={`Ir a la Dotación de Asistentes del RBD ${filtroColegio !== 'TODOS' ? filtroColegio : lastSavedRbd}`}
+            >
+              <Briefcase className="w-3.5 h-3.5 text-amber-200" />
+              <span>Ver en Dotación (RBD {filtroColegio !== 'TODOS' ? filtroColegio : lastSavedRbd})</span>
+            </button>
+          )}
 
           {/* Botón Levantamiento Coeficiente Oficial */}
           <button

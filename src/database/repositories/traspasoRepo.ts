@@ -6,14 +6,16 @@ import {
   CourseLoadSummary,
   TeacherConsolidatedLoad
 } from '../../types/analizadorTypes';
-import { CursoSae, Docente, AsignacionHoraria } from '../../types';
+import { CursoSae, Docente, AsignacionHoraria, AsistenteEducacion } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { guardarEstablecimiento } from './establecimientosRepo';
 import { guardarCurso } from './cursosRepo';
 import { guardarDocente } from './docentesRepo';
 import { guardarAsignacion } from './asignacionesRepo';
+import { guardarAsistenteSync } from './asistentesRepo';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
 import { homologarAsignaturaPorRegla } from '../../services/analizador/homologationService';
+import type { AsistenteAnalizadoRecord } from '../../services/analizador/asistentesClassifier';
 
 export async function ejecutarTraspasoDotacionAnalizador(
   config: TraspasoConfig,
@@ -22,6 +24,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
     teachers: TeacherRecord[];
     courses: CourseLoadSummary[];
     teacherLoads: TeacherConsolidatedLoad[];
+    asistentes?: AsistenteAnalizadoRecord[];
   }
 ): Promise<TraspasoResult> {
   const db = await getDb();
@@ -33,10 +36,12 @@ export async function ejecutarTraspasoDotacionAnalizador(
   const filteredSchools = data.schools.filter(s => targetRbds.has(s.rbd));
   const filteredCourses = data.courses.filter(c => targetRbds.has(c.rbd));
   const filteredTeacherLoads = data.teacherLoads.filter(tl => targetRbds.has(tl.rbd));
+  const filteredAsistentes = (data.asistentes || []).filter(a => targetRbds.has(a.rbd));
 
   let cursosCreados = 0;
   let docentesGuardados = 0;
   let asignacionesGuardadas = 0;
+  let asistentesGuardados = 0;
 
   // 1. Si el modo es REEMPLAZAR, eliminar registros previos de estos colegios en el periodo destino
   if (config.modo === 'REEMPLAZAR') {
@@ -45,6 +50,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
       db.run("DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
       db.run("DELETE FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
       db.run("DELETE FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+      db.run("DELETE FROM asistentes_educacion WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
     }
   }
 
@@ -368,6 +374,41 @@ export async function ejecutarTraspasoDotacionAnalizador(
     }
   }
 
+  // 6. Crear / mapear Asistentes de la Educación
+  for (const a of filteredAsistentes) {
+    const effectiveRbd = targetOverride || a.rbd;
+    const cleanRun = (a.run || '').trim().replace(/[^0-9kK]/g, '') || `TEMP_${a.nombres.replace(/[^A-Za-z0-9]/g, '').slice(0, 10)}`;
+    const astId = `asist_${effectiveRbd}_${periodo}_${cleanRun}`;
+
+    const asistenteObj: AsistenteEducacion = {
+      id: astId,
+      rbd: effectiveRbd,
+      periodo,
+      run: a.run || cleanRun,
+      nombres: a.nombres,
+      apellidos: a.apellidos,
+      cargoFuncion: a.cargo_estandar || a.cargo_original,
+      estamento: a.estamento,
+      horasContrato: a.horas_contrato || 0,
+      horasSubvencionGeneralIndefinido: a.horas_subvencion_general_indefinido || 0,
+      horasSubvencionGeneralPlazoFijo: a.horas_subvencion_general_plazo_fijo || 0,
+      horasSepIndefinido: a.horas_sep_indefinido || 0,
+      horasSepPlazoFijo: a.horas_sep_plazo_fijo || 0,
+      horasPieIndefinido: a.horas_pie_indefinido || 0,
+      horasPiePlazoFijo: a.horas_pie_plazo_fijo || 0,
+      esDuplaPsicosocial: Boolean(a.es_dupla_psicosocial),
+      esEquipoPie: Boolean(a.es_equipo_pie),
+      esTecnicoParvulo: Boolean(a.es_tecnico_parvulo),
+      esAuxiliarServicio: Boolean(a.es_auxiliar_servicio),
+      esInspectorPatio: Boolean(a.es_inspector_patio),
+      observaciones: a.observaciones_ia || a.observaciones_originales,
+      activo: true,
+    };
+
+    guardarAsistenteSync(db, asistenteObj);
+    asistentesGuardados++;
+  }
+
   persistDb();
 
   return {
@@ -375,6 +416,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
     cursosCreados,
     docentesGuardados,
     asignacionesGuardadas,
+    asistentesGuardados,
     alertas,
   };
 }

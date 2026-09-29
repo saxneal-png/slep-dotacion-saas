@@ -35,8 +35,10 @@ import {
   guardarDocente,
   guardarCurso,
   guardarAsignacion,
+  guardarAsistentesBatch,
   listarEstablecimientos
 } from '../database/db';
+import type { AsistenteEducacion } from '../types';
 import type {
   SchoolSummary,
   TeacherRecord,
@@ -79,7 +81,7 @@ const FALLBACK_MODELS: GeminiModel[] = [
 
 interface AnalizadorDotacionViewProps {
   onSyncWithDatabase?: () => Promise<void>;
-  onNavigateToColegio?: (rbd: string) => void;
+  onNavigateToColegio?: (rbd: string, tab?: string) => void;
 }
 
 export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
@@ -393,13 +395,44 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
             });
           }
         }
+
+        // Guardar Asistentes de la Educación
+        const schoolAsistentes = asistentes.filter((a) => a.rbd === s.rbd);
+        if (schoolAsistentes.length > 0) {
+          const mappedAsistentes: AsistenteEducacion[] = schoolAsistentes.map((a) => ({
+            id: a.id,
+            rbd: s.rbd,
+            periodo: 2026,
+            run: a.run,
+            nombres: a.nombres,
+            apellidos: a.apellidos,
+            cargoFuncion: a.cargo_estandar || a.cargo_original,
+            estamento: a.estamento,
+            horasContrato: a.horas_contrato || 0,
+            horasSubvencionGeneralIndefinido: a.horas_subvencion_general_indefinido || 0,
+            horasSubvencionGeneralPlazoFijo: a.horas_subvencion_general_plazo_fijo || 0,
+            horasSepIndefinido: a.horas_sep_indefinido || 0,
+            horasSepPlazoFijo: a.horas_sep_plazo_fijo || 0,
+            horasPieIndefinido: a.horas_pie_indefinido || 0,
+            horasPiePlazoFijo: a.horas_pie_plazo_fijo || 0,
+            esDuplaPsicosocial: Boolean(a.es_dupla_psicosocial),
+            esEquipoPie: Boolean(a.es_equipo_pie),
+            esTecnicoParvulo: Boolean(a.es_tecnico_parvulo),
+            esAuxiliarServicio: Boolean(a.es_auxiliar_servicio),
+            esInspectorPatio: Boolean(a.es_inspector_patio),
+            observaciones: a.observaciones_ia || a.observaciones_originales,
+            activo: true,
+          }));
+          await guardarAsistentesBatch(mappedAsistentes, s.rbd, 2026, false);
+        }
       }
 
       if (onSyncWithDatabase) {
         await onSyncWithDatabase();
       }
 
-      showToast(`¡Sincronización exitosa! ${schools.length} establecimientos incorporados a la base SQLite local.`);
+      const asistTxt = asistentes.length > 0 ? ` y ${asistentes.length} asistentes` : '';
+      showToast(`¡Sincronización exitosa! ${schools.length} establecimientos${asistTxt} incorporados a la base SQLite local.`);
     } catch (err: any) {
       console.error('Error guardando en SQLite:', err);
       showToast(`Error al guardar en SQLite: ${err.message || err}`, 'error');
@@ -709,13 +742,15 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
         teachers={teachers}
         courses={courses}
         teacherLoads={teacherLoads}
+        asistentes={asistentes}
         apiKey={apiKey}
         selectedModel={selectedModel}
         onTransferSuccess={async (res, targetRbd) => {
           if (onSyncWithDatabase) await onSyncWithDatabase();
-          showToast(`¡Traspaso exitoso! ${res.colegiosProcesados} colegio(s), ${res.cursosCreados} cursos y ${res.asignacionesGuardadas} asignaciones guardadas en 2026.`);
+          const asistPart = typeof res.asistentesGuardados === 'number' && res.asistentesGuardados > 0 ? `, ${res.asistentesGuardados} asistentes` : '';
+          showToast(`¡Traspaso exitoso! ${res.colegiosProcesados} colegio(s), ${res.cursosCreados} cursos, ${res.asignacionesGuardadas} asignaciones${asistPart} guardados en 2026.`);
           if (targetRbd && onNavigateToColegio) {
-            onNavigateToColegio(targetRbd);
+            onNavigateToColegio(targetRbd, 'workflow');
           }
         }}
       />

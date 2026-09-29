@@ -52,6 +52,7 @@ export interface ColegioWorkspaceViewProps {
   todosLosDocentes?: Docente[];
   todasLasAsignaciones?: AsignacionHoraria[];
   periodoActivo?: number;
+  initialTab?: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas';
   onTogglePeriodo?: (p: number) => void;
   onRefreshData?: () => void;
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void> | void;
@@ -86,6 +87,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   todosLosDocentes = [],
   todasLasAsignaciones = [],
   periodoActivo = 2026,
+  initialTab,
   onTogglePeriodo,
   onRefreshData,
   onLimpiarDotacionColegio,
@@ -93,7 +95,13 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onExportarMatrizExcelColegio,
   onAbrirCopilot
 }) => {
-  const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
+  const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>(initialTab || 'balanza');
+
+  React.useEffect(() => {
+    if (initialTab) {
+      setTabActiva(initialTab);
+    }
+  }, [initialTab, colegio.rbd]);
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);

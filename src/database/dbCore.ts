@@ -190,6 +190,7 @@ export async function borrarDotacionPeriodo(periodo: number, rbd?: string): Prom
   cursosBorrados: number;
   docentesBorrados: number;
   asignacionesBorradas: number;
+  asistentesBorrados: number;
 }> {
   const db = await getDb();
   let whereClause = "WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))";
@@ -203,21 +204,25 @@ export async function borrarDotacionPeriodo(periodo: number, rbd?: string): Prom
   const countAsig = db.exec(`SELECT count(*) FROM asignaciones_horarias ${whereClause}`, params);
   const countCursos = db.exec(`SELECT count(*) FROM cursos_sae ${whereClause}`, params);
   const countDoc = db.exec(`SELECT count(*) FROM docentes ${whereClause}`, params);
+  const countAst = db.exec(`SELECT count(*) FROM asistentes_educacion ${whereClause}`, params);
 
   const asignacionesBorradas = (countAsig[0]?.values[0]?.[0] as number) || 0;
   const cursosBorrados = (countCursos[0]?.values[0]?.[0] as number) || 0;
   const docentesBorrados = (countDoc[0]?.values[0]?.[0] as number) || 0;
+  const asistentesBorrados = (countAst[0]?.values[0]?.[0] as number) || 0;
 
   db.run(`DELETE FROM asignaciones_horarias ${whereClause}`, params);
   db.run(`DELETE FROM cursos_sae ${whereClause}`, params);
   db.run(`DELETE FROM docentes ${whereClause}`, params);
+  db.run(`DELETE FROM asistentes_educacion ${whereClause}`, params);
 
   persistDb();
 
   return {
     cursosBorrados,
     docentesBorrados,
-    asignacionesBorradas
+    asignacionesBorradas,
+    asistentesBorrados
   };
 }
 
@@ -229,6 +234,7 @@ export async function reiniciarTodaLaBaseDatos(): Promise<void> {
   db.run("DELETE FROM asignaciones_horarias");
   db.run("DELETE FROM cursos_sae");
   db.run("DELETE FROM docentes");
+  db.run("DELETE FROM asistentes_educacion");
   db.run("DELETE FROM salas_infraestructura");
   db.run("DELETE FROM establecimientos");
   db.run("DELETE FROM planes_estudio_mineduc");

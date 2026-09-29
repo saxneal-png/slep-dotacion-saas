@@ -112,6 +112,7 @@ export const App: React.FC = () => {
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
   const [periodoActivo, setPeriodoActivo] = useState<number>(2026);
+  const [workspaceInitialTab, setWorkspaceInitialTab] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
 
   const mostrarMensaje = (mensaje: string, tipo: 'success' | 'error' = 'success') => {
     setNotificacion({ tipo, mensaje });
@@ -716,6 +717,7 @@ export const App: React.FC = () => {
               todosLosDocentes={todosLosDocentes}
               todasLasAsignaciones={todasLasAsignaciones}
               periodoActivo={periodoActivo}
+              initialTab={workspaceInitialTab}
               onTogglePeriodo={handleTogglePeriodo}
               onRefreshData={() => cargarDatos(periodoActivo)}
               onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
@@ -866,15 +868,21 @@ export const App: React.FC = () => {
             onSyncWithDatabase={async () => {
               await cargarDatos(periodoActivo);
             }}
-            onNavigateToColegio={async (rbd: string) => {
+            onNavigateToColegio={async (rbd: string, tabDestino: string = 'workflow') => {
               await cargarDatos(2026);
               const list = await listarEstablecimientos();
               const est = list.find((c) => c.rbd === rbd) || colegios.find((c) => c.rbd === rbd);
               if (est) {
                 await handleSelectColegio(est);
                 setPeriodoActivo(2026);
+                if (tabDestino === 'asistentes' || tabDestino === 'docentes' || tabDestino === 'cursos' || tabDestino === 'pie' || tabDestino === 'salas') {
+                  setWorkspaceInitialTab(tabDestino as any);
+                } else {
+                  setWorkspaceInitialTab('balanza');
+                }
                 setVistaActiva('workflow');
-                mostrarMensaje(`Navegando a ${est.nombre} en Dotación 2026`);
+                const destinoTxt = tabDestino === 'asistentes' ? ' (Dotación de Asistentes)' : '';
+                mostrarMensaje(`Navegando a ${est.nombre}${destinoTxt} en Dotación 2026`);
               }
             }}
           />
