@@ -28,6 +28,7 @@ import {
 } from '../../services/analizador/asistentesClassifier';
 import { AsistenteEducacion, EstamentoAsistente, Establecimiento } from '../../types';
 import { guardarAsistentesBatch, listarEstablecimientos } from '../../database/db';
+import { LevantamientoCoeficienteModal } from './LevantamientoCoeficienteModal';
 
 export interface AsistentesAnalizadorViewProps {
   asistentes: AsistenteAnalizadoRecord[];
@@ -89,6 +90,7 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [isSavingDb, setIsSavingDb] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isLevantamientoModalOpen, setIsLevantamientoModalOpen] = useState(false);
 
   // Modal de edición rápida
   const [asistenteEdicion, setAsistenteEdicion] = useState<AsistenteAnalizadoRecord | null>(null);
@@ -514,6 +516,17 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
             )}
           </button>
 
+          {/* Botón Levantamiento Coeficiente Oficial */}
+          <button
+            onClick={() => setIsLevantamientoModalOpen(true)}
+            disabled={asistentes.length === 0}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white shadow-md shadow-blue-500/25 flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+            title="Generar la Planilla Oficial de Levantamiento de Coeficientes de Asistentes para Establecimientos Educacionales"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-orange-300" />
+            <span>Levantamiento Coeficiente Oficial</span>
+          </button>
+
           {/* Botón Exportar */}
           <button
             onClick={handleExportarExcel}
@@ -805,6 +818,16 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
           </div>
         </div>
       )}
+
+      {/* Modal de Levantamiento de Coeficiente Oficial */}
+      <LevantamientoCoeficienteModal
+        isOpen={isLevantamientoModalOpen}
+        onClose={() => setIsLevantamientoModalOpen(false)}
+        asistentes={asistentes}
+        apiKey={apiKey}
+        selectedModel={selectedModel}
+        onOpenApiKeyModal={onOpenApiKeyModal}
+      />
     </div>
   );
 };

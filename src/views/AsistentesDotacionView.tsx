@@ -15,6 +15,7 @@ import {
   inferirClasificacionAsistente
 } from '../../packages/mineduc-engine/src/calculoAsistentes';
 import { parseAsistentesFromWorkbook } from '../services/analizador/asistentesParser';
+import { exportarLevantamientoIndividualExcel } from '../services/analizador/asistentesLevantamientoExporter';
 
 export interface AsistentesDotacionViewProps {
   colegio: Establecimiento;
@@ -259,6 +260,27 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Asistentes');
     XLSX.writeFile(wb, `Dotacion_Asistentes_RBD_${colegio.rbd}_${periodoActivo}.xlsx`);
+  };
+
+  const handleExportarLevantamientoOficial = async () => {
+    try {
+      await exportarLevantamientoIndividualExcel(
+        asistentes,
+        colegio.rbd,
+        colegio.nombre,
+        colegio.comuna
+      );
+      setNotificacion({
+        tipo: 'success',
+        mensaje: '¡Planilla Oficial de Levantamiento de Coeficiente exportada exitosamente!'
+      });
+      setTimeout(() => setNotificacion(null), 3500);
+    } catch (err: any) {
+      setNotificacion({
+        tipo: 'error',
+        mensaje: `Error al exportar planilla oficial: ${err.message || err}`
+      });
+    }
   };
 
   const handleProcesarArchivoExcel = async () => {
@@ -513,6 +535,16 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
           >
             <Upload className="w-3.5 h-3.5" />
             <span>Importar Excel</span>
+          </button>
+
+          <button
+            onClick={handleExportarLevantamientoOficial}
+            disabled={asistentes.length === 0}
+            className="px-3 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white shadow-md shadow-blue-500/25 flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+            title="Descargar Planilla Oficial de Levantamiento de Coeficientes de Asistentes"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-orange-300" />
+            <span>Levantamiento Coeficiente</span>
           </button>
 
           <button
