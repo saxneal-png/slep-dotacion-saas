@@ -2,6 +2,8 @@ import { geminiFetch } from '../geminiApiClient';
 import { EstamentoAsistente } from '../../types';
 import { inferirClasificacionAsistente } from '../../../packages/mineduc-engine/src/calculoAsistentes';
 
+import { normalizarCargoAsistenteInteligente } from './intelligentCargoNormalizer';
+
 export interface RawAsistenteInput {
   id: string;
   rbd: string;
@@ -55,25 +57,30 @@ export interface AsistenteAnalizadoRecord {
   alertas: string[];
 }
 
-export const ASISTENTES_GEMINI_SYSTEM_PROMPT = `Eres un auditor y analista experto en la dotación de Asistentes de la Educación del sistema público chileno (Servicios Locales de Educación Pública - SLEP, Ley N° 21.109, Ley N° 19.464, Decreto 170 PIE, Ley 20.248 SEP y Código del Trabajo).
+export const ASISTENTES_GEMINI_SYSTEM_PROMPT = `Eres un auditor y analista experto en la dotación de Asistentes de la Educación del sistema público chileno (Servicios Locales de Educación Pública - SLEP Valle Diguillín, Ley N° 21.109, Ley N° 19.464, Decreto 170 PIE, Ley 20.248 SEP y Código del Trabajo).
 
 Tu objetivo es analizar nóminas, funciones y NOTAS U OBSERVACIONES de asistentes de la educación.
-Muchas planillas contienen anotaciones informales o complejas en el campo de función o notas (ejemplos: "apoyo PIE 18h + reemplazo 22h", "licencia médica, reemplazado por X", "asistente de aula en 1° básico y apoyo patio", "técnico en párvulos jornada completa SEP", "dupla psicosocial comunal", "maestro mantención y gasfitería", "chofer furgón rural").
+Muchas planillas contienen anotaciones informales, plurales, errores tipográficos o notas complejas en el campo de función o notas (ejemplos: "nochero", "nocheros", "Nochero.", "rondín", "apoyo PIE 18h + reemplazo 22h", "licencia médica, reemplazado por X", "asistente de aula en 1° básico y apoyo patio", "técnico en párvulos jornada completa SEP", "dupla psicosocial comunal", "maestro mantención y gasfitería", "chofer furgón rural").
+
+Reglas de Homologación, Plurales y Resiliencia Tipográfica:
+- PLURALES A SINGULAR: Convierte cualquier término en plural al cargo oficial singular (ej: "nocheros" -> "NOCHERO/A", "inspectores" -> "INSPECTOR/A DE PATIO", "auxiliares" -> "AUXILIAR DE SERVICIOS", "técnicos de párvulo" -> "TÉCNICO EN EDUCACIÓN PARVULARIA", "choferes" -> "CHOFER / CONDUCTOR", "maestros" -> "MAESTRO DE MANTENCIÓN").
+- NOCHERO/A: En el territorio SLEP, todo "nochero", "nocheros", "Nochero/A", "rondín", "rondines", "sereno", "cuidador nocturno" debe normalizarse como "NOCHERO/A" (Estamento AUXILIAR, es_auxiliar_servicio = true).
+- ERRORES DE TIPEO Y PUNTUACIÓN: Ignora tildes faltantes, mayúsculas/minúsculas y signos de puntuación (ej: "Nochero.", "nocherro", "parbulo").
 
 Debes:
-1. Normalizar el cargo a un título oficial estándar (ej: "ASISTENTE DE SALA", "PSICÓLOGO/A", "TÉCNICO EN PÁRVULOS", "AUXILIAR DE SERVICIOS", "TRABAJADOR/A SOCIAL", "FONOAUDIÓLOGO/A", "TERAPEUTA OCUPACIONAL", "SECRETARIA ADMINISTRATIVA", "INSPECTOR/A DE PATIO").
+1. Normalizar el cargo a un título oficial estándar (ej: "NOCHERO/A", "ASISTENTE DE SALA", "PSICÓLOGO/A", "TÉCNICO EN EDUCACIÓN PARVULARIA", "TÉCNICO EN EDUCACIÓN DIFERENCIAL", "AUXILIAR DE SERVICIOS", "TRABAJADOR/A SOCIAL", "FONOAUDIÓLOGO/A", "TERAPEUTA OCUPACIONAL", "SECRETARIA ADMINISTRATIVA", "INSPECTOR/A DE PATIO", "MAESTRO DE MANTENCIÓN", "CHOFER / CONDUCTOR", "PORTERO/A / CONSERJE").
 2. Clasificar en exactamente UNO de los 5 estamentos de la Ley 21.109:
    - "PROFESIONAL": Psicólogos, Trabajadores/Asistentes Sociales, Fonoaudiólogos, Terapeutas Ocupacionales, Kinesiólogos, Enfermeros Universitarios, Ingenieros TI.
-   - "TECNICO": Técnicos en Párvulos, TENS, Técnicos en Educación Especial, Soporte Técnico TI, Técnicos en Bibliotecología.
+   - "TECNICO": Técnicos en Párvulos, TENS, Técnicos en Educación Especial/Diferencial, Soporte Técnico TI, Técnicos en Bibliotecología.
    - "ADMINISTRATIVO": Secretarias de Dirección/UTP, Encargados de Adquisiciones/Bodega, Encargados SIGE, digitadores.
-   - "AUXILIAR": Auxiliares de Aseo, Maestros de Mantención/Servicios Generales, Choferes de Transporte Escolar, Serenos/Nocheros/Cuidadores.
+   - "AUXILIAR": Auxiliares de Aseo, Maestros de Mantención/Servicios Generales, Choferes de Transporte Escolar, Nocheros/Serenos/Cuidadores/Porteros.
    - "PARADOCENTE_INSPECTORIA": Inspectores de Patio/Pasillos, Asistentes de Sala/Aula (1°-2° Básico), Asistentes de Educación Diferencial, Monitores Extraescolares/PME.
 3. Extraer y ordenar las NOTAS / OBSERVACIONES administrativas relevantes (ej: tipo de reemplazo, multi-fuente, condición de jornada, sede o nivel atendido) en un texto limpio y conciso.
 4. Identificar flags booleanos:
    - esDuplaPsicosocial (Psicólogo o Trabajador/Asistente Social)
    - esEquipoPie (Fonoaudiólogo, Terapeuta, Kinesiólogo, Diferencial, Psicopedagogo)
    - esTecnicoParvulo (Técnico en educación parvularia / asistente de párvulo)
-   - esAuxiliarServicio (Auxiliares de aseo, mantención, chofer, guardia)
+   - esAuxiliarServicio (Auxiliares de aseo, mantención, chofer, guardia, nochero/a, sereno)
    - esInspectorPatio (Inspectores de patio o paradocentes)
 5. Estimar nivel de confianza ("ALTA", "MEDIA", "BAJA") y breve justificación técnica.
 
@@ -200,7 +207,7 @@ export async function clasificarAsistentesConIa(
 
     for (const ast of lote) {
       const iaData = mapaIa[ast.id];
-      const reglaLocal = inferirClasificacionAsistente(ast.cargo_original);
+      const normInteligente = normalizarCargoAsistenteInteligente(ast.cargo_original, ast.observaciones_originales);
 
       const hGralInd = ast.horas_subvencion_general_indefinido || 0;
       const hGralPf = ast.horas_subvencion_general_plazo_fijo || 0;
@@ -224,18 +231,18 @@ export async function clasificarAsistentesConIa(
         alertas.push(`Descuadre: Fuentes suman ${sumaFuentes} hrs vs contrato ${horasContrato} hrs.`);
       }
 
-      let estamento: EstamentoAsistente = reglaLocal.estamento;
-      let cargoEstandar = ast.cargo_original;
+      let estamento: EstamentoAsistente = normInteligente.estamento;
+      let cargoEstandar = normInteligente.cargoEstandar;
       let observacionesIa = ast.observaciones_originales || '';
-      let justificacionIa = 'Clasificación mediante motor normativo local';
-      let confianzaIa: 'ALTA' | 'MEDIA' | 'BAJA' = 'MEDIA';
+      let justificacionIa = 'Normalización léxica y clasificación canónica SLEP';
+      let confianzaIa: 'ALTA' | 'MEDIA' | 'BAJA' = 'ALTA';
       let fuenteClasificacion: 'IA_GEMINI' | 'REGLA_LOCAL' = 'REGLA_LOCAL';
 
-      let esDupla = reglaLocal.esDuplaPsicosocial;
-      let esPie = reglaLocal.esEquipoPie;
-      let esParvulo = reglaLocal.esTecnicoParvulo;
-      let esAuxiliar = reglaLocal.esAuxiliarServicio;
-      let esInspector = reglaLocal.esInspectorPatio;
+      let esDupla = normInteligente.esDuplaPsicosocial;
+      let esPie = normInteligente.esEquipoPie;
+      let esParvulo = normInteligente.esTecnicoParvulo;
+      let esAuxiliar = normInteligente.esAuxiliarServicio;
+      let esInspector = normInteligente.esInspectorPatio;
 
       if (iaData) {
         fuenteClasificacion = 'IA_GEMINI';

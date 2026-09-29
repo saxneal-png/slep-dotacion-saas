@@ -1,6 +1,7 @@
 import { AsistenteAnalizadoRecord } from './asistentesClassifier';
 import { AsistenteEducacion } from '../../types';
 import { geminiFetch } from '../geminiApiClient';
+import { normalizarCargoAsistenteInteligente } from './intelligentCargoNormalizer';
 
 export const FUNCIONES_CANONICAS_LEVANTAMIENTO = [
   'Inspectores',
@@ -64,10 +65,49 @@ export function clasificarFuncionLevantamientoHeuristica(
     esInspectorPatio?: boolean;
   }
 ): { funcion: FuncionCanonicaLevantamiento | 'OTROS '; cargoDetalleOtro?: string } {
+  // 1. Usar el motor de normalización inteligente tokenizado y lematizado
+  const norm = normalizarCargoAsistenteInteligente(cargoOriginal);
+  if (norm.funcionLevantamiento && norm.funcionLevantamiento !== 'OTROS ') {
+    return { funcion: norm.funcionLevantamiento };
+  }
+
   const raw = (cargoOriginal || '').toLowerCase().trim();
   const c = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-  // 1. Inspectores / Paradocentes
+  // 2. Nocheros / Cuidadores nocturnos / Guardias / Serenos (Territorio SLEP: Nochero/a)
+  if (
+    c.includes('nochero') ||
+    c.includes('nochera') ||
+    c.includes('nocturno') ||
+    c.includes('guardia') ||
+    c.includes('sereno') ||
+    c.includes('rondin')
+  ) {
+    return { funcion: 'Nocheros' };
+  }
+
+  // 3. Conductores Auxiliar / Chofer
+  if (
+    c.includes('conductor') ||
+    c.includes('chofer') ||
+    c.includes('furgon') ||
+    c.includes('transporte')
+  ) {
+    return { funcion: 'Conductores Auxliar' };
+  }
+
+  // 4. Maestros / Mantención
+  if (
+    c.includes('maestro') ||
+    c.includes('mantencion') ||
+    c.includes('carpinter') ||
+    c.includes('gasfiter') ||
+    c.includes('electric')
+  ) {
+    return { funcion: 'Maestros' };
+  }
+
+  // 5. Inspectores / Paradocentes
   if (
     flags?.esInspectorPatio ||
     c.includes('inspector') ||
@@ -79,62 +119,43 @@ export function clasificarFuncionLevantamientoHeuristica(
     return { funcion: 'Inspectores' };
   }
 
-  // 2. Auxiliares / Servicios / Aseo
-  if (
-    flags?.esAuxiliarServicio ||
-    (c.includes('auxiliar') && !c.includes('parvul') && !c.includes('diferencial') && !c.includes('aula') && !c.includes('chofer') && !c.includes('conductor')) ||
-    c.includes('aseo') ||
-    c.includes('portero') ||
-    c.includes('porteria') ||
-    c.includes('servicio menor') ||
-    c.includes('servicios menores') ||
-    c.includes('cuidador diurno') ||
-    c.includes('estafeta')
-  ) {
-    return { funcion: 'Auxiliares' };
-  }
-
-  // 3. Psicólogo
+  // 6. Psicólogo
   if (c.includes('psicolog') || c.includes('psicol')) {
     return { funcion: 'Psicólogo' };
   }
 
-  // 4. Trabajador Social
+  // 7. Trabajador Social
   if (c.includes('trabajador social') || c.includes('trabajadora social')) {
     return { funcion: 'Trabajador  Social' };
   }
 
-  // 5. Asistente Social
+  // 8. Asistente Social
   if (c.includes('asistente social')) {
     return { funcion: 'Asistente social' };
   }
 
-  // 6. Kinesiólogo/a
+  // 9. Kinesiólogo/a
   if (c.includes('kinesiolog') || c.includes('kine')) {
     return { funcion: 'Kinesiólogo/a' };
   }
 
-  // 7. Fonoaudiólogo/a
+  // 10. Fonoaudiólogo/a
   if (c.includes('fonoaudiolog') || c.includes('fono')) {
     return { funcion: 'Fonoaudiólogo/a' };
   }
 
-  // 8. Terapeuta ocupacional
+  // 11. Terapeuta ocupacional
   if (c.includes('terapeuta') || c.includes('terapia ocupacional') || c.includes('to pie')) {
     return { funcion: 'Terapeuta ocupacional' };
   }
 
-  // 9. Asistente técnico de Educación Diferencial (y sinónimos como Asistente Educación Diferencial)
+  // 12. Asistente técnico de Educación Diferencial
   if (
     c.includes('diferencial') ||
     c.includes('educacion especial') ||
     c.includes('educacion diferencial') ||
     c.includes('asistente diferencial') ||
     c.includes('tecnico diferencial') ||
-    c.includes('asistente tecnico de educacion diferencial') ||
-    c.includes('asistente de educacion diferencial') ||
-    c.includes('asistente educacion diferencial') ||
-    c.includes('asistente educacional diferencial') ||
     c.includes('apoyo pie') ||
     c.includes('tecnico pie') ||
     c.includes('asistente pie')
@@ -142,7 +163,7 @@ export function clasificarFuncionLevantamientoHeuristica(
     return { funcion: 'Asistente técnico de Educación Diferencial' };
   }
 
-  // 10. Asistentes de aula / Técnicos en Párvulos / Asistente de Párvulos
+  // 13. Asistentes de aula / Técnicos en Párvulos
   if (
     flags?.esTecnicoParvulo ||
     c.includes('asistente de aula') ||
@@ -150,38 +171,11 @@ export function clasificarFuncionLevantamientoHeuristica(
     c.includes('asistente de sala') ||
     c.includes('asistente sala') ||
     c.includes('tecnico parvul') ||
-    c.includes('tecnico en parvulos') ||
-    c.includes('tecnico parvularia') ||
-    c.includes('asistente de parvulo') ||
-    c.includes('asistente de parvulos') ||
-    c.includes('asistente parvulo') ||
-    c.includes('asistente parvulos') ||
+    c.includes('asistente parvul') ||
     c.includes('educadora de parvulo') ||
-    c.includes('auxiliar de parvulo') ||
-    c.includes('atencion de parvulos')
+    c.includes('auxiliar de parvulo')
   ) {
     return { funcion: 'Asistentes de aula' };
-  }
-
-  // 12. Conductores Auxiliar / Chofer
-  if (
-    c.includes('conductor') ||
-    c.includes('chofer') ||
-    c.includes('furgon') ||
-    c.includes('transporte')
-  ) {
-    return { funcion: 'Conductores Auxliar' };
-  }
-
-  // 13. Maestros / Mantención
-  if (
-    c.includes('maestro') ||
-    c.includes('mantencion') ||
-    c.includes('carpinter') ||
-    c.includes('gasfiter') ||
-    c.includes('electric')
-  ) {
-    return { funcion: 'Maestros' };
   }
 
   // 14. Enfermero / TENS / Salud
@@ -195,7 +189,22 @@ export function clasificarFuncionLevantamientoHeuristica(
     return { funcion: 'Enfermero/TENS/Asistente con capacitación' };
   }
 
-  // 15. Comunicaciones / Periodismo / Difusión
+  // 15. Auxiliares / Servicios / Aseo
+  if (
+    flags?.esAuxiliarServicio ||
+    c.includes('auxiliar') ||
+    c.includes('aseo') ||
+    c.includes('portero') ||
+    c.includes('porteria') ||
+    c.includes('servicio menor') ||
+    c.includes('servicios menores') ||
+    c.includes('cuidador diurno') ||
+    c.includes('estafeta')
+  ) {
+    return { funcion: 'Auxiliares' };
+  }
+
+  // 16. Comunicaciones
   if (
     c.includes('comunicaci') ||
     c.includes('periodis') ||
@@ -206,7 +215,7 @@ export function clasificarFuncionLevantamientoHeuristica(
     return { funcion: 'Comunicaciones' };
   }
 
-  // 16. Secretaria
+  // 17. Secretaria
   if (
     c.includes('secretari') ||
     c.includes('recepcio')
@@ -214,18 +223,7 @@ export function clasificarFuncionLevantamientoHeuristica(
     return { funcion: 'Secretaria' };
   }
 
-  // 17. Nocheros / Cuidadores nocturnos / Guardias
-  if (
-    c.includes('nochero') ||
-    c.includes('nocturno') ||
-    c.includes('guardia') ||
-    c.includes('sereno') ||
-    c.includes('rondin')
-  ) {
-    return { funcion: 'Nocheros' };
-  }
-
-  // 11. Administrativos
+  // Administrativos
   if (
     estamento === 'ADMINISTRATIVO' ||
     c.includes('admin') ||
@@ -248,7 +246,7 @@ export function clasificarFuncionLevantamientoHeuristica(
 /**
  * Prompt del Sistema para el Agente IA de Levantamiento de Coeficientes de Asistentes
  */
-export const LEVANTAMIENTO_IA_SYSTEM_PROMPT = `Eres el Agente Especialista en Dotación y Coeficientes de Asistentes de la Educación del Sistema Educacional Chileno (Ley N° 21.109 / SLEP).
+export const LEVANTAMIENTO_IA_SYSTEM_PROMPT = `Eres el Agente Especialista en Dotación y Coeficientes de Asistentes de la Educación del Sistema Educacional Chileno (Ley N° 21.109 / SLEP Valle Diguillín).
 Tu misión es interpretar la nómina de asistentes de la educación y clasificar cada funcionario exactamente en las 17 categorías oficiales de la "Planilla de Levantamiento de Coeficiente de Asistentes de la Educación" o categorizarlo como "OTROS " cuando corresponda.
 
 CATEGORÍAS OFICIALES (17 ESTÁNDAR):
@@ -268,13 +266,17 @@ CATEGORÍAS OFICIALES (17 ESTÁNDAR):
 14. "Enfermero/TENS/Asistente con capacitación" (TENS, técnicos en enfermería, primeros auxilios, salud escolar)
 15. "Comunicaciones" (Periodistas, encargados de difusión, diseñadores, redes)
 16. "Secretaria" (Secretarias de dirección, secretaría académica/UTP, recepcionistas)
-17. "Nocheros" (Nocheros, cuidadores nocturnos, guardias nocturnos, serenos)
+17. "Nocheros" (Nocheros, Nochero/A, Nochero/a, cuidadoras/es nocturnos, guardias nocturnos, serenos, rondines)
 
-HOMOLOGACIÓN DE NOMENCLATURAS SIMILARES O VARIANTES:
-- Cualquier variación como "ASISTENTE EDUCACION DIFERENCIAL", "ASISTENTE DIFERENCIAL" o "TECNICO EN EDUCACION ESPECIAL" DEBE clasificarse como "Asistente técnico de Educación Diferencial".
-- Cualquier variación como "TECNICO EN PARVULOS", "ASISTENTE DE PARVULOS", "TECNICO PARVULARIA" o "ASISTENTE DE SALA" DEBE clasificarse como "Asistentes de aula".
-- "PARADOCENTE", "ASISTENTE DE PATIO" o "ASISTENTE DE CONVIVENCIA" DEBE clasificarse como "Inspectores".
-- "ASISTENTE DE SALUD" o "PRIMEROS AUXILIOS" DEBE clasificarse como "Enfermero/TENS/Asistente con capacitación".
+HOMOLOGACIÓN DE NOMENCLATURAS SIMILARES, PLURALES Y RESILIENCIA TIPOGRÁFICA:
+- "NOCHERO", "NOCHERA", "NOCHEROS", "NOCHERO/A", "NOCHERO/A", "RONDIN", "RONDINES", "SERENO", "CUIDADOR NOCTURNO" DEBEN clasificarse como "Nocheros".
+- "ASISTENTE EDUCACION DIFERENCIAL", "ASISTENTE DIFERENCIAL", "TECNICO EN EDUCACION ESPECIAL" DEBEN clasificarse como "Asistente técnico de Educación Diferencial".
+- "TECNICO EN PARVULOS", "ASISTENTE DE PARVULOS", "TECNICO PARVULARIA", "ASISTENTE DE SALA", "ASISTENTES DE AULA" DEBEN clasificarse como "Asistentes de aula".
+- "PARADOCENTE", "INSPECTORES", "ASISTENTE DE PATIO", "ASISTENTE DE CONVIVENCIA" DEBEN clasificarse como "Inspectores".
+- "AUXILIARES", "AUXILIAR DE ASEO", "ASEO Y MANTENCIÓN" DEBEN clasificarse como "Auxiliares".
+- "CHOFER", "CHOFERES", "CONDUCTOR", "CONDUCTORES" DEBEN clasificarse como "Conductores Auxliar".
+- "MAESTRO", "MAESTROS", "GASFITER", "CARPINTERO" DEBEN clasificarse como "Maestros".
+- "ASISTENTE DE SALUD", "TENS", "PRIMEROS AUXILIOS" DEBEN clasificarse como "Enfermero/TENS/Asistente con capacitación".
 
 REGLAS PARA "OTROS ":
 - Si el cargo NO es ninguno de los 17 anteriores (ej. "Nutricionista", "Encargado(a) CRA / Biblioteca", "Monitor de Taller / Robótica", "Orientador Familiar", "Encargado de Laboratorio"), asígnalo como "OTROS ".

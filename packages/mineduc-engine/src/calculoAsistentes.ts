@@ -56,9 +56,9 @@ export function inferirClasificacionAsistente(cargo: string): ClasificacionInfer
 
   const esPie = esFono || esTerapeuta || esKine || esDiferencial || esPsicopedagogo;
   const esDupla = esPsicologo || esTrabajadorSocial;
-  const esParvulo = /P[AÁ]RVULO/i.test(c);
-  const esAuxiliar = /AUXILIAR|ASEO|SERVICIOS\s*MENORES|CHOFER|CONDUCTOR|SERENO|NOCHERO|CUIDADOR|MANTENCI[OÓ]N|MAESTRO/i.test(c);
-  const esInspector = /INSPECTOR|PARADOCENTE|PATIO|PASILLO/i.test(c);
+  const esParvulo = /P[AÁ]RVULO|PARVULARIA/i.test(c);
+  const esAuxiliar = /AUXILIAR(ES)?|ASEO|SERVICIOS\s*MENORES|CHOFER(ES)?|CONDUCTOR(ES|AS)?|SERENO(S)?|NOCHERO(S|AS|\/A|\/A)?|ROND[IÍ]N(ES)?|CUIDADOR(ES|AS)?|MANTENCI[OÓ]N|MAESTRO(S)?/i.test(c);
+  const esInspector = /INSPECTOR(ES|AS|\/A|\/A)?|PARADOCENTE(S)?|PATIO|PASILLO/i.test(c);
 
   let estamento: EstamentoAsistente = 'PARADOCENTE_INSPECTORIA';
 
