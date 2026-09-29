@@ -377,9 +377,13 @@ export async function parseExcelBrowser(file: File, fileIndex: number = 0): Prom
       colContrataSep = idx;
     } else if (colTitularSep === -1 && (h.includes('titular') && h.includes('sep'))) {
       colTitularSep = idx;
+    } else if (colContrataSubGral === -1 && ((h.includes('contrata') || h.includes('plazo')) && (h.includes('gral') || h.includes('general') || h.includes('regular')))) {
+      colContrataSubGral = idx;
+    } else if (colTitularSubGral === -1 && ((h.includes('titular') || h.includes('indefinid')) && (h.includes('gral') || h.includes('general') || h.includes('regular')))) {
+      colTitularSubGral = idx;
     } else if (colTotalHa === -1 && (h.includes('total ha') || h.includes('horas aula') || h.includes('total h aula') || h === 'total ha*')) {
       colTotalHa = idx;
-    } else if (colSubGral === -1 && ((h.includes('hc') || h.includes('total')) && (h.includes('gral') || h.includes('general')) && !['titular', 'contrata', 'indefinid', 'plazo'].some((k) => h.includes(k)))) {
+    } else if (colSubGral === -1 && ((h.includes('hc') || h.includes('total') || h.includes('sub')) && (h.includes('gral') || h.includes('general') || h.includes('regular')) && !['titular', 'contrata', 'indefinid', 'plazo'].some((k) => h.includes(k)))) {
       colSubGral = idx;
     } else if (colSubSep === -1 && ((h.includes('hc') || h.includes('total')) && h.includes('sep') && !['titular', 'contrata', 'indefinid', 'plazo'].some((k) => h.includes(k)))) {
       colSubSep = idx;
