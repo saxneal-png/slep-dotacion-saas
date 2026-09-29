@@ -13,7 +13,8 @@ import { AsistenteEducacion } from '../../types';
 export function agregarHojaLevantamientoEstablecimiento(
   workbook: ExcelJS.Workbook,
   data: EstablecimientoLevantamiento,
-  sheetName?: string
+  sheetName?: string,
+  soloFilasActivas: boolean = true
 ): ExcelJS.Worksheet {
   // Limitar nombre de hoja a 31 caracteres válidos para Excel
   const safeName = (sheetName || data.nombreEstablecimiento || `RBD ${data.rbd}`)
@@ -97,9 +98,26 @@ export function agregarHojaLevantamientoEstablecimiento(
     cell.alignment = { vertical: 'middle', horizontal: idx === 0 || idx === 6 ? 'left' : 'center', wrapText: true };
   });
 
+  // Filtrar filas: eliminar filas sin funcionarios ni horas para un reporte ejecutivo limpio
+  let filasParaExportar = soloFilasActivas
+    ? data.rows.filter((r) => r.cantidadFuncionarios > 0 || r.totalHoras > 0)
+    : data.rows;
+
+  if (filasParaExportar.length === 0) {
+    filasParaExportar = [{
+      cargoFuncion: 'Sin Dotación Registrada',
+      cantidadFuncionarios: 0,
+      horasSubRegular: 0,
+      horasPie: 0,
+      horasSep: 0,
+      totalHoras: 0,
+      observaciones: 'No se registran asistentes de la educación activos'
+    }];
+  }
+
   // Filas de Datos (Fila 10 en adelante)
   let currentRowNum = 10;
-  data.rows.forEach((r) => {
+  filasParaExportar.forEach((r) => {
     const row = ws.getRow(currentRowNum);
     row.height = 20;
 
@@ -118,37 +136,50 @@ export function agregarHojaLevantamientoEstablecimiento(
 
     // B: CANTIDAD DE FUNCIONARIOS
     const cellB = row.getCell(2);
-    cellB.value = r.cantidadFuncionarios > 0 ? r.cantidadFuncionarios : (r.cantidadFuncionarios === 0 && !isOtro ? 0 : null);
+    cellB.value = r.cantidadFuncionarios > 0 ? r.cantidadFuncionarios : null;
     cellB.font = rowFont;
     cellB.alignment = { vertical: 'middle', horizontal: 'center' };
+    cellB.numFmt = '#,##0';
+
+    // Función auxiliar para valores limpios sin decimales huérfanos
+    const cleanNum = (val: number) => {
+      if (!val || val <= 0) return null;
+      return Math.round(val * 100) / 100;
+    };
 
     // C: SUB REGULAR
     const cellC = row.getCell(3);
-    cellC.value = r.horasSubRegular > 0 ? r.horasSubRegular : null;
+    cellC.value = cleanNum(r.horasSubRegular);
     cellC.font = rowFont;
     cellC.alignment = { vertical: 'middle', horizontal: 'right' };
-    cellC.numFmt = '#,##0.##';
+    if (cellC.value !== null) {
+      cellC.numFmt = Number.isInteger(cellC.value) ? '0' : '0.0';
+    }
 
     // D: PIE
     const cellD = row.getCell(4);
-    cellD.value = r.horasPie > 0 ? r.horasPie : null;
+    cellD.value = cleanNum(r.horasPie);
     cellD.font = rowFont;
     cellD.alignment = { vertical: 'middle', horizontal: 'right' };
-    cellD.numFmt = '#,##0.##';
+    if (cellD.value !== null) {
+      cellD.numFmt = Number.isInteger(cellD.value) ? '0' : '0.0';
+    }
 
     // E: SEP
     const cellE = row.getCell(5);
-    cellE.value = r.horasSep > 0 ? r.horasSep : null;
+    cellE.value = cleanNum(r.horasSep);
     cellE.font = rowFont;
     cellE.alignment = { vertical: 'middle', horizontal: 'right' };
-    cellE.numFmt = '#,##0.##';
+    if (cellE.value !== null) {
+      cellE.numFmt = Number.isInteger(cellE.value) ? '0' : '0.0';
+    }
 
-    // F: TOTAL (Fórmula dinámina =SUM(C#:E#))
+    // F: TOTAL (Fórmula dinámica =SUM(C#:E#))
     const cellF = row.getCell(6);
     cellF.value = { formula: `SUM(C${currentRowNum}:E${currentRowNum})` };
     cellF.font = rowFont;
     cellF.alignment = { vertical: 'middle', horizontal: 'right' };
-    cellF.numFmt = '#,##0.##';
+    cellF.numFmt = '0.##';
 
     // G: Observaciones
     const cellG = row.getCell(7);
@@ -184,30 +215,31 @@ export function agregarHojaLevantamientoEstablecimiento(
   cellTotB.value = { formula: `SUM(B10:B${lastDataRow})` };
   cellTotB.font = { name: fontName, size: 11, bold: true };
   cellTotB.alignment = { vertical: 'middle', horizontal: 'center' };
+  cellTotB.numFmt = '#,##0';
 
   const cellTotC = totalRow.getCell(3);
   cellTotC.value = { formula: `SUM(C10:C${lastDataRow})` };
   cellTotC.font = { name: fontName, size: 11, bold: true };
   cellTotC.alignment = { vertical: 'middle', horizontal: 'right' };
-  cellTotC.numFmt = '#,##0.##';
+  cellTotC.numFmt = '0.##';
 
   const cellTotD = totalRow.getCell(4);
   cellTotD.value = { formula: `SUM(D10:D${lastDataRow})` };
   cellTotD.font = { name: fontName, size: 11, bold: true };
   cellTotD.alignment = { vertical: 'middle', horizontal: 'right' };
-  cellTotD.numFmt = '#,##0.##';
+  cellTotD.numFmt = '0.##';
 
   const cellTotE = totalRow.getCell(5);
   cellTotE.value = { formula: `SUM(E10:E${lastDataRow})` };
   cellTotE.font = { name: fontName, size: 11, bold: true };
   cellTotE.alignment = { vertical: 'middle', horizontal: 'right' };
-  cellTotE.numFmt = '#,##0.##';
+  cellTotE.numFmt = '0.##';
 
   const cellTotF = totalRow.getCell(6);
   cellTotF.value = { formula: `SUM(F10:F${lastDataRow})` };
   cellTotF.font = { name: fontName, size: 11, bold: true, color: { argb: 'FF002060' } };
   cellTotF.alignment = { vertical: 'middle', horizontal: 'right' };
-  cellTotF.numFmt = '#,##0.##';
+  cellTotF.numFmt = '0.##';
 
   const cellTotG = totalRow.getCell(7);
   cellTotG.value = '';
@@ -239,7 +271,8 @@ export async function exportarLevantamientoIndividualExcel(
   nombreEstablecimiento: string,
   comuna?: string,
   interpretacionIa?: any[],
-  matrizPersonalizada?: EstablecimientoLevantamiento
+  matrizPersonalizada?: EstablecimientoLevantamiento,
+  soloFilasActivas: boolean = true
 ): Promise<Blob> {
   const matriz = matrizPersonalizada || generarMatrizLevantamientoEstablecimiento(
     asistentes,
@@ -255,7 +288,7 @@ export async function exportarLevantamientoIndividualExcel(
   workbook.created = new Date();
   workbook.modified = new Date();
 
-  agregarHojaLevantamientoEstablecimiento(workbook, matriz, 'Levantamiento Coeficiente');
+  agregarHojaLevantamientoEstablecimiento(workbook, matriz, 'Levantamiento Coeficiente', soloFilasActivas);
 
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
@@ -278,7 +311,8 @@ export async function exportarLevantamientoConsolidadoSlepExcel(
     asistentes: (AsistenteAnalizadoRecord | AsistenteEducacion)[];
     matrizPersonalizada?: EstablecimientoLevantamiento;
   }>,
-  interpretacionIaGlobal?: any[]
+  interpretacionIaGlobal?: any[],
+  soloFilasActivas: boolean = true
 ): Promise<Blob> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SLEP Valle Diguillín - Sistema de Dotación';
@@ -426,7 +460,7 @@ export async function exportarLevantamientoConsolidadoSlepExcel(
 
   // 2. Agregar cada establecimiento como hoja individual
   matrices.forEach((matriz) => {
-    agregarHojaLevantamientoEstablecimiento(workbook, matriz);
+    agregarHojaLevantamientoEstablecimiento(workbook, matriz, undefined, soloFilasActivas);
   });
 
   const buffer = await workbook.xlsx.writeBuffer();

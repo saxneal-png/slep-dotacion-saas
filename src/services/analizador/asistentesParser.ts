@@ -155,6 +155,7 @@ export function parseAsistentesFromRows(
         else if (/PLAZO\s*FIJO\s*SEP/i.test(colText)) colMap['horasSepPlazo'] = idx;
         else if (/INDEFINID[AO]S?\s*PIE/i.test(colText)) colMap['horasPieInd'] = idx;
         else if (/PLAZO\s*FIJO\s*PIE/i.test(colText)) colMap['horasPiePlazo'] = idx;
+        else if (/OBSERVACI|NOTA|COMENTARIO|DETALLE|SITUACI|ESTADO/i.test(colText)) colMap['observaciones'] = idx;
       });
       break;
     }
@@ -202,6 +203,23 @@ export function parseAsistentesFromRows(
     const { nombres, apellidos } = separarNombresApellidos(nombreRaw);
     const clasificacion = inferirClasificacionAsistente(funcionRaw);
 
+    // Extraer observaciones explícitas o notas entre paréntesis en cargo/nombre
+    const obsExplicit = colMap['observaciones'] !== undefined ? cleanString(row[colMap['observaciones']]) : '';
+    const noteInCargo = (funcionRaw.match(/\((.*?)\)/) || [])[1] || '';
+    const noteInNombre = (nombreRaw.match(/\((.*?)\)/) || [])[1] || '';
+    
+    // Capturar posibles columnas de notas adicionales al final de la fila
+    const extraColsNotes: string[] = [];
+    for (let c = 10; c < row.length; c++) {
+      const extraTxt = cleanString(row[c]);
+      if (extraTxt && !/^\d+$/.test(extraTxt) && extraTxt.length > 2 && c !== colMap['observaciones']) {
+        extraColsNotes.push(extraTxt);
+      }
+    }
+
+    const obsArray = [obsExplicit, noteInCargo, noteInNombre, ...extraColsNotes].filter(Boolean);
+    const observacionesFinal = Array.from(new Set(obsArray)).join('; ');
+
     // Calcular suma de financiamientos
     const sumFuentes = horasSubvGralInd + horasSubvGralPlazo + horasSepInd + horasSepPlazo + horasPieInd + horasPiePlazo;
     const finalHorasContrato = horasContrato > 0 ? horasContrato : sumFuentes;
@@ -235,6 +253,7 @@ export function parseAsistentesFromRows(
       esTecnicoParvulo: clasificacion.esTecnicoParvulo,
       esAuxiliarServicio: clasificacion.esAuxiliarServicio,
       esInspectorPatio: clasificacion.esInspectorPatio,
+      observaciones: observacionesFinal || undefined,
       activo: true
     });
   }

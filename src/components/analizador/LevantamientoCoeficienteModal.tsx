@@ -86,6 +86,7 @@ export const LevantamientoCoeficienteModal: React.FC<LevantamientoCoeficienteMod
   const [iaProcessedCount, setIaProcessedCount] = useState<number>(0);
   const [exporting, setExporting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [soloFilasActivas, setSoloFilasActivas] = useState<boolean>(true);
 
   // Mapa de matrices editadas manualmente por colegio (key: rbd)
   const [matricesEditadas, setMatricesEditadas] = useState<Record<string, EstablecimientoLevantamiento>>({});
@@ -309,7 +310,8 @@ export const LevantamientoCoeficienteModal: React.FC<LevantamientoCoeficienteMod
         colegioActivo.nombre,
         colegioActivo.comuna,
         undefined,
-        matrizActiva
+        matrizActiva,
+        soloFilasActivas
       );
       showToast('Planilla Excel Oficial exportada exitosamente.');
     } catch (err: any) {
@@ -334,7 +336,8 @@ export const LevantamientoCoeficienteModal: React.FC<LevantamientoCoeficienteMod
       const interpretacionArray = Array.from(interpretacionIaMap.values());
       await exportarLevantamientoConsolidadoSlepExcel(
         colegiosData,
-        interpretacionArray.length > 0 ? interpretacionArray : undefined
+        interpretacionArray.length > 0 ? interpretacionArray : undefined,
+        soloFilasActivas
       );
       showToast(`Consolidado SLEP (${colegios.length} colegios) exportado exitosamente.`);
     } catch (err: any) {
@@ -472,6 +475,16 @@ export const LevantamientoCoeficienteModal: React.FC<LevantamientoCoeficienteMod
               )}
               <span>Interpretar y Homologar con IA</span>
             </button>
+
+            <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer select-none border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors">
+              <input
+                type="checkbox"
+                checked={soloFilasActivas}
+                onChange={(e) => setSoloFilasActivas(e.target.checked)}
+                className="rounded border-slate-400 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+              />
+              <span className="font-semibold">Ocultar funciones sin dotación (reporte limpio)</span>
+            </label>
 
             {/* Exportar Colegio Actual */}
             <button
