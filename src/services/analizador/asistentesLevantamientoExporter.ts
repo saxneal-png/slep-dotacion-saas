@@ -238,9 +238,10 @@ export async function exportarLevantamientoIndividualExcel(
   rbd: string,
   nombreEstablecimiento: string,
   comuna?: string,
-  interpretacionIa?: any[]
+  interpretacionIa?: any[],
+  matrizPersonalizada?: EstablecimientoLevantamiento
 ): Promise<Blob> {
-  const matriz = generarMatrizLevantamientoEstablecimiento(
+  const matriz = matrizPersonalizada || generarMatrizLevantamientoEstablecimiento(
     asistentes,
     rbd,
     nombreEstablecimiento,
@@ -275,6 +276,7 @@ export async function exportarLevantamientoConsolidadoSlepExcel(
     nombreEstablecimiento: string;
     comuna?: string;
     asistentes: (AsistenteAnalizadoRecord | AsistenteEducacion)[];
+    matrizPersonalizada?: EstablecimientoLevantamiento;
   }>,
   interpretacionIaGlobal?: any[]
 ): Promise<Blob> {
@@ -338,7 +340,7 @@ export async function exportarLevantamientoConsolidadoSlepExcel(
   const matrices: EstablecimientoLevantamiento[] = [];
 
   for (const col of asistentesPorColegio) {
-    const matriz = generarMatrizLevantamientoEstablecimiento(
+    const matriz = col.matrizPersonalizada || generarMatrizLevantamientoEstablecimiento(
       col.asistentes,
       col.rbd,
       col.nombreEstablecimiento,

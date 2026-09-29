@@ -218,4 +218,75 @@ describe('Levantamiento Coeficiente Asistentes de la Educación (Planilla Oficia
     const buffer = await wb.xlsx.writeBuffer();
     expect(buffer.byteLength).toBeGreaterThan(1000);
   });
+
+  it('homologa nomenclaturas similares y variantes al cargo oficial correcto', () => {
+    // Variantes de Diferencial
+    expect(clasificarFuncionLevantamientoHeuristica('ASISTENTE EDUCACION DIFERENCIAL').funcion).toBe('Asistente técnico de Educación Diferencial');
+    expect(clasificarFuncionLevantamientoHeuristica('Asistente Diferencial PIE').funcion).toBe('Asistente técnico de Educación Diferencial');
+    expect(clasificarFuncionLevantamientoHeuristica('Técnico en Educación Especial').funcion).toBe('Asistente técnico de Educación Diferencial');
+    expect(clasificarFuncionLevantamientoHeuristica('Apoyo Diferencial PIE').funcion).toBe('Asistente técnico de Educación Diferencial');
+
+    // Variantes de Párvulo / Aula
+    expect(clasificarFuncionLevantamientoHeuristica('ASISTENTE DE PARVULOS').funcion).toBe('Asistentes de aula');
+    expect(clasificarFuncionLevantamientoHeuristica('Tecnico en Parvulos').funcion).toBe('Asistentes de aula');
+    expect(clasificarFuncionLevantamientoHeuristica('Tecnico Parvularia NT1').funcion).toBe('Asistentes de aula');
+    expect(clasificarFuncionLevantamientoHeuristica('Asistente de Sala').funcion).toBe('Asistentes de aula');
+    expect(clasificarFuncionLevantamientoHeuristica('Auxiliar de Parvulo').funcion).toBe('Asistentes de aula');
+
+    // Variantes de Inspectoría
+    expect(clasificarFuncionLevantamientoHeuristica('PARADOCENTE DE PATIO').funcion).toBe('Inspectores');
+    expect(clasificarFuncionLevantamientoHeuristica('Asistente de Convivencia e Inspectoría').funcion).toBe('Inspectores');
+  });
+
+  it('permite exportar una matriz editada manualmente preservando los cambios del usuario', async () => {
+    const matrizEditadaManualmente: EstablecimientoLevantamiento = {
+      rbd: '12345',
+      nombreEstablecimiento: 'LICEO SANTA CLARA',
+      comuna: 'BULNES',
+      rows: [
+        {
+          cargoFuncion: 'Asistente técnico de Educación Diferencial',
+          cantidadFuncionarios: 3,
+          horasSubRegular: 0,
+          horasPie: 120,
+          horasSep: 0,
+          totalHoras: 120,
+          observaciones: 'Reclasificado manualmente por el usuario'
+        },
+        {
+          cargoFuncion: 'OTROS Monitor de Robótica',
+          cantidadFuncionarios: 1,
+          horasSubRegular: 0,
+          horasPie: 0,
+          horasSep: 20,
+          totalHoras: 20,
+          observaciones: 'Taller extracurricular SEP',
+          isOtro: true
+        }
+      ],
+      totalGeneral: {
+        cantidadFuncionarios: 4,
+        horasSubRegular: 0,
+        horasPie: 120,
+        horasSep: 20,
+        totalHoras: 140
+      }
+    };
+
+    const wb = new ExcelJS.Workbook();
+    const ws = agregarHojaLevantamientoEstablecimiento(wb, matrizEditadaManualmente, 'Editado');
+
+    expect(ws.getCell('A10').value).toBe('Asistente técnico de Educación Diferencial');
+    expect(ws.getCell('B10').value).toBe(3);
+    expect(ws.getCell('D10').value).toBe(120);
+    expect(ws.getCell('G10').value).toBe('Reclasificado manualmente por el usuario');
+
+    expect(ws.getCell('A11').value).toBe('OTROS Monitor de Robótica');
+    expect(ws.getCell('B11').value).toBe(1);
+    expect(ws.getCell('E11').value).toBe(20);
+    expect(ws.getCell('G11').value).toBe('Taller extracurricular SEP');
+
+    const buffer = await wb.xlsx.writeBuffer();
+    expect(buffer.byteLength).toBeGreaterThan(1000);
+  });
 });

@@ -82,11 +82,12 @@ export function clasificarFuncionLevantamientoHeuristica(
   // 2. Auxiliares / Servicios / Aseo
   if (
     flags?.esAuxiliarServicio ||
-    c.includes('auxiliar') ||
+    (c.includes('auxiliar') && !c.includes('parvul') && !c.includes('diferencial') && !c.includes('aula') && !c.includes('chofer') && !c.includes('conductor')) ||
     c.includes('aseo') ||
     c.includes('portero') ||
     c.includes('porteria') ||
     c.includes('servicio menor') ||
+    c.includes('servicios menores') ||
     c.includes('cuidador diurno') ||
     c.includes('estafeta')
   ) {
@@ -123,28 +124,41 @@ export function clasificarFuncionLevantamientoHeuristica(
     return { funcion: 'Terapeuta ocupacional' };
   }
 
-  // 9. Asistente técnico de Educación Diferencial
+  // 9. Asistente técnico de Educación Diferencial (y sinónimos como Asistente Educación Diferencial)
   if (
-    c.includes('tecnico diferencial') ||
+    c.includes('diferencial') ||
+    c.includes('educacion especial') ||
+    c.includes('educacion diferencial') ||
     c.includes('asistente diferencial') ||
-    c.includes('tecnico educacion especial') ||
+    c.includes('tecnico diferencial') ||
     c.includes('asistente tecnico de educacion diferencial') ||
+    c.includes('asistente de educacion diferencial') ||
+    c.includes('asistente educacion diferencial') ||
+    c.includes('asistente educacional diferencial') ||
     c.includes('apoyo pie') ||
-    c.includes('tecnico pie')
+    c.includes('tecnico pie') ||
+    c.includes('asistente pie')
   ) {
     return { funcion: 'Asistente técnico de Educación Diferencial' };
   }
 
-  // 10. Asistentes de aula / Técnicos en Párvulos
+  // 10. Asistentes de aula / Técnicos en Párvulos / Asistente de Párvulos
   if (
     flags?.esTecnicoParvulo ||
     c.includes('asistente de aula') ||
     c.includes('asistente aula') ||
+    c.includes('asistente de sala') ||
+    c.includes('asistente sala') ||
     c.includes('tecnico parvul') ||
     c.includes('tecnico en parvulos') ||
+    c.includes('tecnico parvularia') ||
     c.includes('asistente de parvulo') ||
+    c.includes('asistente de parvulos') ||
     c.includes('asistente parvulo') ||
-    c.includes('educadora de parvulo')
+    c.includes('asistente parvulos') ||
+    c.includes('educadora de parvulo') ||
+    c.includes('auxiliar de parvulo') ||
+    c.includes('atencion de parvulos')
   ) {
     return { funcion: 'Asistentes de aula' };
   }
@@ -238,23 +252,29 @@ export const LEVANTAMIENTO_IA_SYSTEM_PROMPT = `Eres el Agente Especialista en Do
 Tu misión es interpretar la nómina de asistentes de la educación y clasificar cada funcionario exactamente en las 17 categorías oficiales de la "Planilla de Levantamiento de Coeficiente de Asistentes de la Educación" o categorizarlo como "OTROS " cuando corresponda.
 
 CATEGORÍAS OFICIALES (17 ESTÁNDAR):
-1. "Inspectores" (Inspectores de patio, paradocentes, apoyo a inspectoria)
-2. "Auxiliares" (Aseo, servicios menores, portería, mantención básica)
+1. "Inspectores" (Inspectores de patio, paradocentes, apoyo a inspectoría, asistentes de convivencia/patio)
+2. "Auxiliares" (Aseo, servicios menores, portería, mantención básica, estafeta)
 3. "Psicólogo" (Psicólogos clínicos/educacionales, duplas psicosociales)
 4. "Trabajador  Social" (Trabajadores Sociales / Asistentes Sociales en Dupla SEP)
 5. "Asistente social" (Asistente Social bienestar)
 6. "Kinesiólogo/a" (Kinesiólogos PIE / rehabilitación)
 7. "Fonoaudiólogo/a" (Fonoaudiólogos PIE)
 8. "Terapeuta ocupacional" (Terapeutas Ocupacionales PIE)
-9. "Asistente técnico de Educación Diferencial" (Técnicos Diferencial / Apoyo NEE)
-10. "Asistentes de aula" (Asistentes de aula Básica/Media, Técnicos en Párvulos NT1/NT2/Kínder)
-11. "Administrativos" (Encargados SIGE, digitadores, analistas administrativos)
-12. "Conductores Auxliar" (Choferes de transporte escolar)
-13. "Maestros" (Maestros mantención, carpinteros, gásfiter, electricistas)
-14. "Enfermero/TENS/Asistente con capacitación" (TENS, primeros auxilios, salud escolar)
-15. "Comunicaciones" (Periodistas, encargados de difusión, diseñadores)
-16. "Secretaria" (Secretarias de dirección, secretaría académica)
-17. "Nocheros" (Nocheros, cuidadores nocturnos, guardias nocturnos)
+9. "Asistente técnico de Educación Diferencial" (Asistente de Educación Diferencial, Técnicos en Diferencial, Técnicos en Educación Especial, Apoyo PIE NEE)
+10. "Asistentes de aula" (Asistentes de aula Básica/Media, Técnicos en Párvulos NT1/NT2/Kínder, Asistentes de Párvulo, Asistentes de Sala)
+11. "Administrativos" (Encargados SIGE/SAE, digitadores, analistas administrativos, soporte computación)
+12. "Conductores Auxliar" (Choferes de transporte escolar, conductores auxiliares)
+13. "Maestros" (Maestros de mantención, carpinteros, gásfiter, electricistas, servicios generales)
+14. "Enfermero/TENS/Asistente con capacitación" (TENS, técnicos en enfermería, primeros auxilios, salud escolar)
+15. "Comunicaciones" (Periodistas, encargados de difusión, diseñadores, redes)
+16. "Secretaria" (Secretarias de dirección, secretaría académica/UTP, recepcionistas)
+17. "Nocheros" (Nocheros, cuidadores nocturnos, guardias nocturnos, serenos)
+
+HOMOLOGACIÓN DE NOMENCLATURAS SIMILARES O VARIANTES:
+- Cualquier variación como "ASISTENTE EDUCACION DIFERENCIAL", "ASISTENTE DIFERENCIAL" o "TECNICO EN EDUCACION ESPECIAL" DEBE clasificarse como "Asistente técnico de Educación Diferencial".
+- Cualquier variación como "TECNICO EN PARVULOS", "ASISTENTE DE PARVULOS", "TECNICO PARVULARIA" o "ASISTENTE DE SALA" DEBE clasificarse como "Asistentes de aula".
+- "PARADOCENTE", "ASISTENTE DE PATIO" o "ASISTENTE DE CONVIVENCIA" DEBE clasificarse como "Inspectores".
+- "ASISTENTE DE SALUD" o "PRIMEROS AUXILIOS" DEBE clasificarse como "Enfermero/TENS/Asistente con capacitación".
 
 REGLAS PARA "OTROS ":
 - Si el cargo NO es ninguno de los 17 anteriores (ej. "Nutricionista", "Encargado(a) CRA / Biblioteca", "Monitor de Taller / Robótica", "Orientador Familiar", "Encargado de Laboratorio"), asígnalo como "OTROS ".
