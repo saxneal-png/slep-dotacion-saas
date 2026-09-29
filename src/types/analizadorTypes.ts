@@ -135,6 +135,7 @@ export interface ConsolidatedResponse {
   teachers: TeacherRecord[];
   courses: CourseLoadSummary[];
   teacherLoads: TeacherConsolidatedLoad[];
+  asistentes?: import('../services/analizador/asistentesClassifier').AsistenteAnalizadoRecord[];
   kpis: KpiStats;
   processed_files: string[];
 }

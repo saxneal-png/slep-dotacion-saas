@@ -14,19 +14,22 @@ import {
   Loader2,
   Table,
   GraduationCap,
-  BookOpen
+  BookOpen,
+  Briefcase
 } from 'lucide-react';
 import { FileUpload } from '../components/analizador/FileUpload';
 import { KpiCards } from '../components/analizador/KpiCards';
 import { ConsolidatedTable } from '../components/analizador/ConsolidatedTable';
 import { TeacherDetailTable } from '../components/analizador/TeacherDetailTable';
 import { CourseTeacherLoadView } from '../components/analizador/CourseTeacherLoadView';
+import { AsistentesAnalizadorView } from '../components/analizador/AsistentesAnalizadorView';
 import { ApiKeyModal } from '../components/analizador/ApiKeyModal';
 import { PromptModal } from '../components/analizador/PromptModal';
 import { TraspasoDotacionModal } from '../components/analizador/TraspasoDotacionModal';
 import { inicializarPlanesEstudioAnalizador, getPlanesEstudioAnalizadorCache } from '../services/analizador/planesEstudioBridge';
 import { processDotacionFilesClient, recalculateSchoolTotals } from '../services/analizador/dotacionProcessor';
 import { exportConsolidatedExcelBrowser, exportCsvBrowser } from '../services/analizador/excelExporter';
+import type { AsistenteAnalizadoRecord } from '../services/analizador/asistentesClassifier';
 import {
   guardarEstablecimiento,
   guardarDocente,
@@ -83,7 +86,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
   onSyncWithDatabase,
   onNavigateToColegio
 }) => {
-  const [activeTab, setActiveTab] = useState<'upload' | 'consolidated' | 'teachers' | 'courses'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'consolidated' | 'teachers' | 'asistentes' | 'courses'>('upload');
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
   const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('gemini_model') || 'gemini-3.7-flash');
   const [models, setModels] = useState<GeminiModel[]>(() => {
@@ -120,6 +123,15 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
   const [teachers, setTeachers] = useState<TeacherRecord[]>(() => {
     try {
       const saved = localStorage.getItem('dotacion_teachers');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [asistentes, setAsistentes] = useState<AsistenteAnalizadoRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('dotacion_asistentes_analizados');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -202,6 +214,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
       setTeachers(result.teachers);
       setCourses(result.courses);
       setTeacherLoads(result.teacherLoads);
+      setAsistentes(result.asistentes || []);
       setKpis(result.kpis);
 
       try {
@@ -209,11 +222,13 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
         localStorage.setItem('dotacion_teachers', JSON.stringify(result.teachers));
         localStorage.setItem('dotacion_courses', JSON.stringify(result.courses));
         localStorage.setItem('dotacion_teacher_loads', JSON.stringify(result.teacherLoads));
+        localStorage.setItem('dotacion_asistentes_analizados', JSON.stringify(result.asistentes || []));
         localStorage.setItem('dotacion_kpis', JSON.stringify(result.kpis));
       } catch {}
 
       setActiveTab('consolidated');
-      showToast(`¡Se procesaron exitosamente ${result.schools.length} establecimientos con ${result.courses.length} cursos identificados!`);
+      const asistMsg = result.asistentes && result.asistentes.length > 0 ? ` y ${result.asistentes.length} asistentes analizados` : '';
+      showToast(`¡Se procesaron exitosamente ${result.schools.length} establecimientos con ${result.courses.length} cursos${asistMsg}!`);
     } catch (err: any) {
       showToast(err.message || 'Error al procesar las planillas.', 'error');
     } finally {
@@ -285,6 +300,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
     setTeachers([]);
     setCourses([]);
     setTeacherLoads([]);
+    setAsistentes([]);
     setKpis({
       total_schools: 0,
       total_teachers: 0,
@@ -303,6 +319,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
     localStorage.removeItem('dotacion_teachers');
     localStorage.removeItem('dotacion_courses');
     localStorage.removeItem('dotacion_teacher_loads');
+    localStorage.removeItem('dotacion_asistentes_analizados');
     localStorage.removeItem('dotacion_kpis');
     setActiveTab('upload');
     showToast('Datos reiniciados.');
@@ -547,6 +564,21 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('asistentes')}
+            disabled={asistentes.length === 0}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'asistentes'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : asistentes.length === 0
+                ? 'opacity-40 cursor-not-allowed text-slate-400'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Briefcase className="w-4 h-4" />
+            <span>Asistentes Educación ({asistentes.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('courses')}
             disabled={teachers.length === 0}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -618,6 +650,23 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
               onSelectComuna={setSelectedComuna}
               onReclassify={handleReclassify}
               onBulkReclassify={handleBulkReclassify}
+            />
+          )}
+
+          {activeTab === 'asistentes' && (
+            <AsistentesAnalizadorView
+              asistentes={asistentes}
+              apiKey={apiKey}
+              selectedModel={selectedModel}
+              onUpdateAsistentes={(updated) => {
+                setAsistentes(updated);
+                try {
+                  localStorage.setItem('dotacion_asistentes_analizados', JSON.stringify(updated));
+                } catch {}
+              }}
+              onSyncWithDatabase={onSyncWithDatabase}
+              onNavigateToColegio={onNavigateToColegio}
+              onOpenApiKeyModal={() => setIsKeyModalOpen(true)}
             />
           )}
 

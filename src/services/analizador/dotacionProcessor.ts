@@ -2,6 +2,9 @@ import { parseExcelBrowser } from './excelParser';
 import { classifyActivitiesHybrid } from './classifier';
 import { buildTeacherConsolidatedLoads, buildCourseLoadSummaries } from './courseExtractor';
 import { inicializarPlanesEstudioAnalizador } from './planesEstudioBridge';
+import { parseAsistentesFromWorkbook } from './asistentesParser';
+import { clasificarAsistentesConIa, RawAsistenteInput, AsistenteAnalizadoRecord } from './asistentesClassifier';
+import * as XLSX from 'xlsx';
 import type {
   SchoolSummary,
   TeacherRecord,
@@ -21,6 +24,7 @@ export async function processDotacionFilesClient(
   await inicializarPlanesEstudioAnalizador();
 
   const allTeachers: TeacherRecord[] = [];
+  const rawAsistentesList: RawAsistenteInput[] = [];
   const schoolsMap = new Map<string, SchoolSummary>();
   const processedFiles: string[] = [];
 
@@ -29,6 +33,37 @@ export async function processDotacionFilesClient(
     processedFiles.push(file.name);
 
     try {
+      // 1. Procesar Asistentes de la Educación si el libro contiene la hoja correspondiente
+      try {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const asistResult = parseAsistentesFromWorkbook(wb, '', 2026);
+        if (asistResult.asistentes.length > 0) {
+          asistResult.asistentes.forEach((ast) => {
+            rawAsistentesList.push({
+              id: `${ast.id}-${fileIdx}`,
+              rbd: ast.rbd || '3543',
+              establishment: file.name.replace(/\.[^/.]+$/, ''),
+              file_name: file.name,
+              run: ast.run,
+              nombres: ast.nombres,
+              apellidos: ast.apellidos,
+              cargo_original: ast.cargoFuncion,
+              horas_contrato: ast.horasContrato,
+              horas_subvencion_general_indefinido: ast.horasSubvencionGeneralIndefinido,
+              horas_subvencion_general_plazo_fijo: ast.horasSubvencionGeneralPlazoFijo,
+              horas_sep_indefinido: ast.horasSepIndefinido,
+              horas_sep_plazo_fijo: ast.horasSepPlazoFijo,
+              horas_pie_indefinido: ast.horasPieIndefinido,
+              horas_pie_plazo_fijo: ast.horasPiePlazoFijo,
+              observaciones_originales: ast.observaciones,
+            });
+          });
+        }
+      } catch (errAsist) {
+        console.warn(`No se pudo procesar hoja de asistentes en ${file.name}:`, errAsist);
+      }
+
       const parsed = await parseExcelBrowser(file, fileIdx);
       const uniqueActivities = Array.from(new Set(parsed.teachers.map((t) => t.activity.trim()))).filter(Boolean);
 
@@ -174,11 +209,27 @@ export async function processDotacionFilesClient(
     teachers_sobreasignados_count: teachersSobreasignadosCount,
   };
 
+  // Clasificar asistentes detectados
+  let enrichedAsistentes: AsistenteAnalizadoRecord[] = [];
+  if (rawAsistentesList.length > 0) {
+    try {
+      enrichedAsistentes = await clasificarAsistentesConIa(
+        rawAsistentesList,
+        apiKey,
+        modelName,
+        customPrompt
+      );
+    } catch (errIa) {
+      console.warn('Error clasificando asistentes con IA:', errIa);
+    }
+  }
+
   return {
     schools,
     teachers: allTeachers,
     courses,
     teacherLoads,
+    asistentes: enrichedAsistentes,
     kpis,
     processed_files: processedFiles,
   };
