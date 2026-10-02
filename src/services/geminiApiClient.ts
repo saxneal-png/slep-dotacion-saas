@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cliente seguro universal para llamadas a la API de Google Gemini.
  *
  * En la aplicación de escritorio Electron, las llamadas fetch desde el renderer (file://)
@@ -60,3 +60,49 @@ export async function geminiFetch(url: string, options?: RequestInit): Promise<G
     text: () => resp.text()
   };
 }
+
+/**
+ * Función utilitaria para invocar Gemini con fallback secuencial de modelos.
+ */
+export async function generateGeminiResponse(
+  prompt: string,
+  apiKey: string,
+  modelName: string = 'gemini-3.7-flash'
+): Promise<string> {
+  const candidateModels = [
+    modelName,
+    'gemini-3.7-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+  ].filter((v, i, a) => a.indexOf(v) === i);
+
+  let lastError: any = null;
+
+  for (const m of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`;
+      const resp = await geminiFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+          },
+        }),
+      });
+
+      if (!resp.ok) continue;
+
+      const data = await resp.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('No se pudo obtener respuesta de la API de Gemini');
+}
+

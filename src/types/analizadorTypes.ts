@@ -16,12 +16,19 @@ export interface TeacherRecord {
   rut: string;
   teacher_name: string;
   activity: string;
+  asignatura_normalizada?: string;
   curso?: string;
+  nivel_normalizado?: string;
+  letra_normalizada?: string;
   cursos_asignados?: string[];
   desglose_cursos?: TeacherCourseAssignment[];
   hours: number;
   category: 'AULA' | 'TECNICA' | 'DIRECTIVA';
   source: string;
+  observaciones?: string;
+  observaciones_limpias?: string;
+  dictamen_ia?: string;
+  confianza_ia?: 'ALTA' | 'MEDIA' | 'BAJA';
   total_declared?: number;
   total_teacher_hours?: number;
   horas_aula?: number;
@@ -177,6 +184,7 @@ export interface HomologacionItem {
 export interface TraspasoConfig {
   periodo: number; // 2026
   modo: 'REEMPLAZAR' | 'FUSIONAR';
+  alcance?: 'COMPLETO' | 'SOLO_ASISTENTES' | 'SOLO_DOCENTES'; // Alcance del traspaso
   homologaciones: Record<string, string>; // clave: `${rawSubject}__${nivel}` -> valor: asignaturaOficial
   colegiosRbd: string[];
   targetRbdOverride?: string; // Si el usuario selecciona manualmente la escuela/liceo destino

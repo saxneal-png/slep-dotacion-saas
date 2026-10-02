@@ -102,7 +102,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             identifica automáticamente los <strong>cursos atendidos</strong> (Prekínder a 4° Medio / Multigrado) y calcula la <strong>carga horaria exacta asignada a cada docente</strong>.
           </p>
 
-          <div className="flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2.5 items-center">
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span className="font-semibold text-slate-200">Asistencia Inteligente de Ingesta:</span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 text-[10px]">
+                Activa (Gemini + Normativa MINEDUC)
+              </span>
+            </div>
+
             <button
               onClick={onOpenPromptModal}
               className="inline-flex items-center space-x-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl text-xs font-bold border border-white/20 transition-colors"

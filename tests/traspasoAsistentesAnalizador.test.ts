@@ -190,4 +190,74 @@ describe('Traspaso de Asistentes de la Educación desde el Analizador', () => {
     const enOrigen = await listarAsistentes('99999', 2026);
     expect(enOrigen.length).toBe(0);
   });
+
+  it('debe respetar el alcance SOLO_ASISTENTES sin alterar los docentes ni cursos', async () => {
+    const config: TraspasoConfig = {
+      periodo: 2026,
+      modo: 'REEMPLAZAR',
+      alcance: 'SOLO_ASISTENTES',
+      homologaciones: {},
+      colegiosRbd: ['12345'],
+    };
+
+    const schools: SchoolSummary[] = [
+      {
+        rbd: '12345',
+        establishment: 'Escuela Test',
+        matricula: 100,
+        horas_aula: 80,
+        horas_directivas: 10,
+        horas_tecnicas: 10,
+        total_horas_ee: 100,
+        teachers_count: 2,
+        has_discrepancy: false,
+        source_file: 'test.xlsx',
+      }
+    ];
+
+    const asistentes: AsistenteAnalizadoRecord[] = [
+      {
+        id: 'ast-solo',
+        rbd: '12345',
+        establishment: 'Escuela Test',
+        run: '18.999.888-7',
+        nombres: 'Andrea',
+        apellidos: 'Castro',
+        cargo_original: 'Inspectora',
+        cargo_estandar: 'Inspector/a de Patio',
+        estamento: 'PARADOCENTE_INSPECTORIA',
+        horas_contrato: 44,
+        horas_subvencion_general_indefinido: 44,
+        horas_subvencion_general_plazo_fijo: 0,
+        horas_sep_indefinido: 0,
+        horas_sep_plazo_fijo: 0,
+        horas_pie_indefinido: 0,
+        horas_pie_plazo_fijo: 0,
+        es_dupla_psicosocial: false,
+        es_equipo_pie: false,
+        es_tecnico_parvulo: false,
+        es_auxiliar_servicio: false,
+        es_inspector_patio: true,
+        fuente_clasificacion: 'HEURISTICA',
+        confianza_ia: 'ALTA',
+        estado_cuadratura: 'CUADRADA',
+      }
+    ];
+
+    const result = await ejecutarTraspasoDotacionAnalizador(config, {
+      schools,
+      teachers: [],
+      courses: [],
+      teacherLoads: [],
+      asistentes,
+    });
+
+    expect(result.asistentesGuardados).toBe(1);
+    expect(result.cursosCreados).toBe(0);
+    expect(result.docentesGuardados).toBe(0);
+
+    const guardados = await listarAsistentes('12345', 2026);
+    expect(guardados.length).toBe(1);
+    expect(guardados[0].cargoFuncion).toBe('Inspector/a de Patio');
+  });
 });

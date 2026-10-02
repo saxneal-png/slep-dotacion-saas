@@ -43,14 +43,21 @@ export async function ejecutarTraspasoDotacionAnalizador(
   let asignacionesGuardadas = 0;
   let asistentesGuardados = 0;
 
+  const procesarDocentesYCursos = config.alcance !== 'SOLO_ASISTENTES';
+  const procesarAsistentes = config.alcance !== 'SOLO_DOCENTES';
+
   // 1. Si el modo es REEMPLAZAR, eliminar registros previos de estos colegios en el periodo destino
   if (config.modo === 'REEMPLAZAR') {
     const rbdsToClean = targetOverride ? new Set([targetOverride, ...targetRbds]) : targetRbds;
     for (const rbd of rbdsToClean) {
-      db.run("DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
-      db.run("DELETE FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
-      db.run("DELETE FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
-      db.run("DELETE FROM asistentes_educacion WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+      if (procesarDocentesYCursos) {
+        db.run("DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+        db.run("DELETE FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+        db.run("DELETE FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+      }
+      if (procesarAsistentes) {
+        db.run("DELETE FROM asistentes_educacion WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+      }
     }
   }
 
@@ -86,9 +93,10 @@ export async function ejecutarTraspasoDotacionAnalizador(
     }
   }
 
-  // 3. Crear / mapear Cursos
-  const cursoMap = new Map<string, CursoSae>();
-  for (const sc of filteredCourses) {
+  // 3. Crear / mapear Cursos y Docentes
+  if (procesarDocentesYCursos) {
+    const cursoMap = new Map<string, CursoSae>();
+    for (const sc of filteredCourses) {
     const effectiveRbd = targetOverride || sc.rbd;
     const key = `${effectiveRbd}_${sc.nivel}_${sc.letra}`.toUpperCase();
     if (!cursoMap.has(key)) {
@@ -369,44 +377,47 @@ export async function ejecutarTraspasoDotacionAnalizador(
         esAgrupacionFlexible: asig.esAgrupacionFlexible,
       };
 
-      await guardarAsignacion(asigObj);
-      asignacionesGuardadas++;
+        await guardarAsignacion(asigObj);
+        asignacionesGuardadas++;
+      }
     }
   }
 
   // 6. Crear / mapear Asistentes de la Educación
-  for (const a of filteredAsistentes) {
-    const effectiveRbd = targetOverride || a.rbd;
-    const cleanRun = (a.run || '').trim().replace(/[^0-9kK]/g, '') || `TEMP_${a.nombres.replace(/[^A-Za-z0-9]/g, '').slice(0, 10)}`;
-    const astId = `asist_${effectiveRbd}_${periodo}_${cleanRun}`;
+  if (procesarAsistentes) {
+    for (const a of filteredAsistentes) {
+      const effectiveRbd = targetOverride || a.rbd;
+      const cleanRun = (a.run || '').trim().replace(/[^0-9kK]/g, '') || `TEMP_${a.nombres.replace(/[^A-Za-z0-9]/g, '').slice(0, 10)}`;
+      const astId = `asist_${effectiveRbd}_${periodo}_${cleanRun}`;
 
-    const asistenteObj: AsistenteEducacion = {
-      id: astId,
-      rbd: effectiveRbd,
-      periodo,
-      run: a.run || cleanRun,
-      nombres: a.nombres,
-      apellidos: a.apellidos,
-      cargoFuncion: a.cargo_estandar || a.cargo_original,
-      estamento: a.estamento,
-      horasContrato: a.horas_contrato || 0,
-      horasSubvencionGeneralIndefinido: a.horas_subvencion_general_indefinido || 0,
-      horasSubvencionGeneralPlazoFijo: a.horas_subvencion_general_plazo_fijo || 0,
-      horasSepIndefinido: a.horas_sep_indefinido || 0,
-      horasSepPlazoFijo: a.horas_sep_plazo_fijo || 0,
-      horasPieIndefinido: a.horas_pie_indefinido || 0,
-      horasPiePlazoFijo: a.horas_pie_plazo_fijo || 0,
-      esDuplaPsicosocial: Boolean(a.es_dupla_psicosocial),
-      esEquipoPie: Boolean(a.es_equipo_pie),
-      esTecnicoParvulo: Boolean(a.es_tecnico_parvulo),
-      esAuxiliarServicio: Boolean(a.es_auxiliar_servicio),
-      esInspectorPatio: Boolean(a.es_inspector_patio),
-      observaciones: a.observaciones_ia || a.observaciones_originales,
-      activo: true,
-    };
+      const asistenteObj: AsistenteEducacion = {
+        id: astId,
+        rbd: effectiveRbd,
+        periodo,
+        run: a.run || cleanRun,
+        nombres: a.nombres,
+        apellidos: a.apellidos,
+        cargoFuncion: a.cargo_estandar || a.cargo_original,
+        estamento: a.estamento,
+        horasContrato: a.horas_contrato || 0,
+        horasSubvencionGeneralIndefinido: a.horas_subvencion_general_indefinido || 0,
+        horasSubvencionGeneralPlazoFijo: a.horas_subvencion_general_plazo_fijo || 0,
+        horasSepIndefinido: a.horas_sep_indefinido || 0,
+        horasSepPlazoFijo: a.horas_sep_plazo_fijo || 0,
+        horasPieIndefinido: a.horas_pie_indefinido || 0,
+        horasPiePlazoFijo: a.horas_pie_plazo_fijo || 0,
+        esDuplaPsicosocial: Boolean(a.es_dupla_psicosocial),
+        esEquipoPie: Boolean(a.es_equipo_pie),
+        esTecnicoParvulo: Boolean(a.es_tecnico_parvulo),
+        esAuxiliarServicio: Boolean(a.es_auxiliar_servicio),
+        esInspectorPatio: Boolean(a.es_inspector_patio),
+        observaciones: a.observaciones_ia || a.observaciones_originales,
+        activo: true,
+      };
 
-    guardarAsistenteSync(db, asistenteObj);
-    asistentesGuardados++;
+      guardarAsistenteSync(db, asistenteObj);
+      asistentesGuardados++;
+    }
   }
 
   persistDb();

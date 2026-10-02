@@ -102,6 +102,8 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [progressStep, setProgressStep] = useState<string>('Iniciando procesamiento de planillas...');
+  const [progressPercent, setProgressPercent] = useState<number>(0);
   const [savingDb, setSavingDb] = useState(false);
   const [isTraspasoModalOpen, setIsTraspasoModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -208,9 +210,17 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
 
   const handleProcessFiles = async (files: File[]) => {
     setLoading(true);
+    setProgressStep('Iniciando lectura y sincronización de planillas...');
+    setProgressPercent(5);
     try {
       const customPrompt = localStorage.getItem('gemini_custom_prompt') || undefined;
-      const result = await processDotacionFilesClient(files, apiKey, selectedModel, customPrompt);
+      const result = await processDotacionFilesClient(files, apiKey, selectedModel, customPrompt, {
+        useAiAssistance: true,
+        onProgressStep: (step, percent) => {
+          setProgressStep(step);
+          setProgressPercent(percent);
+        },
+      });
 
       setSchools(result.schools);
       setTeachers(result.teachers);
@@ -441,6 +451,121 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
     }
   };
 
+  const handleTransferSingleSchool = async (rbd: string) => {
+    const schoolObj = schools.find((s) => s.rbd === rbd);
+    if (!schoolObj) return;
+
+    setSavingDb(true);
+    try {
+      const existingColegios = await listarEstablecimientos();
+      let est = existingColegios.find((c) => c.rbd === rbd);
+      if (!est) {
+        est = {
+          id: `est-${rbd}`,
+          rbd: rbd,
+          nombre: schoolObj.establishment,
+          comuna: (schoolObj.comuna as any) || 'Chillán',
+          regimen: 'JEC',
+          porcentajePrioritarios: 75,
+        };
+        await guardarEstablecimiento(est);
+      }
+
+      // 1. Guardar Cursos de este colegio
+      const schoolCourses = courses.filter((c) => c.rbd === rbd);
+      for (const sc of schoolCourses) {
+        await guardarCurso({
+          id: `curso-${rbd}-${sc.curso.replace(/\s+/g, '-')}`,
+          rbd: rbd,
+          periodo: 2026,
+          nivel: sc.nivel,
+          letra: sc.letra,
+          regimen: 'JEC',
+          cupoSae: 35,
+          matriculaProyectada: Math.round(schoolObj.matricula / Math.max(1, schoolCourses.length)),
+          alumnosNeet: 5,
+          alumnosNeep: 2,
+        });
+      }
+
+      // 2. Guardar Docentes y Asignaciones de este colegio
+      const schoolTeacherLoads = teacherLoads.filter((d) => d.rbd === rbd);
+      for (const dl of schoolTeacherLoads) {
+        await guardarDocente({
+          id: `doc-${rbd}-${dl.rut.replace(/[^0-9kK]/g, '')}`,
+          rbd: rbd,
+          periodo: 2026,
+          run: dl.rut || `TEMP-${dl.teacher_name.slice(0, 8)}`,
+          nombres: dl.teacher_name.split(' ')[0] || 'Docente',
+          apellidos: dl.teacher_name.split(' ').slice(1).join(' ') || '',
+          calidadJuridica: 'TITULAR',
+          estamento: 'DOCENTE_AULA',
+          horasContrato: dl.horas_contrato,
+          horasAula: dl.horas_aula,
+          horasDirectivas: dl.horas_directivas,
+          horasTecnicoPedagogicas: dl.horas_tecnicas,
+        });
+
+        for (const asig of dl.cursos) {
+          await guardarAsignacion({
+            id: `asig-${rbd}-${dl.rut}-${asig.curso}-${asig.asignatura}`.replace(/\s+/g, '-'),
+            rbd: rbd,
+            periodo: 2026,
+            cursoId: `curso-${rbd}-${asig.curso.replace(/\s+/g, '-')}`,
+            docenteId: `doc-${rbd}-${dl.rut.replace(/[^0-9kK]/g, '')}`,
+            asignatura: asig.asignatura,
+            horasPedagogicasAula: asig.horas,
+          });
+        }
+      }
+
+      // 3. Guardar Asistentes de la Educación de este colegio
+      const schoolAsistentes = asistentes.filter((a) => a.rbd === rbd);
+      if (schoolAsistentes.length > 0) {
+        const mappedAsistentes: AsistenteEducacion[] = schoolAsistentes.map((a) => ({
+          id: a.id,
+          rbd: rbd,
+          periodo: 2026,
+          run: a.run,
+          nombres: a.nombres,
+          apellidos: a.apellidos,
+          cargoFuncion: a.cargo_estandar || a.cargo_original,
+          estamento: a.estamento,
+          horasContrato: a.horas_contrato || 0,
+          horasSubvencionGeneralIndefinido: a.horas_subvencion_general_indefinido || 0,
+          horasSubvencionGeneralPlazoFijo: a.horas_subvencion_general_plazo_fijo || 0,
+          horasSepIndefinido: a.horas_sep_indefinido || 0,
+          horasSepPlazoFijo: a.horas_sep_plazo_fijo || 0,
+          horasPieIndefinido: a.horas_pie_indefinido || 0,
+          horasPiePlazoFijo: a.horas_pie_plazo_fijo || 0,
+          esDuplaPsicosocial: Boolean(a.es_dupla_psicosocial),
+          esEquipoPie: Boolean(a.es_equipo_pie),
+          esTecnicoParvulo: Boolean(a.es_tecnico_parvulo),
+          esAuxiliarServicio: Boolean(a.es_auxiliar_servicio),
+          esInspectorPatio: Boolean(a.es_inspector_patio),
+          observaciones: a.observaciones_ia || a.observaciones_originales,
+          activo: true,
+        }));
+        await guardarAsistentesBatch(mappedAsistentes, rbd, 2026, true);
+      }
+
+      if (onSyncWithDatabase) {
+        await onSyncWithDatabase();
+      }
+
+      showToast(`¡Dotación de "${schoolObj.establishment}" traspasada exitosamente a la aplicación oficial!`);
+
+      if (onNavigateToColegio) {
+        onNavigateToColegio(rbd, 'workflow');
+      }
+    } catch (err: any) {
+      console.error('Error al transferir colegio individual:', err);
+      showToast(`Error al transferir colegio: ${err.message || err}`, 'error');
+    } finally {
+      setSavingDb(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
       {/* Toast Notificación */}
@@ -523,11 +648,11 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
 
                 <button
                   onClick={() => setIsTraspasoModalOpen(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-600/20 flex items-center gap-1.5"
-                  title="Traspasar a la Dotación oficial 2026 homologando asignaturas con IA y controlando descuadres"
+                  className="px-4 py-2 bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-orange-600/25 flex items-center gap-2 active:scale-95"
+                  title="Abrir asistente para llevar la dotación analizada e ingestada a la aplicación oficial"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Traspasar a Dotación 2026 (con IA)</span>
+                  <Sparkles className="w-4 h-4 text-amber-200" />
+                  <span>Llevar Dotación a la Aplicación Oficial</span>
                 </button>
 
                 <button
@@ -631,18 +756,34 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
       {/* KPI Cards si hay datos procesados */}
       {schools.length > 0 && <KpiCards kpis={kpis} />}
 
-      {/* Loading Overlay */}
+      {/* Loading Overlay con Progreso Inteligente */}
       {loading && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center space-y-4 animate-in fade-in">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center space-y-6 animate-in fade-in">
           <div className="w-16 h-16 rounded-2xl bg-orange-50 border border-orange-200 text-orange-600 flex items-center justify-center mx-auto shadow-xs animate-spin">
             <Loader2 className="w-8 h-8" />
           </div>
-          <h3 className="text-base font-bold text-slate-800">
-            Analizando planillas y consultando motor híbrido...
-          </h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Procesando horas, detectando cursos, clasificando asignaturas en Aula/Técnica/Directiva y cuadrando dotaciones.
-          </p>
+          <div className="space-y-2">
+            <h3 className="text-base font-bold text-slate-800 flex items-center justify-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+              <span>{progressStep}</span>
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Interpretación semántica con Gemini AI, normalización de cursos SIGE y cuadratura según normativa MINEDUC.
+            </p>
+          </div>
+
+          <div className="max-w-md mx-auto space-y-1.5">
+            <div className="flex justify-between text-xs font-bold text-slate-600">
+              <span>Progreso de Ingesta Inteligente</span>
+              <span className="text-orange-600 font-mono">{progressPercent}%</span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200">
+              <div
+                className="bg-gradient-to-r from-orange-500 via-amber-500 to-emerald-500 h-full transition-all duration-300 rounded-full"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
         </div>
       )}
 
@@ -670,6 +811,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
                 setSelectedRbd(rbd);
                 setActiveTab('teachers');
               }}
+              onTransferSchool={handleTransferSingleSchool}
             />
           )}
 

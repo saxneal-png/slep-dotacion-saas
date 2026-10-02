@@ -5,6 +5,7 @@ import type { SchoolSummary } from '../../types/analizadorTypes';
 interface ConsolidatedTableProps {
   schools: SchoolSummary[];
   onSelectSchool?: (rbd: string) => void;
+  onTransferSchool?: (rbd: string) => void;
   selectedComuna?: string;
   onSelectComuna?: (comuna: string) => void;
 }
@@ -33,6 +34,7 @@ export function getComunaBadgeColor(comuna?: string): string {
 export const ConsolidatedTable: React.FC<ConsolidatedTableProps> = ({
   schools,
   onSelectSchool,
+  onTransferSchool,
   selectedComuna = 'ALL',
   onSelectComuna,
 }) => {
@@ -155,6 +157,7 @@ export const ConsolidatedTable: React.FC<ConsolidatedTableProps> = ({
               <th className="py-3 px-4 text-right bg-emerald-50/50 text-emerald-900">Horas Técnicas</th>
               <th className="py-3 px-4 text-right bg-blue-50/70 text-blue-900 font-bold">Total Horas EE</th>
               <th className="py-3 px-4 text-center">Estado</th>
+              <th className="py-3 px-4 text-center">Acción</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
@@ -210,6 +213,20 @@ export const ConsolidatedTable: React.FC<ConsolidatedTableProps> = ({
                     </span>
                   )}
                 </td>
+                <td className="py-3 px-4 text-center">
+                  {onTransferSchool && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTransferSchool(s.rbd);
+                      }}
+                      className="px-2.5 py-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-lg text-[11px] font-bold shadow-xs flex items-center gap-1 mx-auto transition-all active:scale-95"
+                      title={`Llevar dotación de ${s.establishment} a la aplicación oficial`}
+                    >
+                      <span>Llevar a la App</span>
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -225,7 +242,7 @@ export const ConsolidatedTable: React.FC<ConsolidatedTableProps> = ({
               <td className="py-3 px-4 text-right font-mono text-purple-700">{totalDirectivas.toFixed(1)}</td>
               <td className="py-3 px-4 text-right font-mono text-emerald-700">{totalTecnicas.toFixed(1)}</td>
               <td className="py-3 px-4 text-right font-mono text-blue-900 text-sm font-black">{totalGeneral.toFixed(1)}</td>
-              <td className="py-3 px-4"></td>
+              <td className="py-3 px-4" colSpan={2}></td>
             </tr>
           </tfoot>
         </table>
