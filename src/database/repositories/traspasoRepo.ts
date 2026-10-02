@@ -143,6 +143,9 @@ export async function ejecutarTraspasoDotacionAnalizador(
         matriculaProyectada: matProy,
         alumnosNeet: 5,
         alumnosNeep: 2,
+        planEstudioId: sc.plan_estudio_id,
+        especialidadTp: sc.especialidad_tp,
+        tipoModalidad: (sc.modalidad as any) || undefined,
       };
       await guardarCurso(cursoObj);
       cursoMap.set(key, cursoObj);

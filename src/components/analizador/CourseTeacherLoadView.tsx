@@ -14,6 +14,8 @@ import {
   Sparkles
 } from 'lucide-react';
 import type { TeacherConsolidatedLoad, CourseLoadSummary, SchoolSummary } from '../../types/analizadorTypes';
+import type { PlanEstudioCurricular } from '../../types';
+import { getPlanesEstudioAnalizadorCache } from '../../services/analizador/planesEstudioBridge';
 
 import { getComunaBadgeColor } from './ConsolidatedTable';
 
@@ -25,6 +27,8 @@ interface CourseTeacherLoadViewProps {
   onSelectRbd: (rbd: string) => void;
   selectedComuna?: string;
   onSelectComuna?: (comuna: string) => void;
+  onOpenModalidadesModal?: () => void;
+  onUpdateCoursePlan?: (courseKey: string, plan: PlanEstudioCurricular | null) => void;
 }
 
 export const CourseTeacherLoadView: React.FC<CourseTeacherLoadViewProps> = ({
@@ -35,6 +39,8 @@ export const CourseTeacherLoadView: React.FC<CourseTeacherLoadViewProps> = ({
   onSelectRbd,
   selectedComuna = 'ALL',
   onSelectComuna,
+  onOpenModalidadesModal,
+  onUpdateCoursePlan,
 }) => {
   const [subView, setSubView] = useState<'DOCENTES' | 'CURSOS'>('DOCENTES');
   const [searchTerm, setSearchTerm] = useState('');
@@ -411,16 +417,27 @@ export const CourseTeacherLoadView: React.FC<CourseTeacherLoadViewProps> = ({
                   </div>
 
                   {/* Plan de Estudio de Referencia Mineduc */}
-                  {c.plan_referencia && (
-                    <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200/70">
-                      <span className="text-slate-600 font-medium truncate max-w-[280px]">
-                        📋 <span className="font-semibold text-slate-800">{c.plan_referencia}</span>
-                      </span>
-                      <span className="font-mono font-bold text-slate-700">
-                        {c.horas_plan_estudio}h Mineduc
-                      </span>
+                  <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200/70">
+                    <span className="text-slate-600 font-medium truncate max-w-[260px]">
+                      📋 <span className="font-semibold text-slate-800">{c.plan_referencia || 'Sin Plan Asignado'}</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {c.horas_plan_estudio ? (
+                        <span className="font-mono font-bold text-slate-700">
+                          {c.horas_plan_estudio}h Mineduc
+                        </span>
+                      ) : null}
+                      {onOpenModalidadesModal && (
+                        <button
+                          onClick={onOpenModalidadesModal}
+                          className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[10px] border border-blue-200 transition-colors"
+                          title="Cambiar o asociar plan de estudio a este curso"
+                        >
+                          Asociar Plan
+                        </button>
+                      )}
                     </div>
-                  )}
+                  </div>
 
                   {/* Barra de Cobertura de Horas del Plan */}
                   {c.horas_plan_estudio ? (

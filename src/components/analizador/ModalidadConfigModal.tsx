@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { X, CheckCircle, AlertTriangle, Layers, BookOpen, Sparkles, Building2, HelpCircle } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, Layers, BookOpen, Sparkles, Building2, HelpCircle, ChevronDown, ChevronRight, Edit3 } from 'lucide-react';
 import { TipoModalidadEstudio, SchoolSummary, CourseLoadSummary } from '../../types/analizadorTypes';
 import { PlanEstudioCurricular } from '../../types';
-import { getPlanesEstudioAnalizadorCache } from '../../services/analizador/planesEstudioBridge';
+import { getPlanesEstudioAnalizadorCache, buscarPlanEstudioAnalizador } from '../../services/analizador/planesEstudioBridge';
 
 interface ModalidadConfigModalProps {
   isOpen: boolean;
@@ -91,12 +91,60 @@ export const ModalidadConfigModal: React.FC<ModalidadConfigModalProps> = ({
     return map;
   });
 
+  // Estado local para asociación de planes de estudio por curso (`${rbd}-${curso}` -> planId)
+  const [coursePlansMap, setCoursePlansMap] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    courses.forEach((c) => {
+      const key = `${c.rbd}-${c.curso}`;
+      if (c.plan_estudio_id) {
+        map[key] = c.plan_estudio_id;
+      } else if (c.plan_referencia) {
+        const found = planesDisponibles.find((p) => p.nivel === c.plan_referencia);
+        if (found) map[key] = found.id;
+      }
+    });
+    return map;
+  });
+
+  const [expandedSchools, setExpandedSchools] = useState<Set<string>>(() => {
+    return new Set(schools.map((s) => s.rbd || s.establishment));
+  });
+
+  const toggleSchoolExpanded = (key: string) => {
+    setExpandedSchools((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const handleModalityChange = (schoolKey: string, mod: TipoModalidadEstudio) => {
     setSelectedModalities((prev) => ({ ...prev, [schoolKey]: mod }));
   };
 
   const handleRegimenChange = (schoolKey: string, reg: 'JEC' | 'No JEC') => {
     setSelectedRegimen((prev) => ({ ...prev, [schoolKey]: reg }));
+  };
+
+  const handleCoursePlanChange = (courseKey: string, planId: string) => {
+    setCoursePlansMap((prev) => ({ ...prev, [courseKey]: planId }));
+  };
+
+  const handleAutoAssignSchoolPlans = (school: SchoolSummary) => {
+    const sKey = school.rbd || school.establishment;
+    const reg = selectedRegimen[sKey] || 'JEC';
+    const schoolCourses = courses.filter((c) => c.rbd === school.rbd || c.establishment === school.establishment);
+
+    const newMap = { ...coursePlansMap };
+    schoolCourses.forEach((c) => {
+      const cKey = `${c.rbd}-${c.curso}`;
+      const autoPlan = buscarPlanEstudioAnalizador(c.nivel, reg) || buscarPlanEstudioAnalizador(c.curso, reg);
+      if (autoPlan) {
+        newMap[cKey] = autoPlan.id;
+      }
+    });
+    setCoursePlansMap(newMap);
   };
 
   const handleSave = () => {
@@ -112,13 +160,47 @@ export const ModalidadConfigModal: React.FC<ModalidadConfigModalProps> = ({
 
     const updatedCourses = courses.map((c) => {
       const sKey = c.rbd || c.establishment;
+      const cKey = `${c.rbd}-${c.curso}`;
       const schoolMod = selectedModalities[sKey];
       const schoolReg = selectedRegimen[sKey] || c.regimen || 'JEC';
+      const assignedPlanId = coursePlansMap[cKey];
+      const assignedPlan = assignedPlanId ? planesDisponibles.find((p) => p.id === assignedPlanId) : null;
+
+      let planRef = c.plan_referencia;
+      let horasPlan = c.horas_plan_estudio;
+      let horasOblig = c.horas_obligatorias_plan;
+      let horasLibre = c.horas_libre_disposicion_plan;
+      let catPlan = c.categoria_plan;
+      let estadoCob = c.estado_cobertura;
+      let diffHoras = c.diferencia_horas_plan;
+      let pctCob = c.porcentaje_cobertura_plan;
+
+      if (assignedPlan) {
+        planRef = assignedPlan.nivel;
+        horasPlan = assignedPlan.totalHorasPlan || assignedPlan.totalHorasSemanalesObligatorias;
+        horasOblig = assignedPlan.totalHorasSemanalesObligatorias;
+        horasLibre = assignedPlan.horasLibreDisposicion || 0;
+        catPlan = assignedPlan.categoria;
+
+        const diff = Math.round((c.total_horas - horasPlan) * 100) / 100;
+        diffHoras = diff;
+        pctCob = horasPlan > 0 ? Math.round((c.total_horas / horasPlan) * 100) : 100;
+        estadoCob = Math.abs(diff) <= 0.5 ? 'CUBIERTO' : diff < -0.5 ? 'DEFICIT' : 'SUPERAVIT';
+      }
 
       return {
         ...c,
         regimen: schoolReg,
         modalidad: c.modalidad || schoolMod,
+        plan_estudio_id: assignedPlanId || c.plan_estudio_id,
+        plan_referencia: planRef,
+        horas_plan_estudio: horasPlan,
+        horas_obligatorias_plan: horasOblig,
+        horas_libre_disposicion_plan: horasLibre,
+        categoria_plan: catPlan,
+        estado_cobertura: estadoCob,
+        diferencia_horas_plan: diffHoras,
+        porcentaje_cobertura_plan: pctCob,
       };
     });
 
@@ -126,9 +208,17 @@ export const ModalidadConfigModal: React.FC<ModalidadConfigModalProps> = ({
     onClose();
   };
 
+  // Agrupar planes disponibles por categoría para el selector
+  const planesAgrupados = planesDisponibles.reduce((acc, p) => {
+    const cat = p.categoria || 'OTRO';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(p);
+    return acc;
+  }, {} as Record<string, PlanEstudioCurricular[]>);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -138,15 +228,15 @@ export const ModalidadConfigModal: React.FC<ModalidadConfigModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-black tracking-tight text-white">
-                  Modalidades Educativas y Planes de Estudio
+                  Modalidades Educativas y Asociación de Planes de Estudio
                 </h3>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px] border border-emerald-500/30 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" />
-                  Auditoría Inteligente
+                  Auditoría Curricular Activa
                 </span>
               </div>
               <p className="text-xs text-blue-200 mt-0.5">
-                Valida o ajusta la modalidad de estudio de cada colegio para vincular con precisión los planes curriculares MINEDUC.
+                Asocia individualmente a cada curso detectado su plan de estudio oficial (horas obligatorias, electivos y libre disposición).
               </p>
             </div>
           </div>
@@ -163,68 +253,81 @@ export const ModalidadConfigModal: React.FC<ModalidadConfigModalProps> = ({
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-900 flex items-start gap-3">
             <HelpCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <span className="font-bold">¿Por qué es importante definir la modalidad?</span>
+              <span className="font-bold">Asociación Directa de Planes de Estudio por Curso</span>
               <p className="text-blue-800">
-                La modalidad determina las horas semanales mínimas exigidas por el Ministerio de Educación (ej. 38h Básica JEC, 42h Media TP/HC, o 24-28h EPJA Adultos), permitiendo auditar con exactitud el déficit o superávit de horas docentes.
+                Puedes cambiar la modalidad institucional del colegio y vincular un plan curricular específico a cada curso (ej. Básica JEC 38h, Media TP 42h con su especialidad o EPJA Adultos 2024). El sistema recalculará en tiempo real el déficit o superávit docente.
               </p>
             </div>
           </div>
 
           <div className="space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-slate-400" />
-              <span>Establecimientos Detectados ({schools.length})</span>
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-slate-400" />
+                <span>Establecimientos y Cursos Detectados ({schools.length})</span>
+              </h4>
+            </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               {schools.map((school) => {
                 const sKey = school.rbd || school.establishment;
                 const currentMod = selectedModalities[sKey] || school.modalidad_detectada || 'REGULAR_BASICA';
                 const currentReg = selectedRegimen[sKey] || 'JEC';
                 const modMeta = MODALIDAD_LABELS[currentMod] || MODALIDAD_LABELS.REGULAR_BASICA;
                 const schoolCourses = courses.filter((c) => (c.rbd === school.rbd || c.establishment === school.establishment));
+                const isExpanded = expandedSchools.has(sKey);
 
                 return (
                   <div
                     key={sKey}
-                    className={`bg-white rounded-xl border p-4 shadow-xs transition-all ${
+                    className={`bg-white rounded-2xl border shadow-xs transition-all overflow-hidden ${
                       school.modalidad_ambigua ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-200'
                     }`}
                   >
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-mono font-bold">
-                            RBD: {school.rbd || 'N/A'}
-                          </span>
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${modMeta.badgeColor}`}>
-                            {modMeta.label}
-                          </span>
-                          {school.modalidad_ambigua && (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-300 flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3 text-amber-600" />
-                              Revisión Sugerida (Polivalente / Mixto)
+                    {/* Header Establecimiento */}
+                    <div className="p-4 bg-slate-50/80 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <button
+                          onClick={() => toggleSchoolExpanded(sKey)}
+                          className="mt-0.5 p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
+                          title={isExpanded ? 'Contraer cursos' : 'Expandir cursos'}
+                        >
+                          {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600" /> : <ChevronRight className="w-4 h-4 text-slate-600" />}
+                        </button>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 text-xs font-mono font-bold">
+                              RBD: {school.rbd || 'N/A'}
                             </span>
-                          )}
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${modMeta.badgeColor}`}>
+                              {modMeta.label}
+                            </span>
+                            {school.modalidad_ambigua && (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-300 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                Revisión Sugerida (Polivalente / Mixto)
+                              </span>
+                            )}
+                          </div>
+                          <h5 className="text-sm font-bold text-slate-800 mt-1">
+                            {school.establishment}
+                          </h5>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {schoolCourses.length} cursos detectados • {school.teachers_count} docentes • {school.total_horas_ee} hrs totales
+                          </p>
                         </div>
-                        <h5 className="text-sm font-bold text-slate-800 mt-1">
-                          {school.establishment}
-                        </h5>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {schoolCourses.length} cursos detectados • {school.teachers_count} docentes • {school.total_horas_ee} hrs totales
-                        </p>
                       </div>
 
-                      {/* Selectores */}
-                      <div className="flex flex-wrap items-center gap-2">
+                      {/* Selectores de Modalidad y Régimen de la Escuela */}
+                      <div className="flex flex-wrap items-center gap-2 self-end md:self-auto">
                         <div>
                           <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                            Modalidad de Estudio
+                            Modalidad Establecimiento
                           </label>
                           <select
                             value={currentMod}
                             onChange={(e) => handleModalityChange(sKey, e.target.value as TipoModalidadEstudio)}
-                            className="text-xs font-bold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            className="text-xs font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                           >
                             {Object.entries(MODALIDAD_LABELS).map(([k, v]) => (
                               <option key={k} value={k}>
@@ -241,30 +344,113 @@ export const ModalidadConfigModal: React.FC<ModalidadConfigModalProps> = ({
                           <select
                             value={currentReg}
                             onChange={(e) => handleRegimenChange(sKey, e.target.value as 'JEC' | 'No JEC')}
-                            className="text-xs font-bold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                            className="text-xs font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                           >
-                            <option value="JEC">Jornada Escolar Completa (JEC)</option>
-                            <option value="No JEC">Sin JEC (Media Jornada)</option>
+                            <option value="JEC">Jornada Completa (JEC)</option>
+                            <option value="No JEC">Media Jornada (No JEC)</option>
                           </select>
                         </div>
+
+                        <button
+                          onClick={() => handleAutoAssignSchoolPlans(school)}
+                          className="mt-4 px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                          title="Auto-asignar planes normativos MINEDUC a todos los cursos de este colegio"
+                        >
+                          Auto-Asociar
+                        </button>
                       </div>
                     </div>
 
-                    {/* Resumen de Cursos del Colegio */}
-                    <div className="pt-3 flex flex-wrap gap-1.5 items-center">
-                      <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
-                        <BookOpen className="w-3 h-3" /> Cursos:
-                      </span>
-                      {schoolCourses.map((c, cIdx) => (
-                        <span
-                          key={cIdx}
-                          className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-medium border border-slate-200"
-                          title={`Plan asociado: ${c.plan_referencia || 'Plan Estándar'} (${c.horas_plan_estudio || 0} hrs)`}
-                        >
-                          {c.curso} {c.horas_plan_estudio ? `(${c.horas_plan_estudio}h)` : ''}
-                        </span>
-                      ))}
-                    </div>
+                    {/* Tabla de Cursos con Selector de Plan de Estudio */}
+                    {isExpanded && (
+                      <div className="p-4 overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                              <th className="py-2 px-3">Curso Detectado</th>
+                              <th className="py-2 px-3 text-center">Horas Planilla</th>
+                              <th className="py-2 px-3">Plan de Estudio Asociado (MINEDUC)</th>
+                              <th className="py-2 px-3 text-center">Horas Plan</th>
+                              <th className="py-2 px-3 text-center">Estado Cobertura</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                            {schoolCourses.map((c) => {
+                              const cKey = `${c.rbd}-${c.curso}`;
+                              const selectedPlanId = coursePlansMap[cKey] || '';
+                              const currentPlan = planesDisponibles.find((p) => p.id === selectedPlanId);
+                              const targetHours = currentPlan ? (currentPlan.totalHorasPlan || currentPlan.totalHorasSemanalesObligatorias) : (c.horas_plan_estudio || 0);
+                              const diff = targetHours > 0 ? Math.round((c.total_horas - targetHours) * 100) / 100 : 0;
+
+                              return (
+                                <tr key={cKey} className="hover:bg-slate-50/70 transition-colors">
+                                  <td className="py-2.5 px-3">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-slate-900">{c.curso}</span>
+                                      {c.especialidad_tp && (
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                          {c.especialidad_tp}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400">
+                                      Nivel: {c.nivel} • Letra: {c.letra}
+                                    </div>
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800">
+                                    {c.total_horas.toFixed(1)}h
+                                  </td>
+
+                                  <td className="py-2.5 px-3 min-w-[280px]">
+                                    <select
+                                      value={selectedPlanId}
+                                      onChange={(e) => handleCoursePlanChange(cKey, e.target.value)}
+                                      className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500 truncate"
+                                    >
+                                      <option value="">-- Sin Plan Específico ({c.plan_referencia || 'Plan Automático'}) --</option>
+                                      {Object.entries(planesAgrupados).map(([categoria, listaPlanes]) => (
+                                        <optgroup key={categoria} label={`--- Categoría: ${categoria} ---`}>
+                                          {listaPlanes.map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                              {p.nivel} ({p.regimen}) - {p.totalHorasPlan || p.totalHorasSemanalesObligatorias}h {p.decretoSupremo ? `[${p.decretoSupremo}]` : ''}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
+                                    {targetHours > 0 ? `${targetHours}h` : '-'}
+                                  </td>
+
+                                  <td className="py-2.5 px-3 text-center">
+                                    {targetHours > 0 ? (
+                                      Math.abs(diff) <= 0.5 ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                          ✓ Cubierto
+                                        </span>
+                                      ) : diff < -0.5 ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800" title={`Faltan ${Math.abs(diff)} horas`}>
+                                          ⚠️ Déficit ({diff}h)
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                                          ℹ️ Superávit (+{diff}h)
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400">Sin plan</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -290,7 +476,7 @@ export const ModalidadConfigModal: React.FC<ModalidadConfigModalProps> = ({
               className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
             >
               <CheckCircle className="w-4 h-4" />
-              <span>Aplicar y Asociar Planes</span>
+              <span>Guardar y Asociar Planes a Cursos</span>
             </button>
           </div>
         </div>

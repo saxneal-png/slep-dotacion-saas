@@ -906,6 +906,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
               onSelectRbd={setSelectedRbd}
               selectedComuna={selectedComuna}
               onSelectComuna={setSelectedComuna}
+              onOpenModalidadesModal={() => setIsModalidadModalOpen(true)}
             />
           )}
         </>
