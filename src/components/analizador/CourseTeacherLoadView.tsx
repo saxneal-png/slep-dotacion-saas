@@ -369,10 +369,22 @@ export const CourseTeacherLoadView: React.FC<CourseTeacherLoadViewProps> = ({
                 className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col justify-between"
               >
                 <div className="p-4 border-b border-slate-100 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-black bg-orange-100 text-orange-900">
-                      <GraduationCap className="w-3.5 h-3.5" />
-                      {c.curso}
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-black bg-orange-100 text-orange-900">
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        {c.curso}
+                      </div>
+                      {c.modalidad && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                          {c.modalidad.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                      {c.especialidad_tp && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          {c.especialidad_tp}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5">
                       {c.estado_cobertura === 'CUBIERTO' && (

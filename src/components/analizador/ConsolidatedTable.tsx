@@ -168,7 +168,16 @@ export const ConsolidatedTable: React.FC<ConsolidatedTableProps> = ({
                 className={`hover:bg-slate-50 transition-colors ${onSelectSchool ? 'cursor-pointer' : ''}`}
               >
                 <td className="py-3 px-4 font-mono font-bold text-slate-900">{s.rbd}</td>
-                <td className="py-3 px-4 font-semibold text-slate-800">{s.establishment}</td>
+                <td className="py-3 px-4">
+                  <div className="font-semibold text-slate-800">{s.establishment}</div>
+                  {s.modalidad_detectada && (
+                    <div className="mt-0.5">
+                      <span className="inline-flex items-center px-2 py-0.2 text-[10px] font-bold rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                        {s.modalidad_detectada.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                  )}
+                </td>
                 <td className="py-3 px-4">
                   {s.comuna ? (
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${getComunaBadgeColor(s.comuna)}`}>
@@ -191,8 +200,16 @@ export const ConsolidatedTable: React.FC<ConsolidatedTableProps> = ({
                 <td className="py-3 px-4 text-right font-mono font-bold text-purple-700 bg-purple-50/30">
                   {s.horas_directivas.toFixed(1)}
                 </td>
-                <td className="py-3 px-4 text-right font-mono font-bold text-emerald-700 bg-emerald-50/30">
-                  {s.horas_tecnicas.toFixed(1)}
+                <td
+                  className="py-3 px-4 text-right font-mono font-bold text-emerald-700 bg-emerald-50/30"
+                  title={`Desglose Técnico Fuera de Aula:\n- UTP: ${(s.horas_utp || 0).toFixed(1)}h\n- Jefaturas: ${(s.horas_jefatura || 0).toFixed(1)}h\n- Coord. PIE: ${(s.horas_coordinacion_pie || 0).toFixed(1)}h\n- Convivencia: ${(s.horas_convivencia || 0).toFixed(1)}h\n- CRA/Enlaces: ${(s.horas_cra_enlaces || 0).toFixed(1)}h\n- Extraescolar: ${(s.horas_extraescolar || 0).toFixed(1)}h`}
+                >
+                  <div>{s.horas_tecnicas.toFixed(1)}</div>
+                  {(s.horas_utp || s.horas_jefatura || s.horas_coordinacion_pie) ? (
+                    <div className="text-[10px] text-emerald-600 font-sans font-normal">
+                      UTP: {s.horas_utp || 0}h | Jef: {s.horas_jefatura || 0}h
+                    </div>
+                  ) : null}
                 </td>
                 <td className="py-3 px-4 text-right font-mono font-black text-blue-900 bg-blue-50/40">
                   {s.total_horas_ee.toFixed(1)}

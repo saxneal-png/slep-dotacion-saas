@@ -1,3 +1,29 @@
+export type TipoModalidadEstudio =
+  | 'REGULAR_BASICA'
+  | 'REGULAR_MEDIA_HC'
+  | 'MEDIA_TP'
+  | 'EPJA_BASICA'
+  | 'EPJA_MEDIA_HC'
+  | 'EPJA_MEDIA_TP'
+  | 'RURAL_MULTIGRADO'
+  | 'ESPECIAL'
+  | 'POLIVALENTE_MIXTO';
+
+export type TipoFuncionFueraAula =
+  | 'AULA_REGULAR'
+  | 'CO_DOCENCIA_PIE'
+  | 'JEFATURA_CURSO'
+  | 'UTP_CURRICULUM_EVALUACION'
+  | 'COORDINACION_PIE'
+  | 'CONVIVENCIA_ORIENTACION'
+  | 'CRA_BIBLIOTECA'
+  | 'ENLACES_TIC'
+  | 'EXTRAESCOLAR_DEPORTES'
+  | 'DOCENTE_ENCARGADO_RURAL'
+  | 'DIRECTIVA_SUPERIOR'
+  | 'NO_LECTIVA_PREPARACION'
+  | 'OTRA_NO_LECTIVA';
+
 export interface TeacherCourseAssignment {
   curso: string;
   nivel?: string;
@@ -20,10 +46,12 @@ export interface TeacherRecord {
   curso?: string;
   nivel_normalizado?: string;
   letra_normalizada?: string;
+  modalidad_curso?: TipoModalidadEstudio;
   cursos_asignados?: string[];
   desglose_cursos?: TeacherCourseAssignment[];
   hours: number;
   category: 'AULA' | 'TECNICA' | 'DIRECTIVA';
+  tipo_funcion_fuera_aula?: TipoFuncionFueraAula;
   source: string;
   observaciones?: string;
   observaciones_limpias?: string;
@@ -35,6 +63,11 @@ export interface TeacherRecord {
   horas_tecnicas?: number;
   horas_directivas?: number;
   horas_no_lectivas?: number;
+  horas_jefatura?: number;
+  horas_coordinacion_pie?: number;
+  horas_convivencia?: number;
+  horas_cra_enlaces?: number;
+  horas_extraescolar?: number;
   diferencia_carga?: number;
   estado_carga?: 'CUADRADA' | 'SUBASIGNADA' | 'SOBREASIGNADA' | 'EXCESO_LEGAL';
   is_over_legal_limit?: boolean;
@@ -49,6 +82,15 @@ export interface SchoolSummary {
   horas_aula: number;
   horas_directivas: number;
   horas_tecnicas: number;
+  horas_jefatura?: number;
+  horas_utp?: number;
+  horas_coordinacion_pie?: number;
+  horas_convivencia?: number;
+  horas_cra_enlaces?: number;
+  horas_extraescolar?: number;
+  modalidad_detectada?: TipoModalidadEstudio;
+  modalidad_confirmada?: TipoModalidadEstudio;
+  modalidad_ambigua?: boolean;
   total_horas_ee: number;
   teachers_count: number;
   courses_count?: number;
@@ -64,6 +106,7 @@ export interface CourseTeacherItem {
   asignatura: string;
   horas: number;
   categoria: 'AULA' | 'TECNICA' | 'DIRECTIVA';
+  tipo_funcion?: TipoFuncionFueraAula;
 }
 
 export interface CourseLoadSummary {
@@ -71,6 +114,9 @@ export interface CourseLoadSummary {
   nivel: string;
   letra: string;
   regimen?: 'JEC' | 'No JEC';
+  modalidad?: TipoModalidadEstudio;
+  plan_estudio_id?: string;
+  especialidad_tp?: string;
   rbd: string;
   establishment: string;
   comuna?: string;

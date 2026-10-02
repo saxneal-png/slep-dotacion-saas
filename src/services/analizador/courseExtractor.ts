@@ -1,6 +1,7 @@
 import { TeacherCourseAssignment, CourseLoadSummary, TeacherConsolidatedLoad, TeacherRecord } from '../../types/analizadorTypes';
 import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
 import { buscarPlanEstudioAnalizador } from './planesEstudioBridge';
+import { detectarModalidadCursoHeuristica } from './aiModalidadDetector';
 
 export interface NormalizedCourseInfo {
   cursoCompleto: string;
@@ -434,11 +435,14 @@ export function buildCourseLoadSummaries(teachers: TeacherRecord[]): CourseLoadS
 
       if (!courseMap.has(key)) {
         const norm = normalizeCourseHeader(cNombre);
+        const modDetect = detectarModalidadCursoHeuristica(cNombre, [asig.asignatura]);
         courseMap.set(key, {
           curso: cNombre,
           nivel: norm?.nivel || cNombre,
           letra: norm?.letra || 'A',
           regimen: norm?.regimen || 'JEC',
+          modalidad: modDetect.modalidad,
+          especialidad_tp: modDetect.especialidad_tp,
           rbd: t.rbd,
           establishment: t.establishment,
           comuna: t.comuna,

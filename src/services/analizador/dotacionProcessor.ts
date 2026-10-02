@@ -6,6 +6,7 @@ import { parseAsistentesFromWorkbook } from './asistentesParser';
 import { clasificarAsistentesConIa, RawAsistenteInput, AsistenteAnalizadoRecord } from './asistentesClassifier';
 import { interpretarNotasDocentesConIa, TeacherNoteInput } from './aiTeacherNotesInterpreter';
 import { normalizarCursosConIa } from './aiCourseNormalizer';
+import { detectarModalidadEstablecimientoHeuristica } from './aiModalidadDetector';
 import * as XLSX from 'xlsx';
 import type {
   SchoolSummary,
@@ -90,6 +91,12 @@ export async function processDotacionFilesClient(
         horas_aula: 0,
         horas_directivas: 0,
         horas_tecnicas: 0,
+        horas_jefatura: 0,
+        horas_utp: 0,
+        horas_coordinacion_pie: 0,
+        horas_convivencia: 0,
+        horas_cra_enlaces: 0,
+        horas_extraescolar: 0,
         total_horas_ee: 0,
         teachers_count: 0,
         courses_count: 0,
@@ -115,8 +122,8 @@ export async function processDotacionFilesClient(
 
   const courseNormMap = await normalizarCursosConIa(rawCourseNames, apiKey, modelName);
 
-  // 3. Interpretación Inteligente de Notas y Asignaturas con IA / Heurística
-  onProgress('Interpretando notas docentes, co-docencia y desgloses...', 55);
+  // 3. Interpretación Inteligente de Notas y Funciones Fuera de Aula con IA / Heurística
+  onProgress('Interpretando roles fuera de aula, co-docencia y desgloses...', 55);
   const teacherNoteInputs: TeacherNoteInput[] = allTeachers.map((t) => ({
     rut: t.rut,
     teacher_name: t.teacher_name,
@@ -151,13 +158,19 @@ export async function processDotacionFilesClient(
       t.letra_normalizada = norm.letra_normalizada;
     }
 
-    // Interpretación de notas
+    // Interpretación de notas y funciones fuera de aula
     const noteKey = `${t.rut || t.teacher_name}__${t.activity}`;
     if (interpretedNotesMap.has(noteKey)) {
       const interp = interpretedNotesMap.get(noteKey)!;
       t.observaciones_limpias = interp.observaciones_limpias;
       t.dictamen_ia = interp.dictamen_ia;
       t.confianza_ia = interp.confianza;
+      t.tipo_funcion_fuera_aula = interp.tipo_funcion_fuera_aula;
+      t.horas_jefatura = interp.horas_jefatura;
+      t.horas_coordinacion_pie = interp.horas_coordinacion_pie;
+      t.horas_convivencia = interp.horas_convivencia;
+      t.horas_cra_enlaces = interp.horas_cra_enlaces;
+      t.horas_extraescolar = interp.horas_extraescolar;
       if (interp.asignatura_normalizada) {
         t.asignatura_normalizada = interp.asignatura_normalizada;
       }
@@ -174,7 +187,8 @@ export async function processDotacionFilesClient(
     t.source = classResult.source;
   });
 
-  // 6. Recalcular métricas y horas por establecimiento
+  // 6. Recalcular métricas, horas y modalidades por establecimiento
+  onProgress('Deduciendo modalidades educativas y matrices de carga...', 80);
   schoolsMap.forEach((school, key) => {
     const schoolTeachers = allTeachers.filter(
       (t) => t.rbd === school.rbd || t.establishment === school.establishment || t.file_name === school.source_file
@@ -183,6 +197,13 @@ export async function processDotacionFilesClient(
     let schoolAula = 0;
     let schoolDirectiva = 0;
     let schoolTecnica = 0;
+    let schoolJefatura = 0;
+    let schoolUtp = 0;
+    let schoolCoordPie = 0;
+    let schoolConvivencia = 0;
+    let schoolCraEnlaces = 0;
+    let schoolExtraescolar = 0;
+
     const teacherNames = new Set<string>();
     const schoolCourses = new Set<string>();
     const teacherContractMap = new Map<string, number>();
@@ -199,6 +220,13 @@ export async function processDotacionFilesClient(
       if (t.category === 'AULA') schoolAula += hours;
       else if (t.category === 'DIRECTIVA') schoolDirectiva += hours;
       else if (t.category === 'TECNICA') schoolTecnica += hours;
+
+      if (t.horas_jefatura) schoolJefatura += t.horas_jefatura;
+      if (t.horas_coordinacion_pie) schoolCoordPie += t.horas_coordinacion_pie;
+      if (t.horas_convivencia) schoolConvivencia += t.horas_convivencia;
+      if (t.horas_cra_enlaces) schoolCraEnlaces += t.horas_cra_enlaces;
+      if (t.horas_extraescolar) schoolExtraescolar += t.horas_extraescolar;
+      if (t.tipo_funcion_fuera_aula === 'UTP_CURRICULUM_EVALUACION') schoolUtp += hours;
 
       const tKey = t.rut || t.teacher_name || 'unknown';
       const decl = t.total_declared || t.hours || 0;
@@ -227,9 +255,25 @@ export async function processDotacionFilesClient(
       discrepancyParts.push(`⚠️ ${over44Count} docente(s) superan tope legal de 44 hrs`);
     }
 
+    // Modalidad detectada para el establecimiento
+    const modalityInfo = detectarModalidadEstablecimientoHeuristica(
+      school.rbd,
+      school.establishment,
+      Array.from(schoolCourses),
+      schoolTeachers.map((t) => t.activity)
+    );
+
     school.horas_aula = Math.round(schoolAula * 100) / 100;
     school.horas_directivas = Math.round(schoolDirectiva * 100) / 100;
     school.horas_tecnicas = Math.round(schoolTecnica * 100) / 100;
+    school.horas_jefatura = Math.round(schoolJefatura * 100) / 100;
+    school.horas_utp = Math.round(schoolUtp * 100) / 100;
+    school.horas_coordinacion_pie = Math.round(schoolCoordPie * 100) / 100;
+    school.horas_convivencia = Math.round(schoolConvivencia * 100) / 100;
+    school.horas_cra_enlaces = Math.round(schoolCraEnlaces * 100) / 100;
+    school.horas_extraescolar = Math.round(schoolExtraescolar * 100) / 100;
+    school.modalidad_detectada = modalityInfo.modalidad_sugerida;
+    school.modalidad_ambigua = modalityInfo.es_ambigua;
     school.total_horas_ee = totalEE;
     school.teachers_count = teacherNames.size;
     school.courses_count = schoolCourses.size;
@@ -245,7 +289,7 @@ export async function processDotacionFilesClient(
   const courses = buildCourseLoadSummaries(allTeachers);
 
   // 8. Clasificar asistentes detectados
-  onProgress('Auditando y clasificando asistentes de la educación...', 85);
+  onProgress('Auditando y clasificando asistentes de la educación...', 88);
   let enrichedAsistentes: AsistenteAnalizadoRecord[] = [];
   if (rawAsistentesList.length > 0) {
     try {
@@ -261,7 +305,7 @@ export async function processDotacionFilesClient(
   }
 
   // 9. Calcular KPIs finales
-  onProgress('Generando indicadores territoriales y matrices de dotación...', 95);
+  onProgress('Generando indicadores territoriales y matrices de dotación...', 96);
   const totalSchools = schools.length;
   const totalTeachers = new Set(allTeachers.map((t) => t.rut || t.teacher_name)).size;
   const totalMatricula = schools.reduce((acc, s) => acc + (s.matricula || 0), 0);
@@ -332,6 +376,13 @@ export function recalculateSchoolTotals(
     let aula = 0;
     let directiva = 0;
     let tecnica = 0;
+    let jefatura = 0;
+    let utp = 0;
+    let coordPie = 0;
+    let convivencia = 0;
+    let craEnlaces = 0;
+    let extraescolar = 0;
+
     const teacherNames = new Set<string>();
     const schoolCourses = new Set<string>();
 
@@ -341,6 +392,13 @@ export function recalculateSchoolTotals(
       if (t.category === 'AULA') aula += t.hours;
       else if (t.category === 'DIRECTIVA') directiva += t.hours;
       else if (t.category === 'TECNICA') tecnica += t.hours;
+
+      if (t.horas_jefatura) jefatura += t.horas_jefatura;
+      if (t.horas_coordinacion_pie) coordPie += t.horas_coordinacion_pie;
+      if (t.horas_convivencia) convivencia += t.horas_convivencia;
+      if (t.horas_cra_enlaces) craEnlaces += t.horas_cra_enlaces;
+      if (t.horas_extraescolar) extraescolar += t.horas_extraescolar;
+      if (t.tipo_funcion_fuera_aula === 'UTP_CURRICULUM_EVALUACION') utp += t.hours;
     });
 
     const totalEE = Math.round((aula + directiva + tecnica) * 100) / 100;
@@ -350,6 +408,12 @@ export function recalculateSchoolTotals(
       horas_aula: Math.round(aula * 100) / 100,
       horas_directivas: Math.round(directiva * 100) / 100,
       horas_tecnicas: Math.round(tecnica * 100) / 100,
+      horas_jefatura: Math.round(jefatura * 100) / 100,
+      horas_utp: Math.round(utp * 100) / 100,
+      horas_coordinacion_pie: Math.round(coordPie * 100) / 100,
+      horas_convivencia: Math.round(convivencia * 100) / 100,
+      horas_cra_enlaces: Math.round(craEnlaces * 100) / 100,
+      horas_extraescolar: Math.round(extraescolar * 100) / 100,
       total_horas_ee: totalEE,
       teachers_count: teacherNames.size,
       courses_count: schoolCourses.size,

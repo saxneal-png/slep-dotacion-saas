@@ -289,6 +289,13 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
                   </td>
                   <td className="py-3 px-4">
                     <span className="font-medium text-slate-800">{t.activity}</span>
+                    {t.tipo_funcion_fuera_aula && t.tipo_funcion_fuera_aula !== 'AULA_REGULAR' && (
+                      <div className="mt-1 flex items-center gap-1">
+                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {t.tipo_funcion_fuera_aula.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    )}
                     <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={t.source}>
                       {t.source}
                     </div>

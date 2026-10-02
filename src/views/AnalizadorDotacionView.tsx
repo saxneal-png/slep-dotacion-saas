@@ -26,6 +26,7 @@ import { AsistentesAnalizadorView } from '../components/analizador/AsistentesAna
 import { ApiKeyModal } from '../components/analizador/ApiKeyModal';
 import { PromptModal } from '../components/analizador/PromptModal';
 import { TraspasoDotacionModal } from '../components/analizador/TraspasoDotacionModal';
+import { ModalidadConfigModal } from '../components/analizador/ModalidadConfigModal';
 import { inicializarPlanesEstudioAnalizador, getPlanesEstudioAnalizadorCache } from '../services/analizador/planesEstudioBridge';
 import { processDotacionFilesClient, recalculateSchoolTotals } from '../services/analizador/dotacionProcessor';
 import { exportConsolidatedExcelBrowser, exportCsvBrowser } from '../services/analizador/excelExporter';
@@ -106,6 +107,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [savingDb, setSavingDb] = useState(false);
   const [isTraspasoModalOpen, setIsTraspasoModalOpen] = useState(false);
+  const [isModalidadModalOpen, setIsModalidadModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [totalPlanesCurriculares, setTotalPlanesCurriculares] = useState<number>(0);
 
@@ -246,6 +248,21 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApplyModalities = (
+    updatedSchools: SchoolSummary[],
+    updatedCourses: CourseLoadSummary[]
+  ) => {
+    setSchools(updatedSchools);
+    setCourses(updatedCourses);
+
+    try {
+      localStorage.setItem('dotacion_schools', JSON.stringify(updatedSchools));
+      localStorage.setItem('dotacion_courses', JSON.stringify(updatedCourses));
+    } catch {}
+
+    showToast('¡Modalidades y planes de estudio actualizados exitosamente!');
   };
 
   const handleReclassify = async (teacherIndex: number, newCategory: 'AULA' | 'TECNICA' | 'DIRECTIVA') => {
@@ -631,6 +648,15 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
             {schools.length > 0 && (
               <>
                 <button
+                  onClick={() => setIsModalidadModalOpen(true)}
+                  className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                  title="Configurar y asociar modalidades de estudio (TP, EPJA, Multigrado, Regular) y planes curriculares"
+                >
+                  <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Modalidades y Planes</span>
+                </button>
+
+                <button
                   onClick={() => exportConsolidatedExcelBrowser(schools, teachers, courses, teacherLoads)}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
                   title="Descargar Excel oficial de 3 hojas con Consolidado, Auditoría y Carga por Cursos"
@@ -752,6 +778,32 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Banner de Validación de Modalidades si hay establecimientos polivalentes o especiales */}
+      {schools.some((s) => s.modalidad_ambigua) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-xs flex items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-amber-900">
+                Se detectaron modalidades mixtas o polivalentes (HC / TP / EPJA)
+              </h4>
+              <p className="text-[11px] text-amber-800">
+                Algunos colegios imparten ramas simultáneas. Puedes validar o ajustar las modalidades para asegurar la correspondencia exacta con los planes de estudio MINEDUC.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsModalidadModalOpen(true)}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 flex items-center gap-1.5"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Revisar Modalidades</span>
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards si hay datos procesados */}
       {schools.length > 0 && <KpiCards kpis={kpis} />}
@@ -895,6 +947,14 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
             onNavigateToColegio(targetRbd, 'workflow');
           }
         }}
+      />
+
+      <ModalidadConfigModal
+        isOpen={isModalidadModalOpen}
+        onClose={() => setIsModalidadModalOpen(false)}
+        schools={schools}
+        courses={courses}
+        onApplyModalities={handleApplyModalities}
       />
     </div>
   );
