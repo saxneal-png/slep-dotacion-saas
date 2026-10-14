@@ -18,6 +18,7 @@ import type {
 } from '../../types/analizadorTypes';
 
 export interface ProcessDotacionOptions {
+  /** Si es false, se omite toda llamada a Gemini y se usa solo el motor heurístico local (rápido, offline). */
   useAiAssistance?: boolean;
   onProgressStep?: (step: string, percent: number) => void;
 }
@@ -30,6 +31,12 @@ export async function processDotacionFilesClient(
   options?: ProcessDotacionOptions
 ): Promise<ConsolidatedResponse> {
   const onProgress = options?.onProgressStep || (() => {});
+
+  // Con la IA desactivada se entrega una clave vacía: todos los servicios (cursos, notas,
+  // clasificación de actividades y asistentes) caen automáticamente a sus heurísticas locales.
+  const aiEnabled = options?.useAiAssistance !== false && Boolean(apiKey && apiKey.trim());
+  apiKey = aiEnabled ? apiKey : '';
+  const modoLabel = aiEnabled ? 'con IA' : 'modo rápido';
 
   onProgress('Sincronizando planes de estudio y catálogo normativo...', 5);
   // Sincronizar catálogo de planes de estudio desde SQLite para enriquecer el análisis
@@ -110,8 +117,15 @@ export async function processDotacionFilesClient(
     }
   }
 
-  // 2. Normalización Inteligente de Cursos con IA / Heurística
-  onProgress('Normalizando cursos y niveles educativos (SIGE/MINEDUC)...', 35);
+  // 2-4. Normalización de cursos, interpretación de notas/funciones fuera de aula y
+  // clasificación de actividades. Son etapas independientes: se ejecutan en paralelo.
+  onProgress(
+    aiEnabled
+      ? 'Analizando cursos, funciones fuera de aula y actividades con IA (en paralelo)...'
+      : 'Clasificando cursos, funciones y actividades con motor normativo local (modo rápido)...',
+    35
+  );
+
   const rawCourseNames = Array.from(
     new Set(
       allTeachers
@@ -120,10 +134,6 @@ export async function processDotacionFilesClient(
     )
   );
 
-  const courseNormMap = await normalizarCursosConIa(rawCourseNames, apiKey, modelName);
-
-  // 3. Interpretación Inteligente de Notas y Funciones Fuera de Aula con IA / Heurística
-  onProgress('Interpretando roles fuera de aula, co-docencia y desgloses...', 55);
   const teacherNoteInputs: TeacherNoteInput[] = allTeachers.map((t) => ({
     rut: t.rut,
     teacher_name: t.teacher_name,
@@ -133,21 +143,28 @@ export async function processDotacionFilesClient(
     observaciones: t.observaciones,
   }));
 
-  const interpretedNotesMap = await interpretarNotasDocentesConIa(
-    teacherNoteInputs,
-    apiKey,
-    modelName
-  );
-
-  // 4. Clasificación Híbrida de Actividades (Diccionario chileno + Gemini AI)
-  onProgress('Clasificando horas lectivas, directivas y técnicas...', 70);
   const uniqueActivities = Array.from(new Set(allTeachers.map((t) => t.activity.trim()))).filter(Boolean);
-  const classification = await classifyActivitiesHybrid(
-    uniqueActivities,
-    apiKey,
-    modelName,
-    customPrompt
-  );
+
+  let etapasCompletadas = 0;
+  const marcarEtapa = (nombre: string) => {
+    etapasCompletadas++;
+    onProgress(`${nombre} listo (${etapasCompletadas}/3, ${modoLabel})...`, 35 + etapasCompletadas * 12);
+  };
+
+  const [courseNormMap, interpretedNotesMap, classification] = await Promise.all([
+    normalizarCursosConIa(rawCourseNames, apiKey, modelName).then((r) => {
+      marcarEtapa('Normalización de cursos');
+      return r;
+    }),
+    interpretarNotasDocentesConIa(teacherNoteInputs, apiKey, modelName).then((r) => {
+      marcarEtapa('Funciones fuera de aula');
+      return r;
+    }),
+    classifyActivitiesHybrid(uniqueActivities, apiKey, modelName, customPrompt).then((r) => {
+      marcarEtapa('Clasificación de actividades');
+      return r;
+    }),
+  ]);
 
   // 5. Asignar resultados enriquecidos a los registros docentes
   allTeachers.forEach((t) => {

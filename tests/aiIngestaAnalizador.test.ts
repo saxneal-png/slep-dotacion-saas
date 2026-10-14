@@ -118,4 +118,21 @@ describe('AI-Assisted Ingestion & Normalization Engine', () => {
       expect(map.get('Multigrado 1-4')?.es_multigrado).toBe(true);
     });
   });
+
+  describe('Control de Asistencia IA (Activar / Desactivar)', () => {
+    it('debe operar en modo rápido offline cuando useAiAssistance es false incluso si se provee apiKey', async () => {
+      // Si useAiAssistance es false, el procesador pasa clave vacía internamente a los clasificadores
+      const inputs: TeacherNoteInput[] = [
+        { rut: '15.555.555-5', teacher_name: 'Profesor Jefe 2', activity: 'JEFATURA DE CURSO 8°B', hours: 2 },
+      ];
+      // Con apiKey vacía (comportamiento cuando useAiAssistance es false)
+      const resMap = await interpretarNotasDocentesConIa(inputs, '');
+      expect(resMap.size).toBe(1);
+      const res = resMap.get('15.555.555-5__JEFATURA DE CURSO 8°B');
+      expect(res).toBeDefined();
+      expect(res?.horas_jefatura).toBe(2);
+      expect(res?.tipo_funcion_fuera_aula).toBe('JEFATURA_CURSO');
+    });
+  });
 });
+

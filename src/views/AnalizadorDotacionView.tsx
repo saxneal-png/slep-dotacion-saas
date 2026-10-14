@@ -103,6 +103,10 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [useAiAssistance, setUseAiAssistance] = useState<boolean>(() => {
+    const saved = localStorage.getItem('analizador_use_ai');
+    return saved === null ? true : saved === 'true';
+  });
   const [progressStep, setProgressStep] = useState<string>('Iniciando procesamiento de planillas...');
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [savingDb, setSavingDb] = useState(false);
@@ -210,14 +214,23 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
     } catch {}
   };
 
+  const handleToggleAiAssistance = (value: boolean) => {
+    setUseAiAssistance(value);
+    try {
+      localStorage.setItem('analizador_use_ai', String(value));
+    } catch {}
+  };
+
   const handleProcessFiles = async (files: File[]) => {
     setLoading(true);
     setProgressStep('Iniciando lectura y sincronización de planillas...');
     setProgressPercent(5);
+    const inicio = performance.now();
+    const iaActiva = useAiAssistance && Boolean(apiKey);
     try {
       const customPrompt = localStorage.getItem('gemini_custom_prompt') || undefined;
       const result = await processDotacionFilesClient(files, apiKey, selectedModel, customPrompt, {
-        useAiAssistance: true,
+        useAiAssistance,
         onProgressStep: (step, percent) => {
           setProgressStep(step);
           setProgressPercent(percent);
@@ -241,8 +254,10 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
       } catch {}
 
       setActiveTab('consolidated');
+      const segundos = ((performance.now() - inicio) / 1000).toFixed(1);
       const asistMsg = result.asistentes && result.asistentes.length > 0 ? ` y ${result.asistentes.length} asistentes analizados` : '';
-      showToast(`¡Se procesaron exitosamente ${result.schools.length} establecimientos con ${result.courses.length} cursos${asistMsg}!`);
+      const modoMsg = iaActiva ? 'con apoyo IA' : 'en modo rápido (sin IA)';
+      showToast(`¡Se procesaron ${result.schools.length} establecimientos con ${result.courses.length} cursos${asistMsg} ${modoMsg} en ${segundos}s!`);
     } catch (err: any) {
       showToast(err.message || 'Error al procesar las planillas.', 'error');
     } finally {
@@ -820,7 +835,9 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
               <span>{progressStep}</span>
             </h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Interpretación semántica con Gemini AI, normalización de cursos SIGE y cuadratura según normativa MINEDUC.
+              {useAiAssistance && apiKey
+                ? 'Interpretación semántica con Gemini AI, normalización de cursos SIGE y cuadratura según normativa MINEDUC.'
+                : 'Modo rápido: clasificación con motor normativo local MINEDUC, sin consultas a la IA.'}
             </p>
           </div>
 
@@ -851,6 +868,9 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
               onSelectModel={handleSelectModel}
               models={models}
               onOpenKeyModal={() => setIsKeyModalOpen(true)}
+              useAiAssistance={useAiAssistance}
+              onToggleAiAssistance={handleToggleAiAssistance}
+              hasApiKey={Boolean(apiKey)}
             />
           )}
 

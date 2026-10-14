@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, Trash2, Play, Sparkles, FolderUp, BookOpen, Wrench, Shield, Code, Cpu, Key, Calendar } from 'lucide-react';
+import { Upload, FileSpreadsheet, Trash2, Play, Sparkles, FolderUp, BookOpen, Wrench, Shield, Code, Cpu, Key, Calendar, Zap } from 'lucide-react';
 import type { GeminiModel } from '../../types/analizadorTypes';
 
 interface FileUploadProps {
@@ -10,6 +10,9 @@ interface FileUploadProps {
   onSelectModel: (model: string) => void;
   models: GeminiModel[];
   onOpenKeyModal: () => void;
+  useAiAssistance?: boolean;
+  onToggleAiAssistance?: (value: boolean) => void;
+  hasApiKey?: boolean;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({
@@ -20,7 +23,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   onSelectModel,
   models,
   onOpenKeyModal,
+  useAiAssistance = true,
+  onToggleAiAssistance,
+  hasApiKey = false,
 }) => {
+  const iaEfectiva = useAiAssistance && hasApiKey;
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,12 +110,43 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           </p>
 
           <div className="flex flex-wrap gap-2.5 items-center">
-            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-              <span className="font-semibold text-slate-200">Asistencia Inteligente de Ingesta:</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 text-[10px]">
-                Activa (Gemini + Normativa MINEDUC)
-              </span>
+            <div className="flex items-center gap-2.5 bg-slate-900/90 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
+              {iaEfectiva ? (
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              ) : (
+                <Zap className="w-3.5 h-3.5 text-sky-400" />
+              )}
+              <span className="font-semibold text-slate-200">Asistencia IA en la ingesta:</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={useAiAssistance}
+                onClick={() => onToggleAiAssistance?.(!useAiAssistance)}
+                disabled={loading || !onToggleAiAssistance}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                  useAiAssistance ? 'bg-emerald-500' : 'bg-slate-600'
+                }`}
+                title={useAiAssistance ? 'Desactivar IA (modo rápido)' : 'Activar apoyo de IA Gemini'}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    useAiAssistance ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+              {iaEfectiva ? (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 text-[10px]">
+                  Activa (Gemini + Normativa MINEDUC)
+                </span>
+              ) : useAiAssistance && !hasApiKey ? (
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 text-[10px]">
+                  Sin API Key → se usará modo rápido
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30 text-[10px]">
+                  Modo rápido (solo motor normativo local)
+                </span>
+              )}
             </div>
 
             <button
