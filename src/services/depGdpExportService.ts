@@ -277,15 +277,20 @@ export async function generarExcelGdpColegio(
   // ==========================================
   const wsTit = workbook.getWorksheet('Subv. Normal - Docentes Tit');
   if (wsTit) {
-    const docTit = docentesColegio.filter(d => 
-      Number(d.horasSubvencionGeneralTitular || 0) > 0 ||
-      (d.calidadJuridica === 'TITULAR' && d.horasContrato > 0)
-    );
+    const docTit = docentesColegio
+      .map(d => {
+        // Horas exclusivas de subvención regular titular
+        const hSubv = Number(d.horasSubvencionGeneralTitular || 0) ||
+          (d.calidadJuridica === 'TITULAR' && !d.horasPieTitular && !d.horasSepTitular && d.estamento !== 'DOCENTE_DIFERENCIAL' ? (d.horasContrato || 0) : 0);
+        return { docente: d, horasTitular: hSubv };
+      })
+      .filter(item => item.horasTitular > 0);
 
     let rTitIdx = 8;
-    for (const d of docTit) {
+    for (const item of docTit) {
       if (rTitIdx > 46) break;
-      const hSubv = Number(d.horasSubvencionGeneralTitular || 0) || d.horasContrato || 0;
+      const d = item.docente;
+      const hSubv = item.horasTitular;
       const hVig = d.horasVigentesAnterior !== undefined ? d.horasVigentesAnterior : hSubv;
       const prop = d.propuestaGdp || inferirPropuestaGdp(hVig, hSubv, false);
 
@@ -326,21 +331,26 @@ export async function generarExcelGdpColegio(
   // ==========================================
   const wsCtta = workbook.getWorksheet('Subv. Normal - Docentes Ctta.');
   if (wsCtta) {
-    const docCtta = docentesColegio.filter(d => 
-      Number(d.horasSubvencionGeneralContrata || 0) > 0 ||
-      (d.calidadJuridica === 'CONTRATA' && d.horasContrato > 0)
-    );
+    const docCtta = docentesColegio
+      .map(d => {
+        // Horas exclusivas de subvención regular contrata
+        const hCtta = Number(d.horasSubvencionGeneralContrata || 0) ||
+          (d.calidadJuridica === 'CONTRATA' && !d.horasPieContrata && !d.horasSepContrata && d.estamento !== 'DOCENTE_DIFERENCIAL' ? (d.horasContrato || 0) : 0);
+        return { docente: d, horasContrata: hCtta };
+      })
+      .filter(item => item.horasContrata > 0);
 
-    // Segmentar contratas por nivel de enseñanza
-    const cttaParvula = docCtta.filter(d => /párvulo|parvulo/i.test(d.titulo || d.funcionPrincipal || ''));
-    const cttaMedia = docCtta.filter(d => !cttaParvula.includes(d) && (/medio|media|tp|técnico|tecnico/i.test(d.funcionPrincipal || d.asignaturaPrincipal || '')));
-    const cttaBasica = docCtta.filter(d => !cttaParvula.includes(d) && !cttaMedia.includes(d));
+    // Segmentar contratas por nivel de enseñanza (Parvularia, Media o Básica)
+    const cttaParvula = docCtta.filter(item => /párvulo|parvulo/i.test(item.docente.titulo || item.docente.funcionPrincipal || item.docente.asignaturaPrincipal || ''));
+    const cttaMedia = docCtta.filter(item => !cttaParvula.includes(item) && (/medio|media|tp|técnico|tecnico/i.test(item.docente.funcionPrincipal || item.docente.asignaturaPrincipal || item.docente.titulo || '')));
+    const cttaBasica = docCtta.filter(item => !cttaParvula.includes(item) && !cttaMedia.includes(item));
 
-    const llenarBloque = (docentesNivel: Docente[], startRow: number, endRow: number) => {
+    const llenarBloque = (docentesNivel: { docente: Docente; horasContrata: number }[], startRow: number, endRow: number) => {
       let r = startRow;
-      for (const d of docentesNivel) {
+      for (const item of docentesNivel) {
         if (r > endRow) break;
-        const hCtta = Number(d.horasSubvencionGeneralContrata || 0) || d.horasContrato || 0;
+        const d = item.docente;
+        const hCtta = item.horasContrata;
         const row = wsCtta.getRow(r);
 
         row.getCell('C').value = `${d.nombres} ${d.apellidos}`.trim().toUpperCase();
@@ -354,12 +364,15 @@ export async function generarExcelGdpColegio(
         row.getCell('M').value = d.estadoSancionGdp || 'Pendiente';
         row.getCell('N').value = d.horasAprobadasGdp || hCtta;
         row.getCell('O').value = d.observacionesSlep || '';
+        row.getCell('Q').value = d.fechaInicioContrato || '01-03-2026';
+        row.getCell('R').value = d.fechaTerminoContrato || '28-02-2027';
+        row.getCell('S').value = d.situacionFinalGdp || 'Vigente';
         row.commit();
         r++;
       }
       for (let emptyRow = r; emptyRow <= endRow; emptyRow++) {
         const row = wsCtta.getRow(emptyRow);
-        ['C', 'D', 'L', 'N', 'O'].forEach(col => {
+        ['C', 'D', 'L', 'N', 'O', 'Q', 'R', 'S'].forEach(col => {
           row.getCell(col).value = null;
         });
         row.getCell('I').value = 0;
