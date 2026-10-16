@@ -51,6 +51,16 @@ export async function generarExcelGdpColegio(
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(plantillaBuffer);
 
+  // Sanitización de esquema OpenXML (ECMA-376):
+  // Evitar bug crítico de ExcelJS donde serializa <pageSetUpPr> antes de <outlinePr> dentro de <sheetPr>.
+  // Al desactivar fitToPage, se omite <pageSetUpPr>, permitiendo que Excel abra las 6 hojas
+  // de manera 100% nativa y sin advertencias ni reparaciones de XML.
+  workbook.eachSheet((ws) => {
+    if (ws.pageSetup) {
+      ws.pageSetup.fitToPage = false;
+    }
+  });
+
   // ==========================================
   // HOJA 1: PIE (Programa Integración Escolar)
   // ==========================================
