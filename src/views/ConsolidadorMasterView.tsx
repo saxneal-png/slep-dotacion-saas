@@ -20,7 +20,11 @@ import {
   Download,
   RefreshCw,
   Sparkles,
-  FolderArchive
+  FolderArchive,
+  X,
+  Check,
+  Settings,
+  Filter
 } from 'lucide-react';
 import { 
   Establecimiento, 
@@ -37,6 +41,7 @@ import {
   obtenerDocentesConsolidadosTerritorio
 } from '../services/dotacionCalculationService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
+import { GdpParametrosModal } from '../components/GdpParametrosModal';
 import { importarPlanillaPalDEP, generarExcelConsolidadoPalDEP } from '../services/depPalExportService';
 import { generarExcelGdpColegio } from '../services/depGdpExportService';
 import { guardarArchivoNativoOEnNavegador } from '../services/excelReportService';
@@ -51,6 +56,7 @@ interface ConsolidadorMasterViewProps {
   onImportarCarteraSlep: (file: File) => void;
   onExportarExcel: () => void;
   onRecargarDatos?: () => Promise<void> | void;
+  onGuardarColegio?: (est: Establecimiento) => Promise<void>;
 }
 
 export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
@@ -62,13 +68,22 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
   asignaciones = [],
   onImportarCarteraSlep,
   onExportarExcel,
-  onRecargarDatos
+  onRecargarDatos,
+  onGuardarColegio
 }) => {
   const [tabActiva, setTabActiva] = useState<'balance' | 'docentes'>('balance');
   const [filtroDocentes, setFiltroDocentes] = useState('');
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
   const [procesandoPal, setProcesandoPal] = useState(false);
   const [feedbackPal, setFeedbackPal] = useState<{ tipo: 'success' | 'error'; texto: string } | null>(null);
+  
+  // Estados para Modal de Exportación GDP (Individual o Masivo)
+  const [modalGdpAbierto, setModalGdpAbierto] = useState(false);
+  const [colegioGdpId, setColegioGdpId] = useState<string>(establecimientos[0]?.rbd || '');
+  const [filtroColegioGdp, setFiltroColegioGdp] = useState<string>('');
+  const [modoExportacionGdp, setModoExportacionGdp] = useState<'individual' | 'masivo'>('individual');
+  const [progresoMasivo, setProgresoMasivo] = useState<{ actual: number; total: number; nombre: string } | null>(null);
+  const [colegioParaParametros, setColegioParaParametros] = useState<Establecimiento | null>(null);
 
   const handleImportarPalOficial = async (file: File) => {
     try {
@@ -122,35 +137,80 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
     }
   };
 
+  const handleExportarGdpIndividual = async (est: Establecimiento) => {
+    try {
+      setProcesandoPal(true);
+      setFeedbackPal(null);
+      const docColegio = docentes.filter(d => String(d.rbd) === String(est.rbd));
+      const aeColegio = asistentes.filter(a => String(a.rbd) === String(est.rbd));
+      const curColegio = cursos.filter(c => String(c.rbd) === String(est.rbd));
+      const asigColegio = asignaciones.filter(a => String(a.rbd) === String(est.rbd));
+
+      const bytes = await generarExcelGdpColegio(est, docColegio, aeColegio, curColegio, asigColegio);
+      const nombreLimpio = est.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
+      const filename = `Planilla_GDP_${nombreLimpio}_RBD_${est.rbd}.xlsx`;
+
+      await guardarArchivoNativoOEnNavegador(
+        bytes,
+        filename,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        [{ name: 'Planilla Oficial GDP Microsoft Excel', extensions: ['xlsx'] }]
+      );
+
+      setFeedbackPal({
+        tipo: 'success',
+        texto: `✓ Planilla GDP individual de ${est.nombre} (RBD ${est.rbd}) exportada con éxito (6 hojas oficiales con fórmulas nativas).`
+      });
+      setModalGdpAbierto(false);
+    } catch (err: any) {
+      setFeedbackPal({
+        tipo: 'error',
+        texto: `Error al exportar Planilla GDP: ${err.message || err}`
+      });
+    } finally {
+      setProcesandoPal(false);
+    }
+  };
+
   const handleExportarTodasLasGdp = async () => {
     try {
       setProcesandoPal(true);
       setFeedbackPal(null);
       let count = 0;
-      for (const est of establecimientos) {
+      const total = establecimientos.length;
+      for (let i = 0; i < total; i++) {
+        const est = establecimientos[i];
+        setProgresoMasivo({ actual: i + 1, total, nombre: est.nombre });
         const docColegio = docentes.filter(d => String(d.rbd) === String(est.rbd));
         const aeColegio = asistentes.filter(a => String(a.rbd) === String(est.rbd));
         const curColegio = cursos.filter(c => String(c.rbd) === String(est.rbd));
         const asigColegio = asignaciones.filter(a => String(a.rbd) === String(est.rbd));
         
         const bytes = await generarExcelGdpColegio(est, docColegio, aeColegio, curColegio, asigColegio);
+        const nombreLimpio = est.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
+        const filename = `Planilla_GDP_${nombreLimpio}_RBD_${est.rbd}.xlsx`;
+
         await guardarArchivoNativoOEnNavegador(
           bytes,
-          `Planilla_GDP_${est.rbd}_${est.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
+          filename,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          [{ name: 'Planilla Oficial GDP Microsoft Excel', extensions: ['xlsx'] }]
         );
         count++;
       }
       setFeedbackPal({
         tipo: 'success',
-        texto: `Se generaron exitosamente las planillas GDP para ${count} colegios del territorio.`
+        texto: `✓ Se generaron exitosamente las planillas GDP para los ${count} colegios del territorio.`
       });
+      setModalGdpAbierto(false);
     } catch (err: any) {
       setFeedbackPal({
         tipo: 'error',
-        texto: `Error al generar planillas GDP: ${err.message || err}`
+        texto: `Error al generar planillas GDP en lote: ${err.message || err}`
       });
     } finally {
       setProcesandoPal(false);
+      setProgresoMasivo(null);
     }
   };
 
@@ -296,15 +356,20 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
               <span>Exportar PAL 2027 DEP (Territorial)</span>
             </button>
 
-            {/* Botón Exportar GDP por Colegio */}
+            {/* Botón Exportar Planilla Oficial GDP (Individual o Lote) */}
             <button
-              onClick={handleExportarTodasLasGdp}
+              onClick={() => {
+                if (!colegioGdpId && establecimientos.length > 0) {
+                  setColegioGdpId(establecimientos[0].rbd);
+                }
+                setModalGdpAbierto(true);
+              }}
               disabled={procesandoPal}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-amber-600/20 active:scale-[0.98]"
-              title="Genera los libros individuales de Planilla GDP con sus 6 hojas oficiales para cada colegio"
+              title="Abre el centro de exportación de Planilla GDP oficial para descargar por colegio individual o en lote territorial"
             >
               <FolderArchive className="w-4 h-4 text-amber-100" />
-              <span>Exportar GDP por Colegio</span>
+              <span>Exportar Planilla GDP (.xlsx)</span>
             </button>
           </div>
         </div>
@@ -780,6 +845,271 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
         onClose={() => setDocenteFicha(null)}
         docenteConsolidado={docenteFicha}
       />
+
+      {/* ── MODAL EXPORTACIÓN PLANILLA OFICIAL GDP (INDIVIDUAL O MASIVA) ── */}
+      {modalGdpAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-800 overflow-hidden my-auto animate-scale-in">
+            {/* Header del Modal */}
+            <div className="bg-gradient-to-r from-[#002B49] via-slate-900 to-indigo-950 p-5 px-6 text-white flex items-center justify-between border-b border-slate-700">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-500/20 rounded-2xl border border-amber-500/30 text-amber-400">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/40">
+                    Formato Oficial DEP (6 Hojas)
+                  </div>
+                  <h3 className="text-base font-black text-white mt-1">
+                    Exportación de Planilla Oficial GDP
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Elige si deseas exportar un establecimiento de forma individual o la cartera territorial completa.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setModalGdpAbierto(false);
+                  setProgresoMasivo(null);
+                }}
+                disabled={procesandoPal}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Pestañas de Modo: Individual vs Masivo */}
+            <div className="p-5 space-y-4">
+              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setModoExportacionGdp('individual')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+                    modoExportacionGdp === 'individual'
+                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>Exportación Individual (Por Colegio)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoExportacionGdp('masivo')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+                    modoExportacionGdp === 'masivo'
+                      ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  <FolderArchive className="w-4 h-4" />
+                  <span>Exportación Masiva ({establecimientos.length} Colegios)</span>
+                </button>
+              </div>
+
+              {/* CONTENIDO MODO INDIVIDUAL */}
+              {modoExportacionGdp === 'individual' && (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Buscador de Colegio */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Filtrar colegio por nombre o RBD..."
+                      value={filtroColegioGdp}
+                      onChange={e => setFiltroColegioGdp(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Selector Desplegable de Colegios */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      Selecciona el Establecimiento a Exportar:
+                    </label>
+                    <select
+                      value={colegioGdpId}
+                      onChange={e => setColegioGdpId(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-bold focus:ring-2 focus:ring-blue-500"
+                    >
+                      {establecimientos
+                        .filter(est => {
+                          const q = filtroColegioGdp.toLowerCase().trim();
+                          if (!q) return true;
+                          return est.nombre.toLowerCase().includes(q) || String(est.rbd).includes(q) || est.comuna.toLowerCase().includes(q);
+                        })
+                        .map(est => (
+                          <option key={est.rbd} value={est.rbd}>
+                            [RBD {est.rbd}] {est.nombre} ({est.comuna})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Tarjeta de Resumen del Colegio Seleccionado */}
+                  {(() => {
+                    const estSel = establecimientos.find(est => String(est.rbd) === String(colegioGdpId)) || establecimientos[0];
+                    if (!estSel) return null;
+                    const docSel = docentes.filter(d => String(d.rbd) === String(estSel.rbd));
+                    const aeSel = asistentes.filter(a => String(a.rbd) === String(estSel.rbd));
+                    const curSel = cursos.filter(c => String(c.rbd) === String(estSel.rbd));
+                    const totalHrsDoc = docSel.reduce((s, d) => s + (d.horasContrato || 0), 0);
+                    const totalHrsAe = aeSel.reduce((s, a) => s + (a.horasContrato || 0), 0);
+
+                    return (
+                      <div className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300">
+                                RBD {estSel.rbd}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-500">
+                                {estSel.comuna}
+                              </span>
+                            </div>
+                            <h4 className="font-black text-sm text-slate-900 dark:text-white mt-1">
+                              {estSel.nombre}
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Asesor UATP: {estSel.asesorUatp || '⚠️ Sin Asignar'}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setColegioParaParametros(estSel)}
+                            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-xl transition-colors border border-slate-200 dark:border-slate-700"
+                            title="Ajustar subvenciones SEP/Pro-Retención y cupos PIE antes de exportar"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Chips de dotación */}
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <span className="block text-[10px] font-bold text-slate-400">DOCENTES</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-white">
+                              {docSel.length} func.
+                            </span>
+                            <span className="block text-[9px] text-slate-400">{totalHrsDoc}h contratadas</span>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <span className="block text-[10px] font-bold text-slate-400">ASISTENTES</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-white">
+                              {aeSel.length} func.
+                            </span>
+                            <span className="block text-[9px] text-slate-400">{totalHrsAe}h contratadas</span>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <span className="block text-[10px] font-bold text-slate-400">CURSOS</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-white">
+                              {curSel.length} cursos
+                            </span>
+                            <span className="block text-[9px] text-slate-400">Planes MINEDUC</span>
+                          </div>
+                        </div>
+
+                        {/* Parámetros Financieros Actuales */}
+                        <div className="text-[11px] text-slate-600 dark:text-slate-300 flex items-center justify-between border-t border-slate-200 dark:border-slate-700 pt-2">
+                          <span>Subvención SEP: <strong>${(estSel.subvencionSepMensual || 0).toLocaleString('es-CL')}/mes</strong></span>
+                          <span>Pro-Retención: <strong>${(estSel.subvencionProRetencion || 0).toLocaleString('es-CL')}</strong></span>
+                        </div>
+
+                        {/* Botón de Exportación Individual */}
+                        <div className="pt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleExportarGdpIndividual(estSel)}
+                            disabled={procesandoPal}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-amber-600/20 active:scale-[0.98]"
+                          >
+                            {procesandoPal ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                            <span>Descargar Planilla GDP Individual (.xlsx)</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* CONTENIDO MODO MASIVO */}
+              {modoExportacionGdp === 'masivo' && (
+                <div className="space-y-4 animate-fade-in text-xs">
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-2xl border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-2">
+                    <div className="flex items-center gap-2 font-black text-sm">
+                      <FolderArchive className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                      <span>Exportación Territorial Completa</span>
+                    </div>
+                    <p className="text-xs">
+                      Esta operación generará de manera consecutiva los <strong>{establecimientos.length} archivos Excel individuales (.xlsx)</strong> de Planilla GDP para todos los establecimientos de Bulnes, Chillán Viejo, El Carmen, Pemuco, San Ignacio y Yungay.
+                    </p>
+                  </div>
+
+                  {progresoMasivo && (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2">
+                      <div className="flex items-center justify-between font-bold text-xs">
+                        <span>Generando colegio {progresoMasivo.actual} de {progresoMasivo.total}...</span>
+                        <span className="font-mono text-blue-600">
+                          {Math.round((progresoMasivo.actual / progresoMasivo.total) * 100)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-amber-500 h-full rounded-full transition-all duration-200"
+                          style={{ width: `${(progresoMasivo.actual / progresoMasivo.total) * 100}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {progresoMasivo.nombre}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleExportarTodasLasGdp}
+                      disabled={procesandoPal}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:opacity-50 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-amber-600/20 active:scale-[0.98]"
+                    >
+                      {procesandoPal ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <FolderArchive className="w-4 h-4" />
+                      )}
+                      <span>Exportar los {establecimientos.length} Colegios en Lote</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para editar parámetros de establecimiento si se requiere */}
+      {colegioParaParametros && (
+        <GdpParametrosModal
+          isOpen={Boolean(colegioParaParametros)}
+          onClose={() => setColegioParaParametros(null)}
+          establecimiento={colegioParaParametros}
+          docentes={docentes.filter(d => String(d.rbd) === String(colegioParaParametros.rbd))}
+          asistentes={asistentes.filter(a => String(a.rbd) === String(colegioParaParametros.rbd))}
+          cursos={cursos.filter(c => String(c.rbd) === String(colegioParaParametros.rbd))}
+          asignaciones={asignaciones.filter(a => String(a.rbd) === String(colegioParaParametros.rbd))}
+          onGuardarEstablecimiento={onGuardarColegio || (async () => {})}
+          onNotificar={(msg, tipo) => setFeedbackPal({ tipo: tipo || 'success', texto: msg })}
+        />
+      )}
     </div>
   );
 };
