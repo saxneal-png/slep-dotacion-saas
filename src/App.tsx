@@ -643,6 +643,7 @@ export const App: React.FC = () => {
             onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
             todosLosCursos={todosLosCursos}
             todosLosDocentes={todosLosDocentes}
+            todosLosAsistentes={todosLosAsistentes}
             todasLasSalas={todasLasSalas}
             todasLasAsignaciones={todasLasAsignaciones}
             periodoActivo={periodoActivo}
@@ -723,6 +724,7 @@ export const App: React.FC = () => {
               onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
               onExportarDotacionColegio={handleExportarDotacionColegio}
               onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
+              onGuardarColegio={handleGuardarColegio}
               onAbrirCopilot={() => setModalCopilotAbierto(true)}
             />
           ) : (
@@ -839,10 +841,13 @@ export const App: React.FC = () => {
           <ConsolidadorMasterView
             establecimientos={colegios}
             docentes={todosLosDocentes}
+            asistentes={todosLosAsistentes}
+            cursos={todosLosCursos}
             diagnosticos={diagnosticosTodosColegios}
             asignaciones={todasLasAsignaciones}
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onExportarExcel={handleExportarExcel}
+            onRecargarDatos={() => cargarDatos(periodoActivo)}
           />
         )}
 

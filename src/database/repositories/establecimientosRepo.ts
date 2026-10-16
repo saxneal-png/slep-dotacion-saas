@@ -3,7 +3,7 @@ import { getDb, persistDb } from '../dbCore';
 
 export async function listarEstablecimientos(): Promise<Establecimiento[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email FROM establecimientos ORDER BY nombre ASC");
+  const res = db.exec("SELECT id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email, subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes FROM establecimientos ORDER BY nombre ASC");
   if (!res.length) return [];
   return res[0].values.map(row => ({
     id: String(row[0]),
@@ -16,6 +16,10 @@ export async function listarEstablecimientos(): Promise<Establecimiento[]> {
     asesorUatp: row[7] ? String(row[7]) : undefined,
     telefono: row[8] ? String(row[8]) : undefined,
     email: row[9] ? String(row[9]) : undefined,
+    subvencionSepMensual: Number(row[10] || 0),
+    subvencionProRetencion: Number(row[11] || 0),
+    cupoHorasPieDiferencial: Number(row[12] || 0),
+    cupoHorasPieAsistentes: Number(row[13] || 0),
   }));
 }
 
@@ -30,20 +34,26 @@ export async function guardarEstablecimiento(e: Establecimiento): Promise<void> 
     db.run(`
       UPDATE establecimientos SET
         rbd=?, nombre=?, comuna=?, regimen=?, porcentaje_prioritarios=?,
-        director=?, asesor_uatp=?, telefono=?, email=?
+        director=?, asesor_uatp=?, telefono=?, email=?,
+        subvencion_sep_mensual=?, subvencion_pro_retencion=?, cupo_horas_pie_diferencial=?, cupo_horas_pie_asistentes=?
       WHERE id=?
     `, [
       rbdNorm, e.nombre.trim(), e.comuna, e.regimen, e.porcentajePrioritarios,
       e.director || null, e.asesorUatp || null, e.telefono || null, e.email || null,
+      e.subvencionSepMensual || 0, e.subvencionProRetencion || 0, e.cupoHorasPieDiferencial || 0, e.cupoHorasPieAsistentes || 0,
       existingId
     ]);
   } else {
     db.run(`
-      INSERT INTO establecimientos (id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO establecimientos (
+        id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email,
+        subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       e.id, rbdNorm, e.nombre.trim(), e.comuna, e.regimen, e.porcentajePrioritarios,
-      e.director || null, e.asesorUatp || null, e.telefono || null, e.email || null
+      e.director || null, e.asesorUatp || null, e.telefono || null, e.email || null,
+      e.subvencionSepMensual || 0, e.subvencionProRetencion || 0, e.cupoHorasPieDiferencial || 0, e.cupoHorasPieAsistentes || 0
     ]);
   }
   persistDb();
@@ -51,7 +61,7 @@ export async function guardarEstablecimiento(e: Establecimiento): Promise<void> 
 
 export async function obtenerEstablecimientoPorRbd(rbd: string): Promise<Establecimiento | null> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email FROM establecimientos WHERE rbd = ?", [rbd]);
+  const res = db.exec("SELECT id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email, subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes FROM establecimientos WHERE rbd = ?", [rbd]);
   if (!res.length || !res[0].values.length) return null;
   const row = res[0].values[0];
   return {
@@ -64,7 +74,11 @@ export async function obtenerEstablecimientoPorRbd(rbd: string): Promise<Estable
     director: row[6] ? String(row[6]) : undefined,
     asesorUatp: row[7] ? String(row[7]) : undefined,
     telefono: row[8] ? String(row[8]) : undefined,
-    email: row[9] ? String(row[9]) : undefined
+    email: row[9] ? String(row[9]) : undefined,
+    subvencionSepMensual: Number(row[10] || 0),
+    subvencionProRetencion: Number(row[11] || 0),
+    cupoHorasPieDiferencial: Number(row[12] || 0),
+    cupoHorasPieAsistentes: Number(row[13] || 0)
   };
 }
 

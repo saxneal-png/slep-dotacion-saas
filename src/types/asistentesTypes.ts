@@ -34,6 +34,24 @@ export interface AsistenteEducacion {
   esInspectorPatio?: boolean;
   observaciones?: string;
   activo: boolean;
+
+  // Metadatos Oficiales DEP y Planilla GDP
+  horasVigentesAnterior?: number;
+  propuestaGdp?: string;
+  remuneracionMensualApp?: number;
+  remuneracionMensual?: number;
+  fechaInicioContrato?: string;
+  fechaTerminoContrato?: string;
+  accionPmeSep?: string;
+  accionPme?: string;
+  horasProRetencion?: number;
+  descripcionFuncionGdp?: string;
+  estadoSancionGdp?: 'Pendiente' | 'Aprobado' | 'Aprobado parcial.' | 'Rechazado';
+  horasAprobadasGdp?: number;
+  situacionFinalGdp?: string;
+  observacionesDirector?: string;
+  observacionesSlep?: string;
+  observacionesPal?: string;
 }
 
 export interface AsistenteResumenEstamento {

@@ -7,7 +7,11 @@ import {
   Plus, 
   Trash2, 
   Scale, 
-  AlertTriangle 
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  FileSpreadsheet
 } from 'lucide-react';
 import type { 
   Docente, 
@@ -90,6 +94,17 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
   const [horasTallerSep, setHorasTallerSep] = useState<number>(0);
   const [horasTrabajoColaborativo, setHorasTrabajoColaborativo] = useState<number>(0);
 
+  // Parámetros GDP & Contrato Oficial DEP
+  const [fechaInicioContrato, setFechaInicioContrato] = useState<string>('');
+  const [fechaTerminoContrato, setFechaTerminoContrato] = useState<string>('');
+  const [propuestaGdp, setPropuestaGdp] = useState<string>('Continuidad');
+  const [remuneracionMensual, setRemuneracionMensual] = useState<number>(0);
+  const [accionPme, setAccionPme] = useState<string>('');
+  const [horasProRetencion, setHorasProRetencion] = useState<number>(0);
+  const [horasVigentesAnterior, setHorasVigentesAnterior] = useState<number>(0);
+  const [observacionesPal, setObservacionesPal] = useState<string>('');
+  const [seccionGdpAbierta, setSeccionGdpAbierta] = useState<boolean>(false);
+
   // Inicializar estado cuando se abre el modal o cambia el docente a editar
   useEffect(() => {
     if (!isOpen) return;
@@ -141,6 +156,15 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       setHorasSepContrata(sepCon);
       setHorasPieTitular(pieTit);
       setHorasPieContrata(pieCon);
+
+      setFechaInicioContrato(editingDoc.fechaInicioContrato || '');
+      setFechaTerminoContrato(editingDoc.fechaTerminoContrato || '');
+      setPropuestaGdp(editingDoc.propuestaGdp || 'Continuidad');
+      setRemuneracionMensual(editingDoc.remuneracionMensual || 0);
+      setAccionPme(editingDoc.accionPme || '');
+      setHorasProRetencion(editingDoc.horasProRetencion || 0);
+      setHorasVigentesAnterior(editingDoc.horasVigentesAnterior || editingDoc.horasContrato || 0);
+      setObservacionesPal(editingDoc.observacionesPal || '');
     } else {
       // Nuevo Docente
       setRun('');
@@ -161,6 +185,14 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       setHorasSepContrata(0);
       setHorasPieTitular(0);
       setHorasPieContrata(0);
+      setFechaInicioContrato('');
+      setFechaTerminoContrato('');
+      setPropuestaGdp('Continuidad');
+      setRemuneracionMensual(0);
+      setAccionPme('');
+      setHorasProRetencion(0);
+      setHorasVigentesAnterior(44);
+      setObservacionesPal('');
     }
 
     setNuevaFuncionTipo('COORDINACION');
@@ -243,7 +275,15 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       horasTallerSep: Number(horasTallerSep) || 0,
       horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
       asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,
-      aplicaArticulo69
+      aplicaArticulo69,
+      fechaInicioContrato: fechaInicioContrato || undefined,
+      fechaTerminoContrato: fechaTerminoContrato || undefined,
+      propuestaGdp: propuestaGdp as any,
+      remuneracionMensual: Number(remuneracionMensual) || 0,
+      accionPme: accionPme.trim() || undefined,
+      horasProRetencion: Number(horasProRetencion) || 0,
+      horasVigentesAnterior: Number(horasVigentesAnterior) || Number(horasContrato),
+      observacionesPal: observacionesPal.trim() || undefined
     };
 
     onGuardarDocente(doc);
@@ -734,6 +774,133 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
               <strong className="text-purple-950 font-black text-sm bg-white px-2.5 py-0.5 rounded-lg border border-purple-200">
                 {Math.max(0, horasContrato - totalHorasFuncionesNoAula - horasTallerSep - horasTrabajoColaborativo)} hrs
               </strong>
+            </div>
+
+            {/* Sección Desplegable: Parámetros GDP & Contrato Oficial DEP */}
+            <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              <button
+                type="button"
+                onClick={() => setSeccionGdpAbierta(!seccionGdpAbierta)}
+                className="w-full px-4 py-3 bg-slate-100 hover:bg-slate-200/80 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                  <span className="font-bold text-xs text-slate-800">
+                    Parámetros GDP & Contrato Oficial DEP (Proyección Ministerial 2027)
+                  </span>
+                </div>
+                {seccionGdpAbierta ? (
+                  <ChevronUp className="w-4 h-4 text-slate-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-500" />
+                )}
+              </button>
+
+              {seccionGdpAbierta && (
+                <div className="p-4 space-y-3 bg-white border-t border-slate-200 animate-fade-in text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Propuesta Dotación GDP
+                      </label>
+                      <select
+                        value={propuestaGdp}
+                        onChange={e => setPropuestaGdp(e.target.value)}
+                        className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white font-medium"
+                      >
+                        <option value="Continuidad">Continuidad</option>
+                        <option value="No Continuidad">No Continuidad</option>
+                        <option value="Aumento Horas">Aumento Horas</option>
+                        <option value="Disminución Horas">Disminución Horas</option>
+                        <option value="Nuevo">Nuevo</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Fecha Inicio Contrato
+                      </label>
+                      <input
+                        type="date"
+                        value={fechaInicioContrato}
+                        onChange={e => setFechaInicioContrato(e.target.value)}
+                        className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Fecha Término Contrato
+                      </label>
+                      <input
+                        type="date"
+                        value={fechaTerminoContrato}
+                        onChange={e => setFechaTerminoContrato(e.target.value)}
+                        className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Remuneración Mensual ($)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={remuneracionMensual || ''}
+                        placeholder="Ej: 1450000"
+                        onChange={e => setRemuneracionMensual(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white font-mono"
+                      />
+                      <span className="text-[10px] text-slate-400 block mt-0.5">Para costeo en hojas SEP / Pro-Retención</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Acción PME (SEP)
+                      </label>
+                      <input
+                        type="text"
+                        value={accionPme}
+                        placeholder="Ej: A-1 Refuerzo escolar"
+                        onChange={e => setAccionPme(e.target.value)}
+                        className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Horas Pro-Retención
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={horasContrato}
+                        value={horasProRetencion || ''}
+                        placeholder="0"
+                        onChange={e => setHorasProRetencion(parseInt(e.target.value) || 0)}
+                        className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white text-center font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Observaciones Oficiales DEP (PAL)
+                    </label>
+                    <input
+                      type="text"
+                      value={observacionesPal}
+                      placeholder="Ej: Decreto de titularidad N° 142..."
+                      onChange={e => setObservacionesPal(e.target.value)}
+                      className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           </div>

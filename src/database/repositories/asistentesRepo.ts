@@ -3,6 +3,7 @@ import { AsistenteEducacion, EstamentoAsistente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 
 export function mapRowToAsistente(row: any[]): AsistenteEducacion {
+  const horasContrato = Number(row[8]) || 0;
   return {
     id: String(row[0]),
     rbd: String(row[1]),
@@ -12,7 +13,7 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
     apellidos: String(row[5] || ''),
     cargoFuncion: String(row[6] || ''),
     estamento: row[7] as EstamentoAsistente,
-    horasContrato: Number(row[8]) || 0,
+    horasContrato,
     horasSubvencionGeneralIndefinido: Number(row[9]) || 0,
     horasSubvencionGeneralPlazoFijo: Number(row[10]) || 0,
     horasSepIndefinido: Number(row[11]) || 0,
@@ -25,7 +26,20 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
     esAuxiliarServicio: Boolean(row[18]),
     esInspectorPatio: Boolean(row[19]),
     observaciones: row[20] ? String(row[20]) : undefined,
-    activo: row[21] !== undefined ? Boolean(row[21]) : true
+    activo: row[21] !== undefined ? Boolean(row[21]) : true,
+    horasVigentesAnterior: row[22] !== undefined && row[22] !== null ? Number(row[22]) : horasContrato,
+    propuestaGdp: row[23] ? String(row[23]) : 'Continuidad',
+    remuneracionMensualApp: Number(row[24] || 0),
+    fechaInicioContrato: row[25] ? String(row[25]) : '01-03-2026',
+    fechaTerminoContrato: row[26] ? String(row[26]) : '28-02-2027',
+    accionPmeSep: row[27] ? String(row[27]) : undefined,
+    horasProRetencion: Number(row[28] || 0),
+    descripcionFuncionGdp: row[29] ? String(row[29]) : undefined,
+    estadoSancionGdp: (row[30] as any) || 'Pendiente',
+    horasAprobadasGdp: Number(row[31] || 0),
+    situacionFinalGdp: row[32] ? String(row[32]) : 'Vigente',
+    observacionesDirector: row[33] ? String(row[33]) : undefined,
+    observacionesSlep: row[34] ? String(row[34]) : undefined
   };
 }
 
@@ -36,7 +50,10 @@ export function listarAsistentesSync(db: Database, rbd: string, periodo: number 
       horas_contrato, horas_subvencion_general_indefinido, horas_subvencion_general_plazo_fijo,
       horas_sep_indefinido, horas_sep_plazo_fijo, horas_pie_indefinido, horas_pie_plazo_fijo,
       es_dupla_psicosocial, es_equipo_pie, es_tecnico_parvulo, es_auxiliar_servicio,
-      es_inspector_patio, observaciones, activo
+      es_inspector_patio, observaciones, activo,
+      horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
+      accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
+      situacion_final_gdp, observaciones_director, observaciones_slep
     FROM asistentes_educacion
     WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
     ORDER BY apellidos ASC, nombres ASC
@@ -73,7 +90,10 @@ export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: nu
       horas_contrato, horas_subvencion_general_indefinido, horas_subvencion_general_plazo_fijo,
       horas_sep_indefinido, horas_sep_plazo_fijo, horas_pie_indefinido, horas_pie_plazo_fijo,
       es_dupla_psicosocial, es_equipo_pie, es_tecnico_parvulo, es_auxiliar_servicio,
-      es_inspector_patio, observaciones, activo
+      es_inspector_patio, observaciones, activo,
+      horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
+      accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
+      situacion_final_gdp, observaciones_director, observaciones_slep
     FROM asistentes_educacion
     WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))
     ORDER BY rbd ASC, apellidos ASC, nombres ASC
@@ -138,8 +158,11 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
       horas_contrato, horas_subvencion_general_indefinido, horas_subvencion_general_plazo_fijo,
       horas_sep_indefinido, horas_sep_plazo_fijo, horas_pie_indefinido, horas_pie_plazo_fijo,
       es_dupla_psicosocial, es_equipo_pie, es_tecnico_parvulo, es_auxiliar_servicio,
-      es_inspector_patio, observaciones, activo
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      es_inspector_patio, observaciones, activo,
+      horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
+      accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
+      situacion_final_gdp, observaciones_director, observaciones_slep
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -163,7 +186,20 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
     a.esAuxiliarServicio ? 1 : 0,
     a.esInspectorPatio ? 1 : 0,
     a.observaciones || null,
-    a.activo !== false ? 1 : 0
+    a.activo !== false ? 1 : 0,
+    a.horasVigentesAnterior !== undefined && a.horasVigentesAnterior !== null ? a.horasVigentesAnterior : (a.horasContrato || 0),
+    a.propuestaGdp || 'Continuidad',
+    a.remuneracionMensualApp || 0,
+    a.fechaInicioContrato || '01-03-2026',
+    a.fechaTerminoContrato || '28-02-2027',
+    a.accionPmeSep || null,
+    a.horasProRetencion || 0,
+    a.descripcionFuncionGdp || null,
+    a.estadoSancionGdp || 'Pendiente',
+    a.horasAprobadasGdp || 0,
+    a.situacionFinalGdp || 'Vigente',
+    a.observacionesDirector || null,
+    a.observacionesSlep || null
   ]);
   stmt.free();
 }
@@ -202,8 +238,11 @@ export function guardarAsistentesBatchSync(
         horas_contrato, horas_subvencion_general_indefinido, horas_subvencion_general_plazo_fijo,
         horas_sep_indefinido, horas_sep_plazo_fijo, horas_pie_indefinido, horas_pie_plazo_fijo,
         es_dupla_psicosocial, es_equipo_pie, es_tecnico_parvulo, es_auxiliar_servicio,
-        es_inspector_patio, observaciones, activo
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        es_inspector_patio, observaciones, activo,
+        horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
+        accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
+        situacion_final_gdp, observaciones_director, observaciones_slep
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const a of asistentes) {
@@ -229,7 +268,20 @@ export function guardarAsistentesBatchSync(
         a.esAuxiliarServicio ? 1 : 0,
         a.esInspectorPatio ? 1 : 0,
         a.observaciones || null,
-        a.activo !== false ? 1 : 0
+        a.activo !== false ? 1 : 0,
+        a.horasVigentesAnterior !== undefined && a.horasVigentesAnterior !== null ? a.horasVigentesAnterior : (a.horasContrato || 0),
+        a.propuestaGdp || 'Continuidad',
+        a.remuneracionMensualApp || 0,
+        a.fechaInicioContrato || '01-03-2026',
+        a.fechaTerminoContrato || '28-02-2027',
+        a.accionPmeSep || null,
+        a.horasProRetencion || 0,
+        a.descripcionFuncionGdp || null,
+        a.estadoSancionGdp || 'Pendiente',
+        a.horasAprobadasGdp || 0,
+        a.situacionFinalGdp || 'Vigente',
+        a.observacionesDirector || null,
+        a.observacionesSlep || null
       ]);
     }
     stmt.free();

@@ -16,14 +16,20 @@ import {
   Scale,
   Eye,
   AlertTriangle,
-  GraduationCap
+  GraduationCap,
+  Download,
+  RefreshCw,
+  Sparkles,
+  FolderArchive
 } from 'lucide-react';
 import { 
   Establecimiento, 
   Docente, 
   AsignacionHoraria, 
   InconsistenciaTerritorial,
-  DocenteConsolidadoTerritorial 
+  DocenteConsolidadoTerritorial,
+  AsistenteEducacion,
+  CursoSae
 } from '../types';
 import { 
   DiagnosticoColegioCompleto, 
@@ -31,27 +37,122 @@ import {
   obtenerDocentesConsolidadosTerritorio
 } from '../services/dotacionCalculationService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
+import { importarPlanillaPalDEP, generarExcelConsolidadoPalDEP } from '../services/depPalExportService';
+import { generarExcelGdpColegio } from '../services/depGdpExportService';
+import { guardarArchivoNativoOEnNavegador } from '../services/excelReportService';
 
 interface ConsolidadorMasterViewProps {
   establecimientos: Establecimiento[];
   docentes: Docente[];
+  asistentes?: AsistenteEducacion[];
+  cursos?: CursoSae[];
   diagnosticos: DiagnosticoColegioCompleto[];
   asignaciones?: AsignacionHoraria[];
   onImportarCarteraSlep: (file: File) => void;
   onExportarExcel: () => void;
+  onRecargarDatos?: () => Promise<void> | void;
 }
 
 export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
   establecimientos,
   docentes,
+  asistentes = [],
+  cursos = [],
   diagnosticos,
   asignaciones = [],
   onImportarCarteraSlep,
-  onExportarExcel
+  onExportarExcel,
+  onRecargarDatos
 }) => {
   const [tabActiva, setTabActiva] = useState<'balance' | 'docentes'>('balance');
   const [filtroDocentes, setFiltroDocentes] = useState('');
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
+  const [procesandoPal, setProcesandoPal] = useState(false);
+  const [feedbackPal, setFeedbackPal] = useState<{ tipo: 'success' | 'error'; texto: string } | null>(null);
+
+  const handleImportarPalOficial = async (file: File) => {
+    try {
+      setProcesandoPal(true);
+      setFeedbackPal(null);
+      const buffer = await file.arrayBuffer();
+      const resultado = await importarPlanillaPalDEP(buffer, 2027);
+      setFeedbackPal({
+        tipo: 'success',
+        texto: `¡Planilla PAL importada exitosamente! Se procesaron ${resultado.docentesImportados} registros docentes y ${resultado.asistentesImportados} asistentes en ${resultado.colegiosDetectados} colegios.`
+      });
+      if (onRecargarDatos) {
+        await onRecargarDatos();
+      }
+    } catch (err: any) {
+      setFeedbackPal({
+        tipo: 'error',
+        texto: `Error al importar Planilla PAL: ${err.message || err}`
+      });
+    } finally {
+      setProcesandoPal(false);
+    }
+  };
+
+  const handleExportarPalOficial = async () => {
+    try {
+      setProcesandoPal(true);
+      setFeedbackPal(null);
+      const bytes = await generarExcelConsolidadoPalDEP(
+        establecimientos,
+        docentes,
+        asistentes,
+        cursos,
+        asignaciones
+      );
+      await guardarArchivoNativoOEnNavegador(
+        bytes,
+        `Planilla_Final_PAL_2027_DEP_SLEP_Valle_Diguillin_${Date.now()}.xlsx`
+      );
+      setFeedbackPal({
+        tipo: 'success',
+        texto: 'Planilla Final PAL 2027 DEP generada con éxito, preservando el 100% de las fórmulas nativas de Excel.'
+      });
+    } catch (err: any) {
+      setFeedbackPal({
+        tipo: 'error',
+        texto: `Error al exportar Planilla PAL DEP: ${err.message || err}`
+      });
+    } finally {
+      setProcesandoPal(false);
+    }
+  };
+
+  const handleExportarTodasLasGdp = async () => {
+    try {
+      setProcesandoPal(true);
+      setFeedbackPal(null);
+      let count = 0;
+      for (const est of establecimientos) {
+        const docColegio = docentes.filter(d => String(d.rbd) === String(est.rbd));
+        const aeColegio = asistentes.filter(a => String(a.rbd) === String(est.rbd));
+        const curColegio = cursos.filter(c => String(c.rbd) === String(est.rbd));
+        const asigColegio = asignaciones.filter(a => String(a.rbd) === String(est.rbd));
+        
+        const bytes = await generarExcelGdpColegio(est, docColegio, aeColegio, curColegio, asigColegio);
+        await guardarArchivoNativoOEnNavegador(
+          bytes,
+          `Planilla_GDP_${est.rbd}_${est.nombre.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
+        );
+        count++;
+      }
+      setFeedbackPal({
+        tipo: 'success',
+        texto: `Se generaron exitosamente las planillas GDP para ${count} colegios del territorio.`
+      });
+    } catch (err: any) {
+      setFeedbackPal({
+        tipo: 'error',
+        texto: `Error al generar planillas GDP: ${err.message || err}`
+      });
+    } finally {
+      setProcesandoPal(false);
+    }
+  };
 
   const consolidacion = consolidarCarteraTerritorial(establecimientos, docentes, diagnosticos);
   const { inconsistencias, resumenPorComuna, vacantesCruzadas } = consolidacion;
@@ -138,6 +239,99 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* ── CENTRO OFICIAL DEP (PLANILLA PAL 2027 & GDP) ── */}
+      <div className="bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-slate-900/10 dark:from-blue-950/40 dark:via-indigo-950/40 dark:to-slate-900/40 border border-blue-200 dark:border-blue-800 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20 shrink-0">
+              <FileSpreadsheet className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 dark:text-white text-sm sm:text-base">
+                  Centro de Intercambio Oficial DEP (Planilla PAL 2027 & GDP)
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                  Estándar Ministerial
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                Poblado y homologación automática al milímetro preservando fórmulas nativas de Excel (<code className="font-mono text-[11px] bg-slate-200 dark:bg-slate-800 px-1 rounded">VLOOKUP</code>, <code className="font-mono text-[11px] bg-slate-200 dark:bg-slate-800 px-1 rounded">SUMIFS</code>, tablas 65/35 y 60/40).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Botón Importar PAL Oficial */}
+            <label className="flex items-center gap-1.5 px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl cursor-pointer transition-all border border-slate-300 dark:border-slate-700 shadow-sm active:scale-[0.98]">
+              <FileUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span>Importar PAL Oficial (.xlsx)</span>
+              <input
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                disabled={procesandoPal}
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImportarPalOficial(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+
+            {/* Botón Exportar Planilla Final PAL 2027 DEP */}
+            <button
+              onClick={handleExportarPalOficial}
+              disabled={procesandoPal}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-blue-600/20 active:scale-[0.98]"
+              title="Genera el libro único territorial con hojas DOCENTE, AE y Establecimiento para envío a la DEP"
+            >
+              {procesandoPal ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 text-blue-100" />
+              )}
+              <span>Exportar PAL 2027 DEP (Territorial)</span>
+            </button>
+
+            {/* Botón Exportar GDP por Colegio */}
+            <button
+              onClick={handleExportarTodasLasGdp}
+              disabled={procesandoPal}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-amber-600/20 active:scale-[0.98]"
+              title="Genera los libros individuales de Planilla GDP con sus 6 hojas oficiales para cada colegio"
+            >
+              <FolderArchive className="w-4 h-4 text-amber-100" />
+              <span>Exportar GDP por Colegio</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Notificaciones y Feedback de Operaciones PAL/GDP */}
+        {feedbackPal && (
+          <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs font-medium animate-fade-in ${
+            feedbackPal.tipo === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              {feedbackPal.tipo === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+              )}
+              <span>{feedbackPal.texto}</span>
+            </div>
+            <button
+              onClick={() => setFeedbackPal(null)}
+              className="text-xs font-bold underline opacity-80 hover:opacity-100"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Selector de Pestañas del Consolidador */}

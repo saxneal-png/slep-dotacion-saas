@@ -5,9 +5,10 @@ import {
   LayoutGrid, List, UserCheck, RefreshCw, ChevronRight, ChevronDown, Mail, Phone, MapPin,
   HelpCircle, ExternalLink, Settings, Plus, Check, ArrowUpDown, X, Globe, User
 } from 'lucide-react';
-import { Establecimiento, CursoSae, Docente, AsignacionHoraria, PerfilAsesor } from '../types';
+import { Establecimiento, CursoSae, Docente, AsignacionHoraria, PerfilAsesor, AsistenteEducacion } from '../types';
 import { DiagnosticoColegioCompleto, calcularDiagnosticoColegio } from '../services/dotacionCalculationService';
 import { cargarConfiguracionGeneral, reasignarColegiosMasivo } from '../services/configuracionGeneralService';
+import { GdpParametrosModal } from '../components/GdpParametrosModal';
 
 interface ColegiosAsesoradosViewProps {
   colegios: Establecimiento[];
@@ -18,6 +19,7 @@ interface ColegiosAsesoradosViewProps {
   onExportarMatrizExcelColegio: (est: Establecimiento, periodo: number) => Promise<void> | void;
   todosLosCursos: CursoSae[];
   todosLosDocentes: Docente[];
+  todosLosAsistentes?: AsistenteEducacion[];
   todasLasSalas: any[];
   todasLasAsignaciones: AsignacionHoraria[];
   periodoActivo: number;
@@ -34,6 +36,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   onExportarMatrizExcelColegio,
   todosLosCursos,
   todosLosDocentes,
+  todosLosAsistentes = [],
   todasLasSalas,
   todasLasAsignaciones,
   periodoActivo,
@@ -48,6 +51,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   const [selectedEstadoBalance, setSelectedEstadoBalance] = useState<string>('ALL');
   const [vistaModo, setVistaModo] = useState<'grid' | 'table'>('grid');
   const [modalReasignarAbierto, setModalReasignarAbierto] = useState(false);
+  const [colegioParaGdp, setColegioParaGdp] = useState<Establecimiento | null>(null);
   const [colegiosSeleccionadosBatch, setColegiosSeleccionadosBatch] = useState<string[]>([]);
   const [asesorDestinoBatch, setAsesorDestinoBatch] = useState<string>(config.asesoresRegistrados[0]?.nombre || '');
   const [procesandoReasignacion, setProcesandoReasignacion] = useState(false);
@@ -752,6 +756,13 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                     >
                       <FileSpreadsheet className="w-4 h-4" />
                     </button>
+                    <button
+                      onClick={() => setColegioParaGdp(est)}
+                      className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors"
+                      title="Exportar Planilla GDP Oficial (.xlsx) y Parámetros SEP/PIE"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    </button>
                   </div>
 
                   <button
@@ -842,15 +853,24 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                         </span>
                       </td>
                       <td className="p-3 text-right">
-                        <button
-                          onClick={() => {
-                            onSelectColegio(est);
-                            onAbrirWorkflow(est);
-                          }}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-xs"
-                        >
-                          Abrir
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setColegioParaGdp(est)}
+                            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors"
+                            title="Exportar Planilla GDP Oficial (.xlsx) y Parámetros SEP/PIE"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              onSelectColegio(est);
+                              onAbrirWorkflow(est);
+                            }}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-xs"
+                          >
+                            Abrir
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -917,6 +937,21 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── 6. MODAL PARÁMETROS Y EXPORTACIÓN GDP OFICIAL ── */}
+      {colegioParaGdp && (
+        <GdpParametrosModal
+          isOpen={!!colegioParaGdp}
+          onClose={() => setColegioParaGdp(null)}
+          establecimiento={colegioParaGdp}
+          docentes={todosLosDocentes.filter(d => String(d.rbd) === String(colegioParaGdp.rbd))}
+          asistentes={(todosLosAsistentes || []).filter(a => String(a.rbd) === String(colegioParaGdp.rbd))}
+          cursos={todosLosCursos.filter(c => String(c.rbd) === String(colegioParaGdp.rbd))}
+          asignaciones={todasLasAsignaciones.filter(a => String(a.rbd) === String(colegioParaGdp.rbd))}
+          onGuardarEstablecimiento={onGuardarColegio}
+          onNotificar={(msg) => setMensajeFeedback(msg)}
+        />
       )}
 
     </div>

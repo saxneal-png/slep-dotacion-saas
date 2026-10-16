@@ -410,3 +410,36 @@ export async function generarExcelConsolidadoSlep(
   const buffer = await workbook.xlsx.writeBuffer();
   return new Uint8Array(buffer);
 }
+
+/**
+ * Guardado seguro con soporte para Electron Save Dialog nativo o descarga de navegador
+ */
+export async function guardarArchivoNativoOEnNavegador(
+  data: Uint8Array | string,
+  defaultFilename: string,
+  mimeType: string = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  filters: { name: string; extensions: string[] }[] = [{ name: 'Libro de Excel (*.xlsx)', extensions: ['xlsx'] }]
+): Promise<boolean> {
+  const electron = (typeof window !== 'undefined' && (window as any).electronAPI);
+  if (electron?.isDesktop && electron?.saveFileDialog && electron?.writeFile) {
+    const filePath = await electron.saveFileDialog({
+      defaultPath: defaultFilename,
+      filters
+    });
+    if (!filePath) return false;
+    const res = await electron.writeFile(filePath, data);
+    if (!res.success) throw new Error(res.error);
+    return true;
+  } else if (typeof window !== 'undefined') {
+    const blob = new Blob([data as any], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = defaultFilename;
+    a.click();
+    URL.revokeObjectURL(url);
+    return true;
+  }
+  return false;
+}
+

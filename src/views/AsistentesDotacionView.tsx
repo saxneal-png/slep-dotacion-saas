@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Users, UserPlus, Search, Filter, AlertTriangle, ShieldCheck, HeartHandshake,
   Sparkles, CheckCircle2, Download, Upload, Trash2, Edit2, X, Plus, Clock,
-  Briefcase, Award, Check, FileSpreadsheet, Building2
+  Briefcase, Award, Check, FileSpreadsheet, Building2, ChevronDown, ChevronUp
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -80,6 +80,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
   const [modalAbierto, setModalAbierto] = useState(false);
   const [asistenteEdicion, setAsistenteEdicion] = useState<Partial<AsistenteEducacion> | null>(null);
   const [modalImportarAbierto, setModalImportarAbierto] = useState(false);
+  const [seccionGdpAbierta, setSeccionGdpAbierta] = useState(false);
   const [archivoExcel, setArchivoExcel] = useState<File | null>(null);
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
 
@@ -225,6 +226,14 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       esAuxiliarServicio: !!asistenteEdicion.esAuxiliarServicio,
       esInspectorPatio: !!asistenteEdicion.esInspectorPatio,
       observaciones: asistenteEdicion.observaciones?.trim(),
+      fechaInicioContrato: asistenteEdicion.fechaInicioContrato || undefined,
+      fechaTerminoContrato: asistenteEdicion.fechaTerminoContrato || undefined,
+      propuestaGdp: asistenteEdicion.propuestaGdp || 'Continuidad',
+      remuneracionMensual: Number(asistenteEdicion.remuneracionMensual) || 0,
+      accionPme: asistenteEdicion.accionPme?.trim() || undefined,
+      horasProRetencion: Number(asistenteEdicion.horasProRetencion) || 0,
+      horasVigentesAnterior: Number(asistenteEdicion.horasVigentesAnterior) || Number(horasContrato),
+      observacionesPal: asistenteEdicion.observacionesPal?.trim() || undefined,
       activo: true
     };
 
@@ -1019,6 +1028,132 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                   />
                   <span>Inspector de Patio</span>
                 </label>
+              </div>
+
+              {/* Sección Desplegable: Parámetros GDP & Contrato Oficial DEP */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setSeccionGdpAbierta(!seccionGdpAbierta)}
+                  className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 flex items-center justify-between text-left transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                      Parámetros GDP & Contrato Oficial DEP (Proyección Ministerial 2027)
+                    </span>
+                  </div>
+                  {seccionGdpAbierta ? (
+                    <ChevronUp className="w-4 h-4 text-slate-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-500" />
+                  )}
+                </button>
+
+                {seccionGdpAbierta && (
+                  <div className="p-4 space-y-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 animate-fade-in text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          Propuesta Dotación GDP
+                        </label>
+                        <select
+                          value={asistenteEdicion.propuestaGdp || 'Continuidad'}
+                          onChange={(e) => setAsistenteEdicion({ ...asistenteEdicion, propuestaGdp: e.target.value as any })}
+                          className="w-full px-3 py-1.5 border rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 font-medium"
+                        >
+                          <option value="Continuidad">Continuidad</option>
+                          <option value="No Continuidad">No Continuidad</option>
+                          <option value="Aumento Horas">Aumento Horas</option>
+                          <option value="Disminución Horas">Disminución Horas</option>
+                          <option value="Nuevo">Nuevo</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          Fecha Inicio Contrato
+                        </label>
+                        <input
+                          type="date"
+                          value={asistenteEdicion.fechaInicioContrato || ''}
+                          onChange={(e) => setAsistenteEdicion({ ...asistenteEdicion, fechaInicioContrato: e.target.value })}
+                          className="w-full px-3 py-1.5 border rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          Fecha Término Contrato
+                        </label>
+                        <input
+                          type="date"
+                          value={asistenteEdicion.fechaTerminoContrato || ''}
+                          onChange={(e) => setAsistenteEdicion({ ...asistenteEdicion, fechaTerminoContrato: e.target.value })}
+                          className="w-full px-3 py-1.5 border rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          Remuneración Mensual ($)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={asistenteEdicion.remuneracionMensual || ''}
+                          placeholder="Ej: 750000"
+                          onChange={(e) => setAsistenteEdicion({ ...asistenteEdicion, remuneracionMensual: parseFloat(e.target.value) || 0 })}
+                          className="w-full px-3 py-1.5 border rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          Acción PME (SEP)
+                        </label>
+                        <input
+                          type="text"
+                          value={asistenteEdicion.accionPme || ''}
+                          placeholder="Ej: A-2 Apoyo Psicosocial"
+                          onChange={(e) => setAsistenteEdicion({ ...asistenteEdicion, accionPme: e.target.value })}
+                          className="w-full px-3 py-1.5 border rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          Horas Pro-Retención
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={44}
+                          value={asistenteEdicion.horasProRetencion || ''}
+                          placeholder="0"
+                          onChange={(e) => setAsistenteEdicion({ ...asistenteEdicion, horasProRetencion: parseInt(e.target.value) || 0 })}
+                          className="w-full px-3 py-1.5 border rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-center font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                        Observaciones Oficiales DEP (PAL)
+                      </label>
+                      <input
+                        type="text"
+                        value={asistenteEdicion.observacionesPal || ''}
+                        placeholder="Ej: Asistente técnico titular D.F.L. 1..."
+                        onChange={(e) => setAsistenteEdicion({ ...asistenteEdicion, observacionesPal: e.target.value })}
+                        className="w-full px-3 py-1.5 border rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

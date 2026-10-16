@@ -20,6 +20,11 @@ export interface Establecimiento {
   asesorUatp?: string;
   telefono?: string;
   email?: string;
+  // Metadatos Financieros Oficiales DEP / GDP
+  subvencionSepMensual?: number;
+  subvencionProRetencion?: number;
+  cupoHorasPieDiferencial?: number;
+  cupoHorasPieAsistentes?: number;
 }
 
 export interface SalaInfraestructura {
@@ -179,6 +184,23 @@ export interface Docente {
   funcionSecundaria?: string;
   asignaturaPrincipal?: string;
   aplicaArticulo69?: boolean; // Reducción a máx 24 hrs por >= 30 años servicio
+  // Metadatos Oficiales DEP y Planilla GDP
+  horasVigentesAnterior?: number;
+  propuestaGdp?: string;
+  remuneracionMensualApp?: number;
+  remuneracionMensual?: number;
+  fechaInicioContrato?: string;
+  fechaTerminoContrato?: string;
+  accionPmeSep?: string;
+  accionPme?: string;
+  horasProRetencion?: number;
+  descripcionFuncionGdp?: string;
+  estadoSancionGdp?: 'Pendiente' | 'Aprobado' | 'Aprobado parcial.' | 'Rechazado';
+  horasAprobadasGdp?: number;
+  situacionFinalGdp?: string;
+  observacionesDirector?: string;
+  observacionesSlep?: string;
+  observacionesPal?: string;
 }
 
 export interface AsignacionHoraria {

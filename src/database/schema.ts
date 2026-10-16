@@ -12,7 +12,11 @@ CREATE TABLE IF NOT EXISTS establecimientos (
   director TEXT,
   asesor_uatp TEXT,
   telefono TEXT,
-  email TEXT
+  email TEXT,
+  subvencion_sep_mensual REAL DEFAULT 0,
+  subvencion_pro_retencion REAL DEFAULT 0,
+  cupo_horas_pie_diferencial REAL DEFAULT 0,
+  cupo_horas_pie_asistentes REAL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS salas_infraestructura (
@@ -83,6 +87,19 @@ CREATE TABLE IF NOT EXISTS docentes (
   asignatura_principal TEXT,
   aplica_articulo_69 INTEGER DEFAULT 0,
   funciones_no_aula_json TEXT,
+  horas_vigentes_anterior REAL DEFAULT 0,
+  propuesta_gdp TEXT DEFAULT 'Continuidad',
+  remuneracion_mensual_app REAL DEFAULT 0,
+  fecha_inicio_contrato TEXT DEFAULT '01-03-2026',
+  fecha_termino_contrato TEXT DEFAULT '28-02-2027',
+  accion_pme_sep TEXT,
+  horas_pro_retencion REAL DEFAULT 0,
+  descripcion_funcion_gdp TEXT,
+  estado_sancion_gdp TEXT DEFAULT 'Pendiente',
+  horas_aprobadas_gdp REAL DEFAULT 0,
+  situacion_final_gdp TEXT DEFAULT 'Vigente',
+  observaciones_director TEXT,
+  observaciones_slep TEXT,
   periodo INTEGER NOT NULL DEFAULT 2026,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
@@ -158,6 +175,19 @@ CREATE TABLE IF NOT EXISTS asistentes_educacion (
   es_inspector_patio INTEGER DEFAULT 0,
   observaciones TEXT,
   activo INTEGER DEFAULT 1,
+  horas_vigentes_anterior REAL DEFAULT 0,
+  propuesta_gdp TEXT DEFAULT 'Continuidad',
+  remuneracion_mensual_app REAL DEFAULT 0,
+  fecha_inicio_contrato TEXT DEFAULT '01-03-2026',
+  fecha_termino_contrato TEXT DEFAULT '28-02-2027',
+  accion_pme_sep TEXT,
+  horas_pro_retencion REAL DEFAULT 0,
+  descripcion_funcion_gdp TEXT,
+  estado_sancion_gdp TEXT DEFAULT 'Pendiente',
+  horas_aprobadas_gdp REAL DEFAULT 0,
+  situacion_final_gdp TEXT DEFAULT 'Vigente',
+  observaciones_director TEXT,
+  observaciones_slep TEXT,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
 `;
@@ -296,6 +326,55 @@ export function runMigrations(db: Database): void {
   try {
     db.run("ALTER TABLE docentes ADD COLUMN funciones_no_aula_json TEXT;");
   } catch (_) {}
+
+  // Migraciones Oficiales DEP / GDP
+  const gdpEstablecimientosCols = [
+    "ALTER TABLE establecimientos ADD COLUMN subvencion_sep_mensual REAL DEFAULT 0;",
+    "ALTER TABLE establecimientos ADD COLUMN subvencion_pro_retencion REAL DEFAULT 0;",
+    "ALTER TABLE establecimientos ADD COLUMN cupo_horas_pie_diferencial REAL DEFAULT 0;",
+    "ALTER TABLE establecimientos ADD COLUMN cupo_horas_pie_asistentes REAL DEFAULT 0;"
+  ];
+  for (const sql of gdpEstablecimientosCols) {
+    try { db.run(sql); } catch (_) {}
+  }
+
+  const gdpDocentesCols = [
+    "ALTER TABLE docentes ADD COLUMN horas_vigentes_anterior REAL DEFAULT 0;",
+    "ALTER TABLE docentes ADD COLUMN propuesta_gdp TEXT DEFAULT 'Continuidad';",
+    "ALTER TABLE docentes ADD COLUMN remuneracion_mensual_app REAL DEFAULT 0;",
+    "ALTER TABLE docentes ADD COLUMN fecha_inicio_contrato TEXT DEFAULT '01-03-2026';",
+    "ALTER TABLE docentes ADD COLUMN fecha_termino_contrato TEXT DEFAULT '28-02-2027';",
+    "ALTER TABLE docentes ADD COLUMN accion_pme_sep TEXT;",
+    "ALTER TABLE docentes ADD COLUMN horas_pro_retencion REAL DEFAULT 0;",
+    "ALTER TABLE docentes ADD COLUMN descripcion_funcion_gdp TEXT;",
+    "ALTER TABLE docentes ADD COLUMN estado_sancion_gdp TEXT DEFAULT 'Pendiente';",
+    "ALTER TABLE docentes ADD COLUMN horas_aprobadas_gdp REAL DEFAULT 0;",
+    "ALTER TABLE docentes ADD COLUMN situacion_final_gdp TEXT DEFAULT 'Vigente';",
+    "ALTER TABLE docentes ADD COLUMN observaciones_director TEXT;",
+    "ALTER TABLE docentes ADD COLUMN observaciones_slep TEXT;"
+  ];
+  for (const sql of gdpDocentesCols) {
+    try { db.run(sql); } catch (_) {}
+  }
+
+  const gdpAsistentesCols = [
+    "ALTER TABLE asistentes_educacion ADD COLUMN horas_vigentes_anterior REAL DEFAULT 0;",
+    "ALTER TABLE asistentes_educacion ADD COLUMN propuesta_gdp TEXT DEFAULT 'Continuidad';",
+    "ALTER TABLE asistentes_educacion ADD COLUMN remuneracion_mensual_app REAL DEFAULT 0;",
+    "ALTER TABLE asistentes_educacion ADD COLUMN fecha_inicio_contrato TEXT DEFAULT '01-03-2026';",
+    "ALTER TABLE asistentes_educacion ADD COLUMN fecha_termino_contrato TEXT DEFAULT '28-02-2027';",
+    "ALTER TABLE asistentes_educacion ADD COLUMN accion_pme_sep TEXT;",
+    "ALTER TABLE asistentes_educacion ADD COLUMN horas_pro_retencion REAL DEFAULT 0;",
+    "ALTER TABLE asistentes_educacion ADD COLUMN descripcion_funcion_gdp TEXT;",
+    "ALTER TABLE asistentes_educacion ADD COLUMN estado_sancion_gdp TEXT DEFAULT 'Pendiente';",
+    "ALTER TABLE asistentes_educacion ADD COLUMN horas_aprobadas_gdp REAL DEFAULT 0;",
+    "ALTER TABLE asistentes_educacion ADD COLUMN situacion_final_gdp TEXT DEFAULT 'Vigente';",
+    "ALTER TABLE asistentes_educacion ADD COLUMN observaciones_director TEXT;",
+    "ALTER TABLE asistentes_educacion ADD COLUMN observaciones_slep TEXT;"
+  ];
+  for (const sql of gdpAsistentesCols) {
+    try { db.run(sql); } catch (_) {}
+  }
 
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_cursos_rbd_periodo ON cursos_sae(rbd, periodo);',

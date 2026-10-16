@@ -25,6 +25,7 @@ import { ModalTraspasoDotacion } from '../components/ModalTraspasoDotacion';
 import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
 import { ExportarEstablecimientoModal } from '../components/ExportarEstablecimientoModal';
 import { ImportarEstablecimientoModal } from '../components/ImportarEstablecimientoModal';
+import { GdpParametrosModal } from '../components/GdpParametrosModal';
 
 export interface ColegioWorkspaceViewProps {
   colegio: Establecimiento;
@@ -58,6 +59,7 @@ export interface ColegioWorkspaceViewProps {
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void> | void;
   onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
   onExportarMatrizExcelColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
+  onGuardarColegio?: (est: Establecimiento) => Promise<void>;
   onAbrirCopilot?: () => void;
 }
 
@@ -93,6 +95,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onLimpiarDotacionColegio,
   onExportarDotacionColegio,
   onExportarMatrizExcelColegio,
+  onGuardarColegio,
   onAbrirCopilot
 }) => {
   const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>(initialTab || 'balanza');
@@ -108,6 +111,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [modalVaciarSeguroAbierto, setModalVaciarSeguroAbierto] = useState(false);
   const [modalExportarEstablecimientoAbierto, setModalExportarEstablecimientoAbierto] = useState(false);
   const [modalImportarEstablecimientoAbierto, setModalImportarEstablecimientoAbierto] = useState(false);
+  const [modalGdpAbierto, setModalGdpAbierto] = useState(false);
   const [menuAvanzadoAbierto, setMenuAvanzadoAbierto] = useState(false);
 
   const handleEjecutarVaciarDotacion = async () => {
@@ -248,6 +252,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
                         <span>Exportar Matriz Oficial Excel (.xlsx)</span>
                       </button>
                     )}
+
+                    <button
+                      onClick={() => {
+                        setModalGdpAbierto(true);
+                        setMenuAvanzadoAbierto(false);
+                      }}
+                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/60 hover:text-amber-700 dark:hover:text-amber-300 transition-colors text-left"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      <span>Exportar Planilla GDP Oficial (.xlsx)</span>
+                    </button>
 
                     {onExportarDotacionColegio && (
                       <button
@@ -561,6 +576,19 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           if (onRefreshData) onRefreshData();
         }}
       />
+
+      {modalGdpAbierto && (
+        <GdpParametrosModal
+          isOpen={modalGdpAbierto}
+          onClose={() => setModalGdpAbierto(false)}
+          establecimiento={colegio}
+          docentes={docentes}
+          asistentes={asistentes}
+          cursos={cursos}
+          asignaciones={asignaciones}
+          onGuardarEstablecimiento={onGuardarColegio || (async () => {})}
+        />
+      )}
     </div>
   );
 };
