@@ -85,49 +85,59 @@ export function getUltimaHoraGuardado(): string {
 
 let persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let isDbDirty = false;
+let persistChain: Promise<void> = Promise.resolve();
 
-// Auto-guardado en cierre o desenfoque de ventana
+// Auto-guardado de emergencia en cierre o desenfoque de ventana
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
-    if (isDbDirty) {
-      flushPersist();
+    if (isDbDirty && dbInstance) {
+      try {
+        const data = dbInstance.export();
+        setIdbBytes(STORAGE_KEY, data).catch(() => {});
+      } catch (e) {
+        console.error('Error en beforeunload al exportar SQLite:', e);
+      }
     }
   });
 }
 
-function flushPersist(): void {
-  if (!dbInstance || !isDbDirty) return;
-  try {
-    const data = dbInstance.export();
-    isDbDirty = false;
-    lastPersistTime = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+export function flushPersistAsync(): Promise<void> {
+  if (!dbInstance || !isDbDirty) return persistChain;
 
-    if (typeof indexedDB !== 'undefined') {
-      setIdbBytes(STORAGE_KEY, data)
-        .then(() => {
-          persistListeners.forEach(l => l('saved', lastPersistTime));
-        })
-        .catch(err => {
-          console.error('Error al persistir en IndexedDB:', err);
-          persistListeners.forEach(l => l('error', lastPersistTime, err?.message));
-        });
-    } else if (typeof localStorage !== 'undefined') {
-      // Fallback para entornos donde no exista IndexedDB
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(data)));
-      persistListeners.forEach(l => l('saved', lastPersistTime));
-    } else {
-      persistListeners.forEach(l => l('saved', lastPersistTime));
-    }
+  let snapshot: Uint8Array;
+  try {
+    snapshot = dbInstance.export();
   } catch (e: any) {
-    console.error('Error al persistir SQLite DB:', e);
-    const msg = e?.name === 'QuotaExceededError'
-      ? 'Límite de almacenamiento local excedido. Por favor exporta una copia SQLite como respaldo.'
-      : (e?.message || 'Error de persistencia');
-    persistListeners.forEach(l => l('error', new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }), msg));
+    console.error('Error al exportar SQLite snapshot:', e);
+    return persistChain;
   }
+
+  const timestamp = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  lastPersistTime = timestamp;
+
+  persistChain = persistChain.then(async () => {
+    try {
+      if (typeof indexedDB !== 'undefined') {
+        await setIdbBytes(STORAGE_KEY, snapshot);
+      } else if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(snapshot)));
+      }
+      isDbDirty = false; // Solo marcar como limpio cuando IndexedDB haya completado con éxito
+      persistListeners.forEach(l => l('saved', timestamp));
+    } catch (err: any) {
+      isDbDirty = true; // Mantener dirty para reintentar si falló el I/O
+      console.error('Error al persistir SQLite DB en IndexedDB:', err);
+      const msg = err?.name === 'QuotaExceededError'
+        ? 'Límite de almacenamiento local excedido. Por favor exporta una copia SQLite como respaldo.'
+        : (err?.message || 'Error de persistencia');
+      persistListeners.forEach(l => l('error', timestamp, msg));
+    }
+  });
+
+  return persistChain;
 }
 
-export function persistDb(forceImmediate = false): void {
+export function persistDb(forceImmediate = false): Promise<void> {
   isDbDirty = true;
 
   if (persistDebounceTimer) {
@@ -136,17 +146,15 @@ export function persistDb(forceImmediate = false): void {
   }
 
   if (forceImmediate) {
-    flushPersist();
-  } else {
+    return flushPersistAsync();
+  }
+
+  return new Promise((resolve) => {
     persistDebounceTimer = setTimeout(() => {
       persistDebounceTimer = null;
-      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-        (window as any).requestIdleCallback(() => flushPersist(), { timeout: 1000 });
-      } else {
-        flushPersist();
-      }
-    }, 1500);
-  }
+      flushPersistAsync().then(resolve);
+    }, 300); // 300ms de debounce máximo y sin requestIdleCallback
+  });
 }
 
 /**
@@ -201,29 +209,36 @@ export async function borrarDotacionPeriodo(periodo: number, rbd?: string): Prom
     params.push(rbd);
   }
 
-  const countAsig = db.exec(`SELECT count(*) FROM asignaciones_horarias ${whereClause}`, params);
-  const countCursos = db.exec(`SELECT count(*) FROM cursos_sae ${whereClause}`, params);
-  const countDoc = db.exec(`SELECT count(*) FROM docentes ${whereClause}`, params);
-  const countAst = db.exec(`SELECT count(*) FROM asistentes_educacion ${whereClause}`, params);
+  db.run("BEGIN TRANSACTION;");
+  try {
+    const countAsig = db.exec(`SELECT count(*) FROM asignaciones_horarias ${whereClause}`, params);
+    const countCursos = db.exec(`SELECT count(*) FROM cursos_sae ${whereClause}`, params);
+    const countDoc = db.exec(`SELECT count(*) FROM docentes ${whereClause}`, params);
+    const countAst = db.exec(`SELECT count(*) FROM asistentes_educacion ${whereClause}`, params);
 
-  const asignacionesBorradas = (countAsig[0]?.values[0]?.[0] as number) || 0;
-  const cursosBorrados = (countCursos[0]?.values[0]?.[0] as number) || 0;
-  const docentesBorrados = (countDoc[0]?.values[0]?.[0] as number) || 0;
-  const asistentesBorrados = (countAst[0]?.values[0]?.[0] as number) || 0;
+    const asignacionesBorradas = (countAsig[0]?.values[0]?.[0] as number) || 0;
+    const cursosBorrados = (countCursos[0]?.values[0]?.[0] as number) || 0;
+    const docentesBorrados = (countDoc[0]?.values[0]?.[0] as number) || 0;
+    const asistentesBorrados = (countAst[0]?.values[0]?.[0] as number) || 0;
 
-  db.run(`DELETE FROM asignaciones_horarias ${whereClause}`, params);
-  db.run(`DELETE FROM cursos_sae ${whereClause}`, params);
-  db.run(`DELETE FROM docentes ${whereClause}`, params);
-  db.run(`DELETE FROM asistentes_educacion ${whereClause}`, params);
+    db.run(`DELETE FROM asignaciones_horarias ${whereClause}`, params);
+    db.run(`DELETE FROM cursos_sae ${whereClause}`, params);
+    db.run(`DELETE FROM docentes ${whereClause}`, params);
+    db.run(`DELETE FROM asistentes_educacion ${whereClause}`, params);
 
-  persistDb();
+    db.run("COMMIT;");
+    await persistDb(true);
 
-  return {
-    cursosBorrados,
-    docentesBorrados,
-    asignacionesBorradas,
-    asistentesBorrados
-  };
+    return {
+      cursosBorrados,
+      docentesBorrados,
+      asignacionesBorradas,
+      asistentesBorrados
+    };
+  } catch (err) {
+    db.run("ROLLBACK;");
+    throw err;
+  }
 }
 
 /**
@@ -231,13 +246,20 @@ export async function borrarDotacionPeriodo(periodo: number, rbd?: string): Prom
  */
 export async function reiniciarTodaLaBaseDatos(): Promise<void> {
   const db = await getDb();
-  db.run("DELETE FROM asignaciones_horarias");
-  db.run("DELETE FROM cursos_sae");
-  db.run("DELETE FROM docentes");
-  db.run("DELETE FROM asistentes_educacion");
-  db.run("DELETE FROM salas_infraestructura");
-  db.run("DELETE FROM establecimientos");
-  db.run("DELETE FROM planes_estudio_mineduc");
+  db.run("BEGIN TRANSACTION;");
+  try {
+    db.run("DELETE FROM asignaciones_horarias");
+    db.run("DELETE FROM cursos_sae");
+    db.run("DELETE FROM docentes");
+    db.run("DELETE FROM asistentes_educacion");
+    db.run("DELETE FROM salas_infraestructura");
+    db.run("DELETE FROM establecimientos");
+    db.run("DELETE FROM planes_estudio_mineduc");
+    db.run("COMMIT;");
+  } catch (err) {
+    db.run("ROLLBACK;");
+    throw err;
+  }
 
   try {
     await deleteIdbBytes(STORAGE_KEY);
@@ -249,5 +271,5 @@ export async function reiniciarTodaLaBaseDatos(): Promise<void> {
   }
 
   runMigrations(db);
-  persistDb();
+  await persistDb(true);
 }

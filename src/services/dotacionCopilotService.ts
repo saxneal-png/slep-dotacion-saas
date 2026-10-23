@@ -9,6 +9,8 @@ import { calcularDiagnosticoColegio, DiagnosticoColegioCompleto } from './dotaci
 import { geminiFetch } from './geminiApiClient';
 import { normalizarRut, formatearRut } from '../utils/rutUtils';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
+import { cargarConfiguracionGeneral } from './configuracionGeneralService';
+import { createDeterministicPiiVault } from '../utils/piiSovereigntySanitizer';
 
 export interface CopilotMessage {
   id: string;
@@ -448,11 +450,23 @@ export async function consultarCopilotGemini(
   apiKey?: string,
   modelName: string = 'gemini-2.5-flash-lite'
 ): Promise<string> {
-  const effectiveApiKey = apiKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_api_key') : '') || '';
-  if (!effectiveApiKey) {
-    // Si no hay API key configurada, responder con el motor local
+  const config = cargarConfiguracionGeneral();
+
+  const effectiveApiKey = apiKey || config.gemini.apiKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_api_key') : '') || '';
+
+  // Soberanía estricta: si el modo estricto está activo o no hay llave disponible, responder offline local
+  if (!effectiveApiKey || (config.gemini.modoEstrictoCopilot && !apiKey && !config.gemini.apiKey)) {
     return responderConsultaLocalmente(pregunta, contexto);
   }
+
+  // Capa de anonimización determinista PII (Ley 19.628 / Decreto 170)
+  const vault = createDeterministicPiiVault([
+    ...contexto.docentes,
+    ...contexto.todosLosDocentesTerritorio
+  ]);
+
+  const sanitizedResumen = vault.anonymizeText(contexto.resumenTexto);
+  const sanitizedPregunta = vault.anonymizeText(pregunta);
 
   const systemInstruction = `Eres "¡Qué no va a saber! IA", el asistente inteligente oficial de dotación docente, legislación educacional chilena y planificación escolar del Servicio Local de Educación Pública (SLEP) Valle Diguillín.
 
@@ -462,13 +476,13 @@ Tus conocimientos clave son:
    - Los directores y directivos con dedicación institucional (ej. 44 horas cronológicas y 0 Horas Aula de docencia) están 100% apegados a la ley para funciones de liderazgo y gestión escolar, y están EXCEPTUADOS de impartir horas lectivas frente a alumnos. No representan "horas de aula vacantes ni desocupadas".
    - Proporción 65/35 (general) y 60/40 (en establecimientos con 80% o más de alumnos prioritarios) aplicable a docentes de aula.
 2. DFL 1 Estatuto Docente (Límite legal territorial de 44 horas semanales, horas no lectivas, Artículo 69 para docentes mayores con 30 años de servicio).
-3. Decreto 548 (Aforos físicos de salas: 1.11 m²/alumno en aula regular, 1.50 m² en párvulos, 1.80 m² en talleres).
+3. Decreto 548 (Aforos físicos de salas: 1.10 m²/alumno en aula regular, 1.50 m² en párvulos, 1.80 m² en talleres).
 4. Decreto 170 (Programa de Integración Escolar PIE: apoyos y horas de trabajo colaborativo).
 5. Ley 20.248 (Subvención Escolar Preferencial SEP: pertinencia del gasto y horas no aula).
 6. Planes de Estudio MINEDUC y distribución curricular.
 
 ESTADO ACTUAL DE LA DOTACIÓN QUE ESTÁS ANALIZANDO:
-${contexto.resumenTexto}
+${sanitizedResumen}
 
 INSTRUCCIONES DE RESPUESTA:
 - Cuando te pregunten por el Director(a) o Equipo Directivo, identifica con precisión su nombre, cargo, horas de contrato y su fundamento legal bajo el DFL 1 (gestión y liderazgo directivo).
@@ -480,19 +494,22 @@ INSTRUCCIONES DE RESPUESTA:
   const contents = [
     ...historial.map(h => ({
       role: h.role,
-      parts: [{ text: h.text }]
+      parts: [{ text: vault.anonymizeText(h.text) }]
     })),
     {
       role: 'user',
-      parts: [{ text: pregunta }]
+      parts: [{ text: sanitizedPregunta }]
     }
   ];
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${effectiveApiKey}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
 
   const response = await geminiFetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': effectiveApiKey
+    },
     body: JSON.stringify({
       contents,
       systemInstruction: {
@@ -520,10 +537,11 @@ INSTRUCCIONES DE RESPUESTA:
   }
 
   const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!rawText) {
     return responderConsultaLocalmente(pregunta, contexto);
   }
 
-  return text;
+  // Restaurar nombres y RUNs localmente
+  return vault.deanonimizeText(rawText);
 }

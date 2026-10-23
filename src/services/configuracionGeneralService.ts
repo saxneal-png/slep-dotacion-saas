@@ -141,6 +141,11 @@ export function cargarConfiguracionGeneral(): ConfiguracionGeneral {
 
     if (legacyApiKey && !config.gemini.apiKey) {
       config.gemini.apiKey = legacyApiKey;
+      // Migrar y limpiar de localStorage para no dejar credenciales en texto plano
+      if (typeof window !== 'undefined' && window.electronAPI?.setGeminiKey) {
+        window.electronAPI.setGeminiKey(legacyApiKey).catch(() => {});
+        safeRemoveItem('gemini_api_key');
+      }
     }
     if (legacyModel && (!config.gemini.model || config.gemini.model === 'gemini-2.5-flash')) {
       config.gemini.model = legacyModel;
@@ -176,14 +181,24 @@ export function cargarConfiguracionGeneral(): ConfiguracionGeneral {
 export function guardarConfiguracionGeneral(config: ConfiguracionGeneral): void {
   try {
     config.ultimaModificacion = new Date().toISOString();
-    safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
 
-    // Sincronizar con llaves legacy que usan otros servicios
-    if (config.gemini.apiKey) {
-      safeSetItem('gemini_api_key', config.gemini.apiKey);
-    } else {
+    // Si estamos en entorno Electron, persistir API Key de forma segura con safeStorage
+    if (typeof window !== 'undefined' && window.electronAPI?.setGeminiKey) {
+      window.electronAPI.setGeminiKey(config.gemini.apiKey || '').catch(err => {
+        console.warn('Error al guardar API Key en safeStorage:', err);
+      });
+      // Purgar de localStorage para resguardar la seguridad de la clave
       safeRemoveItem('gemini_api_key');
+    } else {
+      // Fallback web tradicional
+      if (config.gemini.apiKey) {
+        safeSetItem('gemini_api_key', config.gemini.apiKey);
+      } else {
+        safeRemoveItem('gemini_api_key');
+      }
     }
+
+    safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
     safeSetItem('gemini_model', config.gemini.model || 'gemini-2.5-flash');
     safeSetItem('gemini_export_analizar_todos', String(config.gemini.analizarTodosAlExportar));
   } catch (e) {

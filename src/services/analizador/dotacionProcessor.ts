@@ -1,4 +1,4 @@
-import { parseExcelBrowser } from './excelParser';
+import { parseExcelWorkbook, ParsedSchoolResult } from './excelParser';
 import { classifyActivitiesHybrid } from './classifier';
 import { buildTeacherConsolidatedLoads, buildCourseLoadSummaries } from './courseExtractor';
 import { inicializarPlanesEstudioAnalizador } from './planesEstudioBridge';
@@ -8,6 +8,92 @@ import { interpretarNotasDocentesConIa, TeacherNoteInput } from './aiTeacherNote
 import { normalizarCursosConIa } from './aiCourseNormalizer';
 import { detectarModalidadEstablecimientoHeuristica } from './aiModalidadDetector';
 import * as XLSX from 'xlsx';
+
+/**
+ * Ingesta resiliente de un archivo Excel unificando lectura binaria en un solo XLSX.read
+ * y ejecutando en Web Worker cuando esté disponible para proteger la tasa de cuadros (60 FPS).
+ */
+async function parseFileIngest(
+  file: File,
+  fileIdx: number
+): Promise<{ parsed: ParsedSchoolResult; rawAsistentes: RawAsistenteInput[] }> {
+  const buffer = await file.arrayBuffer();
+
+  if (typeof Worker !== 'undefined' && typeof window !== 'undefined') {
+    try {
+      const workerResult = await new Promise<any>((resolve, reject) => {
+        const worker = new Worker(new URL('./excelIngest.worker.ts', import.meta.url), { type: 'module' });
+        worker.onmessage = (e) => {
+          worker.terminate();
+          if (e.data.success) resolve(e.data);
+          else reject(new Error(e.data.error || 'Fallo worker ingest'));
+        };
+        worker.onerror = (err) => {
+          worker.terminate();
+          reject(err);
+        };
+        worker.postMessage({ fileBuffer: buffer, fileName: file.name, fileIndex: fileIdx });
+      });
+
+      const rawAsistentes: RawAsistenteInput[] = (workerResult.asistentes || []).map((ast: any) => ({
+        id: `${ast.id}-${fileIdx}`,
+        rbd: ast.rbd || '3543',
+        establishment: file.name.replace(/\.[^/.]+$/, ''),
+        file_name: file.name,
+        run: ast.run,
+        nombres: ast.nombres,
+        apellidos: ast.apellidos,
+        cargo_original: ast.cargoFuncion,
+        horas_contrato: ast.horasContrato,
+        horas_subvencion_general_indefinido: ast.horasSubvencionGeneralIndefinido,
+        horas_subvencion_general_plazo_fijo: ast.horasSubvencionGeneralPlazoFijo,
+        horas_sep_indefinido: ast.horasSepIndefinido,
+        horas_sep_plazo_fijo: ast.horasSepPlazoFijo,
+        horas_pie_indefinido: ast.horasPieIndefinido,
+        horas_pie_plazo_fijo: ast.horasPiePlazoFijo,
+        observaciones_originales: ast.observaciones,
+      }));
+
+      return { parsed: workerResult.parsedSchool, rawAsistentes };
+    } catch (workerErr) {
+      console.warn('Web Worker fallback al hilo principal:', workerErr);
+    }
+  }
+
+  // Fallback seguro: lectura unificada en hilo principal sin doble deserialización
+  const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+  const rawAsistentes: RawAsistenteInput[] = [];
+  try {
+    const asistResult = parseAsistentesFromWorkbook(wb, '', 2026);
+    if (asistResult.asistentes.length > 0) {
+      asistResult.asistentes.forEach((ast) => {
+        rawAsistentes.push({
+          id: `${ast.id}-${fileIdx}`,
+          rbd: ast.rbd || '3543',
+          establishment: file.name.replace(/\.[^/.]+$/, ''),
+          file_name: file.name,
+          run: ast.run,
+          nombres: ast.nombres,
+          apellidos: ast.apellidos,
+          cargo_original: ast.cargoFuncion,
+          horas_contrato: ast.horasContrato,
+          horas_subvencion_general_indefinido: ast.horasSubvencionGeneralIndefinido,
+          horas_subvencion_general_plazo_fijo: ast.horasSubvencionGeneralPlazoFijo,
+          horas_sep_indefinido: ast.horasSepIndefinido,
+          horas_sep_plazo_fijo: ast.horasSepPlazoFijo,
+          horas_pie_indefinido: ast.horasPieIndefinido,
+          horas_pie_plazo_fijo: ast.horasPiePlazoFijo,
+          observaciones_originales: ast.observaciones,
+        });
+      });
+    }
+  } catch (errAsist) {
+    console.warn(`No se pudo procesar hoja de asistentes en ${file.name}:`, errAsist);
+  }
+
+  const parsed = parseExcelWorkbook(wb, file.name, fileIdx);
+  return { parsed, rawAsistentes };
+}
 import type {
   SchoolSummary,
   TeacherRecord,
@@ -54,38 +140,8 @@ export async function processDotacionFilesClient(
     processedFiles.push(file.name);
 
     try {
-      // 1. Procesar Asistentes de la Educación si el libro contiene la hoja correspondiente
-      try {
-        const buffer = await file.arrayBuffer();
-        const wb = XLSX.read(buffer, { type: 'array' });
-        const asistResult = parseAsistentesFromWorkbook(wb, '', 2026);
-        if (asistResult.asistentes.length > 0) {
-          asistResult.asistentes.forEach((ast) => {
-            rawAsistentesList.push({
-              id: `${ast.id}-${fileIdx}`,
-              rbd: ast.rbd || '3543',
-              establishment: file.name.replace(/\.[^/.]+$/, ''),
-              file_name: file.name,
-              run: ast.run,
-              nombres: ast.nombres,
-              apellidos: ast.apellidos,
-              cargo_original: ast.cargoFuncion,
-              horas_contrato: ast.horasContrato,
-              horas_subvencion_general_indefinido: ast.horasSubvencionGeneralIndefinido,
-              horas_subvencion_general_plazo_fijo: ast.horasSubvencionGeneralPlazoFijo,
-              horas_sep_indefinido: ast.horasSepIndefinido,
-              horas_sep_plazo_fijo: ast.horasSepPlazoFijo,
-              horas_pie_indefinido: ast.horasPieIndefinido,
-              horas_pie_plazo_fijo: ast.horasPiePlazoFijo,
-              observaciones_originales: ast.observaciones,
-            });
-          });
-        }
-      } catch (errAsist) {
-        console.warn(`No se pudo procesar hoja de asistentes en ${file.name}:`, errAsist);
-      }
-
-      const parsed = await parseExcelBrowser(file, fileIdx);
+      const { parsed, rawAsistentes } = await parseFileIngest(file, fileIdx);
+      rawAsistentes.forEach(ast => rawAsistentesList.push(ast));
       parsed.teachers.forEach((t) => allTeachers.push(t));
 
       // Construcción preliminar de la escuela

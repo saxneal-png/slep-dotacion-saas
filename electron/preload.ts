@@ -9,8 +9,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('fs:writeFile', filePath, content),
   readFile: (filePath: string) =>
     ipcRenderer.invoke('fs:readFile', filePath),
-  geminiRequest: (url: string, options?: any) =>
-    ipcRenderer.invoke('api:geminiRequest', url, options),
+  geminiRequest: (urlOrModel: string, options?: any) =>
+    ipcRenderer.invoke('api:geminiRequest', urlOrModel, options),
+  setGeminiKey: (key: string) =>
+    ipcRenderer.invoke('secrets:setGeminiKey', key),
+  hasGeminiKey: () =>
+    ipcRenderer.invoke('secrets:hasGeminiKey'),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   isDesktop: true
 });

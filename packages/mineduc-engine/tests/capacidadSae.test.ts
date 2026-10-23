@@ -42,4 +42,33 @@ describe('Capacidad de Infraestructura y Cruce con SAE (Decreto 548)', () => {
     const evaluacion = evaluarCapacidadSaeYInfraestructura('3° Medio B', sala, 40, 30);
     expect(evaluacion.observaciones.some(o => o.includes('Inconsistencia SAE vs Infraestructura'))).toBe(true);
   });
+
+  it('aplica tope normativo para aulas combinadas multigrado (máx 15 para 1°-6° o 3+ cursos)', () => {
+    const sala = {
+      id: 'sala-rural',
+      rbd: '5678',
+      nombreSala: 'Sala Multigrado Grande',
+      superficieM2: 55 // Superficie física permitiría 50 alumnos (55 / 1.1)
+    };
+
+    const evaluacion = evaluarCapacidadSaeYInfraestructura('Multigrado 1° a 6° Básico', sala, 20, 18);
+    // El aforo máximo debe estar topado normativamente a 15 alumnos
+    expect(evaluacion.aforoMaximoFisico).toBe(15);
+    expect(evaluacion.estadoAforo).toBe('ALERTA_SOBRECUPO_FISICO');
+    expect(evaluacion.observaciones.some(o => o.includes('tope normativo de la modalidad: 15 alumnos'))).toBe(true);
+  });
+
+  it('aplica tope normativo para escuelas especiales (Decreto 170 / Decreto 83)', () => {
+    const sala = {
+      id: 'sala-especial',
+      rbd: '9999',
+      nombreSala: 'Sala Especial Trastornos Auditivos',
+      superficieM2: 40
+    };
+
+    const evaluacion = evaluarCapacidadSaeYInfraestructura('Educación Especial Discapacidad Auditiva', sala, 10, 9);
+    // Máx 8 alumnos para discapacidad auditiva
+    expect(evaluacion.aforoMaximoFisico).toBe(8);
+    expect(evaluacion.estadoAforo).toBe('ALERTA_SOBRECUPO_FISICO');
+  });
 });

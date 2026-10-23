@@ -132,14 +132,14 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
     asignaturas: [
       { nombre: "Lenguaje y Comunicación", JEC: 7, No_JEC: 7 },
       { nombre: "Matemática", JEC: 6, No_JEC: 6 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 3.5, No_JEC: 3.5 },
-      { nombre: "Ciencias Naturales", JEC: 3.5, No_JEC: 3 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 3, No_JEC: 3 },
+      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 },
       { nombre: "Artes Visuales y Música", JEC: 3, No_JEC: 2.5 },
       { nombre: "Educación Física y Salud", JEC: 3, No_JEC: 2.5 },
-      { nombre: "Tecnología", JEC: 1.5, No_JEC: 1 },
-      { nombre: "Orientación", JEC: 1, No_JEC: 0.5 },
+      { nombre: "Tecnología", JEC: 1, No_JEC: 1 },
+      { nombre: "Orientación", JEC: 1, No_JEC: 1 },
       { nombre: "Religión", JEC: 2, No_JEC: 2 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2.5, No_JEC: 2 }
+      { nombre: "Idioma Extranjero: Inglés", JEC: 3, No_JEC: 2 }
     ]
   },
   "1_2_medio": {

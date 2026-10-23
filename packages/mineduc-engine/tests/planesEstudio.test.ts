@@ -55,6 +55,15 @@ describe('Planes y Programas MINEDUC', () => {
     expect(planProgNoJec?.horasLibreDisposicion).toBe(0);
     expect(planProgNoJec?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('programaci'))).toBe(true);
 
+    // Multigrado Básica
+    const planMultiJec = DATA_PLANES_ESTUDIO_MINEDUC["multigrado_basica"];
+    expect(planMultiJec.regimen.JEC.total).toBe(38);
+    expect(planMultiJec.regimen.JEC.libre).toBe(6);
+    const sumObligatoriasJec = planMultiJec.asignaturas.reduce((s, a) => s + (a.JEC || 0), 0);
+    expect(sumObligatoriasJec).toBe(32); // 32 obligatorias + 6 libre = 38 JEC
+    const sumObligatoriasNoJec = planMultiJec.asignaturas.reduce((s, a) => s + (a.No_JEC || 0), 0);
+    expect(sumObligatoriasNoJec).toBe(30); // 30 No JEC
+
     // Plan Común TP
     const planComunTP = obtenerPlanPorCurso('3° y 4° Medio Técnico-Profesional (Plan Común de Formación General)', 'JEC');
     expect(planComunTP).toBeDefined();

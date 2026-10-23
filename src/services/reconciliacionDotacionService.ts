@@ -1,7 +1,7 @@
 import { Establecimiento, CursoSae, Docente, AsignacionHoraria } from '../types';
 import {
   obtenerPlanPorCurso,
-  calcularJornadaDocente,
+  calcularJornadaMinutos,
   esModalidadTp,
   esModalidadMultigradoOCombinado,
   esModalidadAdultos,
@@ -10,7 +10,8 @@ import {
 import {
   reconciliarYLimpiarAsignacionesEnDb,
   limpiarAsignacionesDeColegio,
-  guardarAsignacionesBatch
+  guardarAsignacionesBatch,
+  listarAsignaciones
 } from '../database/db';
 
 export interface DiagnosticoSincronizacion {
@@ -86,9 +87,14 @@ export function analizarSincronizacionDotacion(
   const docentesConHorasDisponibles = docentes
     .filter(d => d.estamento === 'DOCENTE_AULA' || d.estamento === 'DOCENTE_DIFERENCIAL')
     .map(d => {
-      const propDoc = d.aplicaArticulo69 ? '60/40' : (proporcionColegio === '60_40' ? '60/40' : '65/35');
       const contratoAula = (d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0);
-      const horasLectivas = calcularJornadaDocente(contratoAula || d.horasContrato, propDoc).horasLectivas;
+      const jornada = calcularJornadaMinutos(
+        contratoAula || d.horasContrato,
+        0,
+        proporcionColegio,
+        Boolean(d.aplicaArticulo69)
+      );
+      const horasLectivas = jornada.horasPedagogicasDisponiblesMax;
       
       const asigsD = asignaciones.filter(a => a.docenteId === d.id);
       const horasAsignadas = asigsD.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
@@ -222,20 +228,31 @@ export async function ejecutarAutoAsignacionMallaDesdeNomina(
   cursos: CursoSae[],
   docentes: Docente[]
 ): Promise<ResultadoReconciliacion> {
-  // 1. Primero purgar datos obsoletos
+  // 1. Primero purgar datos obsoletos y recuperar asignaciones vigentes
   await reconciliarYLimpiarAsignacionesEnDb(rbd, periodo);
+  const asignacionesVigentes = await listarAsignaciones(rbd, periodo);
 
-  // 2. Filtrar docentes de aula disponibles
+  // 2. Filtrar docentes de aula disponibles y descontar horas ya asignadas en SQLite
   const proporcionColegio = colegio.porcentajePrioritarios >= 80 ? '60_40' : '65_35';
   
   // Mapa mutable de horas lectivas disponibles por docente
   const disponibilidad = new Map<string, number>();
   for (const d of docentes) {
     if (d.estamento === 'DOCENTE_AULA') {
-      const propDoc = d.aplicaArticulo69 ? '60/40' : (proporcionColegio === '60_40' ? '60/40' : '65/35');
       const contratoAula = (d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0);
-      const horasLectivas = Math.round(calcularJornadaDocente(contratoAula || d.horasContrato, propDoc).horasLectivas);
-      disponibilidad.set(d.id, horasLectivas);
+      const jornada = calcularJornadaMinutos(
+        contratoAula || d.horasContrato,
+        0,
+        proporcionColegio,
+        Boolean(d.aplicaArticulo69)
+      );
+      const horasLectivasMaxHA = jornada.horasPedagogicasDisponiblesMax;
+
+      const yaAsignadas = asignacionesVigentes
+        .filter(a => a.docenteId === d.id && !a.esTrabajoColaborativo && !a.esTallerSep)
+        .reduce((acc, a) => acc + (a.horasPedagogicasAula || 0), 0);
+
+      disponibilidad.set(d.id, Math.max(0, horasLectivasMaxHA - yaAsignadas));
     }
   }
 
@@ -247,8 +264,20 @@ export async function ejecutarAutoAsignacionMallaDesdeNomina(
     const plan = obtenerPlanPorCurso(curso.nivel, curso.regimen, curso.especialidadTp);
     if (!plan || !plan.asignaturasBase || plan.asignaturasBase.length === 0) continue;
 
+    const asigsCursoVigentes = asignacionesVigentes.filter(a => a.cursoId === curso.id);
+
     for (const asigPlan of plan.asignaturasBase) {
-      const horasRequeridas = asigPlan.horasSugeridas || 2;
+      // Verificar si el curso ya tiene horas asignadas de esta asignatura
+      const normPlan = normalizarTexto(asigPlan.nombre);
+      const yaCubiertas = asigsCursoVigentes
+        .filter(a => {
+          const normA = normalizarTexto(a.asignatura || '');
+          return normA.includes(normPlan) || normPlan.includes(normA);
+        })
+        .reduce((acc, a) => acc + (a.horasPedagogicasAula || 0), 0);
+
+      const horasRequeridas = Math.max(0, (asigPlan.horasSugeridas || 2) - yaCubiertas);
+      if (horasRequeridas <= 0) continue;
       
       // Buscar al mejor docente disponible según afinidad
       let mejorDocente: Docente | null = null;

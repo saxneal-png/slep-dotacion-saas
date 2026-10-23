@@ -21,6 +21,43 @@ export interface ResultadoCalculoJornadaMinutos {
 }
 
 /**
+ * Determina si el nivel o curso corresponde al ciclo inicial (NT1, NT2, 1° a 4° Básico).
+ */
+export function esNivelNt1A4Basico(nivelOCurso: string): boolean {
+  if (!nivelOCurso) return false;
+  const n = nivelOCurso.toLowerCase().trim();
+  if (n.includes('nt1') || n.includes('nt2') || n.includes('pre-k') || n.includes('kinder') || n.includes('kínder') || n.includes('parv')) {
+    return true;
+  }
+  const match = n.match(/([1-4])\s*(?:°|º|ro|do|to|ero)?\s*(?:básico|basico|basica|básica|b)/i);
+  return Boolean(match);
+}
+
+/**
+ * Determina el régimen normativo oficial según Ley N° 20.903:
+ * - Régimen 60/40 general si el establecimiento cuenta con >= 80% (o umbral configurado) de alumnos prioritarios.
+ * - Régimen 60/40 focalizado desde NT1 hasta 4° Básico si el establecimiento cuenta con >= 60% de alumnos prioritarios.
+ * - En cualquier otro caso aplica el régimen 65/35.
+ */
+export function determinarRegimenNormativo(
+  porcentajePrioritarios: number,
+  nivelOEsCicloInicial?: string | boolean,
+  umbralGeneral: number = 80
+): RegimenHorario {
+  const esCicloInicial = typeof nivelOEsCicloInicial === 'boolean'
+    ? nivelOEsCicloInicial
+    : (typeof nivelOEsCicloInicial === 'string' ? esNivelNt1A4Basico(nivelOEsCicloInicial) : false);
+
+  if (porcentajePrioritarios >= umbralGeneral) {
+    return '60_40';
+  }
+  if (porcentajePrioritarios >= 60 && esCicloInicial) {
+    return '60_40';
+  }
+  return '65_35';
+}
+
+/**
  * Obtiene el tramo oficial de la tabla MINEDUC según las horas contractuales (enteras).
  */
 export function obtenerTramoMineduc(horasContrato: number, regimen: RegimenHorario = '65_35'): MineducTramoMinutos | null {
@@ -47,17 +84,20 @@ export function calcularJornadaMinutos(
     const porcentajeLectivoMax = regimen === '60_40' ? 0.60 : 0.65;
     let maxLectivoMin = Math.floor(minutosContratoTotales * porcentajeLectivoMax);
     let maxHorasPed = Math.floor(maxLectivoMin / 45);
-    const minsLectivosAsignados = Math.round(horasPedagogicasAsignadas * 45);
-    const minsRecreo = Math.round(minsLectivosAsignados * (180 / 1710));
-    let minsNoLectivos = Math.max(0, minutosContratoTotales - minsLectivosAsignados - minsRecreo);
-
+    let maxRecreoMin = Math.round(maxLectivoMin * (180 / 1710));
     let reduccionArt69Mins = 0;
+
     if (aplicaArticulo69 && maxLectivoMin > 1440) {
       reduccionArt69Mins = maxLectivoMin - 1440;
       maxLectivoMin = 1440;
       maxHorasPed = 32;
-      minsNoLectivos += reduccionArt69Mins;
+      maxRecreoMin = Math.round(1440 * (180 / 1710));
     }
+
+    const minsNoLectivos = Math.max(0, minutosContratoTotales - maxLectivoMin - maxRecreoMin);
+    const minsLectivosAsignados = Math.round(horasPedagogicasAsignadas * 45);
+    const proporcionRecreo = maxLectivoMin > 0 ? (minsLectivosAsignados / maxLectivoMin) : 0;
+    const minsRecreo = Math.round(maxRecreoMin * Math.min(1, proporcionRecreo));
 
     const minsUsados = minsLectivosAsignados + minsRecreo + minsNoLectivos;
     const sobreasignado = minsLectivosAsignados > maxLectivoMin;
@@ -87,6 +127,7 @@ export function calcularJornadaMinutos(
 
   let maxLectivasHorasPed = tramo.lectivasHorasPedagogicas;
   let maxLectivasMins = tramo.lectivasMinutosCronologicos;
+  let maxRecreoMins = tramo.recreoMinutosCronologicos;
   let minsNoLectivos = tramo.noLectivasMinutosCronologicos;
   let reduccionArt69Mins = 0;
 
@@ -94,16 +135,18 @@ export function calcularJornadaMinutos(
     reduccionArt69Mins = maxLectivasMins - 1440;
     maxLectivasMins = 1440;
     maxLectivasHorasPed = 32;
-    minsNoLectivos += reduccionArt69Mins;
+    // Escalar los minutos de recreo en base a maxLectivasMins para que la suma total cierre exactamente en minutos de contrato
+    maxRecreoMins = Math.round(tramo.recreoMinutosCronologicos * (maxLectivasMins / tramo.lectivasMinutosCronologicos));
+    minsNoLectivos = minutosContratoTotales - maxLectivasMins - maxRecreoMins;
   }
 
   const minsLectivosAsignados = Math.round(horasPedagogicasAsignadas * 45);
   const esSobreasignado = minsLectivosAsignados > maxLectivasMins;
 
-  const proporcionRecreo = tramo.lectivasHorasPedagogicas > 0
-    ? (minsLectivosAsignados / tramo.lectivasMinutosCronologicos)
+  const proporcionRecreo = maxLectivasMins > 0
+    ? (minsLectivosAsignados / maxLectivasMins)
     : 0;
-  const minsRecreo = Math.round(tramo.recreoMinutosCronologicos * Math.min(1, proporcionRecreo));
+  const minsRecreo = Math.round(maxRecreoMins * Math.min(1, proporcionRecreo));
 
   const minsUsados = minsLectivosAsignados + minsRecreo + minsNoLectivos;
   const horasPedagogicasVacantes = Math.max(0, maxLectivasHorasPed - horasPedagogicasAsignadas);

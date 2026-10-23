@@ -122,6 +122,37 @@ export function formatRut(rutRaw: string): string {
   return `${formatted}-${dv}`;
 }
 
+/**
+ * Sanitiza valores de texto para evitar CSV / Excel Formula Injection (=, +, -, @)
+ */
+export function sanitizeExcelText(val: any): string {
+  if (val === null || val === undefined) return '';
+  const str = String(val).trim();
+  if (/^[=+\-@]/.test(str)) {
+    return `'${str}`;
+  }
+  return str;
+}
+
+/**
+ * Obtiene el máximo de Horas Aula Pedagógicas (HA) que puede albergar una jornada sin excederla en VLOOKUP
+ */
+export function obtenerMaxHaParaJornada(
+  jornadaDisponible: number,
+  proporcion: '65/35' | '60/40'
+): number {
+  if (jornadaDisponible <= 0) return 0;
+  const tabla = proporcion === '60/40' ? TABLA_60_40_OFICIAL : TABLA_65_35_OFICIAL;
+  let maxHa = 0;
+  for (const [haStr, item] of Object.entries(tabla)) {
+    const ha = Number(haStr);
+    if (item.jornada <= jornadaDisponible && ha > maxHa) {
+      maxHa = ha;
+    }
+  }
+  return maxHa;
+}
+
 export interface PalDocenteRowData {
   rut: string;
   establecimiento: string;
@@ -246,7 +277,22 @@ export function homologarDocenteAPal(
     sepCrono: number,
     obsSuffix: string = ''
   ): PalDocenteRowData => {
-    const totalHa = kBasica + lMedia;
+    // Prevenir que el cruce de tablas VLOOKUP con jornadas compartidas exceda el total de la Columna J
+    const dispJornada = Math.max(0, jornadaContrato - pieCrono - sepCrono);
+    const maxHaPermitida = obtenerMaxHaParaJornada(dispJornada, proporcionHa);
+    let totalHa = kBasica + lMedia;
+    if (totalHa > maxHaPermitida && maxHaPermitida >= 0) {
+      if (totalHa > 0) {
+        const ratioBas = kBasica / totalHa;
+        kBasica = Math.floor(maxHaPermitida * ratioBas);
+        lMedia = maxHaPermitida - kBasica;
+      } else {
+        kBasica = 0;
+        lMedia = 0;
+      }
+      totalHa = kBasica + lMedia;
+    }
+
     const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(totalHa, proporcionHa);
 
     // Col R absorbe la diferencia exacta para cuadrar Col J = N + O + P + Q + R
@@ -263,12 +309,12 @@ export function homologarDocenteAPal(
     ].filter(Boolean).join(' | ');
 
     return {
-      rut: formatRut(docente.run),
-      establecimiento: establecimiento.nombre.toUpperCase(),
+      rut: sanitizeExcelText(formatRut(docente.run)),
+      establecimiento: sanitizeExcelText(establecimiento.nombre.toUpperCase()),
       rbd: Number(establecimiento.rbd),
       nivel: nivelPal,
       estamento: estamentoPal,
-      cargo: cargoPal.toUpperCase(),
+      cargo: sanitizeExcelText(cargoPal.toUpperCase()),
       funcion: funcionPal,
       calidadContrato: calidad,
       art69: docente.aplicaArticulo69 ? 'SI' : '',
@@ -279,17 +325,23 @@ export function homologarDocenteAPal(
       hrsPieCronologicas: pieCrono,
       hrsSepCronologicas: sepCrono,
       otrasFuncionesNoLectivas: otrasFunciones,
-      observaciones: obsText
+      observaciones: sanitizeExcelText(obsText)
     };
   };
 
   // Regla 33 DEP: Si tiene contratos Titular y Contrata, desdoblar en 2 filas
   if (tieneContratosMixtos) {
+    const dispTit = Math.max(0, totalTit - hPieTit - hSepTit);
+    const maxHaTit = obtenerMaxHaParaJornada(dispTit, proporcionHa);
+    const dispCtta = Math.max(0, totalCtta - hPieCtta - hSepCtta);
+    const maxHaCtta = obtenerMaxHaParaJornada(dispCtta, proporcionHa);
+
     const ratioTit = totalTit / (totalTit + totalCtta);
-    const kBasTit = round(haBasica * ratioTit, 0);
-    const lMedTit = round(haMedia * ratioTit, 0);
-    const kBasCtta = haBasica - kBasTit;
-    const lMedCtta = haMedia - lMedTit;
+    let kBasTit = Math.min(maxHaTit, round(haBasica * ratioTit, 0));
+    let lMedTit = Math.min(Math.max(0, maxHaTit - kBasTit), round(haMedia * ratioTit, 0));
+
+    let kBasCtta = Math.min(maxHaCtta, haBasica - kBasTit);
+    let lMedCtta = Math.min(Math.max(0, maxHaCtta - kBasCtta), haMedia - lMedTit);
 
     const filaTit = armarFila('Titular', totalTit, kBasTit, lMedTit, hPieTit, hSepTit, 'Contrato Titular');
     const filaCtta = armarFila('Plazo Fijo', totalCtta, kBasCtta, lMedCtta, hPieCtta, hSepCtta, 'Contrato Contrata');
@@ -338,47 +390,71 @@ export function homologarAsistenteAPal(
 
   const hGralIndef = Number(asistente.horasSubvencionGeneralIndefinido || 0);
   const hGralPlazo = Number(asistente.horasSubvencionGeneralPlazoFijo || 0);
-  const hSepIndef = Number(asistente.horasSepIndefinido || 0);
-  const hSepPlazo = Number(asistente.horasSepPlazoFijo || 0);
   const hPieIndef = Number(asistente.horasPieIndefinido || 0);
   const hPiePlazo = Number(asistente.horasPiePlazoFijo || 0);
+  const hSepIndef = Number(asistente.horasSepIndefinido || 0);
+  const hSepPlazo = Number(asistente.horasSepPlazoFijo || 0);
 
-  const totalIndef = hGralIndef + hSepIndef + hPieIndef;
-  const totalPlazo = hGralPlazo + hSepPlazo + hPiePlazo;
-  const esMixto = totalIndef > 0 && totalPlazo > 0;
+  const totalIndef = hGralIndef + hPieIndef + hSepIndef;
+  const totalPlazo = hGralPlazo + hPiePlazo + hSepPlazo;
+  const tieneContratosMixtos = totalIndef > 0 && totalPlazo > 0;
 
-  const armarFila = (
-    calidad: 'Indefinido' | 'Plazo Fijo',
-    totalHrs: number,
-    hGral: number,
-    hPie: number,
-    hSep: number
-  ): PalAsistenteRowData => ({
-    rut: formatRut(asistente.run),
-    establecimiento: establecimiento.nombre.toUpperCase(),
-    rbd: Number(establecimiento.rbd),
-    nivel: nivelPal,
-    estamento: 'Asistente de la Educación',
-    cargo: (asistente.cargoFuncion || funcionPal).toUpperCase(),
-    funcion: funcionPal,
-    calidadContrato: calidad,
-    totalHrsContrato: totalHrs,
-    hrsLectivasSubvGeneral: hGral,
-    hrsPie: hPie,
-    hrsSep: hSep,
-    observaciones: asistente.observaciones || ''
-  });
+  if (tieneContratosMixtos) {
+    const filaIndef: PalAsistenteRowData = {
+      rut: sanitizeExcelText(formatRut(asistente.run)),
+      establecimiento: sanitizeExcelText(establecimiento.nombre.toUpperCase()),
+      rbd: Number(establecimiento.rbd),
+      nivel: nivelPal,
+      estamento: 'Asistente de la Educación',
+      cargo: sanitizeExcelText((asistente.cargoFuncion || 'ASISTENTE DE LA EDUCACIÓN').toUpperCase()),
+      funcion: funcionPal,
+      calidadContrato: 'Indefinido',
+      totalHrsContrato: totalIndef,
+      hrsLectivasSubvGeneral: hGralIndef,
+      hrsPie: hPieIndef,
+      hrsSep: hSepIndef,
+      observaciones: sanitizeExcelText(asistente.observaciones ? `${asistente.observaciones} | Contrato Indefinido` : 'Contrato Indefinido')
+    };
 
-  if (esMixto) {
-    return [
-      armarFila('Indefinido', totalIndef, hGralIndef, hPieIndef, hSepIndef),
-      armarFila('Plazo Fijo', totalPlazo, hGralPlazo, hPiePlazo, hSepPlazo)
-    ];
+    const filaPlazo: PalAsistenteRowData = {
+      rut: sanitizeExcelText(formatRut(asistente.run)),
+      establecimiento: sanitizeExcelText(establecimiento.nombre.toUpperCase()),
+      rbd: Number(establecimiento.rbd),
+      nivel: nivelPal,
+      estamento: 'Asistente de la Educación',
+      cargo: sanitizeExcelText((asistente.cargoFuncion || 'ASISTENTE DE LA EDUCACIÓN').toUpperCase()),
+      funcion: funcionPal,
+      calidadContrato: 'Plazo Fijo',
+      totalHrsContrato: totalPlazo,
+      hrsLectivasSubvGeneral: hGralPlazo,
+      hrsPie: hPiePlazo,
+      hrsSep: hSepPlazo,
+      observaciones: sanitizeExcelText(asistente.observaciones ? `${asistente.observaciones} | Contrato Plazo Fijo` : 'Contrato Plazo Fijo')
+    };
+
+    return [filaIndef, filaPlazo];
   }
 
   const calidadUnica = totalIndef > 0 ? 'Indefinido' : 'Plazo Fijo';
   const jornada = asistente.horasContrato || (totalIndef + totalPlazo);
-  return [armarFila(calidadUnica, jornada, hGralIndef + hGralPlazo, hPieIndef + hPiePlazo, hSepIndef + hSepPlazo)];
+
+  return [
+    {
+      rut: sanitizeExcelText(formatRut(asistente.run)),
+      establecimiento: sanitizeExcelText(establecimiento.nombre.toUpperCase()),
+      rbd: Number(establecimiento.rbd),
+      nivel: nivelPal,
+      estamento: 'Asistente de la Educación',
+      cargo: sanitizeExcelText((asistente.cargoFuncion || 'ASISTENTE DE LA EDUCACIÓN').toUpperCase()),
+      funcion: funcionPal,
+      calidadContrato: calidadUnica,
+      totalHrsContrato: jornada,
+      hrsLectivasSubvGeneral: hGralIndef + hGralPlazo,
+      hrsPie: hPieIndef + hPiePlazo,
+      hrsSep: hSepIndef + hSepPlazo,
+      observaciones: sanitizeExcelText(asistente.observaciones || '')
+    }
+  ];
 }
 
 /**

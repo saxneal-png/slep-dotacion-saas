@@ -1,5 +1,6 @@
 import { TipoFuncionFueraAula } from '../../types/analizadorTypes';
 import { generateGeminiResponse } from '../geminiApiClient';
+import { createDeterministicPiiVault } from '../../utils/piiSovereigntySanitizer';
 
 export interface InterpretedTeacherNote {
   raw_text: string;
@@ -184,6 +185,17 @@ export async function interpretarNotasDocentesConIa(
   const batchSize = 15;
   for (let i = 0; i < inputs.length; i += batchSize) {
     const batch = inputs.slice(i, i + batchSize);
+    const vault = createDeterministicPiiVault(batch.map(b => ({ run: b.rut, teacher_name: b.teacher_name })));
+
+    const sanitizedBatch = batch.map((b, idx) => ({
+      index: idx,
+      rut: vault.anonymizeText(b.rut),
+      teacher_name: vault.anonymizeText(b.teacher_name),
+      activity: vault.anonymizeText(b.activity),
+      hours: b.hours,
+      curso: b.curso,
+      observaciones: vault.anonymizeText(b.observaciones || ''),
+    }));
 
     const promptText = `
 Eres un Auditor Experto en Dotación Docente y Normativa Escolar Chilena (MINEDUC, Ley 20.903, DFL 1/1996, Dec. 170 PIE, Ley SEP 20.248).
@@ -210,19 +222,7 @@ Para cada elemento del lote, clasifica con precisión la función y devuelve un 
 - "confianza": "ALTA" | "MEDIA" | "BAJA".
 
 Datos a analizar:
-${JSON.stringify(
-  batch.map((b, idx) => ({
-    index: idx,
-    rut: b.rut,
-    teacher_name: b.teacher_name,
-    activity: b.activity,
-    hours: b.hours,
-    curso: b.curso,
-    observaciones: b.observaciones,
-  })),
-  null,
-  2
-)}
+${JSON.stringify(sanitizedBatch, null, 2)}
 
 Responde ÚNICAMENTE un array JSON válido con la estructura solicitada, sin formato markdown adicional.
 `;
@@ -253,9 +253,9 @@ Responde ÚNICAMENTE un array JSON válido con la estructura solicitada, sin for
               es_co_docencia: Boolean(item.es_co_docencia),
               es_taller_sep: Boolean(item.es_taller_sep),
               curso_detectado: inp.curso,
-              asignatura_normalizada: item.asignatura_normalizada || inp.activity,
-              observaciones_limpias: item.observaciones_limpias || inp.observaciones || '',
-              dictamen_ia: item.dictamen_ia || 'Interpretado por Gemini IA',
+              asignatura_normalizada: vault.deanonimizeText(item.asignatura_normalizada || inp.activity),
+              observaciones_limpias: vault.deanonimizeText(item.observaciones_limpias || inp.observaciones || ''),
+              dictamen_ia: vault.deanonimizeText(item.dictamen_ia || 'Interpretado por Gemini IA'),
               confianza: item.confianza || 'ALTA',
             });
           }

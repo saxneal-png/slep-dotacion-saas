@@ -3,6 +3,8 @@
 // Basado en Decreto 170/2009 y Ordinario N° 2398 (20/12/2023) MINEDUC Chile
 // =============================================================================
 
+import { esModalidadAdultos } from './modalidades';
+
 export interface ItemNormativaPie {
   neet: { cantidad_estudiantes: number; horas_cronologicas: number };
   neep: { cantidad_estudiantes: number; horas_cronologicas: number };
@@ -398,7 +400,7 @@ export function autoAsignarHorasPieCursos(
 
   let totalDemandaDiferencial = 0;
   let totalDemandaPae = 0;
-  const totalDemandaTrabajoColaborativo = cursos.length * 3.0; // 3h obligatorias por cada curso integrado (Art. 86)
+  let totalDemandaTrabajoColaborativo = 0;
   let totalHorasAsignadasDiferencial = 0;
   let totalHorasAsignadasPae = 0;
   let totalHorasAsignadasTecnicos = 0;
@@ -406,12 +408,33 @@ export function autoAsignarHorasPieCursos(
 
   for (const curso of cursos) {
     const isJec = curso.regimen === 'JEC';
-    const neet = curso.alumnos_neet !== undefined ? curso.alumnos_neet : 5;
-    const neep = curso.alumnos_neep !== undefined ? curso.alumnos_neep : 2;
-    const demanda = calcularDemandaNormativaPieCurso(neet, neep, isJec);
+    const neet = curso.alumnos_neet ?? 0;
+    const neep = curso.alumnos_neep ?? 0;
+    const esEpja = esModalidadAdultos(curso.nombre) || (curso.nivel ? esModalidadAdultos(curso.nivel) : false);
+
+    // Excluir del cobro de 3.0h de Trabajo Colaborativo (Art. 86) a cursos sin matrícula PIE y a modalidades de Educación de Adultos (EPJA)
+    const tienePie = (neet > 0 || neep > 0) && !esEpja;
+    const demanda = tienePie
+      ? calcularDemandaNormativaPieCurso(neet, neep, isJec)
+      : {
+          horasTotalCronologicas: 0,
+          horasDiferencialDecimal: 0,
+          horasDiferencialHHMM: "00:00",
+          horasPaeDecimal: 0,
+          horasPaeHHMM: "00:00",
+          horasTrabajoColaborativoCronologicas: 0,
+          neetCount: neet,
+          neepCount: neep,
+          isJec,
+          cumpleAforo: true,
+          observacionNormativa: esEpja ? "EPJA no elegible para Programa de Integración Escolar (PIE)." : "Curso sin matrícula PIE asignada."
+        };
 
     totalDemandaDiferencial += demanda.horasDiferencialDecimal;
     totalDemandaPae += demanda.horasPaeDecimal;
+
+    const horasColabRequeridas = tienePie ? demanda.horasTrabajoColaborativoCronologicas : 0;
+    totalDemandaTrabajoColaborativo += horasColabRequeridas;
 
     const asigsCurso: AsignacionSugeridaPie[] = [];
 
@@ -467,72 +490,76 @@ export function autoAsignarHorasPieCursos(
       resumenPokaYoke.push(`⚠️ ${curso.nombre}: Faltan ${horasPaeFaltantes.toFixed(1)}h de Asistente PAE.`);
     }
 
-    // 3. Asignar Asistente Técnico en Educación Especial (si hay disponibles)
-    for (const tec of tecnicos) {
-      if (tec.horasRestantes >= 2.0) {
-        const horasTec = Math.min(tec.horasRestantes, isJec ? 4.0 : 2.5);
-        tec.horasRestantes -= horasTec;
-        totalHorasAsignadasTecnicos += horasTec;
-
-        asigsCurso.push({
-          id: `auto-tec-${curso.nombre}-${tec.run}`,
-          funcionario_run: tec.run,
-          nombre: tec.nombre,
-          cargo: tec.cargo || 'Técnico en Educación Especial',
-          tipo_profesional: 'Técnico en Educación Especial',
-          horas_asignadas: parseFloat(horasTec.toFixed(1)),
-          tipo_apoyo: 'Apoyo Técnico en Aula',
-        });
-        break;
-      }
-    }
-
-    // 4. Asignar Docente de Aula Regular (3.0 hrs de Trabajo Colaborativo Decreto 170 Art. 86)
-    let horasColabFaltantes = 3.0;
-    const docenteTitularMatch = curso.docente_titular_run
-      ? docentesAula.find(d => d.run === curso.docente_titular_run)
-      : null;
-
-    if (docenteTitularMatch && docenteTitularMatch.horasRestantes >= 3.0) {
-      docenteTitularMatch.horasRestantes -= 3.0;
-      horasColabFaltantes = 0;
-      totalHorasAsignadasColaborativo += 3.0;
-
-      asigsCurso.push({
-        id: `auto-colab-${curso.nombre}-${docenteTitularMatch.run}`,
-        funcionario_run: docenteTitularMatch.run,
-        nombre: docenteTitularMatch.nombre,
-        cargo: docenteTitularMatch.cargo || 'Docente de Aula',
-        tipo_profesional: 'Docente de Aula (Trabajo Colaborativo)',
-        horas_asignadas: 3.0,
-        tipo_apoyo: 'Trabajo Colaborativo / Co-Planificación',
-        docente_aula_asignatura: docenteTitularMatch.asignatura || 'Lenguaje y Matemática',
-      });
-    } else {
-      for (const docA of docentesAula) {
-        if (horasColabFaltantes <= 0) break;
-        if (docA.horasRestantes > 0) {
-          const horasColab = Math.min(docA.horasRestantes, horasColabFaltantes);
-          docA.horasRestantes -= horasColab;
-          horasColabFaltantes -= horasColab;
-          totalHorasAsignadasColaborativo += horasColab;
+    // 3. Asignar Asistente Técnico en Educación Especial (si hay disponibles y tiene PIE)
+    if (tienePie) {
+      for (const tec of tecnicos) {
+        if (tec.horasRestantes >= 2.0) {
+          const horasTec = Math.min(tec.horasRestantes, isJec ? 4.0 : 2.5);
+          tec.horasRestantes -= horasTec;
+          totalHorasAsignadasTecnicos += horasTec;
 
           asigsCurso.push({
-            id: `auto-colab-${curso.nombre}-${docA.run}`,
-            funcionario_run: docA.run,
-            nombre: docA.nombre,
-            cargo: docA.cargo || 'Docente de Aula',
-            tipo_profesional: 'Docente de Aula (Trabajo Colaborativo)',
-            horas_asignadas: parseFloat(horasColab.toFixed(1)),
-            tipo_apoyo: 'Trabajo Colaborativo / Co-Planificación',
-            docente_aula_asignatura: docA.asignatura || 'Asignatura Troncal',
+            id: `auto-tec-${curso.nombre}-${tec.run}`,
+            funcionario_run: tec.run,
+            nombre: tec.nombre,
+            cargo: tec.cargo || 'Técnico en Educación Especial',
+            tipo_profesional: 'Técnico en Educación Especial',
+            horas_asignadas: parseFloat(horasTec.toFixed(1)),
+            tipo_apoyo: 'Apoyo Técnico en Aula',
           });
+          break;
         }
       }
     }
 
-    if (horasColabFaltantes > 0) {
-      resumenPokaYoke.push(`ℹ️ ${curso.nombre}: Faltan ${horasColabFaltantes.toFixed(1)}h de Trabajo Colaborativo con Docente de Aula (Art. 86).`);
+    // 4. Asignar Docente de Aula Regular (3.0 hrs de Trabajo Colaborativo Decreto 170 Art. 86 si corresponde)
+    if (horasColabRequeridas > 0) {
+      let horasColabFaltantes = horasColabRequeridas;
+      const docenteTitularMatch = curso.docente_titular_run
+        ? docentesAula.find(d => d.run === curso.docente_titular_run)
+        : null;
+
+      if (docenteTitularMatch && docenteTitularMatch.horasRestantes >= horasColabRequeridas) {
+        docenteTitularMatch.horasRestantes -= horasColabRequeridas;
+        horasColabFaltantes = 0;
+        totalHorasAsignadasColaborativo += horasColabRequeridas;
+
+        asigsCurso.push({
+          id: `auto-colab-${curso.nombre}-${docenteTitularMatch.run}`,
+          funcionario_run: docenteTitularMatch.run,
+          nombre: docenteTitularMatch.nombre,
+          cargo: docenteTitularMatch.cargo || 'Docente de Aula',
+          tipo_profesional: 'Docente de Aula (Trabajo Colaborativo)',
+          horas_asignadas: horasColabRequeridas,
+          tipo_apoyo: 'Trabajo Colaborativo / Co-Planificación',
+          docente_aula_asignatura: docenteTitularMatch.asignatura || 'Lenguaje y Matemática',
+        });
+      } else {
+        for (const docA of docentesAula) {
+          if (horasColabFaltantes <= 0) break;
+          if (docA.horasRestantes > 0) {
+            const horasColab = Math.min(docA.horasRestantes, horasColabFaltantes);
+            docA.horasRestantes -= horasColab;
+            horasColabFaltantes -= horasColab;
+            totalHorasAsignadasColaborativo += horasColab;
+
+            asigsCurso.push({
+              id: `auto-colab-${curso.nombre}-${docA.run}`,
+              funcionario_run: docA.run,
+              nombre: docA.nombre,
+              cargo: docA.cargo || 'Docente de Aula',
+              tipo_profesional: 'Docente de Aula (Trabajo Colaborativo)',
+              horas_asignadas: parseFloat(horasColab.toFixed(1)),
+              tipo_apoyo: 'Trabajo Colaborativo / Co-Planificación',
+              docente_aula_asignatura: docA.asignatura || 'Asignatura Troncal',
+            });
+          }
+        }
+      }
+
+      if (horasColabFaltantes > 0) {
+        resumenPokaYoke.push(`ℹ️ ${curso.nombre}: Faltan ${horasColabFaltantes.toFixed(1)}h de Trabajo Colaborativo con Docente de Aula (Art. 86).`);
+      }
     }
 
     asignacionesPorCurso[curso.nombre] = asigsCurso;

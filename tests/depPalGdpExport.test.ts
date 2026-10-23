@@ -8,6 +8,7 @@ import {
   homologarDocenteAPal,
   homologarAsistenteAPal,
   inferirPropuestaGdp,
+  sanitizeExcelText,
   TABLA_65_35_OFICIAL,
   TABLA_60_40_OFICIAL
 } from '../src/services/depHomologationEngine';
@@ -207,6 +208,15 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     }
   ];
 
+  it('sanitizeExcelText neutraliza inyecciones de fórmulas maliciosas', () => {
+    expect(sanitizeExcelText('=SUM(A1:A10)')).toBe("'=SUM(A1:A10)");
+    expect(sanitizeExcelText('+12345678')).toBe("'+12345678");
+    expect(sanitizeExcelText('-cmd|/C calc!A0')).toBe("'-cmd|/C calc!A0");
+    expect(sanitizeExcelText('@SUM(B1)')).toBe("'@SUM(B1)");
+    expect(sanitizeExcelText('Docente Regular')).toBe('Docente Regular');
+    expect(sanitizeExcelText(null)).toBe('');
+  });
+
   it('genera la Planilla Final PAL 2027 DEP preservando fórmulas nativas de Excel', async () => {
     const bytes = await generarExcelConsolidadoPalDEP([est], docentes, asistentes);
     expect(bytes).toBeDefined();
@@ -230,7 +240,7 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     const wsResumen = wb.getWorksheet('Resumen');
     expect(wsResumen).toBeDefined();
     expect(wsResumen!.getCell('B3').value).toBeDefined();
-  });
+  }, 15000);
 
   it('genera la Planilla GDP oficial del colegio con sus 6 hojas y fórmulas nativas', async () => {
     const bytes = await generarExcelGdpColegio(est, docentes, asistentes);

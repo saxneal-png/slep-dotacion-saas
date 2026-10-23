@@ -11,6 +11,7 @@
 
 import { Docente, AsignacionHoraria, Establecimiento } from '../types';
 import { geminiFetch } from './geminiApiClient';
+import { createDeterministicPiiVault } from '../utils/piiSovereigntySanitizer';
 
 /** Resultado de clasificación de sección por Gemini */
 export interface GeminiSeccionResult {
@@ -48,10 +49,13 @@ async function callGemini(
 
   for (const model of candidates) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const resp = await geminiFetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
@@ -175,13 +179,14 @@ export async function clasificarDocentesConGemini(
   if (!options.apiKey || docentes.length === 0) return result;
 
   const esRegimen6040 = (establecimiento.porcentajePrioritarios || 0) >= 80;
+  const vault = createDeterministicPiiVault(docentes);
 
-  // Construir resúmenes de todos los docentes
+  // Construir resúmenes de todos los docentes ofuscando datos personales
   const resumenes = docentes.map(d => resumirDocente(d, asignaciones, esRegimen6040));
 
   const prompt = PROMPT_CLASIFICACION_SECCION.replace(
     '{docentes_json}',
-    JSON.stringify(resumenes, null, 2)
+    vault.anonymizeText(JSON.stringify(resumenes, null, 2))
   );
 
   const raw = await callGemini(prompt, options.apiKey, options.modelName);
@@ -194,7 +199,7 @@ export async function clasificarDocentesConGemini(
       const confianza = (['ALTA', 'MEDIA', 'BAJA'].includes(datos.confianza) ? datos.confianza : 'MEDIA') as 'ALTA' | 'MEDIA' | 'BAJA';
       result.set(docenteId, {
         seccion,
-        razon: datos.razon || '',
+        razon: vault.deanonimizeText(datos.razon || ''),
         confianza,
       });
     }
@@ -250,12 +255,13 @@ export async function generarObservacionesConGemini(
   if (!options.apiKey || docentes.length === 0) return result;
 
   const esRegimen6040 = (establecimiento.porcentajePrioritarios || 0) >= 80;
+  const vault = createDeterministicPiiVault(docentes);
 
   const resumenes = docentes.map(d => resumirDocente(d, asignaciones, esRegimen6040));
 
   const prompt = PROMPT_OBSERVACIONES.replace(
     '{docentes_json}',
-    JSON.stringify(resumenes, null, 2)
+    vault.anonymizeText(JSON.stringify(resumenes, null, 2))
   );
 
   const raw = await callGemini(prompt, options.apiKey, options.modelName);
@@ -265,8 +271,8 @@ export async function generarObservacionesConGemini(
     const parsed: Record<string, string> = JSON.parse(raw);
     for (const [docenteId, obs] of Object.entries(parsed)) {
       if (typeof obs === 'string' && obs.length > 0) {
-        // Truncar a 90 caracteres por seguridad
-        result.set(docenteId, obs.slice(0, 90));
+        // Truncar a 90 caracteres por seguridad y desanonimizar
+        result.set(docenteId, vault.deanonimizeText(obs).slice(0, 90));
       }
     }
   } catch {

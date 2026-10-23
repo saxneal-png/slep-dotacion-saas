@@ -1,8 +1,8 @@
 import { geminiFetch } from '../geminiApiClient';
 import { EstamentoAsistente } from '../../types';
 import { inferirClasificacionAsistente } from '../../../packages/mineduc-engine/src/calculoAsistentes';
-
 import { normalizarCargoAsistenteInteligente } from './intelligentCargoNormalizer';
+import { createDeterministicPiiVault } from '../../utils/piiSovereigntySanitizer';
 
 export interface RawAsistenteInput {
   id: string;
@@ -115,10 +115,12 @@ async function llamarGeminiAsistentesLote(
   customPrompt?: string
 ): Promise<Record<string, any>> {
   const promptTemplate = customPrompt || ASISTENTES_GEMINI_SYSTEM_PROMPT;
+  const vault = createDeterministicPiiVault(lote.map(a => ({ run: a.run, nombres: a.nombres, apellidos: a.apellidos })));
+
   const payloadData = lote.map((a) => ({
     id: a.id,
-    run: a.run,
-    nombre_completo: `${a.apellidos ? a.apellidos + ', ' : ''}${a.nombres}`.trim(),
+    run: vault.anonymizeText(a.run),
+    nombre_completo: vault.anonymizeText(`${a.apellidos ? a.apellidos + ', ' : ''}${a.nombres}`.trim()),
     cargo_original: a.cargo_original,
     horas_contrato: a.horas_contrato,
     horas_financiamiento: {
@@ -129,7 +131,7 @@ async function llamarGeminiAsistentesLote(
       pie_ind: a.horas_pie_indefinido || 0,
       pie_pf: a.horas_pie_plazo_fijo || 0,
     },
-    observaciones: a.observaciones_originales || '',
+    observaciones: vault.anonymizeText(a.observaciones_originales || ''),
   }));
 
   const promptFinal = promptTemplate.replace('{asistentes_json}', JSON.stringify(payloadData, null, 2));
@@ -143,10 +145,13 @@ async function llamarGeminiAsistentesLote(
 
   for (const m of candidateModels) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
       const resp = await geminiFetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify({
           contents: [{ parts: [{ text: promptFinal }] }],
           generationConfig: {
@@ -166,6 +171,12 @@ async function llamarGeminiAsistentesLote(
           const mapaRes: Record<string, any> = {};
           parsed.forEach((item) => {
             if (item && item.id) {
+              if (item.observaciones_ia) {
+                item.observaciones_ia = vault.deanonimizeText(item.observaciones_ia);
+              }
+              if (item.justificacion_ia) {
+                item.justificacion_ia = vault.deanonimizeText(item.justificacion_ia);
+              }
               mapaRes[item.id] = item;
             }
           });

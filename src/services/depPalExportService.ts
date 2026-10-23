@@ -5,7 +5,7 @@
 
 import ExcelJS from 'exceljs';
 import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria } from '../types';
-import { homologarDocenteAPal, homologarAsistenteAPal } from './depHomologationEngine';
+import { homologarDocenteAPal, homologarAsistenteAPal, sanitizeExcelText } from './depHomologationEngine';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
@@ -229,6 +229,14 @@ export async function generarExcelConsolidadoPalDEP(
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(plantillaBuffer);
 
+  // Sanitización de esquema OpenXML (ECMA-376):
+  // Desactivar fitToPage para evitar problemas de compatibilidad en hojas PAL
+  workbook.eachSheet((ws) => {
+    if (ws.pageSetup) {
+      ws.pageSetup.fitToPage = false;
+    }
+  });
+
   const wsDoc = workbook.getWorksheet('Info Funcionario (DOCENTE)');
   const wsAe = workbook.getWorksheet('Info Funcionario (AE)');
   const wsEst = workbook.getWorksheet('Info Establecimiento');
@@ -253,13 +261,13 @@ export async function generarExcelConsolidadoPalDEP(
       for (const f of filasHomologadas) {
         const row = wsDoc.getRow(currentRowDoc);
 
-        // Inputs (Cols A a M, y Cols P a S)
-        row.getCell(1).value = f.rut;
-        row.getCell(2).value = f.establecimiento;
+        // Inputs (Cols A a M, y Cols P a S) con sanitización de inyección de fórmulas
+        row.getCell(1).value = sanitizeExcelText(f.rut);
+        row.getCell(2).value = sanitizeExcelText(f.establecimiento);
         row.getCell(3).value = f.rbd;
         row.getCell(4).value = f.nivel;
         row.getCell(5).value = f.estamento;
-        row.getCell(6).value = f.cargo;
+        row.getCell(6).value = sanitizeExcelText(f.cargo);
         row.getCell(7).value = f.funcion;
         row.getCell(8).value = f.calidadContrato;
         row.getCell(9).value = f.art69;
@@ -280,7 +288,7 @@ export async function generarExcelConsolidadoPalDEP(
         row.getCell(16).value = f.hrsPieCronologicas;
         row.getCell(17).value = f.hrsSepCronologicas;
         row.getCell(18).value = f.otrasFuncionesNoLectivas;
-        row.getCell(19).value = f.observaciones;
+        row.getCell(19).value = sanitizeExcelText(f.observaciones);
 
         row.commit();
         currentRowDoc++;
@@ -290,12 +298,15 @@ export async function generarExcelConsolidadoPalDEP(
 
   // Si quedaron filas residuales de la plantilla previa, limpiarlas
   if (wsDoc.rowCount > currentRowDoc - 1) {
-    for (let r = currentRowDoc; r <= wsDoc.rowCount; r++) {
+    const maxCleanDoc = Math.min(wsDoc.rowCount, currentRowDoc + 200);
+    for (let r = currentRowDoc; r <= maxCleanDoc; r++) {
       const row = wsDoc.getRow(r);
-      for (let c = 1; c <= 19; c++) {
-        row.getCell(c).value = null;
+      if (row.hasValues) {
+        for (let c = 1; c <= 19; c++) {
+          row.getCell(c).value = null;
+        }
+        row.commit();
       }
-      row.commit();
     }
   }
 
@@ -312,19 +323,19 @@ export async function generarExcelConsolidadoPalDEP(
       for (const f of filasHomologadas) {
         const row = wsAe.getRow(currentRowAe);
 
-        row.getCell(1).value = f.rut;
-        row.getCell(2).value = f.establecimiento;
+        row.getCell(1).value = sanitizeExcelText(f.rut);
+        row.getCell(2).value = sanitizeExcelText(f.establecimiento);
         row.getCell(3).value = f.rbd;
         row.getCell(4).value = f.nivel;
         row.getCell(5).value = f.estamento;
-        row.getCell(6).value = f.cargo;
+        row.getCell(6).value = sanitizeExcelText(f.cargo);
         row.getCell(7).value = f.funcion;
         row.getCell(8).value = f.calidadContrato;
         row.getCell(9).value = f.totalHrsContrato;
         row.getCell(10).value = f.hrsLectivasSubvGeneral;
         row.getCell(11).value = f.hrsPie;
         row.getCell(12).value = f.hrsSep;
-        row.getCell(13).value = f.observaciones;
+        row.getCell(13).value = sanitizeExcelText(f.observaciones);
 
         row.commit();
         currentRowAe++;
@@ -333,12 +344,15 @@ export async function generarExcelConsolidadoPalDEP(
   }
 
   if (wsAe.rowCount > currentRowAe - 1) {
-    for (let r = currentRowAe; r <= wsAe.rowCount; r++) {
+    const maxCleanAe = Math.min(wsAe.rowCount, currentRowAe + 200);
+    for (let r = currentRowAe; r <= maxCleanAe; r++) {
       const row = wsAe.getRow(r);
-      for (let c = 1; c <= 13; c++) {
-        row.getCell(c).value = null;
+      if (row.hasValues) {
+        for (let c = 1; c <= 13; c++) {
+          row.getCell(c).value = null;
+        }
+        row.commit();
       }
-      row.commit();
     }
   }
 

@@ -172,16 +172,10 @@ export function parseHoursCell(val: any): number {
 }
 
 /**
- * Analiza un archivo Excel (.xlsx, .xls) o CSV con identificación integrada de cursos y carga horaria.
+ * Analiza un libro Excel ya cargado en memoria con identificación integrada de cursos y carga horaria.
+ * Evita la duplicación de lecturas binarias XLSX.read.
  */
-export async function parseExcelBrowser(file: File, fileIndex: number = 0): Promise<ParsedSchoolResult> {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, {
-    type: 'array',
-    cellDates: false,
-    raw: false,
-  });
-
+export function parseExcelWorkbook(workbook: XLSX.WorkBook, fileName: string = 'archivo.xlsx', fileIndex: number = 0): ParsedSchoolResult {
   const detailKeywords = ['detalle', 'nomina', 'nómina', 'planta', 'distribucion', 'distribución'];
   const generalKeywords = ['dotaci', 'planilla', 'horas', 'docente'];
   const excludeKeywords = ['resumen', 'consolidado', 'grafic', 'portada', 'totales'];
@@ -209,7 +203,7 @@ export async function parseExcelBrowser(file: File, fileIndex: number = 0): Prom
 
   const sheet = workbook.Sheets[sheetName];
   if (!sheet) {
-    throw new Error(`No se pudo leer la hoja en ${file.name}`);
+    throw new Error(`No se pudo leer la hoja en ${fileName}`);
   }
 
   const data: string[][] = XLSX.utils.sheet_to_json(sheet, {
@@ -289,18 +283,18 @@ export async function parseExcelBrowser(file: File, fileIndex: number = 0): Prom
   if (headerRowIdx === -1) headerRowIdx = 0;
 
   if (!rbd) {
-    const filenameRbd = file.name.match(/(?:^|[^0-9])(\d{4,6})(?=[^0-9]|$)/);
+    const filenameRbd = fileName.match(/(?:^|[^0-9])(\d{4,6})(?=[^0-9]|$)/);
     rbd = filenameRbd ? filenameRbd[1] : 'S/RBD';
   }
 
   if (!establishment || establishment.length < 3) {
-    let cleanName = file.name.replace(/\.[^/.]+$/, '');
+    let cleanName = fileName.replace(/\.[^/.]+$/, '');
     cleanName = cleanName.replace(/(planilla|dotacion|slep|de|prueba|proyeccion|\d{4})/gi, '').trim();
     establishment = cleanName.replace(/^[ -_]+|[ -_]+$/g, '').toUpperCase() || 'ESTABLECIMIENTO SIN NOMBRE';
   }
 
   // Enriquecer e identificar automáticamente el establecimiento oficial y su comuna
-  const catalogSchool = identifySchool(rbd, file.name) || identifySchool(establishment, file.name);
+  const catalogSchool = identifySchool(rbd, fileName) || identifySchool(establishment, fileName);
   let comuna = '';
   if (catalogSchool) {
     rbd = catalogSchool.rbd;
@@ -863,7 +857,7 @@ export async function parseExcelBrowser(file: File, fileIndex: number = 0): Prom
     tData.activities.forEach((act, actIdx) => {
       teachersData.push({
         id: `${rbd}-${fileIndex}-${tIdx}-${actIdx}`,
-        file_name: file.name,
+        file_name: fileName,
         rbd,
         establishment,
         comuna,
@@ -893,4 +887,18 @@ export async function parseExcelBrowser(file: File, fileIndex: number = 0): Prom
     matricula,
     teachers: teachersData,
   };
+}
+
+/**
+ * Analiza un archivo Excel (.xlsx, .xls) o CSV con identificación integrada de cursos y carga horaria.
+ * Envuelve parseExcelWorkbook tras una única lectura binaria XLSX.read.
+ */
+export async function parseExcelBrowser(file: File, fileIndex: number = 0): Promise<ParsedSchoolResult> {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, {
+    type: 'array',
+    cellDates: false,
+    raw: false,
+  });
+  return parseExcelWorkbook(workbook, file.name, fileIndex);
 }

@@ -74,4 +74,25 @@ describe('Motor Normativo PIE (Decreto 170 / Ord. 2398)', () => {
     expect(balance.totalHorasAsignadasColaborativo).toBe(3.0);
     expect(balance.cursosCubiertosAlCienPorciento).toBe(true);
   });
+
+  it('excluye del cobro de 3.0h de Trabajo Colaborativo a cursos sin matrícula PIE y modalidades EPJA', () => {
+    const cursos = [
+      { nombre: '1° Básico A', regimen: 'JEC', alumnos_neet: 5, alumnos_neep: 2 }, // Con PIE -> requiere 3h colab
+      { nombre: '2° Básico A', regimen: 'JEC' }, // Sin matrícula PIE (alumnos_neet/neep undefined -> 0) -> 0h colab
+      { nombre: '1° Nivel Básico Adultos (EPJA)', regimen: 'No JEC', alumnos_neet: 5 } // EPJA no elegible PIE -> 0h colab
+    ];
+    const profesionales = [
+      { run: '11.111.111-1', nombre: 'Edu Diferencial 1', tipo_profesional: 'Docente Diferencial' as const, horasContratadas: 20 },
+      { run: '22.222.222-2', nombre: 'Fonoaudióloga 1', tipo_profesional: 'Profesional Asistente PAE' as const, horasContratadas: 10 },
+      { run: '33.333.333-3', nombre: 'Docente Titular 1', tipo_profesional: 'Docente de Aula (Trabajo Colaborativo)' as const, horasContratadas: 44 }
+    ];
+
+    const balance = autoAsignarHorasPieCursos(cursos, profesionales);
+    // Solo el primer curso genera demanda de trabajo colaborativo (3.0 hrs)
+    expect(balance.totalDemandaTrabajoColaborativo).toBe(3.0);
+    expect(balance.totalHorasAsignadasColaborativo).toBe(3.0);
+    // El segundo y tercer curso no deben tener asignaciones colaborativas obligatorias
+    expect(balance.asignacionesPorCurso['2° Básico A']).toHaveLength(0);
+    expect(balance.asignacionesPorCurso['1° Nivel Básico Adultos (EPJA)']).toHaveLength(0);
+  });
 });

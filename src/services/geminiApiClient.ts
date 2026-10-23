@@ -10,11 +10,13 @@
 declare global {
   interface Window {
     electronAPI?: {
-      geminiRequest?: (url: string, options?: any) => Promise<{ ok: boolean; status: number; data: string; error?: string }>;
+      geminiRequest?: (urlOrModel: string, options?: any) => Promise<{ ok: boolean; status: number; data: string; error?: string }>;
       saveFileDialog?: (options: any) => Promise<string | null>;
       openFileDialog?: (options: any) => Promise<string | null>;
       writeFile?: (filePath: string, content: string | Uint8Array) => Promise<{ success: boolean; error?: string }>;
       readFile?: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+      setGeminiKey?: (key: string) => Promise<{ success: boolean; error?: string }>;
+      hasGeminiKey?: () => Promise<boolean>;
       getVersion?: () => Promise<string>;
       isDesktop?: boolean;
     };
