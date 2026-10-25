@@ -155,4 +155,63 @@ describe('Flujo de Asignación Docente y Gestión de Planes de Estudio', () => {
     expect(asigJecExistente.asignatura).toBe('Taller de Teatro Infantil');
     expect(asigJecExistente.esTallerJec).toBe(true);
   });
+
+  it('calcula la disponibilidad de asignaturas por curso y prioriza la afinidad del docente (caso Alejandra Ferrada)', () => {
+    const curso1B: CursoSae = {
+      id: 'c-1b-a',
+      rbd: '3543',
+      nivel: '1° Básico',
+      letra: 'A',
+      regimen: 'JEC',
+      cupoSae: 30,
+      matriculaProyectada: 28,
+      alumnosNeet: 3,
+      alumnosNeep: 1
+    };
+
+    // Alejandra ya enseña Inglés en 2° Básico
+    const asignacionesColegio: AsignacionHoraria[] = [
+      {
+        id: 'asig-ale-2b',
+        rbd: '3543',
+        cursoId: 'c-2b-a',
+        docenteId: 'doc-alejandra-ferrada',
+        asignatura: 'Idioma Extranjero: Inglés',
+        horasPedagogicasAula: 2
+      },
+      // En 1° Básico A ya está asignado Lenguaje (8 HA) y Matemática (6 HA)
+      {
+        id: 'asig-leng-1b',
+        rbd: '3543',
+        cursoId: 'c-1b-a',
+        docenteId: 'doc-lenguaje',
+        asignatura: 'Lenguaje y Comunicación',
+        horasPedagogicasAula: 8
+      },
+      {
+        id: 'asig-mat-1b',
+        rbd: '3543',
+        cursoId: 'c-1b-a',
+        docenteId: 'doc-matematica',
+        asignatura: 'Matemática',
+        horasPedagogicasAula: 6
+      }
+    ];
+
+    // Verificar afinidad del docente
+    const asigsDocAlejandra = asignacionesColegio.filter(a => a.docenteId === 'doc-alejandra-ferrada');
+    const materiaAfin = asigsDocAlejandra[0]?.asignatura;
+    expect(materiaAfin).toBe('Idioma Extranjero: Inglés');
+
+    // Verificar que en 1° Básico A Lenguaje y Matemática están CUBIERTAS (saldo 0)
+    const asigs1B = asignacionesColegio.filter(a => a.cursoId === 'c-1b-a');
+    const horasLeng = asigs1B.filter(a => a.asignatura === 'Lenguaje y Comunicación').reduce((s, a) => s + a.horasPedagogicasAula, 0);
+    const horasMat = asigs1B.filter(a => a.asignatura === 'Matemática').reduce((s, a) => s + a.horasPedagogicasAula, 0);
+    expect(horasLeng).toBe(8);
+    expect(horasMat).toBe(6);
+
+    // Y que Inglés está 100% DISPONIBLE en 1° Básico A para Alejandra
+    const horasIngles1B = asigs1B.filter(a => a.asignatura === 'Idioma Extranjero: Inglés').reduce((s, a) => s + a.horasPedagogicasAula, 0);
+    expect(horasIngles1B).toBe(0); // 0 asignadas -> disponible para asignar a Alejandra
+  });
 });

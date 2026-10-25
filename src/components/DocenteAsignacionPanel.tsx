@@ -9,7 +9,9 @@ import {
   BookOpen,
   Clock,
   Sparkles,
-  Check
+  Check,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { Docente, AsignacionHoraria, CursoSae, Establecimiento, PlanEstudioCurricular } from '../types';
 import { obtenerPlanPorCurso, PlanEstudioNivel } from '@slep/mineduc-engine';
@@ -118,6 +120,96 @@ function resolverPlanCurso(
 }
 
 // ============================================================================
+// Helper de Disponibilidad y Cobertura de Asignaturas en Curso
+// ============================================================================
+interface DisponibilidadAsignatura {
+  nombre: string;
+  horasPlan: number;
+  horasAsignadas: number;
+  horasDisponibles: number;
+  estado: 'DISPONIBLE' | 'CUBIERTA' | 'EXCEDIDA';
+  caracter?: string;
+}
+
+function calcularDisponibilidadCurso(
+  curso: CursoSae | null,
+  infoPlan: InfoPlanResuelto,
+  asignacionesColegio: AsignacionHoraria[]
+): {
+  disponibles: DisponibilidadAsignatura[];
+  cubiertas: DisponibilidadAsignatura[];
+  todas: DisponibilidadAsignatura[];
+  horasLibreDisponibles: number;
+  horasLibrePlan: number;
+  horasLibreAsignadas: number;
+} {
+  if (!curso) {
+    return {
+      disponibles: [],
+      cubiertas: [],
+      todas: [],
+      horasLibreDisponibles: 0,
+      horasLibrePlan: 0,
+      horasLibreAsignadas: 0
+    };
+  }
+
+  const asigsCurso = asignacionesColegio.filter(a => a.cursoId === curso.id && !a.esCoDocencia);
+
+  const todas: DisponibilidadAsignatura[] = infoPlan.asignaturas.map(asigPlan => {
+    const horasAsig = asigsCurso
+      .filter(a => a.asignatura.trim().toLowerCase() === asigPlan.nombre.trim().toLowerCase())
+      .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+
+    const horasDisp = Math.max(0, asigPlan.horas - horasAsig);
+    const estado: 'DISPONIBLE' | 'CUBIERTA' | 'EXCEDIDA' = 
+      horasAsig >= asigPlan.horas ? (horasAsig > asigPlan.horas ? 'EXCEDIDA' : 'CUBIERTA') : 'DISPONIBLE';
+
+    return {
+      nombre: asigPlan.nombre,
+      horasPlan: asigPlan.horas,
+      horasAsignadas: horasAsig,
+      horasDisponibles: horasDisp,
+      estado,
+      caracter: asigPlan.caracter
+    };
+  });
+
+  const disponibles = todas.filter(a => a.estado === 'DISPONIBLE');
+  const cubiertas = todas.filter(a => a.estado !== 'DISPONIBLE');
+
+  // Libre Disposición / JEC
+  const horasLibrePlan = infoPlan.horasLibreDisposicion || (curso.regimen === 'JEC' ? 6 : 0);
+  const horasLibreAsignadas = asigsCurso
+    .filter(a => a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))
+    .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+  const horasLibreDisponibles = Math.max(0, horasLibrePlan - horasLibreAsignadas);
+
+  return {
+    disponibles,
+    cubiertas,
+    todas,
+    horasLibreDisponibles,
+    horasLibrePlan,
+    horasLibreAsignadas
+  };
+}
+
+function obtenerMateriasPreferentesDocente(docenteId: string, asignaciones: AsignacionHoraria[]): string[] {
+  const asigsDoc = asignaciones.filter(a => a.docenteId === docenteId && !a.esCoDocencia);
+  const conteo: Record<string, number> = {};
+  for (const a of asigsDoc) {
+    const nom = a.asignatura.trim();
+    if (nom) {
+      conteo[nom] = (conteo[nom] || 0) + (a.horasPedagogicasAula || 1);
+    }
+  }
+  return Object.entries(conteo)
+    .sort((a, b) => b[1] - a[1])
+    .map(entry => entry[0]);
+}
+
+// ============================================================================
 // Subcomponentes aislados para evitar re-renderizados del panel al tipear
 // ============================================================================
 
@@ -126,6 +218,7 @@ interface FormRegularProps {
   colegio: Establecimiento;
   cursos: CursoSae[];
   planesDb: PlanEstudioCurricular[];
+  asignacionesColegio: AsignacionHoraria[];
   onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
   onCerrar: () => void;
 }
@@ -135,6 +228,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   colegio,
   cursos,
   planesDb,
+  asignacionesColegio,
   onGuardar,
   onCerrar
 }) => {
@@ -153,23 +247,71 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     return resolverPlanCurso(cursoSeleccionado, planesDb);
   }, [cursoSeleccionado, planesDb]);
 
-  // Al cambiar de curso, actualizar asignatura y horas sugeridas por defecto
+  // Materias preferentes del docente (ej: Alejandra Ferrada -> Inglés)
+  const materiasPreferentes = useMemo(() => {
+    return obtenerMateriasPreferentesDocente(docente.id, asignacionesColegio);
+  }, [docente.id, asignacionesColegio]);
+
+  // Disponibilidad de asignaturas en el curso seleccionado
+  const datosDisp = useMemo(() => {
+    return calcularDisponibilidadCurso(cursoSeleccionado, infoPlan, asignacionesColegio);
+  }, [cursoSeleccionado, infoPlan, asignacionesColegio]);
+
+  // Info de la asignatura actualmente seleccionada
+  const infoAsigSeleccionada = useMemo(() => {
+    return datosDisp.todas.find(a => a.nombre.toLowerCase() === tipoAsignaturaSeleccionada.toLowerCase()) || null;
+  }, [datosDisp.todas, tipoAsignaturaSeleccionada]);
+
+  // Al cambiar de curso, precargar inteligentemente la asignatura DISPONIBLE o afín al docente
   useEffect(() => {
     if (regCursoId === 'TRANSVERSAL') {
       setTipoAsignaturaSeleccionada('__TRANSVERSAL__');
       setRegNombreCustom('Taller Institucional Transversal');
       setRegHoras(2);
-    } else if (infoPlan.asignaturas.length > 0) {
+      return;
+    }
+
+    // 1. Prioridad: ¿El docente ya dicta una materia habitual que esté DISPONIBLE en este curso?
+    const materiaAfinDisponible = datosDisp.disponibles.find(d => 
+      materiasPreferentes.some(pref => pref.toLowerCase() === d.nombre.toLowerCase())
+    );
+
+    if (materiaAfinDisponible) {
+      setTipoAsignaturaSeleccionada(materiaAfinDisponible.nombre);
+      setRegNombreCustom('');
+      setRegHoras(materiaAfinDisponible.horasDisponibles);
+      return;
+    }
+
+    // 2. Si no, seleccionar la primera asignatura DISPONIBLE del curso con su saldo restante
+    if (datosDisp.disponibles.length > 0) {
+      const primeraDisp = datosDisp.disponibles[0];
+      setTipoAsignaturaSeleccionada(primeraDisp.nombre);
+      setRegNombreCustom('');
+      setRegHoras(primeraDisp.horasDisponibles);
+      return;
+    }
+
+    // 3. Si no hay troncales disponibles pero hay horas de Libre Disposición JEC
+    if (datosDisp.horasLibreDisponibles > 0) {
+      setTipoAsignaturaSeleccionada('__LIBRE_DISPOSICION__');
+      setRegNombreCustom('');
+      setRegHoras(Math.min(datosDisp.horasLibreDisponibles, 2));
+      return;
+    }
+
+    // 4. Si todo el curso está cubierto al 100%, tomar la primera del plan como referencia
+    if (infoPlan.asignaturas.length > 0) {
       const primera = infoPlan.asignaturas[0];
       setTipoAsignaturaSeleccionada(primera.nombre);
       setRegNombreCustom('');
-      setRegHoras(primera.horas || 4);
+      setRegHoras(primera.horas || 2);
     } else {
-      setTipoAsignaturaSeleccionada('__LIBRE_DISPOSICION__');
+      setTipoAsignaturaSeleccionada('__OTRO_PERSONALIZADO__');
       setRegNombreCustom('');
       setRegHoras(2);
     }
-  }, [regCursoId, infoPlan]);
+  }, [regCursoId, datosDisp, materiasPreferentes, infoPlan]);
 
   const esModoPersonalizado = 
     regCursoId === 'TRANSVERSAL' ||
@@ -186,17 +328,20 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       setRegHoras(tallerObj?.horas || 2);
     } else if (valor === '__LIBRE_DISPOSICION__') {
       setRegNombreCustom('');
-      const horasLibre = infoPlan.horasLibreDisposicion > 0 ? Math.min(infoPlan.horasLibreDisposicion, 4) : 2;
+      const horasLibre = datosDisp.horasLibreDisponibles > 0 ? Math.min(datosDisp.horasLibreDisponibles, 4) : 2;
       setRegHoras(horasLibre);
     } else if (valor === '__OTRO_PERSONALIZADO__') {
       setRegNombreCustom('');
       setRegHoras(2);
     } else {
-      // Es una asignatura base del plan de estudio
+      // Es una asignatura del plan de estudio (verificar disponibilidad)
       setRegNombreCustom('');
-      const asig = infoPlan.asignaturas.find(a => a.nombre === valor);
-      if (asig?.horas) {
-        setRegHoras(asig.horas);
+      const dispObj = datosDisp.todas.find(a => a.nombre === valor);
+      if (dispObj) {
+        setRegHoras(dispObj.horasDisponibles > 0 ? dispObj.horasDisponibles : dispObj.horasPlan);
+      } else {
+        const asig = infoPlan.asignaturas.find(a => a.nombre === valor);
+        if (asig?.horas) setRegHoras(asig.horas);
       }
     }
   };
@@ -273,21 +418,28 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
 
         {/* 2. SELECCIÓN DE ASIGNATURA SEGÚN PLAN (SEGUNDO PASO) */}
         {regCursoId !== 'TRANSVERSAL' && (
-          <div className="min-w-[220px] flex-1">
-            <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
-              <BookOpen className="w-3.5 h-3.5 text-orange-600" />
-              <span>2. Asignatura según Plan ({infoPlan.nombrePlan})</span>
+          <div className="min-w-[240px] flex-1">
+            <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+                <span>2. Asignatura según Plan ({infoPlan.nombrePlan})</span>
+              </span>
+              {datosDisp.disponibles.length > 0 && (
+                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full border border-emerald-300">
+                  {datosDisp.disponibles.length} disponibles
+                </span>
+              )}
             </label>
             <select
               value={tipoAsignaturaSeleccionada}
               onChange={(e) => handleSeleccionAsignatura(e.target.value)}
               className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-orange-500 focus:outline-none"
             >
-              {infoPlan.asignaturas.length > 0 && (
-                <optgroup label="📚 Asignaturas Oficiales del Plan">
-                  {infoPlan.asignaturas.map((asig, idx) => (
-                    <option key={idx} value={asig.nombre}>
-                      {asig.nombre} ({asig.horas} HA) {asig.caracter && asig.caracter !== 'Obligatoria' ? `[${asig.caracter}]` : ''}
+              {datosDisp.disponibles.length > 0 && (
+                <optgroup label={`🟢 Asignaturas Disponibles con Horas Pendientes (${datosDisp.disponibles.length})`}>
+                  {datosDisp.disponibles.map((asig, idx) => (
+                    <option key={`disp-${idx}`} value={asig.nombre}>
+                      🟢 {asig.nombre} — {asig.horasDisponibles} HA disponibles (Plan: {asig.horasPlan} HA)
                     </option>
                   ))}
                 </optgroup>
@@ -303,11 +455,21 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                 </optgroup>
               )}
 
-              {(infoPlan.esJec || infoPlan.horasLibreDisposicion > 0) && (
+              {(infoPlan.esJec || datosDisp.horasLibrePlan > 0) && (
                 <optgroup label="⚡ Horas de Libre Disposición (JEC / PEI)">
                   <option value="__LIBRE_DISPOSICION__">
-                    ✨ Libre Disposición / Taller JEC (Personalizado...)
+                    ✨ Libre Disposición / Taller JEC ({datosDisp.horasLibreDisponibles} HA disponibles de {datosDisp.horasLibrePlan} HA)
                   </option>
+                </optgroup>
+              )}
+
+              {datosDisp.cubiertas.length > 0 && (
+                <optgroup label={`⚪ Asignaturas Cubiertas al 100% (${datosDisp.cubiertas.length})`}>
+                  {datosDisp.cubiertas.map((asig, idx) => (
+                    <option key={`cub-${idx}`} value={asig.nombre}>
+                      ⚪ {asig.nombre} (Cubierta: {asig.horasAsignadas}/{asig.horasPlan} HA)
+                    </option>
+                  ))}
                 </optgroup>
               )}
 
@@ -395,6 +557,36 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           </button>
         </div>
       </div>
+
+      {/* Banner Informativo Dinámico de Disponibilidad de la Asignatura */}
+      {regCursoId !== 'TRANSVERSAL' && (
+        <div className="pt-0.5">
+          {infoAsigSeleccionada ? (
+            infoAsigSeleccionada.estado === 'DISPONIBLE' ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px]">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>{infoAsigSeleccionada.nombre}:</strong> Quedan <strong>{infoAsigSeleccionada.horasDisponibles} HA disponibles</strong> para este curso (Plan Oficial: {infoAsigSeleccionada.horasPlan} HA • Asignadas a otros docentes: {infoAsigSeleccionada.horasAsignadas} HA).
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>
+                  <strong>{infoAsigSeleccionada.nombre} (Cubierta):</strong> Esta materia ya tiene sus <strong>{infoAsigSeleccionada.horasAsignadas}/{infoAsigSeleccionada.horasPlan} HA cubiertas</strong> en el plan de este curso.
+                </span>
+              </div>
+            )
+          ) : tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px]">
+              <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>
+                <strong>Horas de Libre Disposición JEC:</strong> Quedan <strong>{datosDisp.horasLibreDisponibles} HA disponibles</strong> para talleres o proyectos en este curso (Plan: {datosDisp.horasLibrePlan} HA • Asignadas: {datosDisp.horasLibreAsignadas} HA).
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
     </form>
   );
 });
@@ -837,6 +1029,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           colegio={colegio}
           cursos={cursos}
           planesDb={planesDb}
+          asignacionesColegio={asignaciones}
           onGuardar={onGuardarAsignacion}
           onCerrar={() => setFormActivo(null)}
         />
