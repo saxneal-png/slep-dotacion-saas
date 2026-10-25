@@ -679,19 +679,42 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
                   <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
                     Régimen
                   </label>
                   <select
                     value={planEnEdicion.regimen}
-                    onChange={(e) => setPlanEnEdicion({ ...planEnEdicion, regimen: e.target.value as any })}
+                    onChange={(e) => {
+                      const nuevoReg = e.target.value as 'JEC' | 'No JEC';
+                      setPlanEnEdicion({ 
+                        ...planEnEdicion, 
+                        regimen: nuevoReg,
+                        horasLibreDisposicion: planEnEdicion.horasLibreDisposicion ?? (nuevoReg === 'JEC' ? 6 : 0)
+                      });
+                    }}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                   >
-                    <option value="JEC">JEC</option>
-                    <option value="No JEC">No JEC</option>
+                    <option value="JEC">JEC (Jornada Completa)</option>
+                    <option value="No JEC">No JEC (Media Jornada)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                    Horas Libre Disp. / JEC
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min={0}
+                    max={20}
+                    value={planEnEdicion.horasLibreDisposicion ?? 0}
+                    onChange={(e) => setPlanEnEdicion({ ...planEnEdicion, horasLibreDisposicion: Number(e.target.value) || 0 })}
+                    placeholder="Ej: 6"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white text-center"
+                  />
                 </div>
 
                 <div>
@@ -702,14 +725,14 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
                     type="text"
                     value={planEnEdicion.decretoSupremo || ''}
                     onChange={(e) => setPlanEnEdicion({ ...planEnEdicion, decretoSupremo: e.target.value })}
-                    placeholder="Ej: Decreto Supremo N° 10/2022"
+                    placeholder="Ej: Dto. Exento N° 2960/2012"
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                   />
                 </div>
 
                 <div>
                   <label className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
-                    Duración Año Lectivo (Semanas)
+                    Año Lectivo (Semanas)
                   </label>
                   <input
                     type="number"
@@ -717,8 +740,32 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
                     max={52}
                     value={planEnEdicion.duracionAnoLectivoSemanas || 36}
                     onChange={(e) => setPlanEnEdicion({ ...planEnEdicion, duracionAnoLectivoSemanas: Number(e.target.value) })}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white text-center"
                   />
+                </div>
+              </div>
+
+              {/* Resumen en vivo de Horas del Plan */}
+              <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 p-2.5 rounded-xl flex items-center justify-between text-xs">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block uppercase font-bold">Horas Obligatorias</span>
+                    <strong className="text-slate-800 dark:text-white font-black text-sm">
+                      {planEnEdicion.asignaturas.filter(a => a.caracter !== 'Opcional').reduce((s, a) => s + (Number(a.horasSemanales) || 0), 0)} HA
+                    </strong>
+                  </div>
+                  <div className="border-l border-blue-200 dark:border-blue-800 pl-4">
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 block uppercase font-bold">Libre Disposición</span>
+                    <strong className="text-amber-700 dark:text-amber-300 font-black text-sm">
+                      {planEnEdicion.horasLibreDisposicion || 0} HA
+                    </strong>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 block uppercase font-bold">Total Plan Semanal</span>
+                  <strong className="text-blue-900 dark:text-blue-200 font-black text-base">
+                    {(planEnEdicion.asignaturas.filter(a => a.caracter !== 'Opcional').reduce((s, a) => s + (Number(a.horasSemanales) || 0), 0)) + (Number(planEnEdicion.horasLibreDisposicion) || 0)} HA
+                  </strong>
                 </div>
               </div>
 

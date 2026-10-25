@@ -814,6 +814,7 @@ export const App: React.FC = () => {
             todosLosColegios={colegios}
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
+            onNavegarAPestana={setVistaActiva}
           />
         )}
 

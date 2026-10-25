@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
   Users, 
   ShieldCheck, 
   Trash2, 
-  Layers
+  Layers,
+  GraduationCap,
+  BookOpen,
+  Clock,
+  Sparkles,
+  Check
 } from 'lucide-react';
-import { Docente, AsignacionHoraria, CursoSae, Establecimiento } from '../types';
-import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
+import { Docente, AsignacionHoraria, CursoSae, Establecimiento, PlanEstudioCurricular } from '../types';
+import { obtenerPlanPorCurso, PlanEstudioNivel } from '@slep/mineduc-engine';
+import { listarPlanesEstudio } from '../database/db';
 
 interface DocenteAsignacionPanelProps {
   docente: Docente;
@@ -21,6 +27,97 @@ interface DocenteAsignacionPanelProps {
 type TipoFormularioActivo = 'REGULAR' | 'CO_DOCENCIA' | 'PIE' | null;
 
 // ============================================================================
+// Helper para resolver plan y asignaturas de un curso
+// ============================================================================
+interface InfoPlanResuelto {
+  asignaturas: { nombre: string; horas: number; caracter?: string }[];
+  horasLibreDisposicion: number;
+  esJec: boolean;
+  talleresJecPredefinidos: { nombre: string; horas?: number }[];
+  nombrePlan: string;
+}
+
+function resolverPlanCurso(
+  curso: CursoSae | null,
+  planesDb: PlanEstudioCurricular[]
+): InfoPlanResuelto {
+  if (!curso) {
+    return {
+      asignaturas: [],
+      horasLibreDisposicion: 0,
+      esJec: false,
+      talleresJecPredefinidos: [],
+      nombrePlan: 'Sin curso'
+    };
+  }
+
+  const esJec = curso.regimen === 'JEC';
+  const talleresCurso = curso.talleresJec || [];
+
+  // 1. Si el curso tiene un plan de estudio personalizado asignado en la BD
+  if (curso.planEstudioId) {
+    const planDb = planesDb.find(p => p.id === curso.planEstudioId);
+    if (planDb && planDb.asignaturas && planDb.asignaturas.length > 0) {
+      return {
+        asignaturas: planDb.asignaturas.map(a => ({
+          nombre: a.nombre,
+          horas: Number(a.horasSemanales) || 2,
+          caracter: a.caracter || 'Obligatoria'
+        })),
+        horasLibreDisposicion: planDb.horasLibreDisposicion || (esJec ? 6 : 0),
+        esJec: planDb.regimen === 'JEC' || esJec,
+        talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
+        nombrePlan: planDb.nivel
+      };
+    }
+  }
+
+  // 2. Si no, consultar el motor normativo de MINEDUC
+  const planMineduc: PlanEstudioNivel | null = obtenerPlanPorCurso(
+    curso.nivel,
+    curso.regimen,
+    curso.especialidadTp
+  );
+
+  if (planMineduc && planMineduc.asignaturasBase && planMineduc.asignaturasBase.length > 0) {
+    return {
+      asignaturas: planMineduc.asignaturasBase.map(a => ({
+        nombre: a.nombre,
+        horas: a.horasSugeridas,
+        caracter: 'Obligatoria'
+      })),
+      horasLibreDisposicion: planMineduc.horasLibreDisposicion || (esJec ? 6 : 0),
+      esJec: planMineduc.regimen === 'JEC' || esJec,
+      talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
+      nombrePlan: planMineduc.nivel
+    };
+  }
+
+  // 3. Fallback estándar si no hay coincidencia directa
+  const fallback = [
+    { nombre: 'Lenguaje y Comunicación', horas: 6, caracter: 'Obligatoria' },
+    { nombre: 'Matemática', horas: 6, caracter: 'Obligatoria' },
+    { nombre: 'Ciencias Naturales', horas: 3, caracter: 'Obligatoria' },
+    { nombre: 'Historia, Geografía y Ciencias Sociales', horas: 3, caracter: 'Obligatoria' },
+    { nombre: 'Inglés', horas: 3, caracter: 'Obligatoria' },
+    { nombre: 'Educación Física y Salud', horas: 3, caracter: 'Obligatoria' },
+    { nombre: 'Artes Visuales', horas: 2, caracter: 'Obligatoria' },
+    { nombre: 'Música', horas: 2, caracter: 'Obligatoria' },
+    { nombre: 'Tecnología', horas: 1, caracter: 'Obligatoria' },
+    { nombre: 'Orientación', horas: 1, caracter: 'Obligatoria' },
+    { nombre: 'Religión', horas: 2, caracter: 'Opcional' }
+  ];
+
+  return {
+    asignaturas: fallback,
+    horasLibreDisposicion: esJec ? 6 : 0,
+    esJec,
+    talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
+    nombrePlan: `${curso.nivel} (${curso.regimen})`
+  };
+}
+
+// ============================================================================
 // Subcomponentes aislados para evitar re-renderizados del panel al tipear
 // ============================================================================
 
@@ -28,6 +125,7 @@ interface FormRegularProps {
   docente: Docente;
   colegio: Establecimiento;
   cursos: CursoSae[];
+  planesDb: PlanEstudioCurricular[];
   onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
   onCerrar: () => void;
 }
@@ -36,61 +134,101 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   docente,
   colegio,
   cursos,
+  planesDb,
   onGuardar,
   onCerrar
 }) => {
   const [regCursoId, setRegCursoId] = useState(cursos[0]?.id || 'TRANSVERSAL');
-  const [regNombre, setRegNombre] = useState('');
+  const [tipoAsignaturaSeleccionada, setTipoAsignaturaSeleccionada] = useState<string>('');
+  const [regNombreCustom, setRegNombreCustom] = useState('');
   const [regHoras, setRegHoras] = useState(4);
   const [regEsTallerSep, setRegEsTallerSep] = useState(false);
 
-  // Obtener plan de estudio del curso seleccionado
-  const cursoSeleccionado = cursos.find(c => c.id === regCursoId) || null;
-  const planCurso = cursoSeleccionado ? obtenerPlanPorCurso(cursoSeleccionado.nivel, cursoSeleccionado.regimen) : null;
+  // Obtener plan resuelto del curso seleccionado
+  const cursoSeleccionado = useMemo(() => {
+    return cursos.find(c => c.id === regCursoId) || null;
+  }, [cursos, regCursoId]);
 
-  // Sugerencias de asignaturas según el curso o por defecto
-  const sugerenciasAsignaturas = planCurso?.asignaturasBase && planCurso.asignaturasBase.length > 0
-    ? planCurso.asignaturasBase.map(a => ({ nombre: a.nombre, horas: a.horasSugeridas }))
-    : [
-        { nombre: 'Lenguaje y Comunicación', horas: 6 },
-        { nombre: 'Matemática', horas: 6 },
-        { nombre: 'Ciencias Naturales', horas: 3 },
-        { nombre: 'Historia, Geografía y Ciencias Sociales', horas: 3 },
-        { nombre: 'Inglés', horas: 3 },
-        { nombre: 'Educación Física y Salud', horas: 3 },
-        { nombre: 'Artes Visuales', horas: 2 },
-        { nombre: 'Música', horas: 2 },
-        { nombre: 'Tecnología', horas: 1 },
-        { nombre: 'Orientación', horas: 1 },
-        { nombre: 'Religión', horas: 2 },
-        { nombre: 'Taller Extracurricular SEP', horas: 2 },
-        { nombre: 'Taller de Refuerzo Pedagógico', horas: 2 }
-      ];
+  const infoPlan = useMemo(() => {
+    return resolverPlanCurso(cursoSeleccionado, planesDb);
+  }, [cursoSeleccionado, planesDb]);
 
-  const handleSelectAsignatura = (nombre: string) => {
-    setRegNombre(nombre);
-    const asigPlan = sugerenciasAsignaturas.find(a => a.nombre.toLowerCase() === nombre.trim().toLowerCase());
-    if (asigPlan?.horas && asigPlan.horas > 0) {
-      setRegHoras(asigPlan.horas);
+  // Al cambiar de curso, actualizar asignatura y horas sugeridas por defecto
+  useEffect(() => {
+    if (regCursoId === 'TRANSVERSAL') {
+      setTipoAsignaturaSeleccionada('__TRANSVERSAL__');
+      setRegNombreCustom('Taller Institucional Transversal');
+      setRegHoras(2);
+    } else if (infoPlan.asignaturas.length > 0) {
+      const primera = infoPlan.asignaturas[0];
+      setTipoAsignaturaSeleccionada(primera.nombre);
+      setRegNombreCustom('');
+      setRegHoras(primera.horas || 4);
+    } else {
+      setTipoAsignaturaSeleccionada('__LIBRE_DISPOSICION__');
+      setRegNombreCustom('');
+      setRegHoras(2);
     }
-    if (/sep/i.test(nombre)) {
-      setRegEsTallerSep(true);
-    }
-  };
+  }, [regCursoId, infoPlan]);
 
-  const handleCursoChange = (nuevoCursoId: string) => {
-    setRegCursoId(nuevoCursoId);
-    if (nuevoCursoId === 'TRANSVERSAL') {
-      if (!regNombre || regNombre === 'Lenguaje y Comunicación') {
-        setRegNombre('Taller Institucional Transversal');
-        setRegHoras(2);
+  const esModoPersonalizado = 
+    regCursoId === 'TRANSVERSAL' ||
+    tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ||
+    tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__';
+
+  const handleSeleccionAsignatura = (valor: string) => {
+    setTipoAsignaturaSeleccionada(valor);
+
+    if (valor.startsWith('__TALLER_EXISTENTE__:')) {
+      const nombreTaller = valor.replace('__TALLER_EXISTENTE__:', '');
+      const tallerObj = infoPlan.talleresJecPredefinidos.find(t => t.nombre === nombreTaller);
+      setRegNombreCustom(nombreTaller);
+      setRegHoras(tallerObj?.horas || 2);
+    } else if (valor === '__LIBRE_DISPOSICION__') {
+      setRegNombreCustom('');
+      const horasLibre = infoPlan.horasLibreDisposicion > 0 ? Math.min(infoPlan.horasLibreDisposicion, 4) : 2;
+      setRegHoras(horasLibre);
+    } else if (valor === '__OTRO_PERSONALIZADO__') {
+      setRegNombreCustom('');
+      setRegHoras(2);
+    } else {
+      // Es una asignatura base del plan de estudio
+      setRegNombreCustom('');
+      const asig = infoPlan.asignaturas.find(a => a.nombre === valor);
+      if (asig?.horas) {
+        setRegHoras(asig.horas);
       }
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regNombre.trim() || !regCursoId) return;
+    if (!regCursoId) return;
+
+    let nombreFinal = '';
+    let esJec = false;
+
+    if (regCursoId === 'TRANSVERSAL') {
+      nombreFinal = regNombreCustom.trim() || 'Taller Institucional Transversal';
+      esJec = false;
+    } else if (tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__') {
+      nombreFinal = regNombreCustom.trim();
+      esJec = true;
+    } else if (tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__') {
+      nombreFinal = regNombreCustom.trim();
+      esJec = /taller|jec|libre/i.test(nombreFinal);
+    } else if (tipoAsignaturaSeleccionada.startsWith('__TALLER_EXISTENTE__:')) {
+      nombreFinal = tipoAsignaturaSeleccionada.replace('__TALLER_EXISTENTE__:', '').trim();
+      esJec = true;
+    } else {
+      nombreFinal = tipoAsignaturaSeleccionada.trim();
+      esJec = false;
+    }
+
+    if (!nombreFinal) {
+      alert('Por favor especifica el nombre de la asignatura o taller.');
+      return;
+    }
 
     const newAsig: AsignacionHoraria = {
       id: `asig-${Date.now()}`,
@@ -98,9 +236,9 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       periodo: docente.periodo || 2026,
       cursoId: regCursoId,
       docenteId: docente.id,
-      asignatura: regNombre.trim(),
+      asignatura: nombreFinal,
       horasPedagogicasAula: Number(regHoras),
-      esTallerJec: /taller/i.test(regNombre),
+      esTallerJec: esJec,
       esTallerSep: regEsTallerSep,
       esProporcionDocente: false
     };
@@ -110,86 +248,152 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-3 bg-white border border-orange-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
-      <div className="flex-1 min-w-[170px]">
-        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Asignatura</label>
-        <input
-          type="text"
-          autoFocus
-          value={regNombre}
-          onChange={(e) => handleSelectAsignatura(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          list={`datalist-reg-${docente.id}`}
-          className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-orange-500 focus:outline-none bg-white"
-          placeholder="Ej: Matemática, Lenguaje..."
-          required
-        />
-        <datalist id={`datalist-reg-${docente.id}`}>
-          {sugerenciasAsignaturas.map((s, idx) => (
-            <option key={idx} value={s.nombre}>
-              {s.horas ? `${s.horas} HA` : ''}
-            </option>
-          ))}
-        </datalist>
-      </div>
-      <div className="min-w-[180px]">
-        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Curso o Modalidad</label>
-        <select
-          value={regCursoId}
-          onChange={(e) => handleCursoChange(e.target.value)}
-          className="w-full px-2 py-1 border border-slate-200 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-orange-500 focus:outline-none"
-        >
-          <option value="TRANSVERSAL">🌟 Taller Institucional / Transversal (Sin Curso)</option>
-          {cursos.map(c => (
-            <option key={c.id} value={c.id}>
-              {c.nivel} {c.letra} ({c.regimen})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="w-20">
-        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Horas Aula</label>
-        <input
-          type="number"
-          value={regHoras}
-          onChange={(e) => setRegHoras(Number(e.target.value))}
-          onFocus={(e) => e.target.select()}
-          className="w-full px-2 py-1 border border-slate-200 rounded text-xs text-center font-bold focus:ring-1 focus:ring-orange-500 focus:outline-none"
-          min={1}
-          max={44}
-          required
-        />
-      </div>
-      <div className="flex items-center gap-1.5 pt-4">
-        <label className="flex items-center gap-1 cursor-pointer text-[11px] font-semibold text-slate-700">
-          <input
-            type="checkbox"
-            checked={regEsTallerSep}
-            onChange={(e) => {
-              setRegEsTallerSep(e.target.checked);
-              if (e.target.checked && !regNombre) {
-                setRegNombre('Taller Extracurricular SEP');
-                setRegHoras(2);
-              }
-            }}
-          />
-          <span>Taller Extracurricular SEP</span>
-        </label>
-      </div>
-      <div className="flex items-center gap-2 pt-4">
-        <button
-          type="submit"
-          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition-colors"
-        >
-          Guardar
-        </button>
-        <button
-          type="button"
-          onClick={onCerrar}
-          className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
-        >
-          Cancelar
-        </button>
+    <form onSubmit={handleSubmit} className="p-3 bg-white border border-orange-200 rounded-xl shadow-xs transition-all space-y-2">
+      <div className="flex flex-wrap items-end gap-2.5 text-xs">
+        
+        {/* 1. SELECCIÓN DE CURSO (PRIMER PASO) */}
+        <div className="min-w-[190px] flex-1 sm:flex-none">
+          <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+            <GraduationCap className="w-3.5 h-3.5 text-orange-600" />
+            <span>1. Curso o Modalidad</span>
+          </label>
+          <select
+            value={regCursoId}
+            onChange={(e) => setRegCursoId(e.target.value)}
+            className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+          >
+            {cursos.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.nivel} {c.letra} ({c.regimen})
+              </option>
+            ))}
+            <option value="TRANSVERSAL">🌟 Taller Institucional / Transversal (Sin Curso)</option>
+          </select>
+        </div>
+
+        {/* 2. SELECCIÓN DE ASIGNATURA SEGÚN PLAN (SEGUNDO PASO) */}
+        {regCursoId !== 'TRANSVERSAL' && (
+          <div className="min-w-[220px] flex-1">
+            <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+              <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+              <span>2. Asignatura según Plan ({infoPlan.nombrePlan})</span>
+            </label>
+            <select
+              value={tipoAsignaturaSeleccionada}
+              onChange={(e) => handleSeleccionAsignatura(e.target.value)}
+              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+            >
+              {infoPlan.asignaturas.length > 0 && (
+                <optgroup label="📚 Asignaturas Oficiales del Plan">
+                  {infoPlan.asignaturas.map((asig, idx) => (
+                    <option key={idx} value={asig.nombre}>
+                      {asig.nombre} ({asig.horas} HA) {asig.caracter && asig.caracter !== 'Obligatoria' ? `[${asig.caracter}]` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {infoPlan.talleresJecPredefinidos.length > 0 && (
+                <optgroup label="🎨 Talleres JEC Registrados en Curso">
+                  {infoPlan.talleresJecPredefinidos.map((tj, idx) => (
+                    <option key={`tj-${idx}`} value={`__TALLER_EXISTENTE__:${tj.nombre}`}>
+                      {tj.nombre} {tj.horas ? `(${tj.horas} HA)` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {(infoPlan.esJec || infoPlan.horasLibreDisposicion > 0) && (
+                <optgroup label="⚡ Horas de Libre Disposición (JEC / PEI)">
+                  <option value="__LIBRE_DISPOSICION__">
+                    ✨ Libre Disposición / Taller JEC (Personalizado...)
+                  </option>
+                </optgroup>
+              )}
+
+              <optgroup label="✏️ Otros">
+                <option value="__OTRO_PERSONALIZADO__">
+                  ✏️ Otra Asignatura / Taller Específico...
+                </option>
+              </optgroup>
+            </select>
+          </div>
+        )}
+
+        {/* 3. CAMPO DE NOMBRE PERSONALIZADO (CONDICIONAL PARA JEC O LIBRE DISPOSICIÓN) */}
+        {esModoPersonalizado && (
+          <div className="min-w-[200px] flex-1">
+            <label className="block text-[10px] font-bold text-amber-700 mb-1 flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+              <span>
+                {regCursoId === 'TRANSVERSAL'
+                  ? 'Nombre del Taller Transversal'
+                  : 'Nombre del Taller JEC / Libre Disposición'}
+              </span>
+            </label>
+            <input
+              type="text"
+              autoFocus
+              value={regNombreCustom}
+              onChange={(e) => setRegNombreCustom(e.target.value)}
+              placeholder="Ej: Taller de Robótica, Refuerzo Matemático, Ajedrez..."
+              className="w-full px-2.5 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-slate-900 bg-amber-50/40 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              required
+            />
+          </div>
+        )}
+
+        {/* 4. HORAS PEDAGÓGICAS DE AULA */}
+        <div className="w-24">
+          <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-slate-500" />
+            <span>Horas Aula</span>
+          </label>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={regHoras}
+              onChange={(e) => setRegHoras(Number(e.target.value))}
+              onFocus={(e) => e.target.select()}
+              className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs text-center font-black focus:ring-2 focus:ring-orange-500 focus:outline-none"
+              min={1}
+              max={44}
+              required
+            />
+            <span className="text-[10px] font-bold text-slate-500">HA</span>
+          </div>
+        </div>
+
+        {/* 5. FINANCIAMIENTO SEP */}
+        <div className="flex items-center pb-1">
+          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 select-none">
+            <input
+              type="checkbox"
+              checked={regEsTallerSep}
+              onChange={(e) => setRegEsTallerSep(e.target.checked)}
+              className="rounded text-orange-600 focus:ring-orange-500"
+            />
+            <span>Financiamiento SEP</span>
+          </label>
+        </div>
+
+        {/* 6. BOTONES ACCIONES */}
+        <div className="flex items-center gap-2 pb-0.5">
+          <button
+            type="submit"
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1 shadow-xs"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Guardar</span>
+          </button>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="px-2.5 py-1.5 text-slate-500 hover:text-slate-800 text-xs font-semibold"
+          >
+            Cancelar
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -199,6 +403,7 @@ interface FormCoDocenciaProps {
   docente: Docente;
   colegio: Establecimiento;
   cursos: CursoSae[];
+  planesDb: PlanEstudioCurricular[];
   onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
   onCerrar: () => void;
 }
@@ -207,25 +412,49 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
   docente,
   colegio,
   cursos,
+  planesDb,
   onGuardar,
   onCerrar
 }) => {
   const [coDocCursoId, setCoDocCursoId] = useState(cursos[0]?.id || '');
-  const [coDocAsignatura, setCoDocAsignatura] = useState('');
+  const [tipoAsignaturaSeleccionada, setTipoAsignaturaSeleccionada] = useState<string>('');
+  const [coDocNombreCustom, setCoDocNombreCustom] = useState('');
   const [coDocHoras, setCoDocHoras] = useState(4);
   const [coDocTipo, setCoDocTipo] = useState<'CO_DOCENCIA' | 'AGRUPACION_FLEXIBLE' | 'REFUERZO_AULA' | 'APOYO_DOCENTE'>('CO_DOCENCIA');
   const [coDocFinanciamiento, setCoDocFinanciamiento] = useState<'SUB_GEN' | 'SEP'>('SEP');
 
-  const cursoSeleccionado = cursos.find(c => c.id === coDocCursoId) || null;
-  const planCurso = cursoSeleccionado ? obtenerPlanPorCurso(cursoSeleccionado.nivel, cursoSeleccionado.regimen) : null;
+  const cursoSeleccionado = useMemo(() => {
+    return cursos.find(c => c.id === coDocCursoId) || null;
+  }, [cursos, coDocCursoId]);
 
-  const sugerenciasAsignaturas = planCurso?.asignaturasBase && planCurso.asignaturasBase.length > 0
-    ? planCurso.asignaturasBase.map(a => a.nombre)
-    : ['Lenguaje y Comunicación', 'Matemática', 'Ciencias Naturales', 'Historia, Geografía y Ciencias Sociales', 'Inglés'];
+  const infoPlan = useMemo(() => {
+    return resolverPlanCurso(cursoSeleccionado, planesDb);
+  }, [cursoSeleccionado, planesDb]);
+
+  useEffect(() => {
+    if (infoPlan.asignaturas.length > 0) {
+      setTipoAsignaturaSeleccionada(infoPlan.asignaturas[0].nombre);
+      setCoDocNombreCustom('');
+    } else {
+      setTipoAsignaturaSeleccionada('__PERSONALIZADA__');
+      setCoDocNombreCustom('Apoyo Pedagógico en Aula');
+    }
+  }, [coDocCursoId, infoPlan]);
+
+  const esPersonalizada = tipoAsignaturaSeleccionada === '__PERSONALIZADA__';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!coDocAsignatura.trim() || !coDocCursoId) return;
+    if (!coDocCursoId) return;
+
+    const nombreFinal = esPersonalizada
+      ? coDocNombreCustom.trim()
+      : tipoAsignaturaSeleccionada.trim();
+
+    if (!nombreFinal) {
+      alert('Por favor especifica la asignatura o área de apoyo.');
+      return;
+    }
 
     const newAsig: AsignacionHoraria = {
       id: `asig-codoc-${Date.now()}`,
@@ -233,7 +462,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
       periodo: docente.periodo || 2026,
       cursoId: coDocCursoId,
       docenteId: docente.id,
-      asignatura: coDocAsignatura.trim(),
+      asignatura: nombreFinal,
       horasPedagogicasAula: Number(coDocHoras),
       esCoDocencia: true,
       esAgrupacionFlexible: coDocTipo === 'AGRUPACION_FLEXIBLE',
@@ -247,13 +476,17 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex flex-wrap items-center gap-3 text-xs shadow-sm">
-      <div className="min-w-[180px]">
-        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Curso Receptor del Apoyo</label>
+    <form onSubmit={handleSubmit} className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-wrap items-end gap-2.5 text-xs shadow-xs">
+      {/* 1. CURSO RECEPTOR */}
+      <div className="min-w-[180px] flex-1 sm:flex-none">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-1 flex items-center gap-1">
+          <GraduationCap className="w-3.5 h-3.5 text-indigo-700" />
+          <span>1. Curso Receptor del Apoyo</span>
+        </label>
         <select
           value={coDocCursoId}
           onChange={(e) => setCoDocCursoId(e.target.value)}
-          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+          className="w-full px-2.5 py-1.5 border border-indigo-300 rounded-lg text-xs bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
           required
         >
           {cursos.map(c => (
@@ -263,31 +496,54 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
           ))}
         </select>
       </div>
-      <div className="flex-1 min-w-[150px]">
-        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Asignatura</label>
-        <input
-          type="text"
-          autoFocus
-          value={coDocAsignatura}
-          onChange={(e) => setCoDocAsignatura(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          list={`datalist-codoc-${docente.id}`}
-          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
-          placeholder="Ej: Matemática, Lenguaje..."
-          required
-        />
-        <datalist id={`datalist-codoc-${docente.id}`}>
-          {sugerenciasAsignaturas.map((nombre, idx) => (
-            <option key={idx} value={nombre} />
+
+      {/* 2. ASIGNATURA SEGÚN PLAN */}
+      <div className="min-w-[200px] flex-1">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-1 flex items-center gap-1">
+          <BookOpen className="w-3.5 h-3.5 text-indigo-700" />
+          <span>2. Asignatura Apoyada</span>
+        </label>
+        <select
+          value={tipoAsignaturaSeleccionada}
+          onChange={(e) => setTipoAsignaturaSeleccionada(e.target.value)}
+          className="w-full px-2.5 py-1.5 border border-indigo-300 rounded-lg text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+        >
+          {infoPlan.asignaturas.map((a, idx) => (
+            <option key={idx} value={a.nombre}>
+              {a.nombre} ({a.horas} HA)
+            </option>
           ))}
-        </datalist>
+          <option value="__PERSONALIZADA__">✨ Otro Apoyo / Taller Específico...</option>
+        </select>
       </div>
+
+      {/* 3. CAMPO PERSONALIZADO */}
+      {esPersonalizada && (
+        <div className="min-w-[180px] flex-1">
+          <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+            Nombre del Apoyo / Taller
+          </label>
+          <input
+            type="text"
+            autoFocus
+            value={coDocNombreCustom}
+            onChange={(e) => setCoDocNombreCustom(e.target.value)}
+            placeholder="Ej: Co-Docencia Matemática, Refuerzo..."
+            className="w-full px-2.5 py-1.5 border border-indigo-300 rounded-lg text-xs font-bold text-slate-900 bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            required
+          />
+        </div>
+      )}
+
+      {/* 4. MODALIDAD DE APOYO */}
       <div className="min-w-[180px]">
-        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Modalidad de Apoyo</label>
+        <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+          Modalidad de Apoyo
+        </label>
         <select
           value={coDocTipo}
           onChange={(e) => setCoDocTipo(e.target.value as any)}
-          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+          className="w-full px-2.5 py-1.5 border border-indigo-300 rounded-lg text-xs bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
         >
           <option value="CO_DOCENCIA">🤝 Co-Docencia en Aula</option>
           <option value="AGRUPACION_FLEXIBLE">👥 Agrupación Flexible (Separación)</option>
@@ -295,41 +551,55 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
           <option value="APOYO_DOCENTE">🛡️ Apoyo Docente Adicional</option>
         </select>
       </div>
-      <div className="w-20">
-        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Horas Aula</label>
-        <input
-          type="number"
-          value={coDocHoras}
-          onChange={(e) => setCoDocHoras(Number(e.target.value))}
-          onFocus={(e) => e.target.select()}
-          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-          min={1}
-          max={44}
-          required
-        />
+
+      {/* 5. HORAS AULA */}
+      <div className="w-24">
+        <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+          Horas Aula
+        </label>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            value={coDocHoras}
+            onChange={(e) => setCoDocHoras(Number(e.target.value))}
+            onFocus={(e) => e.target.select()}
+            className="w-full px-2 py-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            min={1}
+            max={44}
+            required
+          />
+          <span className="text-[10px] font-bold text-indigo-600">HA</span>
+        </div>
       </div>
+
+      {/* 6. FINANCIAMIENTO */}
       <div className="min-w-[140px]">
-        <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">Financiamiento</label>
+        <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+          Financiamiento
+        </label>
         <select
           value={coDocFinanciamiento}
           onChange={(e) => setCoDocFinanciamiento(e.target.value as any)}
-          className="w-full px-2 py-1 border border-indigo-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+          className="w-full px-2.5 py-1.5 border border-indigo-300 rounded-lg text-xs bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
         >
           <option value="SEP">Subvención SEP (No suma plan)</option>
           <option value="SUB_GEN">Subvención General</option>
         </select>
       </div>
-      <div className="flex items-center gap-2 pt-4">
+
+      {/* 7. BOTONES */}
+      <div className="flex items-center gap-2 pb-0.5">
         <button
           type="submit"
-          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-xs shadow-xs transition-colors"
+          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs shadow-xs transition-colors flex items-center gap-1"
         >
-          Guardar Co-Docencia
+          <Check className="w-3.5 h-3.5" />
+          <span>Guardar Co-Docencia</span>
         </button>
         <button
           type="button"
           onClick={onCerrar}
-          className="px-2 py-1 text-slate-500 hover:text-slate-800 text-xs"
+          className="px-2.5 py-1.5 text-slate-500 hover:text-slate-800 text-xs font-semibold"
         >
           Cancelar
         </button>
@@ -491,6 +761,17 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
   onEliminarAsignacion
 }) => {
   const [formActivo, setFormActivo] = useState<TipoFormularioActivo>(null);
+  const [planesDb, setPlanesDb] = useState<PlanEstudioCurricular[]>([]);
+
+  useEffect(() => {
+    let cancel = false;
+    listarPlanesEstudio()
+      .then(res => {
+        if (!cancel && res) setPlanesDb(res);
+      })
+      .catch(err => console.warn('Error al cargar planes de estudio:', err));
+    return () => { cancel = true; };
+  }, []);
 
   const asignacionesDocente = asignaciones.filter(
     a => a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente)
@@ -555,6 +836,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           docente={docente}
           colegio={colegio}
           cursos={cursos}
+          planesDb={planesDb}
           onGuardar={onGuardarAsignacion}
           onCerrar={() => setFormActivo(null)}
         />
@@ -566,6 +848,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           docente={docente}
           colegio={colegio}
           cursos={cursos}
+          planesDb={planesDb}
           onGuardar={onGuardarAsignacion}
           onCerrar={() => setFormActivo(null)}
         />

@@ -19,7 +19,8 @@ import {
   X,
   Clock,
   Search,
-  Filter
+  Filter,
+  BookOpen
 } from 'lucide-react';
 import { 
   Establecimiento, 
@@ -51,6 +52,7 @@ interface DocentesDotacionViewProps {
   cursos?: CursoSae[];
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
+  onNavegarAPestana?: (pestana: any) => void;
 }
 
 export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
@@ -64,7 +66,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   todasLasAsignaciones = [],
   cursos = [],
   onGuardarAsignacion,
-  onEliminarAsignacion
+  onEliminarAsignacion,
+  onNavegarAPestana
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Docente | null>(null);
@@ -421,6 +424,17 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {onNavegarAPestana && (
+            <button
+              type="button"
+              onClick={() => onNavegarAPestana('planes_estudio')}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors border border-slate-300 shadow-xs"
+              title="Ver, editar, duplicar o crear planes de estudio curriculares"
+            >
+              <BookOpen className="w-4 h-4 text-orange-600" />
+              <span>Gestionar Planes</span>
+            </button>
+          )}
           <button
             onClick={abrirModalNuevo}
             className="flex items-center gap-1.5 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
