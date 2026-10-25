@@ -291,10 +291,11 @@ export function calcularEstadisticasColegio(
     horasCoDocenciaTotal += haCoDoc;
     horasTrabajoColaborativoTotal += (dColab + haColab);
 
-    const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || ((pTit + pCon) > 0 && (sTit + sCon) === 0);
+    const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || ((pTit + pCon) > 0 && (sTit + sCon) === 0 && (spTit + spCon) === 0);
     const isSepDoc = (spTit + spCon) > 0 && (pTit + pCon) === 0 && (sTit + sCon) === 0;
-    // Docencia efectiva de aula: mixtos (SubvGen+SEP) incluyen co-docencia; puros SEP/PIE la mantienen como exenta
-    const asigsDocenciaEfectiva = (isPieDoc || isSepDoc)
+
+    // Docencia efectiva de aula: Los docentes de aula (Subvención General o SEP) que realizan co-docencia en sala ejercen docencia lectiva
+    const asigsDocenciaEfectiva = isPieDoc
       ? asigsRegulares
       : [...asigsRegulares, ...asigsCoDoc];
 
@@ -308,12 +309,13 @@ export function calcularEstadisticasColegio(
       ? doc.funcionesNoAula.filter(f => !/sep/i.test(f.financiamiento || '') && !/sep/i.test(f.nombre || '') && !/pie/i.test(f.financiamiento || '') && !(f.nombre && /pie/i.test(f.nombre))).reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : 0;
 
-    const sepExentas = (isPieDoc || isSepDoc)
+    const tieneDocenciaAulaSep = asigsCoDoc.length > 0 || docAsigs.some(a => a.esTallerSep);
+    const sepExentas = (isSepDoc && !tieneDocenciaAulaSep && asigsRegulares.length === 0)
       ? Math.max(spTit + spCon, dTallerSep, sumFuncionesNoAulaSep)
       : (Math.max(dTallerSep, docAsigs.filter(a => a.esTallerSep).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0)) + sumFuncionesNoAulaSep);
     const pieCronologicas = isPieDoc
       ? Math.max(pTit + pCon, dColab, haColab + sumFuncionesNoAulaPie)
-      : Math.max(dColab, haColab) + sumFuncionesNoAulaPie;
+      : Math.round(((haColab * 0.75) + dColab + sumFuncionesNoAulaPie) * 10) / 10;
 
     const hExentas = dDir + dInsp + dTec + dCoord + sepExentas + pieCronologicas + sumFuncionesNoAulaSubvGen;
     const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);

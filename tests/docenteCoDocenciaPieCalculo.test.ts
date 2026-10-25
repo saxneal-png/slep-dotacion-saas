@@ -108,4 +108,141 @@ describe('Cálculo de Carga Horaria para Docente de Aula con Co-Docencia / Apoyo
 
     expect(diagnostico.balanzaGeneral.horasLectivasAsignadas).toBe(24);
   });
+
+  it('calcula con precisión matemática y sin déficit ficticio el caso de VALENTINA ALARCON (26h SEP con 22 HA de Co-Docencia)', () => {
+    const docenteValentina: Docente = {
+      id: 'doc-valentina',
+      rbd: '12345',
+      periodo: 2026,
+      run: '16.217.826-1',
+      nombres: 'VALENTINA',
+      apellidos: 'ALARCON JUNEMANN',
+      estamento: 'DOCENTE_AULA',
+      calidadJuridica: 'TITULAR',
+      horasContrato: 26,
+      horasSepTitular: 26,
+      horasSubvencionGeneralTitular: 0,
+      horasPieTitular: 0
+    };
+
+    const asignacionesValentina: AsignacionHoraria[] = [
+      {
+        id: 'val-1',
+        rbd: '12345',
+        periodo: 2026,
+        cursoId: 'c1',
+        docenteId: 'doc-valentina',
+        asignatura: 'Codocencia',
+        horasPedagogicasAula: 10,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      },
+      {
+        id: 'val-2',
+        rbd: '12345',
+        periodo: 2026,
+        cursoId: 'c2',
+        docenteId: 'doc-valentina',
+        asignatura: 'Codocencia',
+        horasPedagogicasAula: 6,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      },
+      {
+        id: 'val-3',
+        rbd: '12345',
+        periodo: 2026,
+        cursoId: 'c3',
+        docenteId: 'doc-valentina',
+        asignatura: 'Codocencia',
+        horasPedagogicasAula: 6,
+        esCoDocencia: true,
+        esTallerSep: true,
+        tipoApoyo: 'CO_DOCENCIA'
+      }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio(
+      [colegioMock],
+      [docenteValentina],
+      asignacionesValentina,
+      cursosMock
+    );
+
+    const docContrato = consolidado[0]?.contratos[0];
+    expect(docContrato).toBeDefined();
+    if (!docContrato) return;
+
+    // 1. Debe computar exactamente 22 HA de aula lectiva (10 + 6 + 6)
+    expect(docContrato.horasAula65_35).toBe(22);
+    expect(docContrato.horasAula60_40).toBe(0);
+
+    // 2. No debe inflar con horas PIE ni exentas duplicadas
+    expect(docContrato.horasPieCronologicas).toBe(0);
+    expect(docContrato.horasTallerSepExento).toBe(0);
+
+    // 3. Contrato calculado debe coincidir exactamente con la jornada oficial de 25 hrs de la tabla 65/35 (22 HA)
+    expect(docContrato.contratoCalculadoTotal).toBe(25);
+    expect(docContrato.docente.horasContrato).toBe(26);
+    expect(docContrato.saldoHoras).toBe(1); // 26 - 25 = +1 hr de holgura
+    expect(docContrato.estadoSaldo).toBe('HOLGURA');
+
+    // 4. Cumplimiento legal y distribución en minutos enteros
+    expect(docContrato.esInfractorExcesoLectivo).toBe(false);
+    expect(docContrato.minutosRecreoMineduc).toBeGreaterThan(0);
+    expect(docContrato.minutosNoLectivosMineduc).toBeGreaterThan(0);
+    expect(docContrato.minutosHnlPlanificacion40).toBeGreaterThan(0);
+  });
+
+  it('resguarda a Valentina ante régimen 60/40 evitando déficits ficticios de -22 hrs y garantizando saldo íntegro', () => {
+    const colegio60: Establecimiento = {
+      ...colegioMock,
+      porcentajePrioritarios: 85
+    };
+    const cursos60: CursoSae[] = cursosMock.map(c => ({
+      ...c,
+      regimenProporcion: '60_40'
+    }));
+
+    const docenteValentina: Docente = {
+      id: 'doc-valentina-60',
+      rbd: '12345',
+      periodo: 2026,
+      run: '16.217.826-1',
+      nombres: 'VALENTINA',
+      apellidos: 'ALARCON JUNEMANN',
+      estamento: 'DOCENTE_AULA',
+      calidadJuridica: 'TITULAR',
+      horasContrato: 26,
+      horasSepTitular: 26
+    };
+
+    const asignacionesValentina: AsignacionHoraria[] = [
+      { id: 'v1', rbd: '12345', periodo: 2026, cursoId: 'c1', docenteId: 'doc-valentina-60', asignatura: 'Codocencia', horasPedagogicasAula: 10, esCoDocencia: true, esTallerSep: true },
+      { id: 'v2', rbd: '12345', periodo: 2026, cursoId: 'c2', docenteId: 'doc-valentina-60', asignatura: 'Codocencia', horasPedagogicasAula: 6, esCoDocencia: true, esTallerSep: true },
+      { id: 'v3', rbd: '12345', periodo: 2026, cursoId: 'c3', docenteId: 'doc-valentina-60', asignatura: 'Codocencia', horasPedagogicasAula: 6, esCoDocencia: true, esTallerSep: true }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio(
+      [colegio60],
+      [docenteValentina],
+      asignacionesValentina,
+      cursos60
+    );
+
+    const docContrato = consolidado[0]?.contratos[0];
+    expect(docContrato).toBeDefined();
+    if (!docContrato) return;
+
+    // Al no calzar la tabla 60/40 estricta para 22 HA en 26h contrato (requeriría 28h), se resguarda como exento SEP 1:1
+    // Contrato calculado es 26h (NUNCA 48 hrs ni déficit de -22 hrs)
+    expect(docContrato.contratoCalculadoTotal).toBe(26);
+    expect(docContrato.docente.horasContrato).toBe(26);
+    expect(docContrato.saldoHoras).toBe(0);
+    expect(docContrato.estadoSaldo).toBe('EXACTO');
+    expect(docContrato.horasPieCronologicas).toBe(0);
+    expect(docContrato.horasTallerSepExento).toBe(26);
+  });
 });

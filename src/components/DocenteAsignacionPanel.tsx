@@ -167,6 +167,20 @@ export interface DisponibilidadAsignatura {
   caracter?: string;
 }
 
+export function esAsignacionCoDocenciaOApoyo(a: AsignacionHoraria): boolean {
+  return Boolean(
+    a.esCoDocencia ||
+    a.esAgrupacionFlexible ||
+    a.tipoApoyo === 'CO_DOCENCIA' ||
+    a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
+    a.tipoApoyo === 'REFUERZO_AULA' ||
+    a.tipoApoyo === 'APOYO_DOCENTE' ||
+    (a.tipoApoyo && /co-docencia|codocencia|refuerzo|agrupaci[oó]n|apoyo/i.test(a.tipoApoyo)) ||
+    (a.asignatura && /co-docencia|codocencia|refuerzo aula|agrupaci[oó]n/i.test(a.asignatura)) ||
+    Boolean(a.horasCronologicasPie && a.horasCronologicasPie > 0)
+  );
+}
+
 export function calcularDisponibilidadCurso(
   curso: CursoSae | null,
   infoPlan: InfoPlanResuelto,
@@ -178,6 +192,7 @@ export function calcularDisponibilidadCurso(
   horasLibreDisponibles: number;
   horasLibrePlan: number;
   horasLibreAsignadas: number;
+  horasCoDocenciaApoyoCurso: number;
 } {
   if (!curso) {
     return {
@@ -186,11 +201,16 @@ export function calcularDisponibilidadCurso(
       todas: [],
       horasLibreDisponibles: 0,
       horasLibrePlan: 0,
-      horasLibreAsignadas: 0
+      horasLibreAsignadas: 0,
+      horasCoDocenciaApoyoCurso: 0
     };
   }
 
-  const asigsCurso = asignacionesColegio.filter(a => a.cursoId === curso.id && !a.esCoDocencia);
+  // Filtrar asignaciones regulares de aula (excluyendo co-docencia y apoyos paralelos)
+  const asigsCurso = asignacionesColegio.filter(a => a.cursoId === curso.id && !esAsignacionCoDocenciaOApoyo(a));
+  const horasCoDocenciaApoyoCurso = asignacionesColegio
+    .filter(a => a.cursoId === curso.id && esAsignacionCoDocenciaOApoyo(a))
+    .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
   const todas: DisponibilidadAsignatura[] = infoPlan.asignaturas.map(asigPlan => {
     const horasAsig = asigsCurso
@@ -233,7 +253,8 @@ export function calcularDisponibilidadCurso(
     todas,
     horasLibreDisponibles,
     horasLibrePlan,
-    horasLibreAsignadas
+    horasLibreAsignadas,
+    horasCoDocenciaApoyoCurso
   };
 }
 
@@ -1444,89 +1465,206 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
             <div className="flex items-center gap-2 text-xs">
               <span className="font-semibold text-slate-600">
-                Cobertura: <strong className={totalCubiertasCurso >= totalHorasCurso ? 'text-emerald-600' : 'text-amber-600'}>
+                Plan Alumnos: <strong className={totalCubiertasCurso >= totalHorasCurso ? 'text-emerald-600' : 'text-amber-600'}>
                   {totalCubiertasCurso} / {totalHorasCurso} HA
                 </strong> ({totalHorasCurso > 0 ? Math.round((totalCubiertasCurso / totalHorasCurso) * 100) : 0}%)
               </span>
+              {dispCursoInspeccion.horasCoDocenciaApoyoCurso > 0 && (
+                <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold text-[10px]">
+                  +{dispCursoInspeccion.horasCoDocenciaApoyoCurso} HA Co-Docencia / Apoyo
+                </span>
+              )}
             </div>
           </div>
 
           {/* Chips de Asignación en 1-Clic para este docente */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">
-              Asignar con 1 Clic a {docente.nombres}:
-            </span>
-            {dispCursoInspeccion.disponibles.map(asig => (
-              <button
-                key={asig.nombre}
-                type="button"
-                onClick={async () => {
-                  if (onGuardarAsignacion) {
-                    const nuevaAsig: AsignacionHoraria = {
-                      id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                      rbd: colegio.rbd,
-                      docenteId: docente.id,
-                      asignatura: asig.nombre,
-                      cursoId: cursoInspeccion.id,
-                      horasPedagogicasAula: asig.horasDisponibles,
-                      periodo: cursoInspeccion.periodo || 2026,
-                      esTallerJec: false
-                    };
-                    await onGuardarAsignacion(nuevaAsig);
-                  }
-                }}
-                className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[11px] font-semibold transition-all hover:scale-105 shadow-xs"
-                title={`Haz clic para asignar ${asig.horasDisponibles} HA de ${asig.nombre} en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}`}
-              >
-                <Plus className="w-2.5 h-2.5 text-emerald-600" />
-                <span>{asig.nombre}</span>
-                <span className="bg-emerald-200 text-emerald-900 px-1 rounded text-[10px] font-extrabold">
-                  {asig.horasDisponibles} HA
-                </span>
-              </button>
-            ))}
+          {(() => {
+            const subTotalDoc = Number(docente.horasSubvencionGeneralTitular || 0) + Number(docente.horasSubvencionGeneralContrata || 0);
+            const contratoSepDoc = Number(docente.horasSepTitular || 0) + Number(docente.horasSepContrata || 0);
+            const contratoPieDoc = Number(docente.horasPieTitular || 0) + Number(docente.horasPieContrata || 0);
+            const isDocenteSepPuro = contratoSepDoc > 0 && subTotalDoc === 0 && contratoPieDoc === 0;
+            const isDocentePiePuro = docente.estamento === 'DOCENTE_DIFERENCIAL' || (contratoPieDoc > 0 && subTotalDoc === 0 && contratoSepDoc === 0);
 
-            {dispCursoInspeccion.horasLibreDisponibles > 0 && (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (onGuardarAsignacion) {
-                    const nombreTaller = prompt(`Nombre del Taller JEC / Libre Disposición para ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, 'Taller de Libre Disposición');
-                    if (nombreTaller && nombreTaller.trim()) {
-                      const horasInput = prompt(`Horas a asignar (Disponibles: ${dispCursoInspeccion.horasLibreDisponibles} HA):`, String(dispCursoInspeccion.horasLibreDisponibles));
-                      const h = Number(horasInput) || dispCursoInspeccion.horasLibreDisponibles;
-                      const nuevaAsig: AsignacionHoraria = {
-                        id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                        rbd: colegio.rbd,
-                        docenteId: docente.id,
-                        asignatura: nombreTaller.trim(),
-                        cursoId: cursoInspeccion.id,
-                        horasPedagogicasAula: h,
-                        periodo: cursoInspeccion.periodo || 2026,
-                        esTallerJec: true
-                      };
-                      await onGuardarAsignacion(nuevaAsig);
-                    }
-                  }
-                }}
-                className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded text-[11px] font-semibold transition-all hover:scale-105 shadow-xs"
-                title={`Haz clic para asignar un Taller JEC (${dispCursoInspeccion.horasLibreDisponibles} HA libres)`}
-              >
-                <Plus className="w-2.5 h-2.5 text-amber-600" />
-                <span>⚡ Taller JEC / Libre Disp.</span>
-                <span className="bg-amber-200 text-amber-950 px-1 rounded text-[10px] font-extrabold">
-                  {dispCursoInspeccion.horasLibreDisponibles} HA
+            return (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">
+                  Asignar con 1 Clic a {docente.nombres}:
                 </span>
-              </button>
-            )}
 
-            {dispCursoInspeccion.disponibles.length === 0 && dispCursoInspeccion.horasLibreDisponibles === 0 && (
-              <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1 bg-emerald-100/60 px-2 py-0.5 rounded border border-emerald-200">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                ¡Todas las asignaturas del plan de este curso están 100% cubiertas!
-              </span>
-            )}
-          </div>
+                {/* Si es docente financiado 100% por SEP, sugerir Co-docencia o Refuerzo SEP (no asignaturas del plan común titular) */}
+                {isDocenteSepPuro && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (onGuardarAsignacion) {
+                          const horas = prompt(`Horas pedagógicas semanales de Co-Docencia SEP en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, '6');
+                          const h = Number(horas);
+                          if (h && h > 0) {
+                            const nuevaAsig: AsignacionHoraria = {
+                              id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                              rbd: colegio.rbd,
+                              docenteId: docente.id,
+                              asignatura: `Co-Docencia SEP`,
+                              cursoId: cursoInspeccion.id,
+                              horasPedagogicasAula: h,
+                              periodo: cursoInspeccion.periodo || 2026,
+                              esCoDocencia: true,
+                              esTallerSep: true,
+                              tipoApoyo: 'CO_DOCENCIA'
+                            };
+                            await onGuardarAsignacion(nuevaAsig);
+                          }
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded text-[11px] font-bold transition-all hover:scale-105 shadow-xs"
+                      title={`Asignar Co-Docencia financiada por SEP en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}`}
+                    >
+                      <Plus className="w-3 h-3 text-indigo-600" />
+                      <span>🤝 Asignar Co-Docencia SEP</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (onGuardarAsignacion) {
+                          const nombreTaller = prompt(`Nombre del Refuerzo / Taller SEP en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, 'Refuerzo Pedagógico SEP');
+                          if (nombreTaller && nombreTaller.trim()) {
+                            const horas = prompt(`Horas pedagógicas semanales:`, '2');
+                            const h = Number(horas);
+                            if (h && h > 0) {
+                              const nuevaAsig: AsignacionHoraria = {
+                                id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                rbd: colegio.rbd,
+                                docenteId: docente.id,
+                                asignatura: nombreTaller.trim(),
+                                cursoId: cursoInspeccion.id,
+                                horasPedagogicasAula: h,
+                                periodo: cursoInspeccion.periodo || 2026,
+                                esTallerSep: true,
+                                tipoApoyo: 'TALLER_SEP'
+                              };
+                              await onGuardarAsignacion(nuevaAsig);
+                            }
+                          }
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[11px] font-bold transition-all hover:scale-105 shadow-xs"
+                      title="Asignar Taller o Refuerzo SEP en este curso"
+                    >
+                      <Plus className="w-3 h-3 text-emerald-600" />
+                      <span>🌱 Asignar Refuerzo / Taller SEP</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Si es docente diferencial / PIE, sugerir Co-docencia PIE Dec. 170 */}
+                {isDocentePiePuro && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (onGuardarAsignacion) {
+                        const horas = prompt(`Horas cronológicas de Apoyo PIE (Dec. 170) en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, '8');
+                        const h = Number(horas);
+                        if (h && h > 0) {
+                          const nuevaAsig: AsignacionHoraria = {
+                            id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                            rbd: colegio.rbd,
+                            docenteId: docente.id,
+                            asignatura: 'Apoyo PIE - Co-docencia Aula Común (Decreto 170)',
+                            cursoId: cursoInspeccion.id,
+                            horasCronologicasPie: h,
+                            horasPedagogicasAula: Math.round(h * 1.333),
+                            periodo: cursoInspeccion.periodo || 2026,
+                            esCoDocencia: true,
+                            tipoApoyo: 'Co-Docencia en Aula Regular'
+                          };
+                          await onGuardarAsignacion(nuevaAsig);
+                        }
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 rounded text-[11px] font-bold transition-all hover:scale-105 shadow-xs"
+                    title={`Asignar Co-Docencia PIE Decreto 170 en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}`}
+                  >
+                    <ShieldCheck className="w-3 h-3 text-purple-600" />
+                    <span>🛡️ Asignar Apoyo PIE (Dec. 170)</span>
+                  </button>
+                )}
+
+                {/* Para docentes regulares / mixtos con horas de Subvención General: ofrecer las asignaturas disponibles del plan regular */}
+                {!isDocenteSepPuro && !isDocentePiePuro && dispCursoInspeccion.disponibles.map(asig => (
+                  <button
+                    key={asig.nombre}
+                    type="button"
+                    onClick={async () => {
+                      if (onGuardarAsignacion) {
+                        const nuevaAsig: AsignacionHoraria = {
+                          id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                          rbd: colegio.rbd,
+                          docenteId: docente.id,
+                          asignatura: asig.nombre,
+                          cursoId: cursoInspeccion.id,
+                          horasPedagogicasAula: asig.horasDisponibles,
+                          periodo: cursoInspeccion.periodo || 2026,
+                          esTallerJec: false
+                        };
+                        await onGuardarAsignacion(nuevaAsig);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[11px] font-semibold transition-all hover:scale-105 shadow-xs"
+                    title={`Haz clic para asignar ${asig.horasDisponibles} HA de ${asig.nombre} en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}`}
+                  >
+                    <Plus className="w-2.5 h-2.5 text-emerald-600" />
+                    <span>{asig.nombre}</span>
+                    <span className="bg-emerald-200 text-emerald-900 px-1 rounded text-[10px] font-extrabold">
+                      {asig.horasDisponibles} HA
+                    </span>
+                  </button>
+                ))}
+
+                {!isDocenteSepPuro && !isDocentePiePuro && dispCursoInspeccion.horasLibreDisponibles > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (onGuardarAsignacion) {
+                        const nombreTaller = prompt(`Nombre del Taller JEC / Libre Disposición para ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, 'Taller de Libre Disposición');
+                        if (nombreTaller && nombreTaller.trim()) {
+                          const horasInput = prompt(`Horas a asignar (Disponibles: ${dispCursoInspeccion.horasLibreDisponibles} HA):`, String(dispCursoInspeccion.horasLibreDisponibles));
+                          const h = Number(horasInput) || dispCursoInspeccion.horasLibreDisponibles;
+                          const nuevaAsig: AsignacionHoraria = {
+                            id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                            rbd: colegio.rbd,
+                            docenteId: docente.id,
+                            asignatura: nombreTaller.trim(),
+                            cursoId: cursoInspeccion.id,
+                            horasPedagogicasAula: h,
+                            periodo: cursoInspeccion.periodo || 2026,
+                            esTallerJec: true
+                          };
+                          await onGuardarAsignacion(nuevaAsig);
+                        }
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded text-[11px] font-semibold transition-all hover:scale-105 shadow-xs"
+                    title={`Haz clic para asignar un Taller JEC (${dispCursoInspeccion.horasLibreDisponibles} HA libres)`}
+                  >
+                    <Plus className="w-2.5 h-2.5 text-amber-600" />
+                    <span>⚡ Taller JEC / Libre Disp.</span>
+                    <span className="bg-amber-200 text-amber-950 px-1 rounded text-[10px] font-extrabold">
+                      {dispCursoInspeccion.horasLibreDisponibles} HA
+                    </span>
+                  </button>
+                )}
+
+                {!isDocenteSepPuro && !isDocentePiePuro && dispCursoInspeccion.disponibles.length === 0 && dispCursoInspeccion.horasLibreDisponibles === 0 && (
+                  <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1 bg-emerald-100/60 px-2 py-0.5 rounded border border-emerald-200">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    ¡Todas las asignaturas del plan de este curso están 100% cubiertas!
+                  </span>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
