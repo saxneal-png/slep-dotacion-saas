@@ -20,8 +20,13 @@ import {
   Clock,
   Search,
   Filter,
-  BookOpen
+  BookOpen,
+  ClipboardPaste,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { ModalPegarDesdeExcel } from '../components/ModalPegarDesdeExcel';
 import { 
   Establecimiento, 
   Docente, 
@@ -73,6 +78,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const [editingDoc, setEditingDoc] = useState<Docente | null>(null);
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
   const [expandedDocenteId, setExpandedDocenteId] = useState<string | null>(null);
+  const [modalPegarAbierto, setModalPegarAbierto] = useState(false);
 
   // Filtros de búsqueda de docentes
   const [busquedaDocente, setBusquedaDocente] = useState('');
@@ -436,6 +442,16 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             </button>
           )}
           <button
+            type="button"
+            onClick={() => setModalPegarAbierto(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors shadow-xs"
+            title="Copiar y pegar múltiples docentes desde una planilla Excel"
+          >
+            <ClipboardPaste className="w-4 h-4 text-indigo-600" />
+            <span>Pegar desde Excel</span>
+          </button>
+
+          <button
             onClick={abrirModalNuevo}
             className="flex items-center gap-1.5 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
           >
@@ -746,6 +762,41 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                 Restablecer
               </button>
             )}
+
+            {/* Botón Exportación Rápida WYSIWYG */}
+            <button
+              type="button"
+              onClick={() => {
+                const data = docentesFiltrados.map(({ docente: d, auditMulti, calculo, pedAsignadas }) => ({
+                  RUN: d.run,
+                  Nombres: d.nombres,
+                  Apellidos: d.apellidos,
+                  Estamento: d.estamento,
+                  'Calidad Jurídica': d.calidadJuridica,
+                  'Horas Contrato': d.horasContrato,
+                  'Subv. Gral Titular': d.horasSubvencionGeneralTitular || 0,
+                  'Subv. Gral Contrata': d.horasSubvencionGeneralContrata || 0,
+                  'SEP Titular': d.horasSepTitular || 0,
+                  'SEP Contrata': d.horasSepContrata || 0,
+                  'PIE Titular': d.horasPieTitular || 0,
+                  'PIE Contrata': d.horasPieContrata || 0,
+                  'Horas Aula Asignadas': pedAsignadas || 0,
+                  'Tope Máximo Aula (HA)': calculo?.horasPedagogicasDisponiblesMax || 0,
+                  'Saldo Horas': auditMulti.saldoHoras,
+                  'Estado Carga': auditMulti.saldoHoras < 0 ? 'SOBREASIGNADO' : auditMulti.saldoHoras > 0 ? 'HOLGURA' : 'EXACTO'
+                }));
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Docentes');
+                const nombreLimpio = colegio.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
+                XLSX.writeFile(wb, `Nomina_Docente_${nombreLimpio}_RBD_${colegio.rbd}.xlsx`);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors shadow-xs"
+              title="Descargar exactamente esta lista filtrada a un archivo Excel"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Exportar Lista (.xlsx)</span>
+            </button>
           </div>
         </div>
       </div>
@@ -998,6 +1049,20 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         onClose={() => setDocenteFicha(null)}
         docenteConsolidado={docenteFicha}
         cursos={cursos}
+      />
+
+      {/* Modal Pegar Docentes desde Excel */}
+      <ModalPegarDesdeExcel
+        isOpen={modalPegarAbierto}
+        onClose={() => setModalPegarAbierto(false)}
+        tipo="DOCENTES"
+        rbd={colegio.rbd}
+        periodoActivo={cursos[0]?.periodo || 2026}
+        onGuardarBatch={async (items) => {
+          for (const d of items) {
+            await onGuardarDocente(d);
+          }
+        }}
       />
     </div>
   );

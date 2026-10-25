@@ -26,6 +26,8 @@ import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotac
 import { ExportarEstablecimientoModal } from '../components/ExportarEstablecimientoModal';
 import { ImportarEstablecimientoModal } from '../components/ImportarEstablecimientoModal';
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
+import { CentroDescargasModal } from '../components/CentroDescargasModal';
+import { ProgresoDotacionBar } from '../components/ProgresoDotacionBar';
 
 export interface ColegioWorkspaceViewProps {
   colegio: Establecimiento;
@@ -114,6 +116,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [modalExportarEstablecimientoAbierto, setModalExportarEstablecimientoAbierto] = useState(false);
   const [modalImportarEstablecimientoAbierto, setModalImportarEstablecimientoAbierto] = useState(false);
   const [modalGdpAbierto, setModalGdpAbierto] = useState(false);
+  const [modalCentroDescargasAbierto, setModalCentroDescargasAbierto] = useState(false);
   const [menuAvanzadoAbierto, setMenuAvanzadoAbierto] = useState(false);
 
   const handleEjecutarVaciarDotacion = async () => {
@@ -205,7 +208,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
               <span>Importar Matriz</span>
             </button>
 
-            {/* 3. Traspaso de Dotación */}
+            {/* 3. Centro de Descargas Unificado */}
+            <button
+              onClick={() => setModalCentroDescargasAbierto(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-[0.98]"
+              title="Descargar PAL 2027 DEP, GDP, Matriz Excel, Coeficientes Asistentes o Ficha"
+            >
+              <FileDown className="w-4 h-4 text-emerald-200" />
+              <span>Centro de Descargas</span>
+            </button>
+
+            {/* 4. Traspaso de Dotación */}
             <button
               onClick={() => setModalTraspasoAbierto(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/20 active:scale-[0.98]"
@@ -215,7 +228,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
               <span>Traspaso 2026 ➔ 2027</span>
             </button>
 
-            {/* 4. Menú Desplegable Consolidado de Acciones & Reportes */}
+            {/* 5. Menú Desplegable Consolidado de Acciones & Reportes */}
             <div className="relative">
               <button
                 onClick={() => setMenuAvanzadoAbierto(!menuAvanzadoAbierto)}
@@ -407,6 +420,16 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         </div>
       </div>
 
+      {/* Flujo Guiado de 5 Pasos para Certificación Escolar */}
+      <ProgresoDotacionBar
+        cursos={cursos}
+        docentes={docentes}
+        asignaciones={asignaciones}
+        asistentes={asistentes}
+        balanceAula={balance}
+        onSelectTab={(tabId) => setTabActiva(tabId)}
+      />
+
       {/* Navegación por Pestañas Estilizadas */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5 overflow-x-auto text-xs font-medium">
         {tabs.map(tab => {
@@ -595,6 +618,20 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           onGuardarEstablecimiento={onGuardarColegio || (async () => {})}
         />
       )}
+
+      {/* Centro Unificado de Descargas & Reportes Oficiales */}
+      <CentroDescargasModal
+        isOpen={modalCentroDescargasAbierto}
+        onClose={() => setModalCentroDescargasAbierto(false)}
+        colegio={colegio}
+        cursos={cursos}
+        docentes={docentes}
+        asignaciones={asignaciones}
+        asistentes={asistentes}
+        periodoActivo={periodoActivo}
+        onAbrirGdpModal={() => setModalGdpAbierto(true)}
+        onExportarFichaSlep={onExportarDotacionColegio ? () => onExportarDotacionColegio(colegio, periodoActivo) : undefined}
+      />
     </div>
   );
 };

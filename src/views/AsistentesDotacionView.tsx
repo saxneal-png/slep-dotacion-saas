@@ -2,9 +2,11 @@ import React, { useState, useMemo } from 'react';
 import {
   Users, UserPlus, Search, Filter, AlertTriangle, ShieldCheck, HeartHandshake,
   Sparkles, CheckCircle2, Download, Upload, Trash2, Edit2, X, Plus, Clock,
-  Briefcase, Award, Check, FileSpreadsheet, Building2, ChevronDown, ChevronUp
+  Briefcase, Award, Check, FileSpreadsheet, Building2, ChevronDown, ChevronUp,
+  ClipboardPaste
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { ModalPegarDesdeExcel } from '../components/ModalPegarDesdeExcel';
 import {
   AsistenteEducacion,
   EstamentoAsistente,
@@ -82,6 +84,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
   const [modalImportarAbierto, setModalImportarAbierto] = useState(false);
   const [seccionGdpAbierta, setSeccionGdpAbierta] = useState(false);
   const [archivoExcel, setArchivoExcel] = useState<File | null>(null);
+  const [modalPegarAbierto, setModalPegarAbierto] = useState(false);
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
 
   const diagnostico = useMemo(() => {
@@ -536,7 +539,17 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
         </div>
 
         {/* Botones de Acción */}
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+        <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+          <button
+            type="button"
+            onClick={() => setModalPegarAbierto(true)}
+            className="px-3 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors shadow-xs"
+            title="Copiar y pegar múltiples asistentes desde Excel"
+          >
+            <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Pegar desde Excel</span>
+          </button>
+
           <button
             onClick={() => setModalImportarAbierto(true)}
             className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 transition-colors"
@@ -557,12 +570,37 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
           </button>
 
           <button
-            onClick={handleExportarExcel}
-            className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 transition-colors"
-            title="Descargar nómina en formato Excel"
+            onClick={() => {
+              const data = asistentesFiltrados.map((a) => ({
+                RBD: a.rbd,
+                RUN: a.run,
+                Nombres: a.nombres,
+                Apellidos: a.apellidos,
+                Función: a.cargoFuncion,
+                Estamento: ESTAMENTO_LABELS[a.estamento]?.label || a.estamento,
+                'Horas Contrato': a.horasContrato,
+                'Indefinidas Sub Gral': a.horasSubvencionGeneralIndefinido || 0,
+                'Plazo Fijo Sub Gral': a.horasSubvencionGeneralPlazoFijo || 0,
+                'Indefinidas SEP': a.horasSepIndefinido || 0,
+                'Plazo Fijo SEP': a.horasSepPlazoFijo || 0,
+                'Indefinidas PIE': a.horasPieIndefinido || 0,
+                'Plazo Fijo PIE': a.horasPiePlazoFijo || 0,
+                'Dupla Psicosocial': a.esDuplaPsicosocial ? 'SÍ' : 'NO',
+                'Equipo PIE': a.esEquipoPie ? 'SÍ' : 'NO',
+                'Técnico Párvulo': a.esTecnicoParvulo ? 'SÍ' : 'NO',
+                'Auxiliar Servicio': a.esAuxiliarServicio ? 'SÍ' : 'NO'
+              }));
+              const ws = XLSX.utils.json_to_sheet(data);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, 'Asistentes');
+              const nombreLimpio = colegio.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
+              XLSX.writeFile(wb, `Nomina_Asistentes_${nombreLimpio}_RBD_${colegio.rbd}.xlsx`);
+            }}
+            className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1.5 transition-colors shadow-xs"
+            title="Descargar exactamente esta lista filtrada a un archivo Excel"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Exportar</span>
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Exportar Vista (.xlsx)</span>
           </button>
 
           <button
@@ -1244,6 +1282,24 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal Pegar Asistentes desde Excel */}
+      <ModalPegarDesdeExcel
+        isOpen={modalPegarAbierto}
+        onClose={() => setModalPegarAbierto(false)}
+        tipo="ASISTENTES"
+        rbd={colegio.rbd}
+        periodoActivo={periodoActivo}
+        onGuardarBatch={async (items) => {
+          if (onGuardarAsistentesBatch) {
+            await onGuardarAsistentesBatch(items);
+          } else {
+            for (const a of items) {
+              await onGuardarAsistente(a);
+            }
+          }
+        }}
+      />
     </div>
   );
 };
