@@ -50,6 +50,7 @@ export interface CurriculumDemandaViewProps {
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
   periodoActivo?: number;
   onSincronizarMalla?: () => Promise<void> | void;
+  onGestionarPlanes?: () => void;
 }
 
 const NIVELES_REGULARES = [
@@ -108,7 +109,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   onGuardarAsignacion,
   onEliminarAsignacion,
   periodoActivo = 2026,
-  onSincronizarMalla
+  onSincronizarMalla,
+  onGestionarPlanes
 }) => {
   // Modal de Curso Avanzado
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
@@ -1908,7 +1910,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
               {/* SUBPESTAÑA 3: MALLA Y PLAN OFICIAL MINEDUC */}
               {tabCurso === 'malla' && (
-                <MallaPlanPanel planActivo={planActivo} />
+                <MallaPlanPanel planActivo={planActivo} onGestionarPlanes={onGestionarPlanes} />
               )}
             </div>
           ) : (

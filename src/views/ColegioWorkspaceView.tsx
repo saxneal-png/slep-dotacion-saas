@@ -61,6 +61,7 @@ export interface ColegioWorkspaceViewProps {
   onExportarMatrizExcelColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
   onGuardarColegio?: (est: Establecimiento) => Promise<void>;
   onAbrirCopilot?: () => void;
+  onNavegarAPestana?: (pestana: any) => void;
 }
 
 export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
@@ -96,7 +97,8 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onExportarDotacionColegio,
   onExportarMatrizExcelColegio,
   onGuardarColegio,
-  onAbrirCopilot
+  onAbrirCopilot,
+  onNavegarAPestana
 }) => {
   const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>(initialTab || 'balanza');
 
@@ -454,6 +456,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             cursos={cursos}
             onGuardarAsignacion={onGuardarAsignacion}
             onEliminarAsignacion={onEliminarAsignacion}
+            onNavegarAPestana={onNavegarAPestana || (() => setTabActiva('cursos'))}
           />
         )}
 
@@ -482,6 +485,9 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             onEliminarAsignacion={onEliminarAsignacion}
             periodoActivo={periodoActivo}
             onSincronizarMalla={onRefreshData}
+            onGestionarPlanes={() => {
+              if (onNavegarAPestana) onNavegarAPestana('planes_estudio');
+            }}
           />
         )}
 

@@ -726,6 +726,7 @@ export const App: React.FC = () => {
               onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
               onGuardarColegio={handleGuardarColegio}
               onAbrirCopilot={() => setModalCopilotAbierto(true)}
+              onNavegarAPestana={setVistaActiva}
             />
           ) : (
             <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-center max-w-md mx-auto my-12 animate-in fade-in">
