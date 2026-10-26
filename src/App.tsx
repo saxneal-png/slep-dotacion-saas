@@ -816,6 +816,7 @@ export const App: React.FC = () => {
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
             onNavegarAPestana={setVistaActiva}
+            periodoActivo={periodoActivo}
           />
         )}
 

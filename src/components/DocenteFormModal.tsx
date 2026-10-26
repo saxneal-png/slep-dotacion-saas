@@ -56,6 +56,7 @@ interface DocenteFormModalProps {
   onGuardarDocente: (docente: Docente) => void;
   editingDoc: Docente | null;
   rbd: string;
+  periodoActivo?: number;
 }
 
 export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
@@ -63,7 +64,8 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
   onClose,
   onGuardarDocente,
   editingDoc,
-  rbd
+  rbd,
+  periodoActivo = 2026
 }) => {
   const [run, setRun] = useState('');
   const [nombres, setNombres] = useState('');
@@ -274,7 +276,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       horasIngles: editingDoc?.horasIngles || 0,
       funcionPrincipal: editingDoc?.funcionPrincipal,
       funcionSecundaria: editingDoc?.funcionSecundaria,
-      periodo: editingDoc?.periodo || 2026,
+      periodo: editingDoc?.periodo || periodoActivo || 2026,
       horasTallerSep: Number(horasTallerSep) || 0,
       horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
       asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,

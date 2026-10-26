@@ -480,6 +480,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             onGuardarAsignacion={onGuardarAsignacion}
             onEliminarAsignacion={onEliminarAsignacion}
             onNavegarAPestana={onNavegarAPestana || (() => setTabActiva('cursos'))}
+            periodoActivo={periodoActivo}
           />
         )}
 

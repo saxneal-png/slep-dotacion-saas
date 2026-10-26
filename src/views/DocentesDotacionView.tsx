@@ -58,6 +58,7 @@ interface DocentesDotacionViewProps {
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
   onNavegarAPestana?: (pestana: any) => void;
+  periodoActivo?: number;
 }
 
 export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
@@ -72,7 +73,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   cursos = [],
   onGuardarAsignacion,
   onEliminarAsignacion,
-  onNavegarAPestana
+  onNavegarAPestana,
+  periodoActivo = 2026
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Docente | null>(null);
@@ -1050,6 +1052,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         onGuardarDocente={onGuardarDocente}
         editingDoc={editingDoc}
         rbd={colegio.rbd}
+        periodoActivo={periodoActivo}
       />
 
       {/* Modal Ficha 360° del Docente */}
@@ -1066,7 +1069,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         onClose={() => setModalPegarAbierto(false)}
         tipo="DOCENTES"
         rbd={colegio.rbd}
-        periodoActivo={cursos[0]?.periodo || 2026}
+        periodoActivo={periodoActivo}
         onGuardarBatch={async (items) => {
           for (const d of items) {
             await onGuardarDocente(d);
