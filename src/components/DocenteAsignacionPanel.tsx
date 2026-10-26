@@ -206,10 +206,13 @@ export function calcularDisponibilidadCurso(
     };
   }
 
-  // Filtrar asignaciones regulares de aula (excluyendo co-docencia y apoyos paralelos)
-  const asigsCurso = asignacionesColegio.filter(a => a.cursoId === curso.id && !esAsignacionCoDocenciaOApoyo(a));
+  // Filtrar asignaciones regulares de aula (incluyendo asignaciones compartidas con este curso y excluyendo co-docencia y apoyos paralelos)
+  const asigsCurso = asignacionesColegio.filter(a => 
+    (a.cursoId === curso.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(curso.id))) && 
+    !esAsignacionCoDocenciaOApoyo(a)
+  );
   const horasCoDocenciaApoyoCurso = asignacionesColegio
-    .filter(a => a.cursoId === curso.id && esAsignacionCoDocenciaOApoyo(a))
+    .filter(a => (a.cursoId === curso.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(curso.id))) && esAsignacionCoDocenciaOApoyo(a))
     .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
   const todas: DisponibilidadAsignatura[] = infoPlan.asignaturas.map(asigPlan => {
@@ -296,6 +299,22 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
 }) => {
   const [editandoManual, setEditandoManual] = useState(false);
   const [nombreManual, setNombreManual] = useState(a.asignatura);
+  const [asigTransversal, setAsigTransversal] = useState(a.asignatura);
+  const esPieInitial = Boolean(
+    (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
+    (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
+    (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
+    (a.horasCronologicasPie && a.horasCronologicasPie > 0)
+  );
+  const [localHoras, setLocalHoras] = useState<number | string>(
+    esPieInitial ? (a.horasCronologicasPie || a.horasPedagogicasAula) : a.horasPedagogicasAula
+  );
+
+  useEffect(() => {
+    setNombreManual(a.asignatura);
+    setAsigTransversal(a.asignatura);
+    setLocalHoras(esPieInitial ? (a.horasCronologicasPie || a.horasPedagogicasAula) : a.horasPedagogicasAula);
+  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, esPieInitial]);
 
   const cursoActual = useMemo(() => {
     return cursos.find(c => c.id === a.cursoId) || null;
@@ -504,13 +523,28 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                 />
               </div>
             )}
+            {/* Badge visual si es formación diferenciada compartida */}
+            {a.cursosCompartidosIds && a.cursosCompartidosIds.length > 0 && (
+              <div className="mt-1 flex items-center gap-1">
+                <span 
+                  className="px-2 py-0.5 bg-blue-50 text-blue-800 text-[10px] font-bold rounded-md flex items-center gap-1 border border-blue-200"
+                  title={`Asignatura compartida en paralelo con: ${cursos.filter(c => a.cursosCompartidosIds?.includes(c.id)).map(c => `${c.nivel} ${c.letra}`).join(', ')}`}
+                >
+                  <span>🤝 Compartida con:</span>
+                  <span className="font-extrabold text-blue-900">
+                    {cursos.filter(c => a.cursosCompartidosIds?.includes(c.id)).map(c => `${c.nivel} ${c.letra}`).join(', ') || 'Otros Cursos'}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         ) : (
           <input
             type="text"
-            defaultValue={a.asignatura}
-            onBlur={async (e) => {
-              const val = e.target.value.trim();
+            value={asigTransversal}
+            onChange={(e) => setAsigTransversal(e.target.value)}
+            onBlur={async () => {
+              const val = asigTransversal.trim();
               if (val && val !== a.asignatura && onGuardarAsignacion) {
                 await onGuardarAsignacion({ ...a, asignatura: val });
               }
@@ -526,20 +560,21 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
         <div className="inline-flex items-center justify-center gap-1">
           <input
             type="number"
-            defaultValue={esPie ? (a.horasCronologicasPie || a.horasPedagogicasAula) : a.horasPedagogicasAula}
+            value={localHoras}
             min={1}
             max={44}
             step={esPie ? '0.5' : '1'}
-            onBlur={async (e) => {
-              const h = Number(e.target.value);
+            onChange={(e) => setLocalHoras(e.target.value === '' ? '' : Number(e.target.value))}
+            onBlur={async () => {
+              const h = Number(localHoras);
               if (h > 0 && onGuardarAsignacion) {
-                if (esPie) {
+                if (esPie && h !== a.horasCronologicasPie) {
                   await onGuardarAsignacion({ 
                     ...a, 
                     horasCronologicasPie: h, 
                     horasPedagogicasAula: Math.round(h * 1.333) 
                   });
-                } else if (h !== a.horasPedagogicasAula) {
+                } else if (!esPie && h !== a.horasPedagogicasAula) {
                   await onGuardarAsignacion({ ...a, horasPedagogicasAula: h });
                 }
               }
@@ -630,6 +665,9 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   const [regNombreCustom, setRegNombreCustom] = useState('');
   const [regHoras, setRegHoras] = useState(4);
   const [regEsTallerSep, setRegEsTallerSep] = useState(false);
+  const [regCompartir, setRegCompartir] = useState(false);
+  const [regCursosCompartidos, setRegCursosCompartidos] = useState<string[]>([]);
+  const cursoPrevioRef = React.useRef(regCursoId);
 
   // Obtener plan resuelto del curso seleccionado
   const cursoSeleccionado = useMemo(() => {
@@ -655,12 +693,14 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     return datosDisp.todas.find(a => a.nombre.toLowerCase() === tipoAsignaturaSeleccionada.toLowerCase()) || null;
   }, [datosDisp.todas, tipoAsignaturaSeleccionada]);
 
-  // Al cambiar de curso, precargar inteligentemente la asignatura DISPONIBLE o afín al docente
+  // Al cambiar de curso, precargar inteligentemente la asignatura DISPONIBLE o afín al docente (SOLO cuando cambia regCursoId)
   useEffect(() => {
     if (regCursoId === 'TRANSVERSAL') {
       setTipoAsignaturaSeleccionada('__TRANSVERSAL__');
       setRegNombreCustom('Taller Institucional Transversal');
       setRegHoras(2);
+      setRegCompartir(false);
+      setRegCursosCompartidos([]);
       return;
     }
 
@@ -704,7 +744,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       setRegNombreCustom('');
       setRegHoras(2);
     }
-  }, [regCursoId, datosDisp, materiasPreferentes, infoPlan]);
+  }, [regCursoId]);
 
   const esModoPersonalizado = 
     regCursoId === 'TRANSVERSAL' ||
@@ -721,8 +761,8 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       setRegHoras(tallerObj?.horas || 2);
     } else if (valor === '__LIBRE_DISPOSICION__') {
       setRegNombreCustom('');
-      const horasLibre = datosDisp.horasLibreDisponibles > 0 ? Math.min(datosDisp.horasLibreDisponibles, 4) : 2;
-      setRegHoras(horasLibre);
+      const sugeridas = datosDisp.horasLibreDisponibles >= 2 ? 2 : (datosDisp.horasLibreDisponibles > 0 ? datosDisp.horasLibreDisponibles : 2);
+      setRegHoras(sugeridas);
     } else if (valor === '__OTRO_PERSONALIZADO__') {
       setRegNombreCustom('');
       setRegHoras(2);
@@ -750,7 +790,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       nombreFinal = regNombreCustom.trim() || 'Taller Institucional Transversal';
       esJec = false;
     } else if (tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__') {
-      nombreFinal = regNombreCustom.trim();
+      nombreFinal = regNombreCustom.trim() || 'Taller de Libre Disposición';
       esJec = true;
     } else if (tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__') {
       nombreFinal = regNombreCustom.trim();
@@ -778,7 +818,9 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       horasPedagogicasAula: Number(regHoras),
       esTallerJec: esJec,
       esTallerSep: regEsTallerSep,
-      esProporcionDocente: false
+      esProporcionDocente: false,
+      cursosCompartidosIds: regCompartir && regCursosCompartidos.length > 0 ? regCursosCompartidos : undefined,
+      esDiferenciadoCompartido: regCompartir && regCursosCompartidos.length > 0
     };
 
     await onGuardar(newAsig);
@@ -932,7 +974,27 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           </label>
         </div>
 
-        {/* 6. BOTONES ACCIONES */}
+        {/* 6. COMPARTIR CON OTRO CURSO (FORMACIÓN DIFERENCIADA / ELECTIVOS EN PARALELO) */}
+        {regCursoId !== 'TRANSVERSAL' && (
+          <div className="flex items-center pb-1">
+            <label className={`flex items-center gap-1.5 cursor-pointer text-[11px] font-bold px-2.5 py-1.5 rounded-lg select-none border transition-colors ${
+              regCompartir ? 'bg-blue-50 text-blue-800 border-blue-300' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+            }`}>
+              <input
+                type="checkbox"
+                checked={regCompartir}
+                onChange={(e) => {
+                  setRegCompartir(e.target.checked);
+                  if (!e.target.checked) setRegCursosCompartidos([]);
+                }}
+                className="rounded text-blue-600 focus:ring-blue-500"
+              />
+              <span>🤝 Compartir en paralelo</span>
+            </label>
+          </div>
+        )}
+
+        {/* 7. BOTONES ACCIONES */}
         <div className="flex items-center gap-2 pb-0.5">
           <button
             type="submit"
@@ -950,6 +1012,46 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           </button>
         </div>
       </div>
+
+      {/* Selector de Cursos Paralelos para Asignatura Compartida */}
+      {regCompartir && regCursoId !== 'TRANSVERSAL' && (
+        <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-blue-900 flex items-center gap-1">
+              <span>🤝 Formación Diferenciada / Electivo Compartido</span>
+            </span>
+            <span className="text-[10px] text-blue-700">
+              Cubre las horas en ambos cursos pero computa 1 sola vez en el contrato docente
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {cursos.filter(c => c.id !== regCursoId).map(c => {
+              const estaMarcado = regCursosCompartidos.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    if (estaMarcado) {
+                      setRegCursosCompartidos(prev => prev.filter(id => id !== c.id));
+                    } else {
+                      setRegCursosCompartidos(prev => [...prev, c.id]);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-all border flex items-center gap-1.5 ${
+                    estaMarcado 
+                      ? 'bg-blue-600 text-white border-blue-700 shadow-xs' 
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50 hover:border-blue-300'
+                  }`}
+                >
+                  <span>{estaMarcado ? '✓' : '+'}</span>
+                  <span>{c.nivel} {c.letra}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Banner Informativo Dinámico de Disponibilidad de la Asignatura */}
       {regCursoId !== 'TRANSVERSAL' && (
@@ -974,7 +1076,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px]">
               <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
               <span>
-                <strong>Horas de Libre Disposición JEC:</strong> Quedan <strong>{datosDisp.horasLibreDisponibles} HA disponibles</strong> para talleres o proyectos en este curso (Plan: {datosDisp.horasLibrePlan} HA • Asignadas: {datosDisp.horasLibreAsignadas} HA).
+                <strong>Horas de Libre Disposición JEC:</strong> Quedan <strong>{datosDisp.horasLibreDisponibles} HA disponibles</strong> para talleres en este curso (Plan: {datosDisp.horasLibrePlan} HA • Asignadas: {datosDisp.horasLibreAsignadas} HA). Puedes fraccionarlas en múltiples talleres (ej: 3 talleres de 2 HA c/u).
               </span>
             </div>
           ) : null}

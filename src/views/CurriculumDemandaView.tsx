@@ -268,10 +268,13 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   const totalHorasTransversales = asignacionesTransversales.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
-  // Asignaciones del curso activo
+  // Asignaciones del curso activo (incluyendo asignaturas compartidas en paralelo con este curso)
   const asignacionesCurso = useMemo(() => {
     if (!cursoActivo) return [];
-    return asignaciones.filter(a => a.cursoId === cursoActivo.id);
+    return asignaciones.filter(a => 
+      a.cursoId === cursoActivo.id || 
+      (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(cursoActivo.id))
+    );
   }, [asignaciones, cursoActivo]);
 
   // Solo las horas de Malla Regular y Talleres JEC oficiales del plan suman a la cobertura del plan de estudio (38h/30h)
@@ -553,7 +556,10 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     if (filtroCoberturaCurso !== 'TODOS') {
       const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
       const hrsPlan = plan ? plan.totalHorasPlan : (c.regimen === 'JEC' ? 38 : 30);
-      const asigsDoc = asignaciones.filter(a => a.cursoId === c.id && !esApoyoPie(a));
+      const asigsDoc = asignaciones.filter(a => 
+        (a.cursoId === c.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(c.id))) && 
+        !esApoyoPie(a)
+      );
       const totDocAsig = asigsDoc.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
       if (filtroCoberturaCurso === 'COMPLETO') matchCobertura = totDocAsig === hrsPlan;
@@ -795,7 +801,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
                 // Horas de docencia asignadas en el plan regular de este curso (sin inflar por SEP, Co-Docencia ni PIE)
                 const asigsPlanReg = asignaciones.filter(a =>
-                  a.cursoId === c.id &&
+                  (a.cursoId === c.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(c.id))) &&
                   !esApoyoPie(a) &&
                   !esCoDocenciaNoPie(a) &&
                   !a.esTallerSep &&
@@ -1394,9 +1400,28 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
                             return (
                               <tr key={a.id} className="hover:bg-slate-50/70">
-                                <td className="px-4 py-2.5 font-medium text-slate-800 flex items-center gap-2">
-                                  <BookOpen className="w-3.5 h-3.5 text-orange-600 flex-shrink-0" />
-                                  <span>{a.asignatura}</span>
+                                <td className="px-4 py-2.5 font-medium text-slate-800">
+                                  <div className="flex items-center gap-2">
+                                    <BookOpen className="w-3.5 h-3.5 text-orange-600 flex-shrink-0" />
+                                    <span>{a.asignatura}</span>
+                                  </div>
+                                  {a.cursosCompartidosIds && a.cursosCompartidosIds.length > 0 && (
+                                    <div className="mt-0.5">
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                        <span>🤝 Electivo compartido en paralelo con:</span>
+                                        <span className="font-extrabold">
+                                          {cursos.filter(c => a.cursosCompartidosIds?.includes(c.id)).map(c => `${c.nivel} ${c.letra}`).join(', ')}
+                                        </span>
+                                      </span>
+                                    </div>
+                                  )}
+                                  {a.cursoId !== cursoActivo?.id && (
+                                    <div className="mt-0.5">
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                        <span>🤝 Vinculado desde {cursos.find(c => c.id === a.cursoId)?.nivel} {cursos.find(c => c.id === a.cursoId)?.letra}</span>
+                                      </span>
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="px-4 py-2.5">
                                   {doc ? (
@@ -1950,6 +1975,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
             docentes={docentes}
             disponibilidadDocentes={disponibilidadDocentes}
             planActivo={planActivo}
+            cursos={cursos}
           />
 
           <ModalAsignarCoDocencia

@@ -222,6 +222,8 @@ export interface AsignacionHoraria {
   horasCronologicasPie?: number;
   horasColaborativas?: number;
   tipoApoyo?: string;
+  cursosCompartidosIds?: string[]; // IDs de cursos con los que se imparte en paralelo la asignatura electiva/diferenciada (ej: 3° Medio HC A y 3° Medio HC B)
+  esDiferenciadoCompartido?: boolean; // Marca si la asignatura corresponde a Formación Diferenciada compartida en paralelo
 }
 
 export interface BalanzaHorariaColegio {

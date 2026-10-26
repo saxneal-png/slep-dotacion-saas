@@ -276,7 +276,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       horasIngles: editingDoc?.horasIngles || 0,
       funcionPrincipal: editingDoc?.funcionPrincipal,
       funcionSecundaria: editingDoc?.funcionSecundaria,
-      periodo: editingDoc?.periodo || periodoActivo || 2026,
+      periodo: periodoActivo ?? editingDoc?.periodo ?? 2026,
       horasTallerSep: Number(horasTallerSep) || 0,
       horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
       asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,

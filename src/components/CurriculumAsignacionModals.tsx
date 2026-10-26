@@ -28,6 +28,7 @@ interface ModalDocenciaProps {
   docentes: Docente[];
   disponibilidadDocentes: Map<string, { horasAsignadas: number; horasLibres: number }>;
   planActivo: PlanEstudioNivel | null;
+  cursos?: CursoSae[];
 }
 
 export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
@@ -43,12 +44,15 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
   horasSugeridas,
   docentes,
   disponibilidadDocentes,
-  planActivo
+  planActivo,
+  cursos = []
 }) => {
   const [docenteId, setDocenteId] = useState('');
   const [asignatura, setAsignatura] = useState('');
   const [horas, setHoras] = useState(4);
   const [tipoFuncion, setTipoFuncion] = useState<'CURRICULAR' | 'TALLER_JEC' | 'TALLER_SEP' | 'TRABAJO_COLABORATIVO'>('CURRICULAR');
+  const [compartirElectivo, setCompartirElectivo] = useState(false);
+  const [cursosCompartidos, setCursosCompartidos] = useState<string[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -56,6 +60,8 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
       setDocenteId(editandoAsig.docenteId);
       setAsignatura(editandoAsig.asignatura);
       setHoras(editandoAsig.horasPedagogicasAula);
+      setCompartirElectivo(Boolean(editandoAsig.esDiferenciadoCompartido || (editandoAsig.cursosCompartidosIds && editandoAsig.cursosCompartidosIds.length > 0)));
+      setCursosCompartidos(editandoAsig.cursosCompartidosIds || []);
       if (editandoAsig.esTrabajoColaborativo) {
         setTipoFuncion('TRABAJO_COLABORATIVO');
       } else if (editandoAsig.esTallerSep) {
@@ -69,6 +75,8 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
       setAsignatura(asignaturaSugerida || (esModoTransversal ? 'Taller de Robótica / Extraescolar' : (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación')));
       setHoras(horasSugeridas || (esModoTransversal ? 4 : (planActivo?.asignaturasBase[0]?.horasSugeridas || 4)));
       setTipoFuncion(esModoTransversal ? 'TALLER_SEP' : 'CURRICULAR');
+      setCompartirElectivo(false);
+      setCursosCompartidos([]);
       const docSugerido = docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0];
       setDocenteId(docSugerido ? docSugerido.id : '');
     }
@@ -96,7 +104,9 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
       esTallerJec: esJec && !esModoTransversal,
       esTallerSep: esSep,
       esTrabajoColaborativo: esColab,
-      tipoApoyo: esColab ? 'TRABAJO_COLABORATIVO' : (esSep ? 'TALLER_SEP' : (esJec ? 'TALLER_JEC' : 'AULA_REGULAR'))
+      tipoApoyo: esColab ? 'TRABAJO_COLABORATIVO' : (esSep ? 'TALLER_SEP' : (esJec ? 'TALLER_JEC' : 'AULA_REGULAR')),
+      cursosCompartidosIds: compartirElectivo && cursosCompartidos.length > 0 ? cursosCompartidos : undefined,
+      esDiferenciadoCompartido: compartirElectivo && cursosCompartidos.length > 0
     };
 
     await onGuardar(asig);
@@ -259,6 +269,62 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
               </label>
             </div>
           </div>
+
+          {/* Opción Formación Diferenciada / Electivos Compartidos en Paralelo */}
+          {!esModoTransversal && cursos.length > 1 && (
+            <div className="pt-1">
+              <label className={`p-2.5 rounded-xl border cursor-pointer flex items-center justify-between transition-colors ${
+                compartirElectivo ? 'bg-blue-50/80 border-blue-300 text-blue-900' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={compartirElectivo}
+                    onChange={(e) => {
+                      setCompartirElectivo(e.target.checked);
+                      if (!e.target.checked) setCursosCompartidos([]);
+                    }}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="text-xs font-bold block">🤝 Compartir electivo en paralelo con otro(s) curso(s)</span>
+                    <span className="text-[10px] text-slate-500 block">Decreto 193/2019: imparte en simultáneo a 2 o más cursos (ej: 3° Medio HC A y B)</span>
+                  </div>
+                </div>
+              </label>
+
+              {compartirElectivo && (
+                <div className="mt-2 p-2.5 bg-blue-50 border border-blue-200 rounded-xl space-y-1.5">
+                  <span className="text-[11px] font-bold text-blue-900 block">
+                    Selecciona los cursos paralelos que toman esta asignatura en simultáneo:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {cursos.filter(c => c.id !== cursoActivo?.id).map(c => {
+                      const sel = cursosCompartidos.includes(c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            if (sel) setCursosCompartidos(prev => prev.filter(id => id !== c.id));
+                            else setCursosCompartidos(prev => [...prev, c.id]);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 ${
+                            sel 
+                              ? 'bg-blue-600 text-white border-blue-700 shadow-xs' 
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-100'
+                          }`}
+                        >
+                          <span>{sel ? '✓' : '+'}</span>
+                          <span>{c.nivel} {c.letra}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           </div>
 
           <div className="shrink-0 p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">

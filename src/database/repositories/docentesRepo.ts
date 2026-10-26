@@ -194,8 +194,26 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
 export async function guardarDocente(d: Docente): Promise<void> {
   const db = await getDb();
   const docPeriodo = d.periodo || 2026;
-  const existing = db.exec("SELECT id FROM docentes WHERE ((rbd = ? AND run = ? AND (periodo = ? OR periodo IS NULL)) OR id = ?)", [d.rbd, d.run, docPeriodo, d.id]);
-  const docId = (existing.length && existing[0].values.length) ? String(existing[0].values[0][0]) : d.id;
+  
+  // Aislamiento estricto por periodo: buscar si ya existe el docente en este periodo específico
+  const existing = db.exec(
+    "SELECT id FROM docentes WHERE rbd = ? AND run = ? AND periodo = ?", 
+    [d.rbd, d.run, docPeriodo]
+  );
+  
+  let docId: string;
+  if (existing.length && existing[0].values.length) {
+    docId = String(existing[0].values[0][0]);
+  } else {
+    // Si no existe en este periodo, verificar si d.id ya está ocupado por otro periodo
+    const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
+    if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
+      docId = d.id;
+    } else {
+      const cleanRun = d.run.replace(/[^0-9kK]/g, '');
+      docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}_${Date.now()}`;
+    }
+  }
 
   let subvGenTitular = Number(d.horasSubvencionGeneralTitular || 0);
   let subvGenContrata = Number(d.horasSubvencionGeneralContrata || 0);
@@ -306,8 +324,22 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
   try {
     for (const d of docentes) {
       const docPeriodo = d.periodo || 2026;
-      const existing = db.exec("SELECT id FROM docentes WHERE ((rbd = ? AND run = ? AND (periodo = ? OR periodo IS NULL)) OR id = ?)", [d.rbd, d.run, docPeriodo, d.id]);
-      const docId = (existing.length && existing[0].values.length) ? String(existing[0].values[0][0]) : d.id;
+      const existing = db.exec(
+        "SELECT id FROM docentes WHERE rbd = ? AND run = ? AND periodo = ?", 
+        [d.rbd, d.run, docPeriodo]
+      );
+      let docId: string;
+      if (existing.length && existing[0].values.length) {
+        docId = String(existing[0].values[0][0]);
+      } else {
+        const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
+        if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
+          docId = d.id;
+        } else {
+          const cleanRun = d.run.replace(/[^0-9kK]/g, '');
+          docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}_${Date.now()}`;
+        }
+      }
 
       let subvGenTitular = Number(d.horasSubvencionGeneralTitular || 0);
       let subvGenContrata = Number(d.horasSubvencionGeneralContrata || 0);

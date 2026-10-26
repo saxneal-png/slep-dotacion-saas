@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS asignaciones_horarias (
   es_proporcion_docente INTEGER DEFAULT 0,
   es_co_docencia INTEGER DEFAULT 0,
   es_agrupacion_flexible INTEGER DEFAULT 0,
+  cursos_compartidos_json TEXT,
+  es_diferenciado_compartido INTEGER DEFAULT 0,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd),
   FOREIGN KEY (curso_id) REFERENCES cursos_sae(id),
   FOREIGN KEY (docente_id) REFERENCES docentes(id)
@@ -274,6 +276,12 @@ export function runMigrations(db: Database): void {
   } catch (_) {}
   try {
     db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_proporcion_docente INTEGER DEFAULT 0;");
+  } catch (_) {}
+  try {
+    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN cursos_compartidos_json TEXT;");
+  } catch (_) {}
+  try {
+    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_diferenciado_compartido INTEGER DEFAULT 0;");
   } catch (_) {}
   try {
     db.run("ALTER TABLE cursos_sae ADD COLUMN regimen_proporcion TEXT DEFAULT '65_35';");
