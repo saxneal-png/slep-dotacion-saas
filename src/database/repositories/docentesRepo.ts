@@ -215,6 +215,11 @@ export async function guardarDocente(d: Docente): Promise<void> {
 
   const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
 
+  // Soportar compatibilidad de nombres entre vistas/modales y modelo DB
+  const remMensual = d.remuneracionMensualApp ?? (d as any).remuneracionMensual ?? 0;
+  const pmeSep = d.accionPmeSep ?? (d as any).accionPme ?? null;
+  const obsDirector = d.observacionesDirector ?? (d as any).observacionesPal ?? null;
+
   db.run(`
     INSERT INTO docentes (
       id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
@@ -279,16 +284,16 @@ export async function guardarDocente(d: Docente): Promise<void> {
     funcionesJson, docPeriodo,
     d.horasVigentesAnterior !== undefined && d.horasVigentesAnterior !== null ? d.horasVigentesAnterior : d.horasContrato,
     d.propuestaGdp || 'Continuidad',
-    d.remuneracionMensualApp || 0,
+    remMensual,
     d.fechaInicioContrato || '01-03-2026',
     d.fechaTerminoContrato || (d.calidadJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
-    d.accionPmeSep || null,
+    pmeSep,
     d.horasProRetencion || 0,
     d.descripcionFuncionGdp || null,
     d.estadoSancionGdp || 'Pendiente',
     d.horasAprobadasGdp || 0,
     d.situacionFinalGdp || 'Vigente',
-    d.observacionesDirector || null,
+    obsDirector,
     d.observacionesSlep || null
   ]);
   persistDb();
@@ -321,6 +326,11 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
       }
 
       const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
+
+      // Soportar compatibilidad de nombres entre vistas/modales y modelo DB
+      const remMensual = d.remuneracionMensualApp ?? (d as any).remuneracionMensual ?? 0;
+      const pmeSep = d.accionPmeSep ?? (d as any).accionPme ?? null;
+      const obsDirector = d.observacionesDirector ?? (d as any).observacionesPal ?? null;
 
       db.run(`
         INSERT INTO docentes (
@@ -386,16 +396,16 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
         funcionesJson, docPeriodo,
         d.horasVigentesAnterior !== undefined && d.horasVigentesAnterior !== null ? d.horasVigentesAnterior : d.horasContrato,
         d.propuestaGdp || 'Continuidad',
-        d.remuneracionMensualApp || 0,
+        remMensual,
         d.fechaInicioContrato || '01-03-2026',
         d.fechaTerminoContrato || (d.calidadJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
-        d.accionPmeSep || null,
+        pmeSep,
         d.horasProRetencion || 0,
         d.descripcionFuncionGdp || null,
         d.estadoSancionGdp || 'Pendiente',
         d.horasAprobadasGdp || 0,
         d.situacionFinalGdp || 'Vigente',
-        d.observacionesDirector || null,
+        obsDirector,
         d.observacionesSlep || null
       ]);
     }

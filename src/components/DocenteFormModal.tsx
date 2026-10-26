@@ -79,8 +79,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
   const [funcionesNoAula, setFuncionesNoAula] = useState<FuncionNoAulaDocente[]>([]);
   const [nuevaFuncionTipo, setNuevaFuncionTipo] = useState<TipoFuncionNoAula>('COORDINACION');
   const [nuevaFuncionNombre, setNuevaFuncionNombre] = useState('');
-  const [nuevaFuncionHoras, setNuevaFuncionHoras] = useState<number>(2);
+  const [nuevaFuncionHoras, setNuevaFuncionHoras] = useState<number | ''>('');
   const [nuevaFuncionFinanciamiento, setNuevaFuncionFinanciamiento] = useState<FuenteFinanciamientoFuncion>('SUBVENCION_GENERAL');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fuentes de Financiamiento desglosadas
   const [horasSubvGeneralTitular, setHorasSubvGeneralTitular] = useState<number>(44);
@@ -197,26 +198,27 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
 
     setNuevaFuncionTipo('COORDINACION');
     setNuevaFuncionNombre('');
-    setNuevaFuncionHoras(2);
+    setNuevaFuncionHoras('');
     setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
   }, [isOpen, editingDoc]);
 
   if (!isOpen) return null;
 
   const agregarFuncionNoAula = () => {
-    if (!nuevaFuncionHoras || nuevaFuncionHoras <= 0) return;
+    const horasNum = Number(nuevaFuncionHoras) || 0;
+    if (horasNum <= 0) return;
     const defaultInfo = TIPOS_FUNCIONES_LABELS[nuevaFuncionTipo];
     const nombreFinal = nuevaFuncionNombre.trim() || defaultInfo?.defaultNombre || 'Función Fuera de Aula';
     const item: FuncionNoAulaDocente = {
       id: `func-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       tipo: nuevaFuncionTipo,
       nombre: nombreFinal,
-      horas: Number(nuevaFuncionHoras),
+      horas: horasNum,
       financiamiento: nuevaFuncionFinanciamiento
     };
     setFuncionesNoAula(prev => [...prev, item]);
     setNuevaFuncionNombre('');
-    setNuevaFuncionHoras(2);
+    setNuevaFuncionHoras('');
     setNuevaFuncionFinanciamiento('SUBVENCION_GENERAL');
   };
 
@@ -231,20 +233,11 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
     horasSepTitular + horasSepContrata +
     horasPieTitular + horasPieContrata;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
     let finalFunciones = [...funcionesNoAula];
-    // Auto-commit si el usuario escribió datos en la fila pero presionó "Guardar Docente" directamente
-    if (nuevaFuncionHoras > 0 && nuevaFuncionNombre.trim()) {
-      finalFunciones.push({
-        id: `func-${Date.now()}-pending`,
-        tipo: nuevaFuncionTipo,
-        nombre: nuevaFuncionNombre.trim(),
-        horas: Number(nuevaFuncionHoras),
-        financiamiento: nuevaFuncionFinanciamiento
-      });
-    }
 
     const dirHours = finalFunciones.filter(f => f.tipo === 'DIRECTIVA').reduce((s, f) => s + Number(f.horas || 0), 0);
     const inspHours = finalFunciones.filter(f => f.tipo === 'INSPECTORIA').reduce((s, f) => s + Number(f.horas || 0), 0);
@@ -271,7 +264,17 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       horasInspectorGeneral: inspHours || 0,
       horasTecnicoPedagogicas: utpHours || 0,
       horasCoordinacion: coordHours || 0,
+      tipoCoordinacion: editingDoc?.tipoCoordinacion,
+      horasCoordinacionPie: editingDoc?.horasCoordinacionPie || 0,
+      horasConvivenciaEscolar: editingDoc?.horasConvivenciaEscolar || 0,
+      horasExtraescolar: editingDoc?.horasExtraescolar || 0,
+      cargoInstitucional: editingDoc?.cargoInstitucional,
       funcionesNoAula: finalFunciones.length > 0 ? finalFunciones : undefined,
+      horasAula: editingDoc?.horasAula || 0,
+      horasIngles: editingDoc?.horasIngles || 0,
+      funcionPrincipal: editingDoc?.funcionPrincipal,
+      funcionSecundaria: editingDoc?.funcionSecundaria,
+      periodo: editingDoc?.periodo || 2026,
       horasTallerSep: Number(horasTallerSep) || 0,
       horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
       asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,
@@ -280,14 +283,24 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       fechaTerminoContrato: fechaTerminoContrato || undefined,
       propuestaGdp: propuestaGdp as any,
       remuneracionMensual: Number(remuneracionMensual) || 0,
+      remuneracionMensualApp: Number(remuneracionMensual) || 0,
       accionPme: accionPme.trim() || undefined,
+      accionPmeSep: accionPme.trim() || undefined,
       horasProRetencion: Number(horasProRetencion) || 0,
       horasVigentesAnterior: Number(horasVigentesAnterior) || Number(horasContrato),
-      observacionesPal: observacionesPal.trim() || undefined
+      observacionesPal: observacionesPal.trim() || undefined,
+      observacionesDirector: observacionesPal.trim() || undefined
     };
 
-    onGuardarDocente(doc);
-    onClose();
+    try {
+      setIsSubmitting(true);
+      await onGuardarDocente(doc);
+      onClose();
+    } catch (err) {
+      console.error("Error al guardar docente:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -711,10 +724,14 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                   <label className="block text-[11px] font-semibold text-slate-600 mb-1 text-center">Horas</label>
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     max={horasContrato}
                     value={nuevaFuncionHoras}
-                    onChange={e => setNuevaFuncionHoras(parseInt(e.target.value) || 0)}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setNuevaFuncionHoras(val === '' ? '' : Math.max(0, parseInt(val) || 0));
+                    }}
+                    placeholder="Ej: 2"
                     className="w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-purple-400 focus:outline-none font-bold text-center text-purple-950"
                   />
                 </div>
@@ -916,9 +933,10 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all hover:shadow-lg flex items-center gap-1.5 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all hover:shadow-lg flex items-center gap-1.5 cursor-pointer"
             >
-              <span>{editingDoc ? 'Guardar Cambios Docente' : 'Registrar Docente'}</span>
+              <span>{isSubmitting ? 'Guardando...' : (editingDoc ? 'Guardar Cambios Docente' : 'Registrar Docente')}</span>
             </button>
           </div>
         </form>
