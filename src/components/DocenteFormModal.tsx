@@ -131,6 +131,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
         if (editingDoc.horasInspectorGeneral) legacyList.push({ id: `f-${Date.now()}-2`, tipo: 'INSPECTORIA', nombre: 'Inspectoría General', horas: editingDoc.horasInspectorGeneral, financiamiento: 'SUBVENCION_GENERAL' });
         if (editingDoc.horasTecnicoPedagogicas) legacyList.push({ id: `f-${Date.now()}-3`, tipo: 'UTP', nombre: 'Jefatura Técnico-Pedagógica (UTP)', horas: editingDoc.horasTecnicoPedagogicas, financiamiento: 'SUBVENCION_GENERAL' });
         if (editingDoc.horasCoordinacion) legacyList.push({ id: `f-${Date.now()}-4`, tipo: 'COORDINACION', nombre: editingDoc.tipoCoordinacion ? `Coordinación UTP (${editingDoc.tipoCoordinacion})` : 'Coordinación Pedagógica UTP', horas: editingDoc.horasCoordinacion, financiamiento: 'SUBVENCION_GENERAL' });
+        if (editingDoc.horasCoordinacionPie) legacyList.push({ id: `f-${Date.now()}-5`, tipo: 'COORDINACION', nombre: 'Coordinación Programa de Integración Escolar (PIE)', horas: editingDoc.horasCoordinacionPie, financiamiento: 'PIE' });
+        if (editingDoc.horasConvivenciaEscolar) legacyList.push({ id: `f-${Date.now()}-6`, tipo: 'CONVIVENCIA', nombre: 'Convivencia Escolar / Mediación', horas: editingDoc.horasConvivenciaEscolar, financiamiento: 'SUBVENCION_GENERAL' });
+        if (editingDoc.horasExtraescolar) legacyList.push({ id: `f-${Date.now()}-7`, tipo: 'EXTRAESCOLAR', nombre: 'Actividades Extraescolares y Talleres', horas: editingDoc.horasExtraescolar, financiamiento: 'SUBVENCION_GENERAL' });
         setFuncionesNoAula(legacyList);
       }
 
@@ -160,14 +163,25 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       setHorasPieTitular(pieTit);
       setHorasPieContrata(pieCon);
 
-      setFechaInicioContrato(editingDoc.fechaInicioContrato || '');
-      setFechaTerminoContrato(editingDoc.fechaTerminoContrato || '');
+      // Normalizar fechas para evitar fallos de render en input date
+      const normDate = (dStr?: string) => {
+        if (!dStr || dStr === 'Indefinido') return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) return dStr;
+        if (/^\d{2}-\d{2}-\d{4}$/.test(dStr)) {
+          const [d, m, y] = dStr.split('-');
+          return `${y}-${m}-${d}`;
+        }
+        return '';
+      };
+
+      setFechaInicioContrato(normDate(editingDoc.fechaInicioContrato));
+      setFechaTerminoContrato(normDate(editingDoc.fechaTerminoContrato));
       setPropuestaGdp(editingDoc.propuestaGdp || 'Continuidad');
-      setRemuneracionMensual(editingDoc.remuneracionMensual || 0);
-      setAccionPme(editingDoc.accionPme || '');
+      setRemuneracionMensual(editingDoc.remuneracionMensual ?? (editingDoc as any).remuneracionMensualApp ?? 0);
+      setAccionPme(editingDoc.accionPme ?? (editingDoc as any).accionPmeSep ?? '');
       setHorasProRetencion(editingDoc.horasProRetencion || 0);
       setHorasVigentesAnterior(editingDoc.horasVigentesAnterior || editingDoc.horasContrato || 0);
-      setObservacionesPal(editingDoc.observacionesPal || '');
+      setObservacionesPal(editingDoc.observacionesPal ?? (editingDoc as any).observacionesDirector ?? '');
     } else {
       // Nuevo Docente
       setRun('');
@@ -241,10 +255,29 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
 
     let finalFunciones = [...funcionesNoAula];
 
+    // Si el usuario escribió horas en el recuadro de nueva función pero no presionó "+ Añadir a la lista", auto-añadirlo:
+    const pendienteHoras = Number(nuevaFuncionHoras) || 0;
+    if (pendienteHoras > 0) {
+      const defaultInfo = TIPOS_FUNCIONES_LABELS[nuevaFuncionTipo];
+      const nombreFinal = nuevaFuncionNombre.trim() || defaultInfo?.defaultNombre || 'Función Fuera de Aula';
+      finalFunciones.push({
+        id: `func-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        tipo: nuevaFuncionTipo,
+        nombre: nombreFinal,
+        horas: pendienteHoras,
+        financiamiento: nuevaFuncionFinanciamiento
+      });
+      setNuevaFuncionHoras('');
+      setNuevaFuncionNombre('');
+    }
+
     const dirHours = finalFunciones.filter(f => f.tipo === 'DIRECTIVA').reduce((s, f) => s + Number(f.horas || 0), 0);
     const inspHours = finalFunciones.filter(f => f.tipo === 'INSPECTORIA').reduce((s, f) => s + Number(f.horas || 0), 0);
     const utpHours = finalFunciones.filter(f => f.tipo === 'UTP' || f.tipo === 'EVALUACION' || f.tipo === 'ORIENTACION').reduce((s, f) => s + Number(f.horas || 0), 0);
-    const coordHours = finalFunciones.filter(f => f.tipo === 'COORDINACION' || f.tipo === 'CONVIVENCIA' || f.tipo === 'CRA' || f.tipo === 'ENLACES' || f.tipo === 'EXTRAESCOLAR' || f.tipo === 'GREMIAL' || f.tipo === 'ADMINISTRATIVA' || f.tipo === 'OTRA').reduce((s, f) => s + Number(f.horas || 0), 0);
+    const coordPieHours = finalFunciones.filter(f => f.tipo === 'COORDINACION' && (f.financiamiento === 'PIE' || /pie/i.test(f.nombre))).reduce((s, f) => s + Number(f.horas || 0), 0);
+    const convHours = finalFunciones.filter(f => f.tipo === 'CONVIVENCIA').reduce((s, f) => s + Number(f.horas || 0), 0);
+    const extraHours = finalFunciones.filter(f => f.tipo === 'EXTRAESCOLAR').reduce((s, f) => s + Number(f.horas || 0), 0);
+    const coordHours = finalFunciones.filter(f => (f.tipo === 'COORDINACION' && f.financiamiento !== 'PIE' && !/pie/i.test(f.nombre)) || f.tipo === 'CRA' || f.tipo === 'ENLACES' || f.tipo === 'GREMIAL' || f.tipo === 'ADMINISTRATIVA' || f.tipo === 'OTRA').reduce((s, f) => s + Number(f.horas || 0), 0);
 
     const doc: Docente = {
       id: editingDoc ? editingDoc.id : `doc-${Date.now()}`,
@@ -267,9 +300,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       horasTecnicoPedagogicas: utpHours || 0,
       horasCoordinacion: coordHours || 0,
       tipoCoordinacion: editingDoc?.tipoCoordinacion,
-      horasCoordinacionPie: editingDoc?.horasCoordinacionPie || 0,
-      horasConvivenciaEscolar: editingDoc?.horasConvivenciaEscolar || 0,
-      horasExtraescolar: editingDoc?.horasExtraescolar || 0,
+      horasCoordinacionPie: coordPieHours,
+      horasConvivenciaEscolar: convHours,
+      horasExtraescolar: extraHours,
       cargoInstitucional: editingDoc?.cargoInstitucional,
       funcionesNoAula: finalFunciones.length > 0 ? finalFunciones : undefined,
       horasAula: editingDoc?.horasAula || 0,
@@ -336,7 +369,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
         </div>
 
         {/* Cuerpo del Formulario */}
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <form onSubmit={handleSubmit} noValidate className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-xs custom-scrollbar">
             {/* 1. DATOS PERSONALES Y CONTRATO */}
             <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200 space-y-3">
@@ -364,12 +397,16 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                   type="number"
                   min="1"
                   max="44"
+                  step="any"
                   required
                   value={horasContrato}
                   onChange={e => {
                     const val = parseInt(e.target.value) || 0;
+                    const prevVal = horasContrato;
                     setHorasContrato(val);
-                    if (!editingDoc) {
+                    // Sincronizar automáticamente Subvención General si la dotación está financiada íntegramente por ella
+                    const soloSubv = (horasSepTitular + horasSepContrata + horasPieTitular + horasPieContrata) === 0;
+                    if (soloSubv || !editingDoc) {
                       if (calidadJuridica === 'TITULAR') {
                         setHorasSubvGeneralTitular(val);
                         setHorasSubvGeneralContrata(0);
@@ -437,7 +474,20 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                 <label className="block font-semibold text-slate-700 mb-1">Calidad Jurídica Predominante *</label>
                 <select
                   value={calidadJuridica}
-                  onChange={e => setCalidadJuridica(e.target.value as CalidadJuridicaDocente)}
+                  onChange={e => {
+                    const nuevaCalidad = e.target.value as CalidadJuridicaDocente;
+                    setCalidadJuridica(nuevaCalidad);
+                    const soloSubv = (horasSepTitular + horasSepContrata + horasPieTitular + horasPieContrata) === 0;
+                    if (soloSubv || !editingDoc) {
+                      if (nuevaCalidad === 'TITULAR') {
+                        setHorasSubvGeneralTitular(horasContrato);
+                        setHorasSubvGeneralContrata(0);
+                      } else {
+                        setHorasSubvGeneralContrata(horasContrato);
+                        setHorasSubvGeneralTitular(0);
+                      }
+                    }
+                  }}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium"
                 >
                   <option value="TITULAR">Titular</option>
@@ -511,8 +561,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                       type="number"
                       min="0"
                       max="44"
+                      step="any"
                       value={horasSubvGeneralTitular}
-                      onChange={e => setHorasSubvGeneralTitular(parseInt(e.target.value) || 0)}
+                      onChange={e => setHorasSubvGeneralTitular(parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-semibold text-center focus:ring-2 focus:ring-blue-400 focus:outline-none"
                     />
                   </div>
@@ -522,8 +573,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                       type="number"
                       min="0"
                       max="44"
+                      step="any"
                       value={horasSubvGeneralContrata}
-                      onChange={e => setHorasSubvGeneralContrata(parseInt(e.target.value) || 0)}
+                      onChange={e => setHorasSubvGeneralContrata(parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-semibold text-center focus:ring-2 focus:ring-blue-400 focus:outline-none"
                     />
                   </div>
@@ -545,8 +597,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                       type="number"
                       min="0"
                       max="44"
+                      step="any"
                       value={horasSepTitular}
-                      onChange={e => setHorasSepTitular(parseInt(e.target.value) || 0)}
+                      onChange={e => setHorasSepTitular(parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-semibold text-center focus:ring-2 focus:ring-purple-400 focus:outline-none bg-white"
                     />
                   </div>
@@ -556,8 +609,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                       type="number"
                       min="0"
                       max="44"
+                      step="any"
                       value={horasSepContrata}
-                      onChange={e => setHorasSepContrata(parseInt(e.target.value) || 0)}
+                      onChange={e => setHorasSepContrata(parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-semibold text-center focus:ring-2 focus:ring-purple-400 focus:outline-none bg-white"
                     />
                   </div>
@@ -579,8 +633,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                       type="number"
                       min="0"
                       max="44"
+                      step="any"
                       value={horasPieTitular}
-                      onChange={e => setHorasPieTitular(parseInt(e.target.value) || 0)}
+                      onChange={e => setHorasPieTitular(parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-semibold text-center focus:ring-2 focus:ring-blue-400 focus:outline-none bg-white"
                     />
                   </div>
@@ -590,8 +645,9 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                       type="number"
                       min="0"
                       max="44"
+                      step="any"
                       value={horasPieContrata}
-                      onChange={e => setHorasPieContrata(parseInt(e.target.value) || 0)}
+                      onChange={e => setHorasPieContrata(parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-semibold text-center focus:ring-2 focus:ring-blue-400 focus:outline-none bg-white"
                     />
                   </div>
@@ -727,11 +783,12 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                   <input
                     type="number"
                     min="0"
+                    step="any"
                     max={horasContrato}
                     value={nuevaFuncionHoras}
                     onChange={e => {
                       const val = e.target.value;
-                      setNuevaFuncionHoras(val === '' ? '' : Math.max(0, parseInt(val) || 0));
+                      setNuevaFuncionHoras(val === '' ? '' : Math.max(0, parseFloat(val) || 0));
                     }}
                     placeholder="Ej: 2"
                     className="w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-purple-400 focus:outline-none font-bold text-center text-purple-950"
@@ -868,7 +925,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                       <input
                         type="number"
                         min="0"
-                        step="1000"
+                        step="any"
                         value={remuneracionMensual || ''}
                         placeholder="Ej: 1450000"
                         onChange={e => setRemuneracionMensual(parseFloat(e.target.value) || 0)}

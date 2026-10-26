@@ -1,7 +1,30 @@
-import { PlanEstudioNivel, PLANES_MINEDUC } from '@slep/mineduc-engine';
+import {
+  PlanEstudioNivel,
+  PLANES_MINEDUC,
+  CATALOGO_PROFUNDIZACION_HC_27,
+  CATALOGO_PLAN_COMUN_ELECTIVO_3_4,
+  CATALOGO_SECTORES_Y_ESPECIALIDADES_TP_35,
+  CATALOGO_MENCIONES_ARTISTICAS_10,
+  DECRETO_0876_2019_METADATA,
+  validarOfertaElectivosHc,
+  validarEleccionEstudianteHc,
+  AsignaturaProfundizacionHc,
+  ResultadoValidacionOfertaElectivosHc
+} from '@slep/mineduc-engine';
 import { PlanEstudioCurricular, AsignaturaPlanEstudio, AmbitoFormativoPlan, CursoSae } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { Database } from 'sql.js';
+
+export {
+  CATALOGO_PROFUNDIZACION_HC_27,
+  CATALOGO_PLAN_COMUN_ELECTIVO_3_4,
+  CATALOGO_SECTORES_Y_ESPECIALIDADES_TP_35,
+  CATALOGO_MENCIONES_ARTISTICAS_10,
+  DECRETO_0876_2019_METADATA,
+  validarOfertaElectivosHc,
+  validarEleccionEstudianteHc
+};
+export type { AsignaturaProfundizacionHc, ResultadoValidacionOfertaElectivosHc };
 
 // =============================================================================
 // PLAN OFICIAL EPJA 2024 (DECRETO SUPREMO DE EDUCACIÓN N° 10/2022)
@@ -879,20 +902,197 @@ export async function poblarPlanesEstudioEnDb(dbParam?: Database): Promise<void>
   // 1. Poblar Planes Regulares, TP y Especiales de mineduc-engine
   for (const p of PLANES_MINEDUC) {
     const id = `${p.nivel}_${p.regimen}`.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    const semanas = p.semanasLectivas || 36;
     const asigs: AsignaturaPlanEstudio[] = (p.asignaturasBase || []).map(a => ({
       nombre: a.nombre,
       horasSemanales: a.horasSugeridas,
-      horasAnuales: a.horasSugeridas * 36,
+      horasAnuales: a.horasSugeridas * semanas,
       caracter: 'Obligatoria'
     }));
 
+    let ambitosFormativos: AmbitoFormativoPlan[] | undefined = undefined;
+
+    // Complementar planes de 3° y 4° Medio según Decreto Exento N° 0876/2019
+    if (p.nivel.includes('3° y 4° Medio (Humanístico-Científico)')) {
+      ambitosFormativos = [
+        {
+          ambito: "Plan Común de Formación General",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: 14,
+          horasAnualesSubtotal: 532,
+          asignaturas: [
+            { id: "pc-leng", nombre: "Lengua y Literatura", horasSemanales: 3, horasAnuales: 114, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-mat", nombre: "Matemática", horasSemanales: 3, horasAnuales: 114, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-ciud", nombre: "Educación Ciudadana", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-fil", nombre: "Filosofía", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-ing", nombre: "Inglés", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-cien", nombre: "Ciencias para la Ciudadanía", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" }
+          ],
+          descripcion: "Base obligatoria de 6 asignaturas para todo el ciclo de 3° y 4° medio (14 hrs semanales)."
+        },
+        {
+          ambito: "Plan Común de Formación General Electivo",
+          caracter: "Electiva para el establecimiento y estudiante",
+          horasSemanalesSubtotal: 2,
+          horasAnualesSubtotal: 76,
+          catalogoAsignaturasElegibles: CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(c => c.nombre),
+          descripcion: "2 horas semanales a elegir entre Historia, Artes, Educación Física y Salud, o Religión (Dec. 924/1983)."
+        },
+        {
+          ambito: "Plan de Formación Diferenciada Humanístico-Científica",
+          caracter: "Obligatoria por elección (3 asignaturas de 6 hrs)",
+          horasSemanalesSubtotal: 18,
+          horasAnualesSubtotal: 684,
+          catalogoAsignaturasElegibles: CATALOGO_PROFUNDIZACION_HC_27.map(c => c.nombre),
+          descripcion: "El liceo debe ofrecer mínimo 6 asignaturas de las 27 oficiales (Áreas A, B y C) en al menos 2 áreas y sin concentrar en una sola disciplina. Cada estudiante elige 3 asignaturas (18h)."
+        }
+      ];
+    } else if (p.nivel.includes('3° y 4° Medio (Técnico-Profesional)')) {
+      ambitosFormativos = [
+        {
+          ambito: "Plan Común de Formación General",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: 14,
+          horasAnualesSubtotal: 532,
+          descripcion: "Plan común para Educación Técnico-Profesional (14 horas semanales)."
+        },
+        {
+          ambito: "Plan Común de Formación General Electivo (en Libre Disposición)",
+          caracter: "Electiva",
+          horasSemanalesSubtotal: 2,
+          horasAnualesSubtotal: 76,
+          catalogoAsignaturasElegibles: CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(c => c.nombre),
+          descripcion: "Se implementa dentro de las horas de libre disposición del establecimiento TP (2 horas)."
+        },
+        {
+          ambito: "Plan de Formación Diferenciada Técnico-Profesional",
+          caracter: "Obligatoria de especialidad",
+          horasSemanalesSubtotal: 22,
+          horasAnualesSubtotal: 836,
+          catalogoAsignaturasElegibles: CATALOGO_SECTORES_Y_ESPECIALIDADES_TP_35.flatMap(s => s.especialidades),
+          descripcion: "35 especialidades agrupadas en 15 sectores económicos (22 horas semanales)."
+        }
+      ];
+    } else if (p.nivel.includes('3° y 4° Medio (Artístico)')) {
+      ambitosFormativos = [
+        {
+          ambito: "Plan Común de Formación General",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: 14,
+          horasAnualesSubtotal: 532,
+          descripcion: "Plan común oficial para Educación Artística (14 horas semanales)."
+        },
+        {
+          ambito: "Plan Común de Formación General Electivo",
+          caracter: "Electiva",
+          horasSemanalesSubtotal: 2,
+          horasAnualesSubtotal: 76,
+          catalogoAsignaturasElegibles: CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(c => c.nombre),
+          descripcion: "2 horas semanales a elegir entre Historia, Artes, Ed. Física y Salud, o Religión."
+        },
+        {
+          ambito: "Plan de Formación Diferenciada Artística",
+          caracter: "Obligatoria de mención",
+          horasSemanalesSubtotal: 21,
+          horasAnualesSubtotal: 798,
+          catalogoAsignaturasElegibles: CATALOGO_MENCIONES_ARTISTICAS_10,
+          descripcion: "10 menciones artísticas según Decreto Supremo N° 3/2007 (21 horas semanales)."
+        }
+      ];
+    } else if (p.categoria === 'MEDIA_TP' && p.nivel.includes('Especialidad')) {
+      // Especialidades TP específicas bajo Decreto Exento N° 0876/2019
+      const modulosEspecialidad = asigs.filter(a =>
+        a.nombre.startsWith('Módulo') || !['Lengua y Literatura', 'Matemática', 'Educación Ciudadana', 'Filosofía', 'Inglés', 'Ciencias para la Ciudadanía'].includes(a.nombre)
+      );
+      const horasModulos = modulosEspecialidad.reduce((acc, m) => acc + m.horasSemanales, 0);
+
+      ambitosFormativos = [
+        {
+          ambito: "Plan Común de Formación General",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: 14,
+          horasAnualesSubtotal: 532,
+          asignaturas: [
+            { id: "pc-tp-leng", nombre: "Lengua y Literatura", horasSemanales: 3, horasAnuales: 114, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-tp-mat", nombre: "Matemática", horasSemanales: 3, horasAnuales: 114, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-tp-ciud", nombre: "Educación Ciudadana", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-tp-fil", nombre: "Filosofía", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-tp-ing", nombre: "Inglés", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" },
+            { id: "pc-tp-cien", nombre: "Ciencias para la Ciudadanía", horasSemanales: 2, horasAnuales: 76, caracter: "Obligatoria", ambito: "Plan Común" }
+          ],
+          descripcion: "Base obligatoria común de 6 asignaturas para todo el ciclo TP (14 horas semanales)."
+        },
+        {
+          ambito: "Plan Común de Formación General Electivo (en Libre Disposición)",
+          caracter: "Electiva para el establecimiento y estudiante",
+          horasSemanalesSubtotal: 2,
+          horasAnualesSubtotal: 76,
+          catalogoAsignaturasElegibles: CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(c => c.nombre),
+          descripcion: "Se imparte en horas de libre disposición (2h): Historia, Artes, Ed. Física y Salud, o Religión."
+        },
+        {
+          ambito: "Formación Diferenciada Técnico-Profesional (Módulos de la Especialidad)",
+          caracter: "Obligatoria de la Especialidad",
+          horasSemanalesSubtotal: horasModulos || 22,
+          horasAnualesSubtotal: (horasModulos || 22) * semanas,
+          asignaturas: modulosEspecialidad,
+          descripcion: "Módulos técnicos y competencias laborales propias de la especialidad."
+        }
+      ];
+    } else if (p.nivel.includes('Combinado (1° Ciclo')) {
+      ambitosFormativos = [
+        {
+          ambito: "Formación General Básica (1° Ciclo)",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: p.regimen === 'JEC' ? 31.5 : 30,
+          horasAnualesSubtotal: (p.regimen === 'JEC' ? 31.5 : 30) * 38,
+          asignaturas: asigs,
+          descripcion: "Decreto Exento N° 2960/2012 para 1° y 2° o 3° y 4° Básico Combinado (8h Lenguaje, 0h Inglés)."
+        }
+      ];
+    } else if (p.nivel.includes('Combinado (2° Ciclo')) {
+      ambitosFormativos = [
+        {
+          ambito: "Formación General Básica (2° Ciclo)",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: p.regimen === 'JEC' ? 32 : 30,
+          horasAnualesSubtotal: (p.regimen === 'JEC' ? 32 : 30) * 38,
+          asignaturas: asigs,
+          descripcion: "Decreto Exento N° 2960/2012 para 5° y 6° Básico Combinado (6h Lenguaje, 3h Inglés, 4h Ciencias)."
+        }
+      ];
+    } else if (p.nivel.includes('Combinado (3° Ciclo')) {
+      ambitosFormativos = [
+        {
+          ambito: "Formación General Básica (3° Ciclo)",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: p.regimen === 'JEC' ? 32 : 31,
+          horasAnualesSubtotal: (p.regimen === 'JEC' ? 32 : 31) * 38,
+          asignaturas: asigs,
+          descripcion: "Decreto Exento N° 1363/2011 y Dto. 628/2016 para 7° y 8° Básico Combinado (33h No JEC / 38h JEC)."
+        }
+      ];
+    } else if (p.nivel.includes('Multigrado Rural')) {
+      ambitosFormativos = [
+        {
+          ambito: "Plan Integrado de Educación Básica Rural",
+          caracter: "Obligatoria",
+          horasSemanalesSubtotal: p.regimen === 'JEC' ? 32 : 30,
+          horasAnualesSubtotal: (p.regimen === 'JEC' ? 32 : 30) * 38,
+          asignaturas: asigs,
+          descripcion: "Decreto Exento N° 477/1995 y Orientaciones Curriculares DEG para Escuelas Rurales Unidocentes (1° a 6°)."
+        }
+      ];
+    }
+
     const payload = {
       asignaturas: asigs,
+      ambitosFormativos,
       extraMeta: {
         documento: p.referenciaFuente || 'Planes de Estudio Oficiales MINEDUC',
         decretoSupremo: p.referenciaFuente,
-        duracionAnoLectivoSemanas: 36,
-        totalHorasAnualesObligatorias: p.horasObligatorias * 36,
+        duracionAnoLectivoSemanas: semanas,
+        totalHorasAnualesObligatorias: p.horasObligatorias * semanas,
         esPersonalizado: false
       }
     };

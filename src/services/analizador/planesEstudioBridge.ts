@@ -122,7 +122,43 @@ export function buscarPlanEstudioAnalizador(
       }
     }
 
-    // 1.3 Coincidencia por especialidad TP o personalizada
+    // 1.3 Coincidencia para 3° y 4° Medio Regular HC / TP / Artístico
+    if ((targetNorm.includes('3') || targetNorm.includes('4') || targetNorm.includes('tercer') || targetNorm.includes('cuarto')) &&
+        (targetNorm.includes('medio') || targetNorm.includes('secundaria'))) {
+      if (!targetNorm.includes('tp') && !targetNorm.includes('tecnico') && !targetNorm.includes('artistic')) {
+        const matchHc = planesEstudioCache.find(p =>
+          p.categoria === 'MEDIA_HC' &&
+          p.nivel.includes('Humanístico-Científico') &&
+          (!regimen || normStr(p.regimen).includes('no') === reqNoJec)
+        );
+        if (matchHc) return matchHc;
+      }
+    }
+
+    // 1.4 Coincidencia para Cursos Combinados y Aulas Multigrado
+    if (targetNorm.includes('combinad') || targetNorm.includes('multigrado') || /\b[1-8]\s*[-/a]\s*[1-8]\b/.test(targetNorm)) {
+      if (targetNorm.includes('nt') || targetNorm.includes('kinder') || targetNorm.includes('parvul')) {
+        const pParv = planesEstudioCache.find(p => normStr(p.nivel).includes('heterogeneo') || normStr(p.nivel).includes('multigrado parvularia'));
+        if (pParv) return pParv;
+      } else if (targetNorm.includes('1 a 6') || targetNorm.includes('1-6') || (targetNorm.includes('multigrado') && !/\b[1-8]\s*[-/y]\s*[1-8]\b/.test(targetNorm))) {
+        const pMulti = planesEstudioCache.find(p => normStr(p.nivel).includes('multigrado rural') || normStr(p.nivel).includes('multigrado / combinada'));
+        if (pMulti) return pMulti;
+      } else if (targetNorm.includes('7') || targetNorm.includes('8')) {
+        const p78 = planesEstudioCache.find(p => normStr(p.nivel).includes('7° y 8° basico combinado') || normStr(p.nivel).includes('7 y 8 basico'));
+        if (p78) return p78;
+      } else if (targetNorm.includes('5') || targetNorm.includes('6')) {
+        const p56 = planesEstudioCache.find(p => normStr(p.nivel).includes('5° y 6° basico combinado') || normStr(p.nivel).includes('5 y 6 basico'));
+        if (p56) return p56;
+      } else if (targetNorm.includes('3') || targetNorm.includes('4')) {
+        const p34 = planesEstudioCache.find(p => normStr(p.nivel).includes('3° y 4° basico combinado') || normStr(p.nivel).includes('3 y 4 basico'));
+        if (p34) return p34;
+      } else {
+        const p12 = planesEstudioCache.find(p => normStr(p.nivel).includes('1° y 2° basico combinado') || normStr(p.nivel).includes('1 y 2 basico'));
+        if (p12) return p12;
+      }
+    }
+
+    // 1.5 Coincidencia por especialidad TP o personalizada
     const matchParcial = planesEstudioCache.find((p) => {
       const pNivelNorm = normStr(p.nivel);
       // Evitar que "1° Básico" haga match parcial con "1° a 4° Básico"

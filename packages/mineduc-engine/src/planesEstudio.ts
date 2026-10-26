@@ -16,6 +16,542 @@ export interface PlanEstudioNivel {
   asignaturasBase: AsignaturaPlan[];
   categoria?: 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'EPJA' | 'ESPECIAL' | 'LABORAL' | 'MULTIGRADO' | 'OTRO';
   referenciaFuente?: string;
+  semanasLectivas?: number;
+}
+
+// =============================================================================
+// ORIENTACIONES OFICIALES Y PLAN DE ESTUDIOS 3° Y 4° MEDIO (DECRETO EXENTO N° 0876/2019)
+// Aprobado por el CNED mediante Acuerdo N° 057-2019 (15/mayo/2019)
+// =============================================================================
+
+export interface AsignaturaProfundizacionHc {
+  id: string;
+  nombre: string;
+  area: 'A' | 'B' | 'C';
+  areaCodigo: 'AREA_A' | 'AREA_B' | 'AREA_C';
+  areaNombre: string;
+  disciplina: string;
+  horasSemanales: number;
+  horasAnuales: number;
+}
+
+export const DECRETO_0876_2019_METADATA = {
+  decreto: "Decreto Exento N° 0876 (12/sept/2019)",
+  acuerdoCned: "Acuerdo N° 057-2019 (15 de mayo de 2019)",
+  titulo: "Plan de Estudios para 3° y 4° Año Medio",
+  subtitulo: "Formación General Humanístico-Científica, Técnico-Profesional y Artística y Formación Diferenciada Humanístico-Científica",
+  organismo: "Unidad de Currículum y Evaluación (UCE), Ministerio de Educación",
+  semanasLectivasBase: 38,
+  principios: {
+    electividad: "Este plan busca que los estudiantes elijan entre variadas asignaturas en 3° y en 4° medio, tomen sus propias decisiones con respecto de los conocimientos, habilidades y actitudes que deseen desarrollar de acuerdo con sus propios intereses y proyectos de vida. La electividad en este plan ocupará gran parte de su tiempo escolar (20 horas: 18h de profundización + 2h de plan común electivo).",
+    profundizacion: "Cada asignatura de este plan de 6 horas ofrece oportunidades para profundizar en aspectos específicos de cada disciplina, desarrollar las habilidades del siglo XXI, generar conexiones interdisciplinarias e innovar en metodologías de enseñanza para hacer de éstas un espacio atractivo y de participación. Se busca evitar la fragmentación del conocimiento.",
+    exploracion: "Este plan ofrece que los estudiantes exploren diferentes áreas disciplinares, de acuerdo con sus preferencias. Se estructura de tal manera que los estudiantes puedan elegir asignaturas ligadas a diferentes disciplinas en 3°, distintas de las de 4° año, para que combinen de acuerdo a sus inquietudes, intereses y proyecto vocacional (sin estar circunscritos a un plan o canal cerrado)."
+  },
+  criteriosOfertaHc: {
+    asignaturasPorEstudiante: 3,
+    horasPorAsignatura: 6,
+    totalHorasProfundizacion: 18,
+    minimoAsignaturasOfertadasLiceo: 6,
+    totalAsignaturasDisponibles: 27,
+    minimoAreasCubiertas: 2,
+    reglaDiversidadDisciplinar: "Las asignaturas ofrecidas no pueden concentrarse en una misma disciplina dentro de un área.",
+    flexibilidadAgrupacion: "La organización de los grupos para impartir estas asignaturas dependerá del establecimiento, pudiendo organizarlos con estudiantes de ambos niveles juntos (3° y 4° combinados) o por nivel separado.",
+    consultaPreviaEstudiantil: "El establecimiento deberá generar un sistema mediante el cual los estudiantes puedan expresar su opinión acerca de las asignaturas que se vinculan de mejor manera a sus intereses y proyectos de vida, de manera previa a la publicación de la oferta."
+  }
+};
+
+/**
+ * Catálogo Oficial Completo de las 27 Asignaturas de Profundización HC (Decreto Exento N° 0876/2019)
+ */
+export const CATALOGO_PROFUNDIZACION_HC_27: AsignaturaProfundizacionHc[] = [
+  // ── ÁREA A: Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales (9 Asignaturas) ──
+  {
+    id: "hc-a-leng-1",
+    nombre: "Taller de Literatura",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Lengua y Literatura",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-leng-2",
+    nombre: "Lectura y escritura especializadas",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Lengua y Literatura",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-leng-3",
+    nombre: "Participación y argumentación en democracia",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Lengua y Literatura",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-fil-1",
+    nombre: "Estética",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Filosofía",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-fil-2",
+    nombre: "Filosofía Política",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Filosofía",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-fil-3",
+    nombre: "Seminario de Filosofía",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Filosofía",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-hist-1",
+    nombre: "Comprensión histórica del presente",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Historia, Geografía y Ciencias Sociales",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-hist-2",
+    nombre: "Geografía, territorio y desafíos socioambientales",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Historia, Geografía y Ciencias Sociales",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-a-hist-3",
+    nombre: "Economía y sociedad",
+    area: 'A',
+    areaCodigo: 'AREA_A',
+    areaNombre: "Lengua y Literatura, Filosofía, Historia, Geografía y Ciencias Sociales",
+    disciplina: "Historia, Geografía y Ciencias Sociales",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+
+  // ── ÁREA B: Matemática, Ciencias (9 Asignaturas) ──
+  {
+    id: "hc-b-mat-1",
+    nombre: "Límites, derivadas e integrales",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Matemática",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-mat-2",
+    nombre: "Probabilidades y estadística descriptiva e inferencial",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Matemática",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-mat-3",
+    nombre: "Pensamiento computacional y programación",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Matemática",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-mat-4",
+    nombre: "Geometría 3D",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Matemática",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-cien-1",
+    nombre: "Biología de los ecosistemas",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Ciencias",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-cien-2",
+    nombre: "Biología celular y molecular",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Ciencias",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-cien-3",
+    nombre: "Ciencias de la Salud",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Ciencias",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-cien-4",
+    nombre: "Física",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Ciencias",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-b-cien-5",
+    nombre: "Química",
+    area: 'B',
+    areaCodigo: 'AREA_B',
+    areaNombre: "Matemática y Ciencias",
+    disciplina: "Ciencias",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+
+  // ── ÁREA C: Artes y Educación Física y Salud (9 Asignaturas) ──
+  {
+    id: "hc-c-art-1",
+    nombre: "Artes visuales, audiovisuales y multimediales",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Artes",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-art-2",
+    nombre: "Creación y composición musical",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Artes",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-art-3",
+    nombre: "Diseño y arquitectura",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Artes",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-art-4",
+    nombre: "Interpretación y creación en Danza",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Artes",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-art-5",
+    nombre: "Interpretación y creación en Teatro",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Artes",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-art-6",
+    nombre: "Interpretación Musical",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Artes",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-edfis-1",
+    nombre: "Promoción de estilos de vida activos y saludables",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Educación Física y Salud",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-edfis-2",
+    nombre: "Ciencias del ejercicio físico y deportivo",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Educación Física y Salud",
+    horasSemanales: 6,
+    horasAnuales: 228
+  },
+  {
+    id: "hc-c-edfis-3",
+    nombre: "Expresión Corporal",
+    area: 'C',
+    areaCodigo: 'AREA_C',
+    areaNombre: "Artes y Educación Física y Salud",
+    disciplina: "Educación Física y Salud",
+    horasSemanales: 6,
+    horasAnuales: 228
+  }
+];
+
+/**
+ * Catálogo Oficial del Plan Común de Formación General Electivo para 3° y 4° Medio (2 horas)
+ */
+export const CATALOGO_PLAN_COMUN_ELECTIVO_3_4 = [
+  {
+    id: "elec-comun-hist",
+    nombre: "Historia, Geografía y Ciencias Sociales",
+    horasSemanales: 2,
+    horasAnuales: 76,
+    descripcion: "Asignatura electiva de profundización ciudadana y social (2 horas semanales)"
+  },
+  {
+    id: "elec-comun-art",
+    nombre: "Artes",
+    horasSemanales: 2,
+    horasAnuales: 76,
+    descripcion: "Asignatura electiva de expresión y apreciación artística (2 horas semanales)"
+  },
+  {
+    id: "elec-comun-edfis",
+    nombre: "Educación Física y Salud",
+    horasSemanales: 2,
+    horasAnuales: 76,
+    descripcion: "Asignatura electiva de actividad física y bienestar (2 horas semanales)"
+  },
+  {
+    id: "elec-comun-rel",
+    nombre: "Religión",
+    horasSemanales: 2,
+    horasAnuales: 76,
+    decreto: "Decreto Supremo N° 924/1983",
+    descripcion: "Obligatoria de ofrecer para el liceo, optativa para el alumno y su familia. Si no se dicta o no se cursa, las horas se redistribuyen en Artes, Educación Física y Salud, o Historia."
+  }
+];
+
+/**
+ * Catálogo de los 15 Sectores Económicos y 35 Especialidades Técnico-Profesionales Oficiales (Decreto 0876/2019)
+ */
+export const CATALOGO_SECTORES_Y_ESPECIALIDADES_TP_35 = [
+  { sector: "MADERERO", especialidades: ["Forestal", "Muebles y Terminaciones en Madera"] },
+  { sector: "AGROPECUARIO", especialidades: ["Agropecuaria"] },
+  { sector: "ALIMENTACION", especialidades: ["Elaboración Industrial de Alimentos", "Gastronomía"] },
+  { sector: "CONSTRUCCION", especialidades: ["Construcción", "Refrigeración y Climatización", "Instalaciones Sanitarias", "Montaje Industrial"] },
+  { sector: "METALMECANICA", especialidades: ["Mecánica Automotriz", "Mecánica Industrial", "Mecánica de Mantenimiento de Aeronaves", "Construcciones Metálicas"] },
+  { sector: "ELECTRICIDAD", especialidades: ["Electricidad", "Electrónica"] },
+  { sector: "MARITIMO", especialidades: ["Acuicultura", "Pesquería", "Tripulación de Naves Mercantes y Especiales", "Operaciones Portuarias"] },
+  { sector: "MINERO", especialidades: ["Explotación Minera", "Metalurgia Extractiva", "Asistencia en Geología"] },
+  { sector: "GRAFICO", especialidades: ["Gráfica", "Dibujo Técnico"] },
+  { sector: "CONFECCION", especialidades: ["Vestuario y Confección Textil"] },
+  { sector: "ADMINISTRACION", especialidades: ["Administración", "Contabilidad"] },
+  { sector: "SALUD Y EDUCACION", especialidades: ["Atención de Párvulos", "Atención de Enfermería"] },
+  { sector: "QUIMICA E INDUSTRIA", especialidades: ["Química Industrial"] },
+  { sector: "TECNOLOGIA Y COMUNICACIONES", especialidades: ["Conectividad y Redes", "Telecomunicaciones", "Programación"] },
+  { sector: "HOTELERIA Y TURISMO", especialidades: ["Servicios de Hotelería", "Servicios de Turismo"] }
+];
+
+/**
+ * 10 Menciones Artísticas Oficiales (Decreto Supremo N° 3/2007)
+ */
+export const PLAN_COMUN_GENERAL_TP_ASIGNATURAS = [
+  { nombre: "Lengua y Literatura", JEC: 3, No_JEC: 3 },
+  { nombre: "Matemática", JEC: 3, No_JEC: 3 },
+  { nombre: "Educación Ciudadana", JEC: 2, No_JEC: 2 },
+  { nombre: "Filosofía", JEC: 2, No_JEC: 2 },
+  { nombre: "Inglés", JEC: 2, No_JEC: 2 },
+  { nombre: "Ciencias para la Ciudadanía", JEC: 2, No_JEC: 2 }
+];
+
+export const CATALOGO_MENCIONES_ARTISTICAS_10 = [
+  "Artes Visuales",
+  "Artes Audiovisuales",
+  "Diseño",
+  "Música (Interpretación)",
+  "Música (Composición)",
+  "Teatro (Actuación)",
+  "Teatro (Diseño Escénico)",
+  "Danza",
+  "Artes de la Representación",
+  "Expresión Artística Integrada"
+];
+
+/**
+ * Validador Normativo de Oferta Institucional de Electivos de Profundización HC
+ * según el Decreto Exento N° 0876/2019:
+ * 1. Mínimo 6 asignaturas ofertadas por el liceo.
+ * 2. Cubrir al menos 2 de las 3 áreas (Área A, Área B, Área C).
+ * 3. Las asignaturas ofrecidas dentro de un área no pueden concentrarse en una misma disciplina.
+ */
+export interface ResultadoValidacionOfertaElectivosHc {
+  valido: boolean;
+  totalOfertadas: number;
+  areasCubiertas: string[];
+  disciplinasPorArea: Record<string, string[]>;
+  errores: string[];
+  advertencias: string[];
+  desglosePorArea: {
+    areaA: { cantidad: number; asignaturas: string[]; disciplinas: string[] };
+    areaB: { cantidad: number; asignaturas: string[]; disciplinas: string[] };
+    areaC: { cantidad: number; asignaturas: string[]; disciplinas: string[] };
+  };
+}
+
+export function validarOfertaElectivosHc(nombresAsignaturas: string[]): ResultadoValidacionOfertaElectivosHc {
+  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const seleccionadas = Array.from(new Set(nombresAsignaturas.map(s => norm(s))));
+
+  const asigsCoincidentes = CATALOGO_PROFUNDIZACION_HC_27.filter(c =>
+    seleccionadas.some(s => norm(c.nombre) === s || s.includes(norm(c.nombre)) || norm(c.nombre).includes(s))
+  );
+
+  const porArea: Record<string, AsignaturaProfundizacionHc[]> = { A: [], B: [], C: [] };
+  asigsCoincidentes.forEach(a => {
+    porArea[a.area].push(a);
+  });
+
+  const areasCubiertas: string[] = [];
+  if (porArea.A.length > 0) areasCubiertas.push('Área A (Lengua, Filosofía, Cs. Sociales)');
+  if (porArea.B.length > 0) areasCubiertas.push('Área B (Matemática, Ciencias)');
+  if (porArea.C.length > 0) areasCubiertas.push('Área C (Artes, Ed. Física y Salud)');
+
+  const disciplinasPorArea: Record<string, string[]> = {
+    A: Array.from(new Set(porArea.A.map(a => a.disciplina))),
+    B: Array.from(new Set(porArea.B.map(a => a.disciplina))),
+    C: Array.from(new Set(porArea.C.map(a => a.disciplina)))
+  };
+
+  const errores: string[] = [];
+  const advertencias: string[] = [];
+
+  // Regla 1: Mínimo 6 asignaturas
+  if (asigsCoincidentes.length < 6) {
+    errores.push(`La oferta del establecimiento contempla ${asigsCoincidentes.length} de las 6 asignaturas mínimas exigidas por el Decreto N° 0876/2019.`);
+  }
+
+  // Regla 2: Cobertura de al menos dos áreas
+  if (areasCubiertas.length < 2) {
+    errores.push(`La oferta cubre solo ${areasCubiertas.length} área(s) disciplinar(es). El Decreto exige garantizar cobertura en al menos dos de las tres áreas (Área A, B o C).`);
+  }
+
+  // Regla 3: No concentración en una sola disciplina dentro de un área
+  for (const [areaLetra, asigs] of Object.entries(porArea)) {
+    if (asigs.length >= 2) {
+      const discUnicas = disciplinasPorArea[areaLetra];
+      if (discUnicas.length === 1) {
+        errores.push(`En el Área ${areaLetra}, todas las asignaturas ofertadas (${asigs.length}) se concentran en una única disciplina ("${discUnicas[0]}"). El decreto prohíbe concentrar en una sola disciplina dentro de un área.`);
+      }
+    }
+  }
+
+  if (asigsCoincidentes.length >= 6 && asigsCoincidentes.length < 9) {
+    advertencias.push(`Se cumple el mínimo legal (6 asignaturas). Sin embargo, el CNED sugiere que, en lo posible y según disponibilidad de recursos, los establecimientos amplíen la oferta para resguardar mayores opciones vocacionales.`);
+  }
+
+  const valido = errores.length === 0;
+
+  return {
+    valido,
+    totalOfertadas: asigsCoincidentes.length,
+    areasCubiertas,
+    disciplinasPorArea,
+    errores,
+    advertencias,
+    desglosePorArea: {
+      areaA: {
+        cantidad: porArea.A.length,
+        asignaturas: porArea.A.map(a => a.nombre),
+        disciplinas: disciplinasPorArea.A
+      },
+      areaB: {
+        cantidad: porArea.B.length,
+        asignaturas: porArea.B.map(a => a.nombre),
+        disciplinas: disciplinasPorArea.B
+      },
+      areaC: {
+        cantidad: porArea.C.length,
+        asignaturas: porArea.C.map(a => a.nombre),
+        disciplinas: disciplinasPorArea.C
+      }
+    }
+  };
+}
+
+/**
+ * Validador de Selección del Estudiante (3 asignaturas de 6 horas cada una = 18 horas)
+ */
+export function validarEleccionEstudianteHc(nombresAsignaturas: string[]): {
+  valido: boolean;
+  totalHoras: number;
+  asignaturasValidas: string[];
+  errores: string[];
+} {
+  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const unicas = Array.from(new Set(nombresAsignaturas.map(s => norm(s))));
+
+  const asigsCoincidentes = CATALOGO_PROFUNDIZACION_HC_27.filter(c =>
+    unicas.some(s => norm(c.nombre) === s || s.includes(norm(c.nombre)) || norm(c.nombre).includes(s))
+  );
+
+  const errores: string[] = [];
+  const totalHoras = asigsCoincidentes.length * 6;
+
+  if (asigsCoincidentes.length !== 3) {
+    errores.push(`El estudiante debe elegir exactamente 3 asignaturas de profundización (actualmente tiene ${asigsCoincidentes.length} seleccionadas).`);
+  }
+
+  return {
+    valido: errores.length === 0,
+    totalHoras,
+    asignaturasValidas: asigsCoincidentes.map(a => a.nombre),
+    errores
+  };
 }
 
 export const DATA_PLANES_ESTUDIO_MINEDUC = {
@@ -123,8 +659,104 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 4 }
     ]
   },
+  "combinado_1_2_basica": {
+    nombre: "1° y 2° Básico Combinado (1° Ciclo Básica)",
+    referenciaFuente: "Decreto Exento N° 2960/2012 (1° a 4° Básico)",
+    regimen: {
+      JEC: { total: 38, libre: 6.5 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 8, No_JEC: 8 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 3, No_JEC: 3 },
+      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 },
+      { nombre: "Artes Visuales", JEC: 2, No_JEC: 2 },
+      { nombre: "Música", JEC: 2, No_JEC: 2 },
+      { nombre: "Educación Física y Salud", JEC: 4, No_JEC: 3 },
+      { nombre: "Orientación", JEC: 0.5, No_JEC: 0.5 },
+      { nombre: "Tecnología", JEC: 1, No_JEC: 0.5 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "combinado_3_4_basica": {
+    nombre: "3° y 4° Básico Combinado (1° Ciclo Básica)",
+    referenciaFuente: "Decreto Exento N° 2960/2012 (1° a 4° Básico)",
+    regimen: {
+      JEC: { total: 38, libre: 6.5 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 8, No_JEC: 8 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 3, No_JEC: 3 },
+      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 },
+      { nombre: "Artes Visuales", JEC: 2, No_JEC: 2 },
+      { nombre: "Música", JEC: 2, No_JEC: 2 },
+      { nombre: "Educación Física y Salud", JEC: 4, No_JEC: 3 },
+      { nombre: "Orientación", JEC: 0.5, No_JEC: 0.5 },
+      { nombre: "Tecnología", JEC: 1, No_JEC: 0.5 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "combinado_5_6_basica": {
+    nombre: "5° y 6° Básico Combinado (2° Ciclo Básica)",
+    referenciaFuente: "Decreto Exento N° 2960/2012 (5° y 6° Básico)",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 6, No_JEC: 6 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 3 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 3, No_JEC: 3 },
+      { nombre: "Artes Visuales", JEC: 1.5, No_JEC: 1 },
+      { nombre: "Música", JEC: 1.5, No_JEC: 1 },
+      { nombre: "Educación Física y Salud", JEC: 2, No_JEC: 2 },
+      { nombre: "Orientación", JEC: 1, No_JEC: 1 },
+      { nombre: "Tecnología", JEC: 1, No_JEC: 1 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "combinado_7_8_basica": {
+    nombre: "7° y 8° Básico Combinado (3° Ciclo Básica)",
+    referenciaFuente: "Decreto Exento N° 1363/2011 y Dto. 628/2016 (7° y 8° Básico)",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 33, libre: 2 }
+    },
+    asignaturas: [
+      { nombre: "Lengua y Literatura", JEC: 6, No_JEC: 6 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
+      { nombre: "Ciencias Naturales", JEC: 4, No_JEC: 4 },
+      { nombre: "Idioma Extranjero: Inglés", JEC: 3, No_JEC: 3 },
+      { nombre: "Artes Visuales y Música", JEC: 3, No_JEC: 2 },
+      { nombre: "Educación Física y Salud", JEC: 2, No_JEC: 2 },
+      { nombre: "Orientación", JEC: 1, No_JEC: 1 },
+      { nombre: "Tecnología", JEC: 1, No_JEC: 1 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 }
+    ]
+  },
+  "combinado_parvularia": {
+    nombre: "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)",
+    referenciaFuente: "Decreto Supremo N° 315/2010 y Bases Curriculares Dto. 28/2019",
+    regimen: {
+      JEC: { total: 28, libre: 4 },
+      No_JEC: { total: 22, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 8, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 10, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 6, No_JEC: 6 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
+    ]
+  },
   "multigrado_basica": {
-    nombre: "Educación Básica Multigrado / Combinada",
+    nombre: "Aula Multigrado Rural Integrada (1° a 6° Básico)",
+    referenciaFuente: "Decreto Exento N° 477/1995 y Orientaciones Curriculares DEG Rural",
     regimen: {
       JEC: { total: 38, libre: 6 },
       No_JEC: { total: 30, libre: 0 }
@@ -191,7 +823,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
         nombre: "Artístico",
         diferenciada: 21,
         JEC: { total: 42, libre: 5 },
-        No_JEC: { total: 0, libre: 0 }
+        No_JEC: { total: 38, libre: 1 }
       }
     }
   },
@@ -200,10 +832,10 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   // ===========================================================================
   "tp_formacion_general_3_4": {
     nombre: "3° y 4° Medio Técnico-Profesional (Plan Común de Formación General)",
-    referenciaFuente: "Decreto Supremo de Educación N° 452/2013 y Decreto Exento de Educación N° 0954/2015",
+    referenciaFuente: "Decreto Exento N° 0876/2019 (Acuerdo CNED N° 057-2019)",
     regimen: {
       JEC: { total: 20, libre: 6 },
-      No_JEC: { total: 14, libre: 0 }
+      No_JEC: { total: 16, libre: 2 }
     },
     asignaturas: [
       { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
@@ -221,11 +853,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Instalación de motores eléctricos y equipos de calefacción", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Instalaciones eléctricas domiciliarias", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Elaboración de proyectos eléctricos", JEC: 6, No_JEC: 6 },
@@ -240,11 +868,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Instalación de sistemas de control eléctrico industrial", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Instalaciones eléctricas industriales", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Instalación de equipos electrónicos de potencia", JEC: 4, No_JEC: 4 },
@@ -260,11 +884,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Programación y bases de datos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Instalación y configuración de equipos informáticos", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo: Soporte a usuarios y productividad", JEC: 6, No_JEC: 6 },
@@ -279,11 +899,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Diseño de bases de datos relacionales", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Programación orientada a objetos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Administración de bases de datos", JEC: 4, No_JEC: 4 },
@@ -299,11 +915,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Higiene para la elaboración de alimentos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Elaboración de alimentos de baja complejidad", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Recepción y almacenamiento de insumos", JEC: 2, No_JEC: 2 },
@@ -320,11 +932,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Cocina chilena", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Innovación y cocina internacional", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Elaboración de bebidas alcohólicas y analcohólicas", JEC: 4, No_JEC: 4 },
@@ -340,11 +948,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Elaboración de masas y pastas", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Elaboración de productos de repostería", JEC: 3, No_JEC: 3 },
       { nombre: "Módulo mención: Elaboración de productos de pastelería", JEC: 6, No_JEC: 6 },
@@ -360,11 +964,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Material didáctico y de ambientación", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Expresión musical para párvulos", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Relación con la familia", JEC: 2, No_JEC: 2 },
@@ -380,11 +980,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Actividades educativas para párvulos", JEC: 7, No_JEC: 7 },
       { nombre: "Módulo: Expresión literaria y teatral con párvulos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Alimentación de los párvulos", JEC: 3, No_JEC: 3 },
@@ -400,11 +996,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Utilización de información contable", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Gestión comercial y tributaria", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Procesos administrativos", JEC: 5, No_JEC: 5 },
@@ -421,11 +1013,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Legislación laboral", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Cálculo de remuneraciones, finiquitos y obligaciones laborales", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Desarrollo y bienestar del personal", JEC: 6, No_JEC: 6 },
@@ -441,11 +1029,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Análisis de muestras de hormigón, suelos y materiales", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Carpintería de instalación de faenas", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Control y mantenimiento de bodegas y pañoles", JEC: 2, No_JEC: 2 },
@@ -463,11 +1047,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Albañilerías estructurales y no estructurales", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Carpintería estructural", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Enfierradura para elementos estructurales", JEC: 4, No_JEC: 4 },
@@ -483,11 +1063,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Impermeabilización y aislación de elementos", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Instalación de cubiertas y elementos de evacuación de aguas lluvias", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Instalación de muebles, puertas y ventanas", JEC: 6, No_JEC: 6 },
@@ -503,11 +1079,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Calidad en obras viales e infraestructura", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo mención: Seguridad vial", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Mantenimiento de obras viales", JEC: 4, No_JEC: 4 },
@@ -524,11 +1096,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Soldadura industrial", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo: Mantenimiento de herramientas", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo: Medición y verificación", JEC: 5, No_JEC: 5 },
@@ -544,11 +1112,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Mantenimiento y reparación industrial", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Detección de fallas en sistemas industriales", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Control de procesos industriales", JEC: 6, No_JEC: 6 },
@@ -564,11 +1128,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Torneado de piezas y conjuntos mecánicos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Fresado de piezas y conjuntos mecánicos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Taladrado y rectificado de piezas mecánicas", JEC: 2, No_JEC: 2 },
@@ -584,11 +1144,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Fabricación de matrices", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo mención: Fabricación de moldes", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo mención: Mantención de matrices y moldes", JEC: 5, No_JEC: 5 },
@@ -604,11 +1160,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Manejo de suelo y residuos", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo: Manejo de técnicas de riego", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo: Técnicas de reproducción vegetal", JEC: 5, No_JEC: 5 },
@@ -624,11 +1176,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Técnicas de cultivo de especies vegetales", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo mención: Manejos para optimización productiva de frutales", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Postcosecha y guarda de productos agrícolas", JEC: 6, No_JEC: 6 },
@@ -644,11 +1192,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Manejos pecuarios", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo mención: Reproducción animal", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Producción lechera", JEC: 4, No_JEC: 4 },
@@ -665,11 +1209,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Viticultura", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo mención: Cosecha y transporte de vides", JEC: 4, No_JEC: 4 },
       { nombre: "Módulo mención: Elaboración de vinos", JEC: 4, No_JEC: 4 },
@@ -686,11 +1226,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Recepción de materias primas", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo: Almacenaje y bodega de alimentos e insumos alimentarios", JEC: 5, No_JEC: 5 },
       { nombre: "Módulo: Elaboración de alimentos e higiene", JEC: 6, No_JEC: 6 },
@@ -705,11 +1241,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Tratamientos de conservación de alimentos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Control y registro de procesos de la industria de alimentos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Manejo de desechos de la industria de alimentos", JEC: 3, No_JEC: 3 },
@@ -725,11 +1257,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo mención: Almacenamiento y control de inventarios", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Procesamiento de pedidos y distribución", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo mención: Operaciones de importación y exportación", JEC: 4, No_JEC: 4 },
@@ -745,11 +1273,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Motores de combustión interna y sus sistemas", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Sistemas de frenos, suspensión y dirección", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Sistemas eléctricos y electrónicos automotrices", JEC: 6, No_JEC: 6 },
@@ -764,11 +1288,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Diagnóstico electrónico y control de emisiones", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Sistemas de transmisión y transferencia de fuerza", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Sistemas de inyección electrónica diésel y gasolina", JEC: 4, No_JEC: 4 },
@@ -784,11 +1304,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Circuitos analógicos y digitales", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Montaje y soldadura de componentes electrónicos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Medición y verificación electrónica", JEC: 6, No_JEC: 6 },
@@ -803,11 +1319,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Sistemas de microcontroladores y programación embebida", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Mantenimiento y reparación de equipos electrónicos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Telecomunicaciones y redes de datos", JEC: 4, No_JEC: 4 },
@@ -823,11 +1335,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Cuidados básicos de enfermería", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Higiene y bioseguridad en salud", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Primeros auxilios y atención de urgencia", JEC: 6, No_JEC: 6 },
@@ -842,11 +1350,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Administración de medicamentos y procedimientos invasivos menores", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Cuidados del adulto mayor y paciente en situación de dependencia", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Atención en salud materno-infantil y del adolescente", JEC: 4, No_JEC: 4 },
@@ -862,11 +1366,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Procesos contables y estados financieros básicos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Legislación tributaria aplicada", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Legislación laboral y previsión social", JEC: 6, No_JEC: 6 },
@@ -881,11 +1381,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Contabilidad de costos y presupuestos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Auditoría y control interno", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Declaraciones de impuestos mensuales y anuales", JEC: 4, No_JEC: 4 },
@@ -901,11 +1397,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Instalación y configuración de redes LAN", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Cableado estructurado y normas de telecomunicaciones", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Enrutamiento y conmutación básica", JEC: 6, No_JEC: 6 },
@@ -920,11 +1412,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       No_JEC: { total: 36, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Lenguaje y Comunicación", JEC: 3, No_JEC: 3 },
-      { nombre: "Idioma Extranjero: Inglés", JEC: 2, No_JEC: 2 },
-      { nombre: "Matemática", JEC: 3, No_JEC: 3 },
-      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 4, No_JEC: 4 },
-      { nombre: "Religión (Optativa)", JEC: 2, No_JEC: 2 },
+      ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
       { nombre: "Módulo: Seguridad en redes y cortafuegos", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Servicios de red e infraestructura en la nube", JEC: 6, No_JEC: 6 },
       { nombre: "Módulo: Redes inalámbricas y telefonía IP", JEC: 4, No_JEC: 4 },
@@ -1194,6 +1682,17 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   addSimplePlan("5_6_basico", "5° a 6° Básico", "BASICA");
   addSimplePlan("7_8_basico", "7° a 8° Básico", "BASICA");
   addSimplePlan("7_8_basico_indigena", "7° a 8° año de Educación Básica - Con Sector Lengua Indígena", "BASICA");
+  
+  // 1.1 Cursos Combinados por Ciclo Oficial (Decreto 2960/2012 y 1363/2011)
+  addSimplePlan("combinado_1_2_basica", "1° y 2° Básico Combinado (1° Ciclo Básica)", "BASICA");
+  addSimplePlan("combinado_3_4_basica", "3° y 4° Básico Combinado (1° Ciclo Básica)", "BASICA");
+  addSimplePlan("combinado_5_6_basica", "5° y 6° Básico Combinado (2° Ciclo Básica)", "BASICA");
+  addSimplePlan("combinado_7_8_basica", "7° y 8° Básico Combinado (3° Ciclo Básica)", "BASICA");
+  addSimplePlan("combinado_parvularia", "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)", "PARVULARIA");
+
+  // 1.2 Aula Multigrado Rural Integrada (Decreto 477/1995)
+  addSimplePlan("multigrado_basica", "Aula Multigrado Rural Integrada (1° a 6° Básico)", "MULTIGRADO");
+  // Alias de retrocompatibilidad
   addSimplePlan("multigrado_basica", "Educación Básica Multigrado / Combinada", "MULTIGRADO");
 
   // 2. Media 1° y 2°
@@ -1221,7 +1720,9 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
         horasLibreDisposicion: mod.JEC.libre,
         totalHorasPlan: mod.JEC.total,
         asignaturasBase: listBase,
-        categoria: cat
+        categoria: cat,
+        referenciaFuente: "Decreto Exento N° 0876/2019 (Acuerdo CNED N° 057-2019)",
+        semanasLectivas: 38
       });
     }
 
@@ -1233,7 +1734,9 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
         horasLibreDisposicion: mod.No_JEC.libre,
         totalHorasPlan: mod.No_JEC.total,
         asignaturasBase: listBase,
-        categoria: cat
+        categoria: cat,
+        referenciaFuente: "Decreto Exento N° 0876/2019 (Acuerdo CNED N° 057-2019)",
+        semanasLectivas: 38
       });
     }
   }
@@ -1485,14 +1988,22 @@ export function obtenerPlanPorCurso(
       grupo = "Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)";
     }
   }
-  // 5. CURSOS MULTIGRADO Y COMBINADOS
-  else if (c.includes('multigrado') || c.includes('combinado') || c.includes('comb')) {
-    if (c.includes('nt') || c.includes('kinder') || c.includes('parvular')) {
-      grupo = "Multigrado Parvularia (NT1-NT2)";
+  // 5. CURSOS MULTIGRADO Y COMBINADOS (Resolución Inteligente por Ciclos)
+  else if (c.includes('multigrado') || c.includes('combinado') || c.includes('comb') || /\b[1-8]°?\s*[-/aA]\s*[1-8]°?\b/.test(c)) {
+    if (c.includes('nt') || c.includes('kinder') || c.includes('parvular') || c.includes('pk')) {
+      grupo = "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)";
     } else if (c.includes('medio')) {
       grupo = "1° y 2° Medio";
+    } else if (/\b(1\s*a\s*6|1\s*-\s*6|1°?\s*a\s*6°?)\b/.test(c) || (c.includes('multigrado') && !/\b[1-8]°?\s*[-/y]\s*[1-8]°?\b/.test(c))) {
+      grupo = "Aula Multigrado Rural Integrada (1° a 6° Básico)";
+    } else if (c.includes('7') || c.includes('8')) {
+      grupo = "7° y 8° Básico Combinado (3° Ciclo Básica)";
+    } else if (c.includes('5') || c.includes('6')) {
+      grupo = "5° y 6° Básico Combinado (2° Ciclo Básica)";
+    } else if (c.includes('3') || c.includes('4')) {
+      grupo = "3° y 4° Básico Combinado (1° Ciclo Básica)";
     } else {
-      grupo = "Educación Básica Multigrado / Combinada";
+      grupo = "1° y 2° Básico Combinado (1° Ciclo Básica)";
     }
   }
   // 6. PARVULARIA REGULAR

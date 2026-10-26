@@ -22,6 +22,7 @@ import {
   getDb,
   persistDb
 } from '../database/db';
+import { OrientacionesDecreto0876Modal } from './curriculum/components/OrientacionesDecreto0876Modal';
 
 interface PlanesEstudioViewProps {
   colegios: Establecimiento[];
@@ -51,6 +52,7 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
   // Modales
   const [modalEditarAbierto, setModalEditarAbierto] = useState(false);
   const [modalAdjuntarAbierto, setModalAdjuntarAbierto] = useState(false);
+  const [modalOrientacionesAbierto, setModalOrientacionesAbierto] = useState(false);
   const [planParaAdjuntar, setPlanParaAdjuntar] = useState<PlanEstudioCurricular | null>(null);
   const [planEnEdicion, setPlanEnEdicion] = useState<PlanEstudioCurricular | null>(null);
 
@@ -271,6 +273,15 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
 
         {/* Acciones Superiores */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setModalOrientacionesAbierto(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-700 via-indigo-600 to-purple-600 hover:from-blue-800 hover:to-purple-700 text-white text-xs font-black rounded-2xl shadow-md transition-all active:scale-[0.98]"
+            title="Consultar Decreto Exento N° 0876/2019, Catálogo de 27 Asignaturas HC y Validador de Oferta"
+          >
+            <GraduationCap className="w-4 h-4 text-blue-200" />
+            <span>Orientaciones 3° y 4° Medio (Dto. 0876/2019)</span>
+          </button>
+
           <button
             onClick={handleRestaurarOficiales}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-2xl border border-slate-300 dark:border-slate-700 transition-all shadow-xs"
@@ -893,6 +904,12 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ── 6. MODAL ORIENTACIONES Y VALIDADOR CURRICULAR 3° Y 4° MEDIO (DTO. 0876/2019) ── */}
+      <OrientacionesDecreto0876Modal
+        abierto={modalOrientacionesAbierto}
+        onCerrar={() => setModalOrientacionesAbierto(false)}
+      />
 
     </div>
   );

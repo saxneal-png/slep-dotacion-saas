@@ -289,4 +289,68 @@ describe('Correcciones Periodo 2027, Libre Disposición Fragmentada y Formación
       'Taller de Ajedrez'
     ]);
   });
+
+  it('debe actualizar correctamente la ficha de un docente existente en 2027 preservando su ID y sincronizando financiamiento y funciones no aula', async () => {
+    // 1. Docente creado en 2027 (ej. tras traspaso de dotación)
+    const docId2027 = `doc_${rbd}_2027_17091325-6`;
+    const docInicial: Docente = {
+      id: docId2027,
+      rbd,
+      run: '17.091.325-6',
+      nombres: 'DARIO ANSELMO',
+      apellidos: 'PARRA',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 42,
+      horasSubvencionGeneralTitular: 42,
+      horasSubvencionGeneralContrata: 0,
+      periodo: 2027
+    };
+    await guardarDocente(docInicial);
+
+    // Verificar guardado inicial
+    let docs = await listarDocentes(rbd, 2027);
+    expect(docs).toHaveLength(1);
+    expect(docs[0].id).toBe(docId2027);
+    expect(docs[0].horasContrato).toBe(42);
+
+    // 2. Modificar la ficha en 2027 (cambiar horas, agregar funciones no aula y campos GDP)
+    const docModificado: Docente = {
+      ...docInicial,
+      horasContrato: 38,
+      horasSubvencionGeneralTitular: 38,
+      funcionesNoAula: [
+        {
+          id: 'f-1',
+          tipo: 'COORDINACION',
+          nombre: 'Coordinación de Ciclo',
+          horas: 4,
+          financiamiento: 'SUBVENCION_GENERAL'
+        }
+      ],
+      horasCoordinacion: 4,
+      propuestaGdp: 'Disminución Horas',
+      remuneracionMensualApp: 1550000,
+      remuneracionMensual: 1550000,
+      observacionesDirector: 'Ajuste contractual acordado 2027'
+    };
+
+    await guardarDocente(docModificado);
+
+    // 3. Verificar que se actualizó el registro exacto sin duplicar
+    docs = await listarDocentes(rbd, 2027);
+    expect(docs).toHaveLength(1);
+    const dRecup = docs[0];
+    expect(dRecup.id).toBe(docId2027);
+    expect(dRecup.periodo).toBe(2027);
+    expect(dRecup.horasContrato).toBe(38);
+    expect(dRecup.horasSubvencionGeneralTitular).toBe(38);
+    expect(dRecup.horasCoordinacion).toBe(4);
+    expect(dRecup.funcionesNoAula).toHaveLength(1);
+    expect(dRecup.funcionesNoAula?.[0].nombre).toBe('Coordinación de Ciclo');
+    expect(dRecup.remuneracionMensualApp).toBe(1550000);
+    expect(dRecup.remuneracionMensual).toBe(1550000);
+    expect(dRecup.observacionesDirector).toBe('Ajuste contractual acordado 2027');
+    expect(dRecup.observacionesPal).toBe('Ajuste contractual acordado 2027');
+  });
 });

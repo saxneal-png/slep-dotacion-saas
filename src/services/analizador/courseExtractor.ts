@@ -9,6 +9,7 @@ export interface NormalizedCourseInfo {
   letra: string;
   regimen: 'JEC' | 'No JEC';
   esMultigrado: boolean;
+  esCombinado?: boolean;
 }
 
 /**
@@ -81,24 +82,62 @@ export function normalizeCourseHeader(raw: string): NormalizedCourseInfo | null 
     }
   }
 
-  // Cursos Combinados
+  // Cursos Combinados (Resolución Inteligente por Ciclos)
   if (/COMBINAD/i.test(clean) || /COMB\b/i.test(clean)) {
-    const label = `Curso Combinado ${raw.trim()}`;
-    return { cursoCompleto: label, nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: true };
+    const mRango = clean.match(/([1-8])°?\s*[-/aA]\s*([1-8])°?/);
+    let label = `Curso Combinado ${raw.trim()}`;
+    let esMulti = false;
+
+    if (mRango) {
+      const start = parseInt(mRango[1], 10);
+      const end = parseInt(mRango[2], 10);
+      if (start <= 2 && end <= 2) label = "1° y 2° Básico Combinado (1° Ciclo Básica)";
+      else if (start <= 4 && end <= 4) label = "3° y 4° Básico Combinado (1° Ciclo Básica)";
+      else if (start >= 5 && end <= 6) label = "5° y 6° Básico Combinado (2° Ciclo Básica)";
+      else if (start >= 7 && end <= 8) label = "7° y 8° Básico Combinado (3° Ciclo Básica)";
+      else {
+        label = "Aula Multigrado Rural Integrada (1° a 6° Básico)";
+        esMulti = true;
+      }
+    } else if (/NT|KINDER|PARVUL/i.test(clean)) {
+      label = "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)";
+    }
+
+    return { cursoCompleto: label, nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: esMulti, esCombinado: true };
   }
 
-  // Multigrado Parvularia NT1-NT2 / Prekínder - Kínder
+  // Nivel Heterogéneo Parvularia NT1-NT2 / Prekínder - Kínder
   if (/^(?:NT1\s*[-/]\s*NT2|PRE-?K(?:INDER)?\s*[-/]\s*K(?:INDER)?)/i.test(clean)) {
-    return { cursoCompleto: 'Multigrado NT1-NT2', nivel: 'Multigrado NT1-NT2', letra: 'U', regimen: 'No JEC', esMultigrado: true };
+    return {
+      cursoCompleto: 'Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)',
+      nivel: 'Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)',
+      letra: 'U',
+      regimen: 'No JEC',
+      esMultigrado: false,
+      esCombinado: true
+    };
   }
 
-  // Multigrado Básica (ej: 1°-2° Básico, 1° a 6°, 1-2-3-4)
+  // Multigrado y Combinados de Básica (ej: 1°-2° Básico, 1° a 6°, 5°-6°)
   const multiBasicaMatch = clean.match(/^([1-8])°?\s*[-/aA]\s*([1-8])°?(?:\s*[-/]\s*([1-8])°?)?(?:\s*B[AÁ]SICO)?$/i);
   if (multiBasicaMatch) {
-    const start = multiBasicaMatch[1];
-    const end = multiBasicaMatch[2];
-    const label = `Multigrado ${start}°-${end}° Básico`;
-    return { cursoCompleto: label, nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: true };
+    const start = parseInt(multiBasicaMatch[1], 10);
+    const end = parseInt(multiBasicaMatch[2], 10);
+    
+    // Si abarca 3 o más grados o de 1 a 6: Aula Multigrado Rural Integrada
+    if ((end - start >= 2) || (start === 1 && end >= 4)) {
+      const label = "Aula Multigrado Rural Integrada (1° a 6° Básico)";
+      return { cursoCompleto: label, nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: true, esCombinado: true };
+    }
+
+    // Si es un par dentro de un mismo ciclo: Curso Combinado por Ciclo
+    let label = `Curso Combinado ${start}°-${end}° Básico`;
+    if (end <= 2) label = "1° y 2° Básico Combinado (1° Ciclo Básica)";
+    else if (start <= 4 && end <= 4) label = "3° y 4° Básico Combinado (1° Ciclo Básica)";
+    else if (start >= 5 && end <= 6) label = "5° y 6° Básico Combinado (2° Ciclo Básica)";
+    else if (start >= 7 && end <= 8) label = "7° y 8° Básico Combinado (3° Ciclo Básica)";
+
+    return { cursoCompleto: label, nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: false, esCombinado: true };
   }
 
   // Educación Parvularia NT1 / Pre-Kínder

@@ -60,7 +60,24 @@ export function normalizarEncabezadoCurso(header: string): { nivel: string; letr
 
   // 2. Cursos Combinados
   if (/COMBINAD/i.test(clean) || /COMB\b/i.test(clean)) {
-    return { nivel: `Curso Combinado ${raw}`, letra: 'U', regimen: 'JEC', esMultigrado: true };
+    const mRango = clean.match(/([1-8])°?\s*[-/aA]\s*([1-8])°?/);
+    let label = `Curso Combinado ${raw}`;
+    let esMulti = false;
+    if (mRango) {
+      const start = parseInt(mRango[1], 10);
+      const end = parseInt(mRango[2], 10);
+      if (end <= 2) label = "1° y 2° Básico Combinado (1° Ciclo Básica)";
+      else if (start <= 4 && end <= 4) label = "3° y 4° Básico Combinado (1° Ciclo Básica)";
+      else if (start >= 5 && end <= 6) label = "5° y 6° Básico Combinado (2° Ciclo Básica)";
+      else if (start >= 7 && end <= 8) label = "7° y 8° Básico Combinado (3° Ciclo Básica)";
+      else {
+        label = "Aula Multigrado Rural Integrada (1° a 6° Básico)";
+        esMulti = true;
+      }
+    } else if (/NT|KINDER|PARVUL/i.test(clean)) {
+      label = "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)";
+    }
+    return { nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: esMulti };
   }
 
   // 3. Multigrado Parvularia NT1-NT2
@@ -71,7 +88,17 @@ export function normalizarEncabezadoCurso(header: string): { nivel: string; letr
   // 4. Multigrado Básica (ej: 1°-2° Básico, 1 a 6, 1-2-3-4)
   const multiBasicaMatch = clean.match(/^([1-8])°?\s*[-/aA]\s*([1-8])°?(?:\s*[-/]\s*([1-8])°?)?(?:\s*B[AÁ]SICO)?$/i);
   if (multiBasicaMatch) {
-    return { nivel: `Multigrado ${raw}`, letra: 'U', regimen: 'JEC', esMultigrado: true };
+    const start = parseInt(multiBasicaMatch[1], 10);
+    const end = parseInt(multiBasicaMatch[2], 10);
+    if ((end - start >= 2) || (start === 1 && end >= 4)) {
+      return { nivel: 'Aula Multigrado Rural Integrada (1° a 6° Básico)', letra: 'U', regimen: 'JEC', esMultigrado: true };
+    }
+    let label = `Curso Combinado ${start}°-${end}° Básico`;
+    if (end <= 2) label = "1° y 2° Básico Combinado (1° Ciclo Básica)";
+    else if (start <= 4 && end <= 4) label = "3° y 4° Básico Combinado (1° Ciclo Básica)";
+    else if (start >= 5 && end <= 6) label = "5° y 6° Básico Combinado (2° Ciclo Básica)";
+    else if (start >= 7 && end <= 8) label = "7° y 8° Básico Combinado (3° Ciclo Básica)";
+    return { nivel: label, letra: 'U', regimen: 'JEC', esMultigrado: false };
   }
 
   const laboralMatch = clean.match(/^LABORAL\s*([0-9]+)$/i);

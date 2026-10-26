@@ -82,15 +82,18 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
       horasVigentesAnterior: row[34] !== undefined && row[34] !== null ? Number(row[34]) : horasContrato,
       propuestaGdp: row[35] ? String(row[35]) : 'Continuidad',
       remuneracionMensualApp: Number(row[36] || 0),
+      remuneracionMensual: Number(row[36] || 0),
       fechaInicioContrato: row[37] ? String(row[37]) : '01-03-2026',
       fechaTerminoContrato: row[38] ? String(row[38]) : (calJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
       accionPmeSep: row[39] ? String(row[39]) : undefined,
+      accionPme: row[39] ? String(row[39]) : undefined,
       horasProRetencion: Number(row[40] || 0),
       descripcionFuncionGdp: row[41] ? String(row[41]) : undefined,
       estadoSancionGdp: (row[42] as any) || 'Pendiente',
       horasAprobadasGdp: Number(row[43] || 0),
       situacionFinalGdp: row[44] ? String(row[44]) : 'Vigente',
       observacionesDirector: row[45] ? String(row[45]) : undefined,
+      observacionesPal: row[45] ? String(row[45]) : undefined,
       observacionesSlep: row[46] ? String(row[46]) : undefined
     };
   });
@@ -177,15 +180,18 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
       horasVigentesAnterior: row[34] !== undefined && row[34] !== null ? Number(row[34]) : horasContrato,
       propuestaGdp: row[35] ? String(row[35]) : 'Continuidad',
       remuneracionMensualApp: Number(row[36] || 0),
+      remuneracionMensual: Number(row[36] || 0),
       fechaInicioContrato: row[37] ? String(row[37]) : '01-03-2026',
       fechaTerminoContrato: row[38] ? String(row[38]) : (calJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
       accionPmeSep: row[39] ? String(row[39]) : undefined,
+      accionPme: row[39] ? String(row[39]) : undefined,
       horasProRetencion: Number(row[40] || 0),
       descripcionFuncionGdp: row[41] ? String(row[41]) : undefined,
       estadoSancionGdp: (row[42] as any) || 'Pendiente',
       horasAprobadasGdp: Number(row[43] || 0),
       situacionFinalGdp: row[44] ? String(row[44]) : 'Vigente',
       observacionesDirector: row[45] ? String(row[45]) : undefined,
+      observacionesPal: row[45] ? String(row[45]) : undefined,
       observacionesSlep: row[46] ? String(row[46]) : undefined
     };
   });
@@ -195,23 +201,36 @@ export async function guardarDocente(d: Docente): Promise<void> {
   const db = await getDb();
   const docPeriodo = d.periodo || 2026;
   
-  // Aislamiento estricto por periodo: buscar si ya existe el docente en este periodo específico
-  const existing = db.exec(
-    "SELECT id FROM docentes WHERE rbd = ? AND run = ? AND periodo = ?", 
-    [d.rbd, d.run, docPeriodo]
-  );
-  
-  let docId: string;
-  if (existing.length && existing[0].values.length) {
-    docId = String(existing[0].values[0][0]);
-  } else {
-    // Si no existe en este periodo, verificar si d.id ya está ocupado por otro periodo
-    const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
-    if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
+  // Aislamiento estricto por periodo:
+  // 1. Si d.id ya existe en este rbd y periodo, respetar estrictamente ese id para mantener FKs
+  let docId: string = '';
+  if (d.id) {
+    const existingById = db.exec(
+      "SELECT id FROM docentes WHERE id = ? AND rbd = ? AND periodo = ?",
+      [d.id, d.rbd, docPeriodo]
+    );
+    if (existingById.length && existingById[0].values.length) {
       docId = d.id;
+    }
+  }
+
+  // 2. Si no se encontró por ID directo, buscar por RUN normalizado en este (rbd, periodo)
+  if (!docId) {
+    const existingByRun = db.exec(
+      "SELECT id FROM docentes WHERE rbd = ? AND run = ? AND periodo = ?", 
+      [d.rbd, d.run, docPeriodo]
+    );
+    if (existingByRun.length && existingByRun[0].values.length) {
+      docId = String(existingByRun[0].values[0][0]);
     } else {
-      const cleanRun = d.run.replace(/[^0-9kK]/g, '');
-      docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}_${Date.now()}`;
+      // Si no existe en este periodo, verificar si d.id ya está ocupado por otro periodo
+      const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
+      if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
+        docId = d.id;
+      } else {
+        const cleanRun = d.run.replace(/[^0-9kK]/g, '');
+        docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}_${Date.now()}`;
+      }
     }
   }
 
@@ -314,7 +333,7 @@ export async function guardarDocente(d: Docente): Promise<void> {
     obsDirector,
     d.observacionesSlep || null
   ]);
-  persistDb();
+  await persistDb(true);
 }
 
 export async function guardarDocentesBatch(docentes: Docente[]): Promise<number> {
@@ -446,12 +465,12 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
     db.run("ROLLBACK;");
     throw err;
   }
-  persistDb();
+  await persistDb(true);
   return docentes.length;
 }
 
 export async function eliminarDocente(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM docentes WHERE id = ?", [id]);
-  persistDb();
+  await persistDb(true);
 }

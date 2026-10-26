@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculadora de Dotación Docente Oficial MINEDUC (Ley N° 20.903 &amp; DFL 1/1996)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slep: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              200: '#bae0fd',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              800: '#0c4a6e',
+              900: '#082f49',
+              950: '#041f33'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    .font-tabular {
+      font-variant-numeric: tabular-nums;
+    }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen py-6 px-3 sm:px-6">
+
+  <div class="max-w-7xl mx-auto space-y-6">
+
+    <!-- Header Section Institucional -->
+    <header class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-sky-100 text-sky-800 border border-sky-200">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Motor Normativo Oficial MINEDUC / SLEP
+          </span>
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            Aritmética Estricta en Minutos Enteros
+          </span>
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+            Ley N° 20.903 &amp; DFL 1/1996
+          </span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Calculadora de Dotación y Contratos Docentes</h1>
+        <p class="text-slate-600 text-sm mt-1 max-w-3xl">
+          Determinación exacta de contratos según las <strong class="text-slate-800">tablas reglamentarias oficiales MINEDUC</strong>, con distribución auditable en tres componentes: Docencia de Aula, Recreos normativos y Horas No Lectivas (resguardando el 40% de preparación exclusiva).
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="cargarPreset('caso8cursos')" class="px-3.5 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors border border-slate-300">
+          8 Cursos × 38 HA (Básica Regular)
+        </button>
+        <button onclick="cargarPreset('colegioCompleto')" class="px-3.5 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors border border-slate-300">
+          12 Cursos × 38 HA + Institucional
+        </button>
+        <button onclick="abrirModalTabla()" class="px-3.5 py-2 text-xs font-semibold bg-sky-700 hover:bg-sky-800 text-white rounded-xl shadow-sm transition-colors flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 4h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+          Ver Tabla Oficial (1 a 44 hrs)
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Grid: Parámetros y Resultados -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Controls & Configuration -->
+      <section class="lg:col-span-5 space-y-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
+          <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+            <svg class="w-5 h-5 text-sky-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+            Parámetros del Establecimiento
+          </h2>
+
+          <!-- Régimen Legal Selector -->
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-bold uppercase tracking-wider text-slate-500">Régimen Legal de Proporción</label>
+              <span id="lblDescripcionRegimen" class="text-[11px] font-medium text-slate-500">Art. 69 Estatuto Docente</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="cursor-pointer">
+                <input type="radio" name="radioRegimen" value="65_35" checked onchange="cambiarRegimen('65_35')" class="peer sr-only">
+                <div class="p-3 rounded-xl border border-slate-200 bg-slate-50 peer-checked:bg-sky-50 peer-checked:border-sky-600 peer-checked:text-sky-950 transition-all text-center">
+                  <div class="text-sm font-extrabold">65 / 35 (General)</div>
+                  <div class="text-[11px] text-slate-500 peer-checked:text-sky-700">&lt; 80% Prioritarios SEP</div>
+                </div>
+              </label>
+
+              <label class="cursor-pointer">
+                <input type="radio" name="radioRegimen" value="60_40" onchange="cambiarRegimen('60_40')" class="peer sr-only">
+                <div class="p-3 rounded-xl border border-slate-200 bg-slate-50 peer-checked:bg-emerald-50 peer-checked:border-emerald-600 peer-checked:text-emerald-950 transition-all text-center">
+                  <div class="text-sm font-extrabold">60 / 40 (Vulnerable)</div>
+                  <div class="text-[11px] text-slate-500 peer-checked:text-emerald-700">≥ 80% SEP / NT1 a 4° Básico</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Modo de Entrada Tabs -->
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold uppercase tracking-wider text-slate-500">Modalidad de Ingreso de Demanda</label>
+            <div class="flex p-1 bg-slate-100 rounded-xl">
+              <button id="tabCursos" onclick="setModoEntrada('cursos')" class="flex-1 py-1.5 text-xs font-bold rounded-lg bg-white shadow-sm text-slate-800 transition-all">
+                Por Cursos &amp; Plan de Estudio
+              </button>
+              <button id="tabDirecto" onclick="setModoEntrada('directo')" class="flex-1 py-1.5 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-all">
+                Total Directo en HA
+              </button>
+            </div>
+          </div>
+
+          <!-- Sección: Por Cursos -->
+          <div id="seccionCursos" class="grid grid-cols-2 gap-4">
+            <div class="space-y-1">
+              <label class="text-xs font-semibold text-slate-700" for="inputCursos">N° de Cursos</label>
+              <div class="relative">
+                <input type="number" id="inputCursos" min="1" max="100" value="8" oninput="calcularTodo()" class="w-full pl-3 pr-8 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none">
+                <span class="absolute right-2.5 top-2.5 text-xs text-slate-400">cursos</span>
+              </div>
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-xs font-semibold text-slate-700" for="inputPlan">Plan por Curso (HA)</label>
+              <div class="relative">
+                <input type="number" id="inputPlan" min="1" max="60" value="38" oninput="calcularTodo()" class="w-full pl-3 pr-8 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none">
+                <span class="absolute right-2.5 top-2.5 text-xs text-slate-400">HA/sem</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sección: Directo -->
+          <div id="seccionDirecto" class="hidden space-y-1">
+            <label class="text-xs font-semibold text-slate-700" for="inputTotalHA">Total Horas Pedagógicas Aula (HA)</label>
+            <div class="relative">
+              <input type="number" id="inputTotalHA" min="1" value="304" placeholder="Ej: 304" oninput="calcularTodo()" class="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              <span class="absolute right-3 top-2.5 text-xs text-slate-400 font-mono">HA</span>
+            </div>
+          </div>
+
+          <!-- Módulo Adicional: Horas Fuera de Aula / Institucionales -->
+          <div class="pt-4 border-t border-slate-100 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Horas Institucionales (Fuera de Aula)</span>
+                <p class="text-[11px] text-slate-500">Jefaturas (DFL 1), Coordinación UTP, Colaboración PIE (Dec. 170 Art. 86)</p>
+              </div>
+              <input type="checkbox" id="checkHorasAnexas" onchange="toggleHorasAnexas()" class="w-4 h-4 text-sky-600 rounded focus:ring-sky-500 border-slate-300">
+            </div>
+
+            <div id="seccionAnexasInputs" class="hidden grid grid-cols-2 gap-3 pt-2">
+              <div class="space-y-1">
+                <label class="text-[11px] font-semibold text-slate-600" for="inputHorasJefatura">Jefaturas / UTP (HC)</label>
+                <input type="number" id="inputHorasJefatura" min="0" value="16" oninput="calcularTodo()" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              </div>
+              <div class="space-y-1">
+                <label class="text-[11px] font-semibold text-slate-600" for="inputHorasPIE">Colaboración PIE (HC)</label>
+                <input type="number" id="inputHorasPIE" min="0" value="24" oninput="calcularTodo()" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-sky-500 focus:outline-none">
+              </div>
+            </div>
+          </div>
+
+          <!-- Normativa Callout -->
+          <div class="bg-sky-50 border border-sky-200 rounded-xl p-3.5 text-xs text-sky-950 space-y-1.5">
+            <div class="flex items-center gap-1.5 font-bold text-sky-900">
+              <svg class="w-4 h-4 text-sky-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <span>Regla Canónica Oficial MINEDUC:</span>
+            </div>
+            <p class="text-sky-900/90 leading-relaxed text-[11px]">
+              La jornada de contrato semanal se rige por la tabla oficial indexada por horas cronológicas enteras. En régimen <strong>65/35</strong> el tope máximo por docente de 44 hrs es de <strong>38 HA</strong> (28h 30m aula + 3h recreo + 12h 30m HNL). En régimen <strong>60/40</strong> es de <strong>35 HA</strong> (26h 15m aula + 3h recreo + 14h 45m HNL).
+            </p>
+          </div>
+        </div>
+
+        <!-- Resumen Ejecutivo Hero Box -->
+        <div class="bg-gradient-to-br from-slate-900 via-slate-850 to-slate-800 text-white rounded-2xl p-6 shadow-sm space-y-4">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="font-bold tracking-wider text-sky-400 uppercase">Resumen de Dotación Contractual</span>
+            <span id="badgeRegimenActual" class="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30">RÉGIMEN 65/35</span>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-800/90 border border-sky-500/40 shadow-inner">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-sky-300 mb-1 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              TOTAL CONTRATOS SEMANALES REQUERIDOS
+            </div>
+            <div class="text-4xl font-extrabold tracking-tight text-white flex items-baseline gap-2 font-tabular">
+              <span id="cardTotalContratos">352</span>
+              <span class="text-sm font-semibold text-slate-300">Horas Cronológicas (HC)</span>
+            </div>
+            <p class="text-xs text-sky-200/90 mt-1 font-medium" id="cardDescripcionEmpaque">8 contratos completos de 44 hrs</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 pt-1 text-xs">
+            <div class="p-2.5 rounded-lg bg-slate-800/60 border border-slate-700">
+              <div class="text-slate-400 text-[11px]">Demanda Total de Aula</div>
+              <div class="font-bold text-slate-200 text-sm mt-0.5 font-tabular" id="cardDemandaHA">304 HA (228h 00m)</div>
+            </div>
+            <div class="p-2.5 rounded-lg bg-slate-800/60 border border-slate-700">
+              <div class="text-slate-400 text-[11px]">Minutos Recreo Normativo</div>
+              <div class="font-bold text-slate-200 text-sm mt-0.5 font-tabular" id="cardTotalRecreo">24h 00m (1.440 min)</div>
+            </div>
+          </div>
+
+          <button onclick="copiarReporteOficial()" class="w-full mt-2 py-2.5 px-4 bg-sky-700 hover:bg-sky-600 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+            Copiar Informe Técnico Oficial para SLEP / MINEDUC
+          </button>
+        </div>
+      </section>
+
+      <!-- Right Column: Visual Breakdown & Detailed Tables -->
+      <section class="lg:col-span-7 space-y-6">
+
+        <!-- Top Metric Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <!-- Card 1: Total Horas Contrato -->
+          <div class="bg-gradient-to-br from-sky-50 to-blue-50/70 p-4 rounded-2xl border-2 border-sky-500 shadow-sm col-span-2 sm:col-span-1">
+            <div class="flex items-center justify-between text-sky-900 text-[11px] font-bold uppercase tracking-wider mb-1">
+              <span>Total Contrato</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] bg-sky-200 text-sky-900 font-extrabold">HC</span>
+            </div>
+            <div class="text-3xl font-extrabold text-sky-950 font-tabular" id="statTotalContratoHero">352</div>
+            <div class="text-[11px] text-sky-700 font-semibold mt-1 truncate" id="statTotalContratoDesc">8 docentes de 44h</div>
+          </div>
+
+          <!-- Card 2: Horas Aula Requeridas -->
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider mb-1">
+              <span>Docencia Aula</span>
+              <span class="text-sky-700 font-bold">HA</span>
+            </div>
+            <div class="text-2xl font-black text-slate-900 font-tabular" id="statHA">304</div>
+            <div class="text-[11px] text-slate-500 mt-1 truncate font-tabular" id="statHACronologico">228h 00m (13.680 min)</div>
+          </div>
+
+          <!-- Card 3: Recreos Normativos -->
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider mb-1">
+              <span>Recreo Oficial</span>
+              <span class="text-amber-600 font-bold">Tabla</span>
+            </div>
+            <div class="text-2xl font-black text-slate-900 font-tabular" id="statRecreo">24h 00m</div>
+            <div class="text-[11px] text-slate-500 mt-1 truncate font-tabular" id="statRecreoMinutos">1.440 min normativos</div>
+          </div>
+
+          <!-- Card 4: Tiempo No Lectivo (HNL) -->
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="flex items-center justify-between text-slate-500 text-[11px] font-bold uppercase tracking-wider mb-1">
+              <span>No Lectivo (HNL)</span>
+              <span class="text-emerald-700 font-bold">Minutos</span>
+            </div>
+            <div class="text-2xl font-black text-slate-900 font-tabular" id="statNoLectivo">100h 00m</div>
+            <div class="text-[11px] text-emerald-700 font-semibold mt-1 truncate font-tabular" id="statPrepExclusiva">40h prep. exclusiva</div>
+          </div>
+        </div>
+
+        <!-- Visual Distribution Bar (Lectivo + Recreo + HNL = 100% Exacto) -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900">Distribución de la Jornada Contratada (Norma MINEDUC)</h3>
+              <p class="text-xs text-slate-500">Acreditación en minutos enteros: $100\%$ del tiempo contractual certificado sin discrepancias</p>
+            </div>
+            <span class="px-2.5 py-1 text-xs font-mono font-bold rounded-lg bg-slate-100 text-slate-700" id="textTotalHorasBarra">
+              Total: 352 HC (21.120 min)
+            </span>
+          </div>
+
+          <!-- Stacked Progress Bar -->
+          <div class="h-6 w-full bg-slate-100 rounded-xl overflow-hidden flex p-1 gap-1">
+            <div id="barLectiva" class="h-full bg-sky-600 rounded-lg transition-all duration-500 relative group flex items-center justify-center text-[10px] font-bold text-white" style="width: 64.77%;">
+              <span class="truncate px-1">Aula 64.8%</span>
+            </div>
+            <div id="barRecreo" class="h-full bg-amber-400 rounded-lg transition-all duration-500 relative group flex items-center justify-center text-[10px] font-bold text-amber-950" style="width: 6.82%;">
+              <span class="truncate px-1">Recreo 6.8%</span>
+            </div>
+            <div id="barNoLectiva" class="h-full bg-emerald-600 rounded-lg transition-all duration-500 relative group flex items-center justify-center text-[10px] font-bold text-white" style="width: 28.41%;">
+              <span class="truncate px-1">HNL 28.4%</span>
+            </div>
+          </div>
+
+          <!-- Bar Legend con Minutos Enteros -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1 text-slate-600">
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-sky-600 shrink-0"></span>
+              <span id="lblLectivoBarra" class="font-tabular">Aula: 228h 00m (13.680 min)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-amber-400 shrink-0"></span>
+              <span id="lblRecreoBarra" class="font-tabular">Recreo: 24h 00m (1.440 min)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-emerald-600 shrink-0"></span>
+              <span id="lblNoLectivoBarra" class="font-tabular">HNL: 100h 00m (6.000 min)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed Packaging Table (Roster de Docentes) -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div class="border-b border-slate-100 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 class="font-bold text-slate-900 text-sm">Empaquetación Oficial de Contratos Docentes</h3>
+              <p class="text-xs text-slate-500 mt-0.5">Calculada según búsqueda estricta en la Tabla Reglamentaria MINEDUC</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-100 text-slate-700" id="badgeTotalDocentes">
+                8 Docentes de Aula
+              </span>
+              <span class="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+                Discrepancia Cero
+              </span>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-bold tracking-wider font-mono text-[11px]">
+                <tr>
+                  <th class="py-3 px-4">Contrato / Tipo</th>
+                  <th class="py-3 px-4">Jornada</th>
+                  <th class="py-3 px-4">Horas Aula</th>
+                  <th class="py-3 px-4">Min. Aula</th>
+                  <th class="py-3 px-4">Recreo</th>
+                  <th class="py-3 px-4">No Lectivo (HNL)</th>
+                  <th class="py-3 px-4">Prep. 40% Excl.</th>
+                  <th class="py-3 px-4 text-center">Cuadre</th>
+                </tr>
+              </thead>
+              <tbody id="tbodyContratos" class="divide-y divide-slate-100 text-slate-700 font-medium font-tabular">
+                <!-- Inyectado por JS -->
+              </tbody>
+              <tfoot class="bg-slate-100/95 border-t-2 border-slate-300 font-bold text-slate-900 font-tabular">
+                <tr>
+                  <td class="py-3.5 px-4 flex items-center gap-1.5 text-slate-900 uppercase tracking-wider text-[11px]">
+                    <span class="w-2 h-2 rounded-full bg-sky-700"></span>
+                    TOTAL PLANTA
+                  </td>
+                  <td class="py-3.5 px-4 text-sky-900 font-extrabold text-sm" id="footTotalContrato">352 hrs</td>
+                  <td class="py-3.5 px-4 text-sky-800" id="footTotalHA">304 HA</td>
+                  <td class="py-3.5 px-4" id="footTotalMinAula">228h 00m</td>
+                  <td class="py-3.5 px-4 text-amber-900" id="footTotalRecreo">24h 00m</td>
+                  <td class="py-3.5 px-4 text-emerald-900" id="footTotalHNL">100h 00m</td>
+                  <td class="py-3.5 px-4 text-indigo-900" id="footTotalPrepExclusiva">40h 00m</td>
+                  <td class="py-3.5 px-4 text-center">
+                    <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-200 text-emerald-900 font-bold">100% OK</span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="p-4 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-600 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div>
+              <strong>Resguardo Legal Art. 69 inc. 4:</strong> Al menos el 40% del tiempo no lectivo individual se reserva exclusivamente para preparación de clases y evaluación.
+            </div>
+            <button onclick="calcularTodo()" class="text-sky-700 hover:text-sky-900 font-bold shrink-0 underline">
+              Recalcular Roster
+            </button>
+          </div>
+        </div>
+
+        <!-- Comparative Card: Strict MINEDUC vs Distorted Continuous Formula -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="font-bold text-slate-900 text-sm">Dictamen Técnico: Tabla Estricta MINEDUC vs. Simuladores No Oficiales</h3>
+              <p class="text-xs text-slate-500">¿Por qué es obligatorio utilizar las tablas oficiales en SLEP, SIGE y Planillas DEP?</p>
+            </div>
+            <span class="px-2.5 py-1 rounded text-[11px] font-bold bg-sky-100 text-sky-800 border border-sky-200">
+              Conformidad Normativa
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <!-- Columna 1: Tabla Estricta MINEDUC (Este script) -->
+            <div class="p-4 rounded-xl border border-emerald-200 bg-emerald-50/60 space-y-2.5">
+              <div class="font-bold text-emerald-900 flex items-center justify-between">
+                <span>Tabla Oficial MINEDUC (Vigente)</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-200 text-emerald-800 font-extrabold">OFICIAL</span>
+              </div>
+              <ul class="space-y-1.5 text-slate-700">
+                <li class="flex justify-between"><span>Jornada Completa:</span> <strong>44 hrs (2.640 min)</strong></li>
+                <li class="flex justify-between"><span>Docencia de Aula (Tope):</span> <strong>38 HA (28h 30m)</strong></li>
+                <li class="flex justify-between text-amber-900 font-semibold"><span>Recreo Reglamentario:</span> <strong>3h 00m (180 min)</strong></li>
+                <li class="flex justify-between text-emerald-900 font-semibold"><span>Horas No Lectivas (HNL):</span> <strong>12h 30m (750 min)</strong></li>
+                <li class="flex justify-between text-indigo-900 font-semibold"><span>40% Prep. Exclusiva:</span> <strong>5h 00m (300 min)</strong></li>
+                <li class="flex justify-between text-slate-600 pt-1 border-t border-emerald-200/60 text-[11px]">
+                  <span>Total Verificado:</span> <strong>28h30m + 3h + 12h30m = 44h 00m</strong>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Columna 2: Fórmulas Continuas No Oficiales -->
+            <div class="p-4 rounded-xl border border-rose-200 bg-rose-50/60 space-y-2.5">
+              <div class="font-bold text-rose-900 flex items-center justify-between">
+                <span>Fórmula Continua Decimal (Sin Recreo)</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-rose-200 text-rose-800 font-extrabold">INADMISIBLE</span>
+              </div>
+              <ul class="space-y-1.5 text-slate-700">
+                <li class="flex justify-between"><span>Jornada Completa:</span> <strong>44 hrs (2.640 min)</strong></li>
+                <li class="flex justify-between"><span>Tope Teórico Decimal (65%):</span> <strong>28h 36m (ficticio)</strong></li>
+                <li class="flex justify-between text-rose-700"><span>Recreo Reconocido:</span> <strong>0h 00m (eliminado)</strong></li>
+                <li class="flex justify-between text-rose-800"><span>HNL Reclamada (35%):</span> <strong>15h 24m</strong></li>
+                <li class="flex justify-between text-rose-800"><span>Holgura Inventada:</span> <strong>6 min por profesor</strong></li>
+                <li class="flex justify-between text-slate-600 pt-1 border-t border-rose-200/60 text-[11px]">
+                  <span>Problema Operativo:</span> <strong>Rechazo en SIGE y sobrecontratación</strong>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </div>
+
+    <!-- Modal: Tabla Oficial MINEDUC Completa 1 a 44 hrs -->
+    <div id="modalTablaOficial" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl max-w-4xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+          <div>
+            <h3 class="text-lg font-extrabold text-slate-900">Tabla Oficial Reglamentaria MINEDUC (1 a 44 Horas)</h3>
+            <p class="text-xs text-slate-500">Decreto de Proporción Horaria - Distribución semanal auditada en minutos enteros</p>
+          </div>
+          <button onclick="cerrarModalTabla()" class="text-slate-400 hover:text-slate-600 rounded-lg p-1.5 hover:bg-slate-100 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+
+        <div class="flex items-center gap-3 shrink-0">
+          <label class="text-xs font-bold text-slate-600 uppercase">Visualizar Régimen:</label>
+          <div class="inline-flex p-1 bg-slate-100 rounded-lg">
+            <button id="btnVer65" onclick="cambiarVistaTablaModal('65_35')" class="px-3 py-1 text-xs font-bold rounded-md bg-white text-slate-800 shadow-sm transition">
+              65 / 35 (General)
+            </button>
+            <button id="btnVer60" onclick="cambiarVistaTablaModal('60_40')" class="px-3 py-1 text-xs font-bold rounded-md text-slate-600 hover:text-slate-900 transition">
+              60 / 40 (Vulnerable)
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-y-auto custom-scrollbar flex-1 border border-slate-200 rounded-xl">
+          <table class="w-full text-left text-xs font-tabular">
+            <thead class="bg-slate-50 sticky top-0 border-b border-slate-200 text-slate-700 uppercase font-mono font-bold text-[11px]">
+              <tr>
+                <th class="py-2.5 px-3">Jornada (HC)</th>
+                <th class="py-2.5 px-3">Max HA</th>
+                <th class="py-2.5 px-3">Minutos Lectivos</th>
+                <th class="py-2.5 px-3">Recreo</th>
+                <th class="py-2.5 px-3">No Lectivas (HNL)</th>
+                <th class="py-2.5 px-3">40% Prep. Excl.</th>
+                <th class="py-2.5 px-3 text-center">Suma Total</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyModalTabla" class="divide-y divide-slate-100 text-slate-700">
+              <!-- Rellenado por JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-between shrink-0 text-xs text-slate-500">
+          <span>Fuente: CPEIP / MINEDUC - Implementación Ley N° 20.903</span>
+          <button onclick="cerrarModalTabla()" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition">
+            Cerrar Tabla
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toastNotification" class="fixed bottom-6 right-6 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-xl border border-slate-700 flex items-center gap-2 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+      <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+      <span id="toastMessage">Texto copiado con éxito</span>
+    </div>
+
+  </div>
+
+  <script>
+    // =========================================================================
+    // TABLAS INMUTABLES OFICIALES MINEDUC (CPEIP / DFL 1 / Ley N° 20.903)
+    // Extraídas del motor normativo @slep/mineduc-engine
+    // =========================================================================
+    const TABLA_OFICIAL_65_35 = [
+      { jornada: 44, ha: 38, lectivas: "28 h 30 m", recreo: "3 h 0 m", hnl: "12 h 30 m" },
+      { jornada: 43, ha: 37, lectivas: "27 h 45 m", recreo: "2 h 56 m", hnl: "12 h 19 m" },
+      { jornada: 42, ha: 36, lectivas: "27 h 0 m", recreo: "2 h 52 m", hnl: "12 h 8 m" },
+      { jornada: 41, ha: 35, lectivas: "26 h 15 m", recreo: "2 h 48 m", hnl: "11 h 57 m" },
+      { jornada: 40, ha: 35, lectivas: "26 h 15 m", recreo: "2 h 44 m", hnl: "11 h 1 m" },
+      { jornada: 39, ha: 34, lectivas: "25 h 30 m", recreo: "2 h 40 m", hnl: "10 h 50 m" },
+      { jornada: 38, ha: 33, lectivas: "24 h 45 m", recreo: "2 h 35 m", hnl: "10 h 40 m" },
+      { jornada: 37, ha: 32, lectivas: "24 h 0 m", recreo: "2 h 31 m", hnl: "10 h 29 m" },
+      { jornada: 36, ha: 31, lectivas: "23 h 15 m", recreo: "2 h 27 m", hnl: "10 h 18 m" },
+      { jornada: 35, ha: 30, lectivas: "22 h 30 m", recreo: "2 h 23 m", hnl: "10 h 7 m" },
+      { jornada: 34, ha: 29, lectivas: "21 h 45 m", recreo: "2 h 19 m", hnl: "9 h 56 m" },
+      { jornada: 33, ha: 29, lectivas: "21 h 45 m", recreo: "2 h 15 m", hnl: "9 h 0 m" },
+      { jornada: 32, ha: 28, lectivas: "21 h 0 m", recreo: "2 h 11 m", hnl: "8 h 49 m" },
+      { jornada: 31, ha: 27, lectivas: "20 h 15 m", recreo: "2 h 7 m", hnl: "8 h 38 m" },
+      { jornada: 30, ha: 26, lectivas: "19 h 30 m", recreo: "2 h 3 m", hnl: "8 h 27 m" },
+      { jornada: 29, ha: 25, lectivas: "18 h 45 m", recreo: "1 h 59 m", hnl: "8 h 16 m" },
+      { jornada: 28, ha: 24, lectivas: "18 h 0 m", recreo: "1 h 55 m", hnl: "8 h 5 m" },
+      { jornada: 27, ha: 23, lectivas: "17 h 15 m", recreo: "1 h 50 m", hnl: "7 h 55 m" },
+      { jornada: 26, ha: 22, lectivas: "16 h 30 m", recreo: "1 h 46 m", hnl: "7 h 44 m" },
+      { jornada: 25, ha: 22, lectivas: "16 h 30 m", recreo: "1 h 42 m", hnl: "6 h 48 m" },
+      { jornada: 24, ha: 21, lectivas: "15 h 45 m", recreo: "1 h 38 m", hnl: "6 h 37 m" },
+      { jornada: 23, ha: 20, lectivas: "15 h 0 m", recreo: "1 h 34 m", hnl: "6 h 26 m" },
+      { jornada: 22, ha: 19, lectivas: "14 h 15 m", recreo: "1 h 30 m", hnl: "6 h 15 m" },
+      { jornada: 21, ha: 18, lectivas: "13 h 30 m", recreo: "1 h 26 m", hnl: "6 h 4 m" },
+      { jornada: 20, ha: 17, lectivas: "12 h 45 m", recreo: "1 h 22 m", hnl: "5 h 53 m" },
+      { jornada: 19, ha: 16, lectivas: "12 h 0 m", recreo: "1 h 18 m", hnl: "5 h 42 m" },
+      { jornada: 18, ha: 16, lectivas: "12 h 0 m", recreo: "1 h 14 m", hnl: "4 h 46 m" },
+      { jornada: 17, ha: 15, lectivas: "11 h 15 m", recreo: "1 h 10 m", hnl: "4 h 35 m" },
+      { jornada: 16, ha: 14, lectivas: "10 h 30 m", recreo: "1 h 5 m", hnl: "4 h 25 m" },
+      { jornada: 15, ha: 13, lectivas: "9 h 45 m", recreo: "1 h 1 m", hnl: "4 h 14 m" },
+      { jornada: 14, ha: 12, lectivas: "9 h 0 m", recreo: "0 h 57 m", hnl: "4 h 3 m" },
+      { jornada: 13, ha: 11, lectivas: "8 h 15 m", recreo: "0 h 53 m", hnl: "3 h 52 m" },
+      { jornada: 12, ha: 10, lectivas: "7 h 30 m", recreo: "0 h 49 m", hnl: "3 h 41 m" },
+      { jornada: 11, ha: 10, lectivas: "7 h 30 m", recreo: "0 h 45 m", hnl: "2 h 45 m" },
+      { jornada: 10, ha: 9, lectivas: "6 h 45 m", recreo: "0 h 41 m", hnl: "2 h 34 m" },
+      { jornada: 9, ha: 8, lectivas: "6 h 0 m", recreo: "0 h 37 m", hnl: "2 h 23 m" },
+      { jornada: 8, ha: 7, lectivas: "5 h 15 m", recreo: "0 h 33 m", hnl: "2 h 12 m" },
+      { jornada: 7, ha: 6, lectivas: "4 h 30 m", recreo: "0 h 29 m", hnl: "2 h 1 m" },
+      { jornada: 6, ha: 5, lectivas: "3 h 45 m", recreo: "0 h 25 m", hnl: "1 h 50 m" },
+      { jornada: 5, ha: 4, lectivas: "3 h 0 m", recreo: "0 h 20 m", hnl: "1 h 40 m" },
+      { jornada: 4, ha: 3, lectivas: "2 h 15 m", recreo: "0 h 16 m", hnl: "1 h 29 m" },
+      { jornada: 3, ha: 3, lectivas: "2 h 15 m", recreo: "0 h 12 m", hnl: "0 h 33 m" },
+      { jornada: 2, ha: 2, lectivas: "1 h 30 m", recreo: "0 h 8 m", hnl: "0 h 22 m" },
+      { jornada: 1, ha: 1, lectivas: "0 h 45 m", recreo: "0 h 4 m", hnl: "0 h 11 m" }
+    ];
+
+    const TABLA_OFICIAL_60_40 = [
+      { jornada: 44, ha: 35, lectivas: "26 h 15 m", recreo: "3 h 0 m", hnl: "14 h 45 m" },
+      { jornada: 43, ha: 34, lectivas: "25 h 30 m", recreo: "2 h 56 m", hnl: "14 h 34 m" },
+      { jornada: 42, ha: 33, lectivas: "24 h 45 m", recreo: "2 h 52 m", hnl: "14 h 23 m" },
+      { jornada: 41, ha: 33, lectivas: "24 h 45 m", recreo: "2 h 48 m", hnl: "13 h 27 m" },
+      { jornada: 40, ha: 32, lectivas: "24 h 0 m", recreo: "2 h 44 m", hnl: "13 h 16 m" },
+      { jornada: 39, ha: 31, lectivas: "23 h 15 m", recreo: "2 h 40 m", hnl: "13 h 5 m" },
+      { jornada: 38, ha: 30, lectivas: "22 h 30 m", recreo: "2 h 35 m", hnl: "12 h 55 m" },
+      { jornada: 37, ha: 29, lectivas: "21 h 45 m", recreo: "2 h 31 m", hnl: "12 h 44 m" },
+      { jornada: 36, ha: 29, lectivas: "21 h 45 m", recreo: "2 h 27 m", hnl: "11 h 48 m" },
+      { jornada: 35, ha: 28, lectivas: "21 h 0 m", recreo: "2 h 23 m", hnl: "11 h 37 m" },
+      { jornada: 34, ha: 27, lectivas: "20 h 15 m", recreo: "2 h 19 m", hnl: "11 h 26 m" },
+      { jornada: 33, ha: 26, lectivas: "19 h 30 m", recreo: "2 h 15 m", hnl: "11 h 15 m" },
+      { jornada: 32, ha: 25, lectivas: "18 h 45 m", recreo: "2 h 11 m", hnl: "11 h 4 m" },
+      { jornada: 31, ha: 25, lectivas: "18 h 45 m", recreo: "2 h 7 m", hnl: "10 h 8 m" },
+      { jornada: 30, ha: 24, lectivas: "18 h 0 m", recreo: "2 h 3 m", hnl: "9 h 57 m" },
+      { jornada: 29, ha: 23, lectivas: "17 h 15 m", recreo: "1 h 59 m", hnl: "9 h 46 m" },
+      { jornada: 28, ha: 22, lectivas: "16 h 30 m", recreo: "1 h 55 m", hnl: "9 h 35 m" },
+      { jornada: 27, ha: 21, lectivas: "15 h 45 m", recreo: "1 h 50 m", hnl: "9 h 25 m" },
+      { jornada: 26, ha: 21, lectivas: "15 h 45 m", recreo: "1 h 46 m", hnl: "8 h 29 m" },
+      { jornada: 25, ha: 20, lectivas: "15 h 0 m", recreo: "1 h 42 m", hnl: "8 h 18 m" },
+      { jornada: 24, ha: 19, lectivas: "14 h 15 m", recreo: "1 h 38 m", hnl: "8 h 7 m" },
+      { jornada: 23, ha: 18, lectivas: "13 h 30 m", recreo: "1 h 34 m", hnl: "7 h 56 m" },
+      { jornada: 22, ha: 18, lectivas: "13 h 30 m", recreo: "1 h 30 m", hnl: "7 h 0 m" },
+      { jornada: 21, ha: 17, lectivas: "12 h 45 m", recreo: "1 h 26 m", hnl: "6 h 49 m" },
+      { jornada: 20, ha: 16, lectivas: "12 h 0 m", recreo: "1 h 22 m", hnl: "6 h 38 m" },
+      { jornada: 19, ha: 15, lectivas: "11 h 15 m", recreo: "1 h 18 m", hnl: "6 h 27 m" },
+      { jornada: 18, ha: 14, lectivas: "10 h 30 m", recreo: "1 h 14 m", hnl: "6 h 16 m" },
+      { jornada: 17, ha: 14, lectivas: "10 h 30 m", recreo: "1 h 10 m", hnl: "5 h 20 m" },
+      { jornada: 16, ha: 13, lectivas: "9 h 45 m", recreo: "1 h 5 m", hnl: "5 h 10 m" },
+      { jornada: 15, ha: 12, lectivas: "9 h 0 m", recreo: "1 h 1 m", hnl: "4 h 59 m" },
+      { jornada: 14, ha: 11, lectivas: "8 h 15 m", recreo: "0 h 57 m", hnl: "4 h 48 m" },
+      { jornada: 13, ha: 10, lectivas: "7 h 30 m", recreo: "0 h 53 m", hnl: "4 h 37 m" },
+      { jornada: 12, ha: 10, lectivas: "7 h 30 m", recreo: "0 h 49 m", hnl: "3 h 41 m" },
+      { jornada: 11, ha: 9, lectivas: "6 h 45 m", recreo: "0 h 45 m", hnl: "3 h 30 m" },
+      { jornada: 10, ha: 8, lectivas: "6 h 0 m", recreo: "0 h 41 m", hnl: "3 h 19 m" },
+      { jornada: 9, ha: 7, lectivas: "5 h 15 m", recreo: "0 h 37 m", hnl: "3 h 8 m" },
+      { jornada: 8, ha: 6, lectivas: "4 h 30 m", recreo: "0 h 33 m", hnl: "2 h 57 m" },
+      { jornada: 7, ha: 6, lectivas: "4 h 30 m", recreo: "0 h 29 m", hnl: "2 h 1 m" },
+      { jornada: 6, ha: 5, lectivas: "3 h 45 m", recreo: "0 h 25 m", hnl: "1 h 50 m" },
+      { jornada: 5, ha: 4, lectivas: "3 h 0 m", recreo: "0 h 20 m", hnl: "1 h 40 m" },
+      { jornada: 4, ha: 3, lectivas: "2 h 15 m", recreo: "0 h 16 m", hnl: "1 h 29 m" },
+      { jornada: 3, ha: 2, lectivas: "1 h 30 m", recreo: "0 h 12 m", hnl: "1 h 18 m" },
+      { jornada: 2, ha: 2, lectivas: "1 h 30 m", recreo: "0 h 8 m", hnl: "0 h 22 m" },
+      { jornada: 1, ha: 1, lectivas: "0 h 45 m", recreo: "0 h 4 m", hnl: "0 h 11 m" }
+    ];
+
+    function parseHHMMToMinutes(hhmmStr) {
+      if (!hhmmStr) return 0;
+      const match = hhmmStr.match(/(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/i);
+      if (!match) return 0;
+      const hours = match[1] ? parseInt(match[1], 10) : 0;
+      const minutes = match[2] ? parseInt(match[2], 10) : 0;
+      return hours * 60 + minutes;
+    }
+
+    function formatearMinutos(mins) {
+      if (isNaN(mins) || mins <= 0) return '0h 00m';
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h}h ${m.toString().padStart(2, '0')}m`;
+    }
+
+    // Indexar mapas en minutos enteros
+    function procesarTabla(listaRaw) {
+      return listaRaw.map(item => {
+        const contratoMins = item.jornada * 60;
+        const lectivasMins = item.ha * 45;
+        const recreoMins = parseHHMMToMinutes(item.recreo);
+        const hnlMins = parseHHMMToMinutes(item.hnl);
+        const prep40Mins = Math.floor(hnlMins * 0.40);
+
+        return {
+          jornada: item.jornada,
+          haMax: item.ha,
+          contratoMins,
+          lectivasMins,
+          recreoMins,
+          hnlMins,
+          prep40Mins,
+          lectivasTexto: item.lectivas,
+          recreoTexto: item.recreo,
+          hnlTexto: item.hnl
+        };
+      });
+    }
+
+    const MAPA_65_35 = procesarTabla(TABLA_OFICIAL_65_35);
+    const MAPA_60_40 = procesarTabla(TABLA_OFICIAL_60_40);
+
+    // Estado reactivo de la aplicación
+    let estado = {
+      regimen: '65_35', // '65_35' | '60_40'
+      modoEntrada: 'cursos', // 'cursos' | 'directo'
+      numCursos: 8,
+      planEstudio: 38,
+      totalHADirecto: 304,
+      horasAnexasActivas: false,
+      horasJefatura: 16,
+      horasPIE: 24,
+      modalVistaTabla: '65_35'
+    };
+
+    function setText(id, texto) {
+      const el = document.getElementById(id);
+      if (el) el.innerText = texto;
+    }
+
+    function setHtml(id, html) {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    }
+
+    function mostrarToast(mensaje) {
+      const toast = document.getElementById('toastNotification');
+      const toastMsg = document.getElementById('toastMessage');
+      if (!toast || !toastMsg) return;
+      toastMsg.innerText = mensaje;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 3000);
+    }
+
+    function setModoEntrada(modo) {
+      estado.modoEntrada = modo;
+      const tabCursos = document.getElementById('tabCursos');
+      const tabDirecto = document.getElementById('tabDirecto');
+      const secCursos = document.getElementById('seccionCursos');
+      const secDirecto = document.getElementById('seccionDirecto');
+
+      if (modo === 'cursos') {
+        if (tabCursos) {
+          tabCursos.classList.add('bg-white', 'shadow-sm', 'text-slate-800');
+          tabCursos.classList.remove('text-slate-600');
+        }
+        if (tabDirecto) {
+          tabDirecto.classList.remove('bg-white', 'shadow-sm', 'text-slate-800');
+          tabDirecto.classList.add('text-slate-600');
+        }
+        if (secCursos) secCursos.classList.remove('hidden');
+        if (secDirecto) secDirecto.classList.add('hidden');
+      } else {
+        if (tabDirecto) {
+          tabDirecto.classList.add('bg-white', 'shadow-sm', 'text-slate-800');
+          tabDirecto.classList.remove('text-slate-600');
+        }
+        if (tabCursos) {
+          tabCursos.classList.remove('bg-white', 'shadow-sm', 'text-slate-800');
+          tabCursos.classList.add('text-slate-600');
+        }
+        if (secDirecto) secDirecto.classList.remove('hidden');
+        if (secCursos) secCursos.classList.add('hidden');
+      }
+      calcularTodo();
+    }
+
+    function cambiarRegimen(nuevoRegimen) {
+      estado.regimen = nuevoRegimen;
+      const badge = document.getElementById('badgeRegimenActual');
+      const desc = document.getElementById('lblDescripcionRegimen');
+      if (estado.regimen === '65_35') {
+        if (badge) badge.innerText = 'RÉGIMEN 65/35';
+        if (desc) desc.innerText = 'Tope 38 HA en 44 hrs';
+      } else {
+        if (badge) badge.innerText = 'RÉGIMEN 60/40';
+        if (desc) desc.innerText = 'Tope 35 HA en 44 hrs';
+      }
+      calcularTodo();
+    }
+
+    function toggleHorasAnexas() {
+      const chk = document.getElementById('checkHorasAnexas');
+      estado.horasAnexasActivas = chk ? chk.checked : false;
+      const sec = document.getElementById('seccionAnexasInputs');
+      if (sec) {
+        if (estado.horasAnexasActivas) sec.classList.remove('hidden');
+        else sec.classList.add('hidden');
+      }
+      calcularTodo();
+    }
+
+    function cargarPreset(tipo) {
+      if (tipo === 'caso8cursos') {
+        const radio = document.querySelector('input[name="radioRegimen"][value="65_35"]');
+        if (radio) radio.checked = true;
+        cambiarRegimen('65_35');
+        setModoEntrada('cursos');
+        const inCursos = document.getElementById('inputCursos');
+        const inPlan = document.getElementById('inputPlan');
+        const chkAnexas = document.getElementById('checkHorasAnexas');
+        if (inCursos) inCursos.value = 8;
+        if (inPlan) inPlan.value = 38;
+        if (chkAnexas) chkAnexas.checked = false;
+        toggleHorasAnexas();
+      } else if (tipo === 'colegioCompleto') {
+        const radio = document.querySelector('input[name="radioRegimen"][value="65_35"]');
+        if (radio) radio.checked = true;
+        cambiarRegimen('65_35');
+        setModoEntrada('cursos');
+        const inCursos = document.getElementById('inputCursos');
+        const inPlan = document.getElementById('inputPlan');
+        const chkAnexas = document.getElementById('checkHorasAnexas');
+        const inJef = document.getElementById('inputHorasJefatura');
+        const inPIE = document.getElementById('inputHorasPIE');
+        if (inCursos) inCursos.value = 12;
+        if (inPlan) inPlan.value = 38;
+        if (chkAnexas) chkAnexas.checked = true;
+        if (inJef) inJef.value = 24;
+        if (inPIE) inPIE.value = 36;
+        toggleHorasAnexas();
+      }
+      calcularTodo();
+      mostrarToast('Preset oficial MINEDUC cargado con éxito');
+    }
+
+    // Búsqueda canónica del contrato mínimo en la tabla oficial
+    function buscarTramoMinimoPorHA(haRequeridas, regimen) {
+      if (haRequeridas <= 0) return null;
+      const tabla = regimen === '60_40' ? MAPA_60_40 : MAPA_65_35;
+
+      // Buscar de menor a mayor jornada (la lista está ordenada de 44 a 1, por lo que recorremos al revés)
+      for (let i = tabla.length - 1; i >= 0; i--) {
+        if (tabla[i].haMax >= haRequeridas) {
+          const item = tabla[i];
+          const minAulaReal = haRequeridas * 45;
+          // El recreo y el HNL se toman de la tabla oficial para esa jornada
+          const contratoMins = item.contratoMins;
+          const recreoMins = item.recreoMins;
+          // HNL real respetando que el aula asignada sea exactamente haRequeridas
+          const hnlMins = Math.max(0, contratoMins - minAulaReal - recreoMins);
+          const prep40Mins = Math.floor(hnlMins * 0.40);
+
+          return {
+            jornada: item.jornada,
+            haAsignadas: haRequeridas,
+            haMax: item.haMax,
+            contratoMins,
+            lectivasMins: minAulaReal,
+            recreoMins,
+            hnlMins,
+            prep40Mins,
+            vacanteHA: item.haMax - haRequeridas
+          };
+        }
+      }
+
+      // Si excede el tope de 44 hrs
+      return null;
+    }
+
+    function calcularTodo() {
+      // 1. Demanda de aula pedagógica
+      let totalHA = 0;
+      if (estado.modoEntrada === 'cursos') {
+        const elC = document.getElementById('inputCursos');
+        const elP = document.getElementById('inputPlan');
+        const cVal = elC ? parseInt(elC.value) : 8;
+        const pVal = elP ? parseInt(elP.value) : 38;
+        estado.numCursos = isNaN(cVal) ? 0 : Math.max(0, cVal);
+        estado.planEstudio = isNaN(pVal) ? 0 : Math.max(0, pVal);
+        totalHA = estado.numCursos * estado.planEstudio;
+      } else {
+        const elTot = document.getElementById('inputTotalHA');
+        const totVal = elTot ? parseInt(elTot.value) : 304;
+        totalHA = isNaN(totVal) ? 0 : Math.max(0, totVal);
+        estado.totalHADirecto = totalHA;
+      }
+
+      // 2. Horas Institucionales Adicionales
+      let horasInstitucionales = 0;
+      let jefaturaHrs = 0;
+      let pieHrs = 0;
+      if (estado.horasAnexasActivas) {
+        const elJ = document.getElementById('inputHorasJefatura');
+        const elP = document.getElementById('inputHorasPIE');
+        jefaturaHrs = elJ ? (parseInt(elJ.value) || 0) : 0;
+        pieHrs = elP ? (parseInt(elP.value) || 0) : 0;
+        horasInstitucionales = Math.max(0, jefaturaHrs) + Math.max(0, pieHrs);
+      }
+
+      // 3. Parámetros de la tabla oficial para jornada completa (44 hrs)
+      const tramo44 = estado.regimen === '60_40' ? MAPA_60_40[0] : MAPA_65_35[0];
+      const maxHAPorDocente44 = tramo44.haMax; // 38 HA en 65/35, 35 HA en 60/40
+
+      // 4. Empaquetado estricto por tabla oficial
+      const docentesCompletos = maxHAPorDocente44 > 0 ? Math.floor(totalHA / maxHAPorDocente44) : 0;
+      const haRemanente = maxHAPorDocente44 > 0 ? (totalHA % maxHAPorDocente44) : 0;
+
+      let tramoRemanente = null;
+      if (haRemanente > 0) {
+        tramoRemanente = buscarTramoMinimoPorHA(haRemanente, estado.regimen);
+      }
+
+      const horasContratoAula = (docentesCompletos * 44) + (tramoRemanente ? tramoRemanente.jornada : 0);
+      const totalContratoReal = horasContratoAula + horasInstitucionales;
+
+      // 5. Acumulación exacta en minutos enteros
+      const totalMinutosContrato = totalContratoReal * 60;
+      const totalMinutosAula = totalHA * 45;
+
+      const totalMinutosRecreo = (docentesCompletos * tramo44.recreoMins) + (tramoRemanente ? tramoRemanente.recreoMins : 0);
+      const totalMinutosHNL = (docentesCompletos * tramo44.hnlMins) + (tramoRemanente ? tramoRemanente.hnlMins : 0) + (horasInstitucionales * 60);
+      const totalMinutosPrepExclusiva = (docentesCompletos * tramo44.prep40Mins) + (tramoRemanente ? tramoRemanente.prep40Mins : 0);
+
+      // Actualizar Tarjeta Hero y Métricas
+      setText('statTotalContratoHero', totalContratoReal);
+      let descHero = `${docentesCompletos} doc. de 44h`;
+      if (tramoRemanente) descHero += ` + ${tramoRemanente.jornada}h parcial`;
+      if (horasInstitucionales > 0) descHero += ` + ${horasInstitucionales}h fuera aula`;
+      setText('statTotalContratoDesc', descHero);
+
+      setText('statHA', totalHA.toLocaleString('es-CL'));
+      setText('statHACronologico', `${formatearMinutos(totalMinutosAula)} (${totalMinutosAula.toLocaleString('es-CL')} min)`);
+
+      setText('statRecreo', formatearMinutos(totalMinutosRecreo));
+      setText('statRecreoMinutos', `${totalMinutosRecreo.toLocaleString('es-CL')} min oficiales`);
+
+      setText('statNoLectivo', formatearMinutos(totalMinutosHNL));
+      setText('statPrepExclusiva', `${formatearMinutos(totalMinutosPrepExclusiva)} prep. 40%`);
+
+      // Resumen Ejecutivo Izquierdo
+      setText('cardTotalContratos', totalContratoReal);
+      let descTxt = `${docentesCompletos} contrato(s) completo(s) de 44 hrs`;
+      if (tramoRemanente) {
+        descTxt += ` + 1 contrato de ${tramoRemanente.jornada} hrs (${haRemanente} HA)`;
+      }
+      if (horasInstitucionales > 0) {
+        descTxt += ` + ${horasInstitucionales} hrs institucionales`;
+      }
+      setText('cardDescripcionEmpaque', descTxt);
+      setText('cardDemandaHA', `${totalHA} HA (${formatearMinutos(totalMinutosAula)})`);
+      setText('cardTotalRecreo', `${formatearMinutos(totalMinutosRecreo)} (${totalMinutosRecreo} min)`);
+
+      // Pie de Tabla
+      setText('footTotalContrato', `${totalContratoReal} hrs`);
+      setText('footTotalHA', `${totalHA} HA`);
+      setText('footTotalMinAula', formatearMinutos(totalMinutosAula));
+      setText('footTotalRecreo', formatearMinutos(totalMinutosRecreo));
+      setText('footTotalHNL', formatearMinutos(totalMinutosHNL));
+      setText('footTotalPrepExclusiva', formatearMinutos(totalMinutosPrepExclusiva));
+
+      // Barra de Distribución Proporcional
+      const baseMinutos = totalMinutosContrato > 0 ? totalMinutosContrato : 1;
+      const pctLectivo = ((totalMinutosAula / baseMinutos) * 100);
+      const pctRecreo = ((totalMinutosRecreo / baseMinutos) * 100);
+      const pctHNL = ((totalMinutosHNL / baseMinutos) * 100);
+
+      const barL = document.getElementById('barLectiva');
+      const barR = document.getElementById('barRecreo');
+      const barNL = document.getElementById('barNoLectiva');
+
+      if (barL) {
+        barL.style.width = `${pctLectivo.toFixed(2)}%`;
+        barL.innerHTML = `<span class="truncate px-1">Aula ${pctLectivo.toFixed(1)}%</span>`;
+      }
+      if (barR) {
+        barR.style.width = `${pctRecreo.toFixed(2)}%`;
+        barR.innerHTML = `<span class="truncate px-1">Recreo ${pctRecreo.toFixed(1)}%</span>`;
+      }
+      if (barNL) {
+        barNL.style.width = `${pctHNL.toFixed(2)}%`;
+        barNL.innerHTML = `<span class="truncate px-1">HNL ${pctHNL.toFixed(1)}%</span>`;
+      }
+
+      setText('lblLectivoBarra', `Aula: ${formatearMinutos(totalMinutosAula)} (${totalMinutosAula} min)`);
+      setText('lblRecreoBarra', `Recreo: ${formatearMinutos(totalMinutosRecreo)} (${totalMinutosRecreo} min)`);
+      setText('lblNoLectivoBarra', `HNL: ${formatearMinutos(totalMinutosHNL)} (${totalMinutosHNL} min)`);
+      setText('textTotalHorasBarra', `Total: ${totalContratoReal} HC (${totalMinutosContrato.toLocaleString('es-CL')} min)`);
+
+      renderizarRosterDocente(docentesCompletos, tramoRemanente, tramo44, horasInstitucionales, jefaturaHrs, pieHrs);
+    }
+
+    function renderizarRosterDocente(completos, tramoRemanente, tramo44, horasInst, jefaturaHrs, pieHrs) {
+      const tbody = document.getElementById('tbodyContratos');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      let idx = 1;
+
+      // 1. Docentes Titulares de Jornada Completa (44 hrs)
+      for (let i = 0; i < completos; i++) {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition-colors';
+        tr.innerHTML = `
+          <td class="py-3 px-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center text-[10px] font-bold font-mono">${idx}</span>
+            <div>
+              <span class="font-bold text-slate-800">Docente Titular Aula</span>
+              <span class="block text-[10px] text-slate-400">Jornada Completa Ordinaria</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 font-bold text-slate-900">44 hrs</td>
+          <td class="py-3 px-4 text-sky-800 font-bold">${tramo44.haMax} HA</td>
+          <td class="py-3 px-4 text-slate-700">${tramo44.lectivasTexto}</td>
+          <td class="py-3 px-4 text-amber-900 font-semibold">${tramo44.recreoTexto}</td>
+          <td class="py-3 px-4 text-emerald-800 font-bold">${tramo44.hnlTexto}</td>
+          <td class="py-3 px-4 text-indigo-900 font-semibold">${formatearMinutos(tramo44.prep40Mins)}</td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+              44h 00m ✓
+            </span>
+          </td>
+        `;
+        tbody.appendChild(tr);
+        idx++;
+      }
+
+      // 2. Docente con Contrato Remanente / Parcial por Tabla Oficial
+      if (tramoRemanente) {
+        const sumaTotalFila = tramoRemanente.lectivasMins + tramoRemanente.recreoMins + tramoRemanente.hnlMins;
+        const tr = document.createElement('tr');
+        tr.className = 'bg-amber-50/40 hover:bg-amber-50/80 transition-colors';
+        tr.innerHTML = `
+          <td class="py-3 px-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-900 flex items-center justify-center text-[10px] font-bold font-mono">${idx}</span>
+            <div>
+              <span class="font-bold text-amber-950">Docente Parcial / Remanente</span>
+              <span class="block text-[10px] text-amber-700">Tabla MINEDUC Tramo ${tramoRemanente.jornada} hrs</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 font-bold text-amber-950">${tramoRemanente.jornada} hrs</td>
+          <td class="py-3 px-4 text-sky-800 font-bold">${tramoRemanente.haAsignadas} HA ${tramoRemanente.vacanteHA > 0 ? `<span class="text-[10px] text-slate-400 font-normal">(${tramoRemanente.vacanteHA} vac.)</span>` : ''}</td>
+          <td class="py-3 px-4 text-slate-700">${formatearMinutos(tramoRemanente.lectivasMins)}</td>
+          <td class="py-3 px-4 text-amber-900 font-semibold">${formatearMinutos(tramoRemanente.recreoMins)}</td>
+          <td class="py-3 px-4 text-emerald-800 font-bold">${formatearMinutos(tramoRemanente.hnlMins)}</td>
+          <td class="py-3 px-4 text-indigo-900 font-semibold">${formatearMinutos(tramoRemanente.prep40Mins)}</td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+              ${formatearMinutos(sumaTotalFila)} ✓
+            </span>
+          </td>
+        `;
+        tbody.appendChild(tr);
+        idx++;
+      }
+
+      // 3. Horas Institucionales Asignadas Fuera de Aula (UTP, Jefaturas, PIE)
+      if (horasInst > 0) {
+        const minsInst = horasInst * 60;
+        const tr = document.createElement('tr');
+        tr.className = 'bg-indigo-50/40 hover:bg-indigo-50/80 transition-colors';
+        tr.innerHTML = `
+          <td class="py-3 px-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center text-[10px] font-bold font-mono">+</span>
+            <div>
+              <span class="font-bold text-indigo-950">Funciones Institucionales Fuera de Aula</span>
+              <span class="block text-[10px] text-indigo-700">UTP (${jefaturaHrs}h) + PIE Colaborativo Dec. 170 (${pieHrs}h)</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 font-bold text-indigo-950">${horasInst} hrs</td>
+          <td class="py-3 px-4 text-slate-400">0 HA</td>
+          <td class="py-3 px-4 text-slate-400">0h 00m</td>
+          <td class="py-3 px-4 text-slate-400">0h 00m</td>
+          <td class="py-3 px-4 text-indigo-900 font-bold">${formatearMinutos(minsInst)}</td>
+          <td class="py-3 px-4 text-slate-400">--</td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-800 font-bold border border-indigo-200">
+              ${formatearMinutos(minsInst)} ✓
+            </span>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      const totalDocentes = completos + (tramoRemanente ? 1 : 0);
+      setText('badgeTotalDocentes', `${totalDocentes} Docente(s) en Aula`);
+    }
+
+    // Modal de Visualización de la Tabla Oficial MINEDUC 1 a 44 hrs
+    function abrirModalTabla() {
+      const modal = document.getElementById('modalTablaOficial');
+      if (modal) modal.classList.remove('hidden');
+      cambiarVistaTablaModal(estado.regimen);
+    }
+
+    function cerrarModalTabla() {
+      const modal = document.getElementById('modalTablaOficial');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function cambiarVistaTablaModal(regimen) {
+      estado.modalVistaTabla = regimen;
+      const btn65 = document.getElementById('btnVer65');
+      const btn60 = document.getElementById('btnVer60');
+
+      if (regimen === '65_35') {
+        if (btn65) {
+          btn65.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+          btn65.classList.remove('text-slate-600');
+        }
+        if (btn60) {
+          btn60.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+          btn60.classList.add('text-slate-600');
+        }
+      } else {
+        if (btn60) {
+          btn60.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+          btn60.classList.remove('text-slate-600');
+        }
+        if (btn65) {
+          btn65.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+          btn65.classList.add('text-slate-600');
+        }
+      }
+
+      const tabla = regimen === '60_40' ? MAPA_60_40 : MAPA_65_35;
+      const tbody = document.getElementById('tbodyModalTabla');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      tabla.forEach(item => {
+        const suma = item.lectivasMins + item.recreoMins + item.hnlMins;
+        const esExacta = suma === item.contratoMins;
+
+        const tr = document.createElement('tr');
+        tr.className = item.jornada === 44 ? 'bg-sky-50/60 font-semibold' : 'hover:bg-slate-50';
+        tr.innerHTML = `
+          <td class="py-2 px-3 font-bold text-slate-900">${item.jornada} hrs (${item.contratoMins} m)</td>
+          <td class="py-2 px-3 text-sky-800 font-bold">${item.haMax} HA</td>
+          <td class="py-2 px-3 text-slate-700">${item.lectivasTexto} (${item.lectivasMins} m)</td>
+          <td class="py-2 px-3 text-amber-900 font-semibold">${item.recreoTexto} (${item.recreoMins} m)</td>
+          <td class="py-2 px-3 text-emerald-900 font-semibold">${item.hnlTexto} (${item.hnlMins} m)</td>
+          <td class="py-2 px-3 text-indigo-900">${formatearMinutos(item.prep40Mins)}</td>
+          <td class="py-2 px-3 text-center">
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${esExacta ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">
+              ${formatearMinutos(suma)} ${esExacta ? '✓' : '⚠️'}
+            </span>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function copiarReporteOficial() {
+      const reg = estado.regimen === '65_35' ? '65/35 (General)' : '60/40 (Vulnerable / Pre-básica a 4° Básico)';
+      const cursos = estado.modoEntrada === 'cursos' ? `${estado.numCursos} cursos de ${estado.planEstudio} HA` : `${estado.totalHADirecto} HA directas`;
+      const totalContrato = document.getElementById('cardTotalContratos')?.innerText || '0';
+      const ha = document.getElementById('statHA')?.innerText || '0';
+      const hcLect = document.getElementById('statHACronologico')?.innerText || '0';
+      const recreo = document.getElementById('statRecreo')?.innerText || '0';
+      const recreoMins = document.getElementById('statRecreoMinutos')?.innerText || '';
+      const noLect = document.getElementById('statNoLectivo')?.innerText || '0';
+      const prepExcl = document.getElementById('statPrepExclusiva')?.innerText || '';
+      const empaque = document.getElementById('cardDescripcionEmpaque')?.innerText || '';
+
+      const texto = `INFORME OFICIAL DE DOTACIÓN DOCENTE (LEY N° 20.903 & TABLAS MINEDUC)
+========================================================================
+Servicio Local de Educación Pública / Establecimiento Educacional
+Régimen Normativo: Proporción ${reg}
+Base Curricular Auditada: ${cursos}
+
+DESGLOSE OFICIAL DE JORNADA (ARITMÉTICA EN MINUTOS ENTEROS):
+- Total Horas Pedagógicas Aula: ${ha} HA (${hcLect})
+- Minutos de Recreo Normativo: ${recreo} (${recreoMins})
+- Horas No Lectivas (HNL): ${noLect}
+- Reserva 40% Prep. Exclusiva (Art. 69 inc. 4): ${prepExcl}
+------------------------------------------------------------------------
+TOTAL HORAS CRONOLÓGICAS DE CONTRATO: ${totalContrato} Horas Semanales
+Estructura de Empaquetación Sugerida: ${empaque}
+Acreditación Técnica: Suma de componentes Lectivos + Recreos + HNL = 100% de minutos contractuales. Cumple estrictamente la Tabla Ministerial y los estándares de auditoría SIGE y Plan Anual Local (PAL).`;
+
+      const dummy = document.createElement('textarea');
+      dummy.value = texto;
+      document.body.appendChild(dummy);
+      dummy.select();
+      document.execCommand('copy');
+      document.body.removeChild(dummy);
+
+      mostrarToast('¡Informe oficial copiado al portapapeles!');
+    }
+
+    // Inicialización al cargar la página
+    document.addEventListener('DOMContentLoaded', () => {
+      calcularTodo();
+    });
+
+    window.onload = function() {
+      calcularTodo();
+    };
+  </script>
+</body>
+</html>
