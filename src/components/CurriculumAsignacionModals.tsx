@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Users, ShieldCheck, X } from 'lucide-react';
 import { AsignacionHoraria, CursoSae, Docente, Establecimiento } from '../types';
-import { PlanEstudioNivel, AsignaturaPlan } from '@slep/mineduc-engine';
+import { 
+  PlanEstudioNivel, 
+  AsignaturaPlan,
+  CATALOGO_PROFUNDIZACION_HC_27,
+  CATALOGO_PLAN_COMUN_ELECTIVO_3_4
+} from '@slep/mineduc-engine';
 
 export const TIPOS_APOYO_PIE = [
   { id: 'Co-Docencia en Aula Regular', label: 'Co-Docencia en Aula Regular (Docente Diferencial)', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
@@ -53,6 +58,17 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
   const [tipoFuncion, setTipoFuncion] = useState<'CURRICULAR' | 'TALLER_JEC' | 'TALLER_SEP' | 'TRABAJO_COLABORATIVO'>('CURRICULAR');
   const [compartirElectivo, setCompartirElectivo] = useState(false);
   const [cursosCompartidos, setCursosCompartidos] = useState<string[]>([]);
+
+  const es34Medio = Boolean(cursoActivo && (
+    cursoActivo.nivel.includes('3°') ||
+    cursoActivo.nivel.includes('4°') ||
+    cursoActivo.nivel.includes('3o') ||
+    cursoActivo.nivel.includes('4o') ||
+    cursoActivo.nivel.includes('3 ') ||
+    cursoActivo.nivel.includes('4 ') ||
+    planActivo?.nivel.includes('3°') ||
+    planActivo?.nivel.includes('4°')
+  ));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -155,6 +171,16 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
                 const match = planActivo?.asignaturasBase.find(a => a.nombre.toLowerCase() === val.toLowerCase());
                 if (match && !editandoAsig) {
                   setHoras(match.horasSugeridas);
+                } else if (!editandoAsig) {
+                  const matchProf = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === val.toLowerCase());
+                  if (matchProf) {
+                    setHoras(6);
+                  } else {
+                    const matchComun = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => val.toLowerCase().includes(c.nombre.toLowerCase()));
+                    if (matchComun) {
+                      setHoras(2);
+                    }
+                  }
                 }
               }}
               placeholder="Ej. Lenguaje y Comunicación, Módulo de Especialidad..."
@@ -164,6 +190,17 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
               {planActivo?.asignaturasBase.map((asig: AsignaturaPlan, i: number) => (
                 <option key={i} value={asig.nombre} label={`${asig.horasSugeridas} HA (Oficial MINEDUC)`} />
               ))}
+              {es34Medio && (
+                <>
+                  <option value="Plan Común Electivo (Historia / Artes / Ed. Física / Religión)" label="2 HA (Plan Común Electivo)" />
+                  {CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map((elec, i) => (
+                    <option key={`pce-${i}`} value={`${elec.nombre} (Electivo)`} label="2 HA (Plan Común Electivo)" />
+                  ))}
+                  {CATALOGO_PROFUNDIZACION_HC_27.map((prof, i) => (
+                    <option key={`prof-${i}`} value={prof.nombre} label={`6 HA (Profundización Área ${prof.area}: ${prof.disciplina})`} />
+                  ))}
+                </>
+              )}
             </datalist>
           </div>
 

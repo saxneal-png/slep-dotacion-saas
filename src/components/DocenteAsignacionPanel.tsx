@@ -14,7 +14,12 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Docente, AsignacionHoraria, CursoSae, Establecimiento, PlanEstudioCurricular } from '../types';
-import { obtenerPlanPorCurso, PlanEstudioNivel } from '@slep/mineduc-engine';
+import { 
+  obtenerPlanPorCurso, 
+  PlanEstudioNivel,
+  CATALOGO_PROFUNDIZACION_HC_27,
+  CATALOGO_PLAN_COMUN_ELECTIVO_3_4
+} from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
 
 interface DocenteAsignacionPanelProps {
@@ -133,6 +138,28 @@ function resolverPlanCurso(
   };
 }
 
+// Helper de verificación para asignaturas de Formación Diferenciada HC y Plan Común Electivo
+export function esAsignaturaProfundizacionHc(nombre: string): boolean {
+  if (!nombre) return false;
+  const n = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  // Nunca confundir con Educación Física y Salud general
+  if (n.includes('educacion fisica') || n.includes('ed. fisica') || n.includes('ed fisica') || n.includes('ed.fisica')) {
+    return false;
+  }
+  return CATALOGO_PROFUNDIZACION_HC_27.some(p => {
+    const pn = p.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    return n === pn;
+  });
+}
+
+export function esAsignaturaPlanComunElectivo(nombre: string): boolean {
+  if (!nombre) return false;
+  const n = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (n.includes('plan comun electivo') || n.includes('electivo comun')) return true;
+  if (n.includes('electivo') && (n.includes('historia') || n.includes('artes') || n.includes('fisica') || n.includes('religion'))) return true;
+  return false;
+}
+
 // Normalizador de nombres de asignaturas para conciliación de cobertura
 export function normalizarNombreAsignatura(nombre: string): string {
   if (!nombre) return '';
@@ -144,7 +171,7 @@ export function normalizarNombreAsignatura(nombre: string): string {
   n = n.replace(/^taller (de )?/i, '');
   n = n.replace(/\s+/g, ' ').trim();
 
-  // 1. EDUCACIÓN FÍSICA Y SALUD (DEBE evaluarse estrictamente antes de ciencias para evitar que "fisica" colisione)
+  // 1. EDUCACIÓN FÍSICA Y SALUD (DEBE evaluarse estrictamente primero para evitar que "fisica" colisione)
   if (
     n.includes('educacion fisica') ||
     n.includes('ed. fisica') ||
@@ -159,36 +186,48 @@ export function normalizarNombreAsignatura(nombre: string): string {
   }
 
   // 2. Plan Común Electivo (3° y 4° Medio)
-  if (n.includes('electivo comun') || n.includes('plan comun electivo')) {
+  if (esAsignaturaPlanComunElectivo(n)) {
     return 'plan comun electivo';
   }
 
   // 3. Idioma Extranjero / Inglés
   if (n.includes('ingles')) return 'ingles';
 
-  // 4. Lenguaje y Comunicación / Lengua y Literatura
-  if (n.includes('lengua') || n.includes('lenguaje') || n.includes('comunicacion') || n.includes('literatura')) {
+  // 4. Lenguaje y Comunicación / Lengua y Literatura (excluyendo electivos específicos)
+  if (
+    (n.includes('lengua') || n.includes('lenguaje') || n.includes('comunicacion')) &&
+    !n.includes('taller de literatura') && !n.includes('lectura y escritura') && !n.includes('argumentacion')
+  ) {
     return 'lenguaje y comunicacion';
   }
 
-  // 5. Matemática
-  if (n.includes('mate') || n.includes('matematica') || n.includes('algebra') || n.includes('geometria') || n.includes('calculo')) {
+  // 5. Matemática (excluyendo electivos específicos de profundización)
+  if (
+    (n.includes('mate') || n.includes('matematica') || n.includes('algebra') || n.includes('geometria') || n.includes('calculo')) &&
+    !n.includes('limites') && !n.includes('probabilidades') && !n.includes('pensamiento computacional') && !n.includes('geometria 3d')
+  ) {
     return 'matematica';
   }
 
-  // 6. Historia, Geografía y Ciencias Sociales
-  if (n.includes('historia') || n.includes('geograf') || (n.includes('sociales') && !n.includes('ciencias naturales'))) {
+  // 6. Historia, Geografía y Ciencias Sociales (excluyendo electivos específicos)
+  if (
+    (n.includes('historia') || n.includes('geograf') || (n.includes('sociales') && !n.includes('ciencias naturales'))) &&
+    !n.includes('comprension historica') && !n.includes('socioambientales') && !n.includes('economia y sociedad')
+  ) {
     return 'historia, geografia y ciencias sociales';
   }
 
   // 7. Ciencias Naturales y sus ramas en Media (Biología, Física de ciencias, Química)
   // Se excluye estrictamente cualquier referencia a Educación Física
   if (
-    n.includes('ciencias naturales') ||
-    n.includes('naturales') ||
-    n.includes('biolog') ||
-    n.includes('quimic') ||
-    /\b(fisica|ciencias fisicas)\b/i.test(n)
+    (
+      n.includes('ciencias naturales') ||
+      n.includes('naturales') ||
+      n.includes('biolog') ||
+      n.includes('quimic') ||
+      /\b(fisica|ciencias fisicas)\b/i.test(n)
+    ) &&
+    !n.includes('celular y molecular') && !n.includes('ecosistemas') && !n.includes('ciencias de la salud')
   ) {
     return 'ciencias naturales';
   }
@@ -207,6 +246,24 @@ export function normalizarNombreAsignatura(nombre: string): string {
 export function sonAsignaturasEquivalentes(asigA: string, asigB: string): boolean {
   if (!asigA || !asigB) return false;
   if (asigA.trim().toLowerCase() === asigB.trim().toLowerCase()) return true;
+
+  const aNorm = asigA.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const bNorm = asigB.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  // Formación Diferenciada HC (18 HA) equivale a cualquiera de las 27 asignaturas de profundización
+  const esDiferenciadaA = aNorm.includes('formacion diferenciada') || aNorm.includes('diferenciado hc');
+  const esDiferenciadaB = bNorm.includes('formacion diferenciada') || bNorm.includes('diferenciado hc');
+
+  if (esDiferenciadaA && esAsignaturaProfundizacionHc(asigB)) return true;
+  if (esDiferenciadaB && esAsignaturaProfundizacionHc(asigA)) return true;
+
+  // Plan Común Electivo (2 HA)
+  const esPlanComunA = aNorm.includes('plan comun electivo') || aNorm.includes('electivo comun');
+  const esPlanComunB = bNorm.includes('plan comun electivo') || bNorm.includes('electivo comun');
+
+  if (esPlanComunA && esAsignaturaPlanComunElectivo(asigB)) return true;
+  if (esPlanComunB && esAsignaturaPlanComunElectivo(asigA)) return true;
+
   const normA = normalizarNombreAsignatura(asigA);
   const normB = normalizarNombreAsignatura(asigB);
   return normA === normB;
@@ -409,6 +466,31 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     (!asigEnPlan && a.cursoId !== 'TRANSVERSAL')
   );
 
+  const esMedio34Fila = Boolean(cursoActual && (
+    cursoActual.nivel.includes('3°') ||
+    cursoActual.nivel.includes('4°') ||
+    cursoActual.nivel.includes('3o') ||
+    cursoActual.nivel.includes('4o') ||
+    cursoActual.nivel.includes('3 ') ||
+    cursoActual.nivel.includes('4 ') ||
+    infoPlan.nombrePlan.includes('3°') ||
+    infoPlan.nombrePlan.includes('4°')
+  ));
+
+  const matchProfActual = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === a.asignatura.toLowerCase());
+  const matchPlanComunActual = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => a.asignatura.toLowerCase().includes(c.nombre.toLowerCase()));
+
+  const valorSelectFila = esLibreDisposicion
+    ? 'LIBRE_DISPOSICION'
+    : (
+        matchProfActual
+          ? matchProfActual.nombre
+          : (matchPlanComunActual && a.asignatura.toLowerCase().includes('electivo')
+              ? `${matchPlanComunActual.nombre} (Electivo)`
+              : (asigEnPlan?.nombre || 'OTRA_MANUAL')
+            )
+      );
+
   return (
     <tr className="hover:bg-slate-50 transition-colors">
       {/* 1. Columna CURSO / NIVEL */}
@@ -482,13 +564,12 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
               <select
-                value={
-                  esLibreDisposicion
-                    ? 'LIBRE_DISPOSICION'
-                    : (asigEnPlan?.nombre || 'OTRA_MANUAL')
-                }
+                value={valorSelectFila}
                 onChange={async (e) => {
                   const sel = e.target.value;
+                  const matchProf = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === sel.toLowerCase());
+                  const matchComunElec = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => sel.toLowerCase().includes(c.nombre.toLowerCase()));
+
                   if (sel === 'LIBRE_DISPOSICION') {
                     setEditandoManual(true);
                     if (onGuardarAsignacion) {
@@ -500,6 +581,26 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                     }
                   } else if (sel === 'OTRA_MANUAL') {
                     setEditandoManual(true);
+                  } else if (matchProf) {
+                    setEditandoManual(false);
+                    if (onGuardarAsignacion) {
+                      await onGuardarAsignacion({ 
+                        ...a, 
+                        asignatura: sel, 
+                        horasPedagogicasAula: a.horasPedagogicasAula === 6 ? a.horasPedagogicasAula : 6, 
+                        esTallerJec: false 
+                      });
+                    }
+                  } else if (matchComunElec) {
+                    setEditandoManual(false);
+                    if (onGuardarAsignacion) {
+                      await onGuardarAsignacion({ 
+                        ...a, 
+                        asignatura: sel, 
+                        horasPedagogicasAula: a.horasPedagogicasAula === 2 ? a.horasPedagogicasAula : 2, 
+                        esTallerJec: false 
+                      });
+                    }
                   } else {
                     setEditandoManual(false);
                     if (onGuardarAsignacion) {
@@ -519,6 +620,42 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                     <option value="" disabled>(Todas las obligatorias están cubiertas)</option>
                   )}
                 </optgroup>
+
+                {esMedio34Fila && (
+                  <>
+                    <optgroup label="✨ Plan Común Electivo (3° y 4° Medio - 2 HA)">
+                      {CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(elec => (
+                        <option key={elec.id} value={`${elec.nombre} (Electivo)`}>
+                          ✨ {elec.nombre} (Electivo - 2 HA)
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="🎓 Formación Diferenciada HC - Área A: Lengua, Filosofía, Cs. Sociales (6 HA)">
+                      {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'A').map(p => (
+                        <option key={p.id} value={p.nombre}>
+                          📘 {p.nombre} ({p.disciplina} - 6 HA)
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="🎓 Formación Diferenciada HC - Área B: Matemática y Ciencias (6 HA)">
+                      {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'B').map(p => (
+                        <option key={p.id} value={p.nombre}>
+                          🔬 {p.nombre} ({p.disciplina} - 6 HA)
+                        </option>
+                      ))}
+                    </optgroup>
+
+                    <optgroup label="🎓 Formación Diferenciada HC - Área C: Artes y Ed. Física (6 HA)">
+                      {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'C').map(p => (
+                        <option key={p.id} value={p.nombre}>
+                          🎨 {p.nombre} ({p.disciplina} - 6 HA)
+                        </option>
+                      ))}
+                    </optgroup>
+                  </>
+                )}
 
                 {infoPlan.esJec && (
                   <optgroup label="⚡ Libre Disposición / JEC (Nombre Flexible)">
@@ -812,6 +949,19 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     }
   }, [regCursoId]);
 
+  const esMedio34Form = useMemo(() => {
+    return Boolean(cursoSeleccionado && (
+      cursoSeleccionado.nivel.includes('3°') ||
+      cursoSeleccionado.nivel.includes('4°') ||
+      cursoSeleccionado.nivel.includes('3o') ||
+      cursoSeleccionado.nivel.includes('4o') ||
+      cursoSeleccionado.nivel.includes('3 ') ||
+      cursoSeleccionado.nivel.includes('4 ') ||
+      infoPlan.nombrePlan.includes('3°') ||
+      infoPlan.nombrePlan.includes('4°')
+    ));
+  }, [cursoSeleccionado, infoPlan.nombrePlan]);
+
   const esModoPersonalizado = 
     regCursoId === 'TRANSVERSAL' ||
     tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ||
@@ -819,6 +969,9 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
 
   const handleSeleccionAsignatura = (valor: string) => {
     setTipoAsignaturaSeleccionada(valor);
+
+    const matchProf = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === valor.toLowerCase());
+    const matchComunElec = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => valor.toLowerCase().includes(c.nombre.toLowerCase()));
 
     if (valor.startsWith('__TALLER_EXISTENTE__:')) {
       const nombreTaller = valor.replace('__TALLER_EXISTENTE__:', '');
@@ -830,6 +983,12 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       const sugeridas = datosDisp.horasLibreDisponibles >= 2 ? 2 : (datosDisp.horasLibreDisponibles > 0 ? datosDisp.horasLibreDisponibles : 2);
       setRegHoras(sugeridas);
     } else if (valor === '__OTRO_PERSONALIZADO__') {
+      setRegNombreCustom('');
+      setRegHoras(2);
+    } else if (matchProf) {
+      setRegNombreCustom('');
+      setRegHoras(6);
+    } else if (matchComunElec) {
       setRegNombreCustom('');
       setRegHoras(2);
     } else {
@@ -972,6 +1131,42 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                     </option>
                   ))}
                 </optgroup>
+              )}
+
+              {esMedio34Form && (
+                <>
+                  <optgroup label="✨ Plan Común Electivo (3° y 4° Medio - 2 HA)">
+                    {CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(elec => (
+                      <option key={elec.id} value={`${elec.nombre} (Electivo)`}>
+                        ✨ {elec.nombre} (Electivo - 2 HA)
+                      </option>
+                    ))}
+                  </optgroup>
+
+                  <optgroup label="🎓 Formación Diferenciada HC - Área A: Lengua, Filosofía, Cs. Sociales (6 HA)">
+                    {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'A').map(p => (
+                      <option key={p.id} value={p.nombre}>
+                        📘 {p.nombre} ({p.disciplina} - 6 HA)
+                      </option>
+                    ))}
+                  </optgroup>
+
+                  <optgroup label="🎓 Formación Diferenciada HC - Área B: Matemática y Ciencias (6 HA)">
+                    {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'B').map(p => (
+                      <option key={p.id} value={p.nombre}>
+                        🔬 {p.nombre} ({p.disciplina} - 6 HA)
+                      </option>
+                    ))}
+                  </optgroup>
+
+                  <optgroup label="🎓 Formación Diferenciada HC - Área C: Artes y Ed. Física (6 HA)">
+                    {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'C').map(p => (
+                      <option key={p.id} value={p.nombre}>
+                        🎨 {p.nombre} ({p.disciplina} - 6 HA)
+                      </option>
+                    ))}
+                  </optgroup>
+                </>
               )}
 
               <optgroup label="✏️ Otros">

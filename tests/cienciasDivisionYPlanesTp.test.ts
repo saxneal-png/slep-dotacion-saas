@@ -80,3 +80,33 @@ describe('Auditoría y Corrección: Cursos Técnico-Profesionales con Plan Comú
     expect(planTpGenerico?.horasLibreDisposicion).toBe(6);
   });
 });
+
+describe('Auditoría y Validación: Catálogo de Electivos de Formación Diferenciada HC (Decreto 0876/2019)', () => {
+  it('sonAsignaturasEquivalentes vincula los 27 electivos oficiales a Formación Diferenciada HC sin alterar el plan común', () => {
+    // Electivos de Área A
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Taller de Literatura')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Seminario de Filosofía')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Economía y sociedad')).toBe(true);
+
+    // Electivos de Área B
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Límites, derivadas e integrales')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Biología celular y molecular')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Física')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Química')).toBe(true);
+
+    // Electivos de Área C
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Promoción de estilos de vida activos y saludables')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Creación y composición musical')).toBe(true);
+
+    // No debe confundir asignaturas del plan común con formación diferenciada
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Educación Ciudadana')).toBe(false);
+    expect(sonAsignaturasEquivalentes('Formación Diferenciada (Humanístico-Científico)', 'Inglés')).toBe(false);
+  });
+
+  it('sonAsignaturasEquivalentes vincula correctamente el Plan Común Electivo (2 HA)', () => {
+    expect(sonAsignaturasEquivalentes('Plan Común Electivo', 'Historia, Geografía y Ciencias Sociales (Electivo)')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Plan Común Electivo', 'Artes (Electivo)')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Plan Común Electivo', 'Educación Física y Salud (Electivo)')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Plan Común Electivo', 'Religión (Electivo)')).toBe(true);
+  });
+});
