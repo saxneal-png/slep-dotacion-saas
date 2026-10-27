@@ -205,9 +205,9 @@ function calcularAfinidadDocenteAsignatura(docente: Docente, nombreAsignatura: s
   if (/lengua|castellano|comunicacion|literatura/i.test(normAsig) && /lengua|castellano|comunicacion|basica/i.test(`${normPrinc} ${normTitulo}`)) return 70;
   if (/matematica|algebra|geometria|calculo/i.test(normAsig) && /matematica|fisica|basica/i.test(`${normPrinc} ${normTitulo}`)) return 70;
   if (/historia|geografia|sociales|ciudadana/i.test(normAsig) && /historia|sociales|filosofia|basica/i.test(`${normPrinc} ${normTitulo}`)) return 70;
-  if (/ciencias|biologia|quimica|fisica|naturales/i.test(normAsig) && /ciencias|biologia|quimica|fisica|naturales|basica/i.test(`${normPrinc} ${normTitulo}`)) return 70;
+  if (/educacion fisica|ed\.?\s*fisica|salud|deporte|motricidad/i.test(normAsig) && /fisica|deporte|salud|motricidad/i.test(`${normPrinc} ${normTitulo}`)) return 70;
+  if (/ciencias|biologia|quimica|(?<!educacion\s*)fisica|naturales/i.test(normAsig) && /ciencias|biologia|quimica|naturales|basica/i.test(`${normPrinc} ${normTitulo}`)) return 70;
   if (/ingles|idioma|extranjero/i.test(normAsig) && /ingles|traduccion|idioma/i.test(`${normPrinc} ${normTitulo}`)) return 70;
-  if (/educacion fisica|salud|deporte/i.test(normAsig) && /fisica|deporte|salud|motricidad/i.test(`${normPrinc} ${normTitulo}`)) return 70;
   if (/artes|musica|plastica|visual/i.test(normAsig) && /arte|musica|plastica|visual/i.test(`${normPrinc} ${normTitulo}`)) return 70;
   if (/tecnologia|computacion|informatica|enlaces/i.test(normAsig) && /tecno|comput|infor|enlace/i.test(`${normPrinc} ${normTitulo}`)) return 70;
 

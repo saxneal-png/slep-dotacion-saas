@@ -409,6 +409,24 @@ export const PLAN_COMUN_GENERAL_TP_ASIGNATURAS = [
   { nombre: "Ciencias para la Ciudadanía", JEC: 2, No_JEC: 2 }
 ];
 
+/**
+ * Asignatura del Plan Común Electivo para Educación Técnico-Profesional
+ * según Decreto Exento N° 0876/2019 (se imparte en 2 horas con cargo a libre disposición).
+ */
+export const PLAN_COMUN_ELECTIVO_TP_ASIGNATURA = {
+  nombre: "Plan Común Electivo (Historia / Artes / Ed. Física / Religión)",
+  JEC: 2,
+  No_JEC: 2
+};
+
+/**
+ * Plan Común General Completo para Técnico-Profesional (14h General + 2h Electivo Común = 16h)
+ */
+export const PLAN_COMUN_COMPLETO_TP_ASIGNATURAS = [
+  ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
+  PLAN_COMUN_ELECTIVO_TP_ASIGNATURA
+];
+
 export const CATALOGO_MENCIONES_ARTISTICAS_10 = [
   "Artes Visuales",
   "Artes Audiovisuales",
@@ -2017,8 +2035,10 @@ export function obtenerPlanPorCurso(
     if (c.includes('medio') || c.includes('secundaria')) {
       if (c.includes('1°') || c.includes('2°') || c.includes('1o') || c.includes('2o') || c.includes('1 ') || c.includes('2 ')) {
         grupo = '1° y 2° Medio';
-      } else if (c.includes('tp') || c.includes('tecnico') || c.includes('profesional')) {
+      } else if (c.includes('plan comun') && (c.includes('tp') || c.includes('tecnico'))) {
         grupo = '3° y 4° Medio Técnico-Profesional (Plan Común de Formación General)';
+      } else if (c.includes('tp') || c.includes('tecnico') || c.includes('profesional')) {
+        grupo = '3° y 4° Medio (Técnico-Profesional)';
       } else if (c.includes('artistic')) {
         grupo = '3° y 4° Medio (Artístico)';
       } else {

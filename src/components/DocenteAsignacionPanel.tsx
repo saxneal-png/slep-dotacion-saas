@@ -82,12 +82,26 @@ function resolverPlanCurso(
   );
 
   if (planMineduc && planMineduc.asignaturasBase && planMineduc.asignaturasBase.length > 0) {
+    const asignaturasBase = planMineduc.asignaturasBase.map(a => ({
+      nombre: a.nombre,
+      horas: a.horasSugeridas,
+      caracter: 'Obligatoria'
+    }));
+
+    // En 3° y 4° Medio TP, si el plan no tiene explícito el Plan Común Electivo, incluirlo
+    // para que el establecimiento pueda seleccionarlo y asignarlo con cargo a sus horas de libre disposición (2 HA)
+    const esTp34 = curso.nivel.includes('3°') || curso.nivel.includes('4°') || curso.nivel.includes('3o') || curso.nivel.includes('4o');
+    const esModalidadTecnica = planMineduc.categoria === 'MEDIA_TP' || curso.nivel.toLowerCase().includes('tp') || Boolean(curso.especialidadTp);
+    if (esTp34 && esModalidadTecnica && !asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo'))) {
+      asignaturasBase.push({
+        nombre: 'Plan Común Electivo (Historia / Artes / Ed. Física / Religión)',
+        horas: 2,
+        caracter: 'Electiva en Libre Disposición'
+      });
+    }
+
     return {
-      asignaturas: planMineduc.asignaturasBase.map(a => ({
-        nombre: a.nombre,
-        horas: a.horasSugeridas,
-        caracter: 'Obligatoria'
-      })),
+      asignaturas: asignaturasBase,
       horasLibreDisposicion: planMineduc.horasLibreDisposicion || (esJec ? 6 : 0),
       esJec: planMineduc.regimen === 'JEC' || esJec,
       talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
@@ -130,12 +144,55 @@ export function normalizarNombreAsignatura(nombre: string): string {
   n = n.replace(/^taller (de )?/i, '');
   n = n.replace(/\s+/g, ' ').trim();
 
+  // 1. EDUCACIÓN FÍSICA Y SALUD (DEBE evaluarse estrictamente antes de ciencias para evitar que "fisica" colisione)
+  if (
+    n.includes('educacion fisica') ||
+    n.includes('ed. fisica') ||
+    n.includes('ed fisica') ||
+    n.includes('ed.fisica') ||
+    n.includes('educacion y salud') ||
+    n.includes('deporte') ||
+    n.includes('motricidad') ||
+    (n.includes('salud') && !n.includes('ciencias de la salud'))
+  ) {
+    return 'educacion fisica y salud';
+  }
+
+  // 2. Plan Común Electivo (3° y 4° Medio)
+  if (n.includes('electivo comun') || n.includes('plan comun electivo')) {
+    return 'plan comun electivo';
+  }
+
+  // 3. Idioma Extranjero / Inglés
   if (n.includes('ingles')) return 'ingles';
-  if (n.includes('lengua') || n.includes('lenguaje') || n.includes('comunicacion')) return 'lenguaje y comunicacion';
-  if (n.includes('mate') || n.includes('matematica')) return 'matematica';
-  if (n.includes('natural') || n.includes('biolog') || n.includes('fisica') || n.includes('quimica')) return 'ciencias naturales';
-  if (n.includes('historia') || n.includes('geograf') || n.includes('sociales')) return 'historia, geografia y ciencias sociales';
-  if (n.includes('educacion fisica') || n.includes('ed fisica') || n.includes('salud')) return 'educacion fisica y salud';
+
+  // 4. Lenguaje y Comunicación / Lengua y Literatura
+  if (n.includes('lengua') || n.includes('lenguaje') || n.includes('comunicacion') || n.includes('literatura')) {
+    return 'lenguaje y comunicacion';
+  }
+
+  // 5. Matemática
+  if (n.includes('mate') || n.includes('matematica') || n.includes('algebra') || n.includes('geometria') || n.includes('calculo')) {
+    return 'matematica';
+  }
+
+  // 6. Historia, Geografía y Ciencias Sociales
+  if (n.includes('historia') || n.includes('geograf') || (n.includes('sociales') && !n.includes('ciencias naturales'))) {
+    return 'historia, geografia y ciencias sociales';
+  }
+
+  // 7. Ciencias Naturales y sus ramas en Media (Biología, Física de ciencias, Química)
+  // Se excluye estrictamente cualquier referencia a Educación Física
+  if (
+    n.includes('ciencias naturales') ||
+    n.includes('naturales') ||
+    n.includes('biolog') ||
+    n.includes('quimic') ||
+    /\b(fisica|ciencias fisicas)\b/i.test(n)
+  ) {
+    return 'ciencias naturales';
+  }
+
   if (n.includes('visual') || n.includes('plastica') || (n.includes('artes') && !n.includes('musical'))) return 'artes visuales';
   if (n.includes('musica') || n.includes('musical')) return 'musica';
   if (n.includes('tecno') || n.includes('tecnologia')) return 'tecnologia';
@@ -523,6 +580,15 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                 />
               </div>
             )}
+            {/* Badge visual para división específica de Ciencias (Biología / Física / Química) */}
+            {asigEnPlan?.nombre === 'Ciencias Naturales' && a.asignatura !== 'Ciencias Naturales' && !editandoManual && (
+              <div className="mt-1 flex items-center gap-1">
+                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10px] font-bold rounded-md flex items-center gap-1 border border-emerald-200">
+                  🔬 Subsector específico: {a.asignatura} (Plan Ciencias: {asigEnPlan.horas} HA)
+                </span>
+              </div>
+            )}
+
             {/* Badge visual si es formación diferenciada compartida */}
             {a.cursosCompartidosIds && a.cursosCompartidosIds.length > 0 && (
               <div className="mt-1 flex items-center gap-1">

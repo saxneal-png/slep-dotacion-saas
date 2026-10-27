@@ -999,10 +999,13 @@ export async function poblarPlanesEstudioEnDb(dbParam?: Database): Promise<void>
           descripcion: "10 menciones artísticas según Decreto Supremo N° 3/2007 (21 horas semanales)."
         }
       ];
-    } else if (p.categoria === 'MEDIA_TP' && p.nivel.includes('Especialidad')) {
+    } else if (p.categoria === 'MEDIA_TP' && (p.nivel.includes('Especialidad') || p.nivel.includes('Técnico-Profesional'))) {
       // Especialidades TP específicas bajo Decreto Exento N° 0876/2019
       const modulosEspecialidad = asigs.filter(a =>
-        a.nombre.startsWith('Módulo') || !['Lengua y Literatura', 'Matemática', 'Educación Ciudadana', 'Filosofía', 'Inglés', 'Ciencias para la Ciudadanía'].includes(a.nombre)
+        a.nombre.startsWith('Módulo') || (
+          !['Lengua y Literatura', 'Matemática', 'Educación Ciudadana', 'Filosofía', 'Inglés', 'Ciencias para la Ciudadanía', 'Plan Común Electivo (Historia / Artes / Ed. Física / Religión)'].includes(a.nombre) &&
+          !a.nombre.includes('Plan Común')
+        )
       );
       const horasModulos = modulosEspecialidad.reduce((acc, m) => acc + m.horasSemanales, 0);
 

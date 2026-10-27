@@ -1523,6 +1523,90 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           </div>
                         );
                       })}
+
+                      {/* Si el plan cuenta con horas de libre disposición JEC, mostrar tarjeta rápida para asignarlas */}
+                      {planActivo.horasLibreDisposicion > 0 && (
+                        (() => {
+                          const horasJecAsignadas = asignacionesPlanRegularCurso
+                            .filter(a => a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))
+                            .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+                          const horasJecRestantes = Math.max(0, planActivo.horasLibreDisposicion - horasJecAsignadas);
+                          const yaCompletada = horasJecRestantes === 0;
+
+                          return (
+                            <div
+                              className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                                yaCompletada
+                                  ? 'bg-amber-50/50 border-amber-200 text-amber-900'
+                                  : 'bg-amber-50/90 border-amber-300 text-amber-950 hover:border-amber-400'
+                              }`}
+                            >
+                              <div>
+                                <div className="font-bold flex items-center gap-1 text-amber-900">
+                                  {yaCompletada ? <CheckCircle2 className="w-3 h-3 text-amber-600" /> : <Sparkles className="w-3 h-3 text-amber-600" />}
+                                  <span className="truncate max-w-[140px]">⚡ Libre Disposición JEC</span>
+                                </div>
+                                <div className="text-[10px] text-amber-700">
+                                  Plan: {planActivo.horasLibreDisposicion} HA ({horasJecAsignadas} HA asignadas{horasJecRestantes > 0 ? `, ${horasJecRestantes} HA disp.` : ''})
+                                </div>
+                              </div>
+
+                              {horasJecRestantes > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalNuevaDocencia('Taller JEC / Libre Disposición', horasJecRestantes)}
+                                  className="px-2 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[10px] font-bold rounded transition-colors"
+                                  title="Asignar horas de libre disposición / Taller JEC"
+                                >
+                                  + Asignar
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()
+                      )}
+
+                      {/* En 3° y 4° Medio TP, el Plan Común Electivo se imparte con cargo a Libre Disposición (2h) */}
+                      {(esCursoTp || planActivo.categoria === 'MEDIA_TP' || cursoActivo.nivel.includes('3°') || cursoActivo.nivel.includes('4°')) &&
+                        !planActivo.asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo')) && (
+                          (() => {
+                            const electivoAsignado = asignacionesPlanRegularCurso.some(a =>
+                              /electivo/i.test(a.asignatura) ||
+                              (!planActivo.asignaturasBase.some(b => b.nombre.toLowerCase() === a.asignatura.toLowerCase()) && /religion|artes|educacion fisica|historia/i.test(a.asignatura))
+                            );
+
+                            return (
+                              <div
+                                className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                                  electivoAsignado
+                                    ? 'bg-blue-50/50 border-blue-200 text-blue-900'
+                                    : 'bg-blue-50/90 border-blue-300 text-blue-950 hover:border-blue-400'
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-bold flex items-center gap-1 text-blue-900">
+                                    {electivoAsignado ? <CheckCircle2 className="w-3 h-3 text-blue-600" /> : <BookOpen className="w-3 h-3 text-blue-600" />}
+                                    <span className="truncate max-w-[140px]">Plan Común Electivo</span>
+                                  </div>
+                                  <div className="text-[10px] text-blue-700">
+                                    Plan: 2 HA (Historia / Artes / Ed. Física / Religión)
+                                  </div>
+                                </div>
+
+                                {!electivoAsignado && (
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirModalNuevaDocencia('Plan Común Electivo (Historia / Artes / Ed. Física / Religión)', 2)}
+                                    className="px-2 py-1 bg-blue-200 hover:bg-blue-300 text-blue-900 text-[10px] font-bold rounded transition-colors"
+                                    title="Asignar 2 HA del Plan Común Electivo con cargo a libre disposición"
+                                  >
+                                    + Asignar
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()
+                        )}
                     </div>
                   </div>
                 </div>
