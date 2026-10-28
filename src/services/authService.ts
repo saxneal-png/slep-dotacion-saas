@@ -182,6 +182,11 @@ export class AuthService {
     encontrado.ultimoAcceso = new Date().toISOString();
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
 
+    // Si el usuario tiene una ApiKey personal configurada, activarla para la sesión actual
+    if (encontrado.geminiApiKey) {
+      localStorage.setItem('gemini_api_key', encontrado.geminiApiKey);
+    }
+
     const { passwordHash: _, salt: __, ...usuarioSeguro } = encontrado;
     const session: AuthSession = {
       usuario: usuarioSeguro,
@@ -205,6 +210,32 @@ export class AuthService {
 
   public static logout(): void {
     localStorage.removeItem(STORAGE_SESSION_KEY);
+  }
+
+  public static async restablecerPasswordPorEmail(email: string, nuevaPasswordPlain: string): Promise<string> {
+    const usuarios = await this.getUsuarios();
+    const cleanEmail = email.trim().toLowerCase();
+    const idx = usuarios.findIndex(u => (u.email || '').toLowerCase() === cleanEmail);
+    if (idx === -1) {
+      throw new Error('No se encontró ninguna cuenta asociada a este correo electrónico institucional.');
+    }
+
+    const salt = generateSalt();
+    const passwordHash = await hashPassword(nuevaPasswordPlain, salt);
+    usuarios[idx].salt = salt;
+    usuarios[idx].passwordHash = passwordHash;
+    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    return usuarios[idx].nombreCompleto;
+  }
+
+  public static async guardarApiKeyUsuario(userId: string, apiKey: string): Promise<void> {
+    const usuarios = await this.getUsuarios();
+    const idx = usuarios.findIndex(u => u.id === userId);
+    if (idx >= 0) {
+      usuarios[idx].geminiApiKey = apiKey.trim();
+      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+      localStorage.setItem('gemini_api_key', apiKey.trim());
+    }
   }
 
   public static async cambiarPassword(userId: string, nuevaPasswordPlain: string): Promise<void> {

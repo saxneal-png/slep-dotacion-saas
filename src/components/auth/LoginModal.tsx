@@ -5,9 +5,10 @@ import { AuthSession, UserRole } from '../../types/authTypes';
 
 interface LoginModalProps {
   onLoginSuccess: (session: AuthSession) => void;
+  onAbrirOlvidoPassword?: () => void;
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
+export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess, onAbrirOlvidoPassword }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [mostrarPassword, setMostrarPassword] = useState(false);
@@ -122,6 +123,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                 {mostrarPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            {onAbrirOlvidoPassword && (
+              <div className="flex justify-end mt-1.5">
+                <button
+                  type="button"
+                  onClick={onAbrirOlvidoPassword}
+                  className="text-xs text-amber-400 hover:text-amber-300 transition hover:underline"
+                >
+                  ¿Ha olvidado su contraseña?
+                </button>
+              </div>
+            )}
           </div>
 
           <button

@@ -11,6 +11,7 @@ export interface UsuarioSistema {
   salt: string;
   rbdAsignado?: string; // Para rol 'director_colegio': restringe la vista a un solo colegio
   comunasPermitidas?: string[]; // Para rol 'asesor': filtrar comunas específicas
+  geminiApiKey?: string; // ApiKey personal de Gemini del Asesor/Usuario
   activo: boolean;
   ultimoAcceso?: string;
 }

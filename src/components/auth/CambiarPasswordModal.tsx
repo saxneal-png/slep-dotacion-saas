@@ -19,6 +19,9 @@ export const CambiarPasswordModal: React.FC<CambiarPasswordModalProps> = ({
   const [actualPassword, setActualPassword] = useState('');
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [confirmarPassword, setConfirmarPassword] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    return localStorage.getItem('gemini_api_key') || (session.usuario as any).geminiApiKey || '';
+  });
   const [mostrarClaves, setMostrarClaves] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -29,8 +32,24 @@ export const CambiarPasswordModal: React.FC<CambiarPasswordModalProps> = ({
     e.preventDefault();
     setError(null);
 
+    // Si solo desea actualizar la API Key sin cambiar contraseña
+    if (!nuevaPassword && !actualPassword && geminiApiKey !== undefined) {
+      try {
+        setCargando(true);
+        await AuthService.guardarApiKeyUsuario(session.usuario.id, geminiApiKey);
+        onSuccess('¡API Key personal de Gemini actualizada exitosamente!');
+        onClose();
+        return;
+      } catch (err: any) {
+        setError(err.message || 'Error al guardar API Key.');
+        return;
+      } finally {
+        setCargando(false);
+      }
+    }
+
     if (!actualPassword || !nuevaPassword || !confirmarPassword) {
-      setError('Por favor complete todos los campos.');
+      setError('Por favor complete todos los campos de contraseña.');
       return;
     }
 
@@ -56,9 +75,13 @@ export const CambiarPasswordModal: React.FC<CambiarPasswordModalProps> = ({
         throw new Error('La contraseña actual es incorrecta.');
       }
 
-      // Cambiar contraseña
+      // Cambiar contraseña y API Key si fue provista
       await AuthService.cambiarPassword(session.usuario.id, nuevaPassword);
-      onSuccess('¡Contraseña actualizada exitosamente!');
+      if (geminiApiKey !== undefined) {
+        await AuthService.guardarApiKeyUsuario(session.usuario.id, geminiApiKey);
+      }
+
+      onSuccess('¡Contraseña y configuración actualizadas exitosamente!');
       onClose();
     } catch (err: any) {
       setError(err.message || 'Error al actualizar contraseña.');
@@ -139,12 +162,27 @@ export const CambiarPasswordModal: React.FC<CambiarPasswordModalProps> = ({
             </label>
             <input
               type={mostrarClaves ? 'text' : 'password'}
-              required
               value={confirmarPassword}
               onChange={e => setConfirmarPassword(e.target.value)}
               placeholder="••••••••"
               className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div className="pt-2 border-t border-slate-800">
+            <label className="block text-[11px] font-bold uppercase text-amber-400 mb-1">
+              Mi API Key Personal de Gemini IA (Opcional)
+            </label>
+            <input
+              type="password"
+              value={geminiApiKey}
+              onChange={e => setGeminiApiKey(e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-amber-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Esta clave se activará automáticamente cada vez que inicies sesión en tu cuenta.
+            </p>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
