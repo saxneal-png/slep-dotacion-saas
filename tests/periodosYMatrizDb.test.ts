@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'fs';
 import {
   getDb,
@@ -30,7 +30,23 @@ describe('Periodos y Matriz Excel en Base de Datos', () => {
 
   it('guarda matriz excel con cursos, docentes y asignaciones en 2026', async () => {
     const realPath = 'C:/Users/DionicioFelipeFlores/Downloads/Dotación Liceo Narciso T.xlsx';
-    if (!fs.existsSync(realPath)) return;
+    if (!fs.existsSync(realPath)) {
+      // Si el archivo no existe en el runner (ej. CI GitHub Actions), creamos datos mínimos para permitir la suite
+      const mockParsed = {
+        cursos: [
+          { nivel: '1° Básico', letra: 'A', cupoSae: 30, matriculaProyectada: 28, asignaturas: [{ nombre: 'Lenguaje', horas: 8 }] },
+          { nivel: '2° Básico', letra: 'A', cupoSae: 30, matriculaProyectada: 28, asignaturas: [{ nombre: 'Lenguaje', horas: 8 }] }
+        ],
+        docentes: [
+          { run: '11111111-1', nombres: 'Docente', apellidos: 'Uno', horasContrato: 44, calidadJuridica: 'TITULAR' as const, estamento: 'DOCENTE_AULA' as const }
+        ],
+        asignaciones: [
+          { docenteRun: '11111111-1', nivel: '1° Básico', letra: 'A', asignatura: 'Lenguaje', horas: 8 }
+        ]
+      };
+      await guardarMatrizExcelEnDb(mockParsed as any, colegioTest.rbd, 2026);
+      return;
+    }
 
     const buffer = fs.readFileSync(realPath);
     const parsed = await parseMatrizExcel(buffer, 'Dotación Liceo Narciso T.xlsx');
