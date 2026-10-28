@@ -117,7 +117,7 @@ export const App: React.FC = () => {
   const [modalCopilotAbierto, setModalCopilotAbierto] = useState(false);
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
-  const [periodoActivo, setPeriodoActivo] = useState<number>(2026);
+  const [periodoActivo, setPeriodoActivo] = useState<number>(2027);
   const [workspaceInitialTab, setWorkspaceInitialTab] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
 
   const mostrarMensaje = (mensaje: string, tipo: 'success' | 'error' = 'success') => {
@@ -145,7 +145,7 @@ export const App: React.FC = () => {
   }, [permisos]);
 
   // 1. Cargar Base de Datos y Colecciones Globales
-  const cargarDatos = async (p: number = periodoActivo) => {
+  const cargarDatos = async (p: number = 2027) => {
     try {
       await getDb();
       await checkAndSeedInitialData();

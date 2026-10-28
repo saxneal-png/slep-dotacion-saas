@@ -162,10 +162,13 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            <button onClick={() => onSelectVista('workflow')} className={navPillClass('workflow')}>
-              <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Espacio Escolar</span>
-            </button>
+            {/* Espacio Escolar solo para quien tiene permisos territoriales o es director en contexto */}
+            {(!permisos || permisos.puedeAccederTodasEscuelas) && (
+              <button onClick={() => onSelectVista('workflow')} className={navPillClass('workflow')}>
+                <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Espacio Escolar</span>
+              </button>
+            )}
 
             {(!permisos || permisos.puedeVerConsolidadorMaster) && (
               <button onClick={() => onSelectVista('consolidador')} className={`${navPillClass('consolidador')} relative`}>
@@ -199,6 +202,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Analizador</span>
               </button>
             )}
+
+            {/* Indicador de Espacio Escolar Exclusivo para Director */}
+            {permisos && !permisos.puedeAccederTodasEscuelas && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-black bg-blue-600/30 text-blue-300 border border-blue-500/40">
+                <ClipboardCheck className="w-4 h-4 text-amber-400" />
+                <span>Propuesta de Dotación 2027</span>
+              </div>
+            )}
           </nav>
 
           {/* ── 3. Controles Derecha ── */}
@@ -228,24 +239,11 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
-            {/* Selector Periodo (2026 | 2027) */}
-            <div className="flex items-center bg-black/40 p-0.5 rounded-xl border border-white/20 shadow-inner">
-              <button
-                onClick={() => onTogglePeriodo(2026)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all ${
-                  periodoActivo === 2026
-                    ? 'bg-brand-primary text-white shadow-md'
-                    : 'text-slate-200 hover:text-white hover:bg-white/10'
-                }`}
-              >2026</button>
-              <button
-                onClick={() => onTogglePeriodo(2027)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all ${
-                  periodoActivo === 2027
-                    ? 'bg-brand-primary text-white shadow-md'
-                    : 'text-slate-200 hover:text-white hover:bg-white/10'
-                }`}
-              >2027</button>
+            {/* Selector Periodo Fijo en 2027 */}
+            <div className="flex items-center bg-black/40 px-3 py-1 rounded-xl border border-white/20 shadow-inner">
+              <span className="text-xs font-black text-amber-400 tracking-wider">
+                Periodo 2027
+              </span>
             </div>
 
             {/* Theme Switcher */}

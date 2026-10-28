@@ -6,6 +6,7 @@ import {
   Mail, Phone, MapPin, Building2, Layers, Users, Search, BookOpen
 } from 'lucide-react';
 import { PlanesEstudioConfigTab } from './configuraciones/PlanesEstudioConfigTab';
+import { UsuariosConfigTab } from './configuraciones/UsuariosConfigTab';
 import {
   ConfiguracionGeneral,
   PerfilAsesor,
@@ -57,7 +58,7 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
   onVolver
 }) => {
   const [config, setConfig] = useState<ConfiguracionGeneral>(() => cargarConfiguracionGeneral());
-  const [tabActiva, setTabActiva] = useState<'perfil' | 'normativa' | 'planes' | 'ia' | 'ui' | 'db'>('perfil');
+  const [tabActiva, setTabActiva] = useState<'usuarios' | 'perfil' | 'normativa' | 'planes' | 'ia' | 'ui' | 'db'>('usuarios');
   const [mensajeGuardado, setMensajeGuardado] = useState<string | null>(null);
   const [probandoGemini, setProbandoGemini] = useState(false);
   const [resultadoTestGemini, setResultadoTestGemini] = useState<{ exito: boolean; mensaje: string } | null>(null);
@@ -341,6 +342,18 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
       <div className="flex items-center gap-1.5 overflow-x-auto bg-slate-200/70 p-1 rounded-2xl border border-slate-300/60 shadow-inner">
         
         <button
+          onClick={() => setTabActiva('usuarios')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            tabActiva === 'usuarios'
+              ? 'bg-white text-blue-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+          }`}
+        >
+          <Users className="w-4 h-4 text-blue-600" />
+          <span>Gestión de Usuarios (RBAC)</span>
+        </button>
+
+        <button
           onClick={() => setTabActiva('perfil')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
             tabActiva === 'perfil'
@@ -415,6 +428,11 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
       </div>
 
       {/* CONTENIDO DE LAS PESTAÑAS */}
+
+      {/* 0. PESTAÑA GESTIÓN DE USUARIOS RBAC */}
+      {tabActiva === 'usuarios' && (
+        <UsuariosConfigTab colegios={colegios} />
+      )}
 
       {/* 1. PESTAÑA PERFIL & ASESORES UATP */}
       {tabActiva === 'perfil' && (
