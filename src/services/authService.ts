@@ -148,13 +148,51 @@ export class AuthService {
   }
 
   public static async login(usernameOrEmail: string, passwordPlain: string): Promise<AuthSession> {
-    const usuarios = await this.getUsuarios();
     const cleanInput = usernameOrEmail.trim().toLowerCase();
+    let usuarios = await this.getUsuarios();
     
     // Buscar usuario por username o por email
-    const encontrado = usuarios.find(
+    let encontrado = usuarios.find(
       u => (u.username.toLowerCase() === cleanInput || (u.email && u.email.toLowerCase() === cleanInput)) && u.activo
     );
+
+    // 1. Si no se encuentra en el almacenamiento local pero es saxneal@gmail.com (SuperAdmin oficial)
+    if (!encontrado && (cleanInput === 'saxneal@gmail.com' || cleanInput === 'saxneal')) {
+      usuarios = await this.inicializarUsuariosSiNoExisten();
+      encontrado = usuarios.find(u => (u.email || '').toLowerCase() === 'saxneal@gmail.com');
+    }
+
+    // 2. Si aún no está en local pero existe en Firebase Auth, consultar Firestore /usuarios
+    if (!encontrado && auth && typeof window !== 'undefined') {
+      try {
+        const cred = await signInWithEmailAndPassword(auth, cleanInput, passwordPlain);
+        if (cred.user) {
+          const uDocSnap = await getDoc(doc(firestore, 'usuarios', cred.user.uid)).catch(() => null);
+          const uData = uDocSnap?.data();
+          const rol = uData?.rol || (cleanInput === 'saxneal@gmail.com' ? 'admin' : 'asesor');
+          const salt = generateSalt();
+          const passwordHash = await hashPassword(passwordPlain, salt);
+          const nuevoUsuario: UsuarioSistema = {
+            id: cred.user.uid,
+            username: cred.user.email || cleanInput,
+            email: cred.user.email || cleanInput,
+            nombreCompleto: uData?.nombreCompleto || 'Super Administrador SLEP (saxneal)',
+            role: rol,
+            cargo: uData?.cargo || 'Administrador General del Sistema',
+            rbdAsignado: uData?.rbdAsignado || null,
+            comunasPermitidas: uData?.carteraRbds || [],
+            passwordHash,
+            salt,
+            activo: true
+          };
+          usuarios.push(nuevoUsuario);
+          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+          encontrado = nuevoUsuario;
+        }
+      } catch (fbLoginErr: any) {
+        // Ignorar si falla para emitir el error estándar de usuario no encontrado
+      }
+    }
 
     if (!encontrado) {
       throw new Error('Usuario no encontrado o cuenta deshabilitada.');
