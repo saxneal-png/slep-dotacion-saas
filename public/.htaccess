@@ -1,0 +1,29 @@
+# Apache 2.4 - Enrutamiento para API REST y Single Page Application (SPA)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # 1. Enrutar peticiones a la API PHP
+    RewriteCond %{REQUEST_URI} ^/api/ [NC]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+
+    # 2. Archivos estáticos existentes (js, css, png, woff2, etc.) se sirven directo
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # 3. Cualquier otra ruta se delega al index.html del Frontend React SPA
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+# Seguridad básica de cabeceras
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Desactivar listado de directorios
+Options -Indexes
