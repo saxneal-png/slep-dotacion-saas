@@ -1,9 +1,37 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Reglas para Dotación SLEP Valle Diguillín
+
+    // 1. Catálogo de Establecimientos: Lectura pública/institucional, modificación restringida
+    match /establecimientos/{rbd} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // 2. Cursos SAE: Lectura institucional, escritura por usuarios autorizados
+    match /cursos/{cursoId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // 3. Docentes y Nómina: Protegido por autenticación
+    match /docentes/{docenteId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 4. Asignaciones Curriculares Ley 20.903: Protegido por autenticación
+    match /asignaciones/{asigId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 5. Bloqueos de edición concurrente: Protegido por autenticación
+    match /bloqueos_edicion/{rbd} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Regla de salvaguarda para cualquier otra colección no especificada
     match /{document=**} {
-      allow read, write: if true; // Configuración inicial de desarrollo / transición
+      allow read, write: if request.auth != null;
     }
   }
 }

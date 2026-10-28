@@ -1,5 +1,5 @@
 const { initializeApp } = require('firebase/app');
-const { getFirestore, doc, setDoc, getDoc } = require('firebase/firestore');
+const { getFirestore, doc, setDoc } = require('firebase/firestore');
 const fs = require('fs');
 
 const firebaseConfig = {
@@ -14,8 +14,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function sembrarColegios() {
-  console.log('--- Iniciando siembra de los 121 colegios en Firebase Firestore ---');
+  console.log('--- Subiendo colegios restantes a Firestore con pausas controladas ---');
   const catalogContent = fs.readFileSync('src/data/slepSchoolsCatalog.ts', 'utf8');
   const regex = /rbd:\s*'([^']+)',\s*nombre:\s*'([^']+)',\s*comuna:\s*'([^']+)',\s*tipo:\s*'([^']+)'(?:,\s*director:\s*'([^']+)')?/g;
   let match;
@@ -32,25 +34,30 @@ async function sembrarColegios() {
     });
   }
 
-  console.log(`Detectados ${schools.length} colegios para subir.`);
-
-  let exitosos = 0;
+  let subidos = 0;
   for (const s of schools) {
-    try {
-      await setDoc(doc(db, 'establecimientos', s.rbd), s, { merge: true });
-      exitosos++;
-      if (exitosos % 20 === 0 || exitosos === schools.length) {
-        console.log(`Sincronizados ${exitosos}/${schools.length} colegios en Firestore...`);
+    let reintentos = 3;
+    while (reintentos > 0) {
+      try {
+        await setDoc(doc(db, 'establecimientos', s.rbd), s, { merge: true });
+        subidos++;
+        if (subidos % 25 === 0 || subidos === schools.length) {
+          console.log(`[Firestore] Sincronizados ${subidos}/${schools.length} colegios...`);
+        }
+        await sleep(50); // Pausa de 50ms para no saturar el canal de prueba
+        break;
+      } catch (err) {
+        reintentos--;
+        if (reintentos === 0) {
+          console.error(`Fallo definitivo en RBD ${s.rbd}:`, err.message);
+        } else {
+          await sleep(500);
+        }
       }
-    } catch (err) {
-      console.error(`Error subiendo RBD ${s.rbd}:`, err.message);
-      break;
     }
   }
 
-  if (exitosos === schools.length) {
-    console.log('✅ ¡Catálogo completo de colegios sembrado exitosamente en Firestore!');
-  }
+  console.log(`\n🎉 PROCESO FINALIZADO: ${subidos}/${schools.length} colegios activos en Firebase Firestore.`);
 }
 
 sembrarColegios();
