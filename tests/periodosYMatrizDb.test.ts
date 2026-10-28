@@ -31,20 +31,35 @@ describe('Periodos y Matriz Excel en Base de Datos', () => {
   it('guarda matriz excel con cursos, docentes y asignaciones en 2026', async () => {
     const realPath = 'C:/Users/DionicioFelipeFlores/Downloads/Dotación Liceo Narciso T.xlsx';
     if (!fs.existsSync(realPath)) {
-      // Si el archivo no existe en el runner (ej. CI GitHub Actions), creamos datos mínimos para permitir la suite
+      // Si el archivo no existe en el runner (ej. CI GitHub Actions en Ubuntu), usamos la estructura real parseada
       const mockParsed = {
         cursos: [
-          { nivel: '1° Básico', letra: 'A', cupoSae: 30, matriculaProyectada: 28, asignaturas: [{ nombre: 'Lenguaje', horas: 8 }] },
-          { nivel: '2° Básico', letra: 'A', cupoSae: 30, matriculaProyectada: 28, asignaturas: [{ nombre: 'Lenguaje', horas: 8 }] }
+          { nivel: '1° Básico', letra: 'A', regimen: 'JEC' as const, horasTotal: 38 },
+          { nivel: '2° Básico', letra: 'A', regimen: 'JEC' as const, horasTotal: 38 }
         ],
         docentes: [
-          { run: '11111111-1', nombres: 'Docente', apellidos: 'Uno', horasContrato: 44, calidadJuridica: 'TITULAR' as const, estamento: 'DOCENTE_AULA' as const }
-        ],
-        asignaciones: [
-          { docenteRun: '11111111-1', nivel: '1° Básico', letra: 'A', asignatura: 'Lenguaje', horas: 8 }
+          {
+            run: '11111111-1',
+            nombres: 'Docente',
+            apellidos: 'Prueba',
+            horasContrato: 44,
+            titularSubGral: 44,
+            contrataSubGral: 0,
+            titularSep: 0,
+            contrataSep: 0,
+            titularPie: 0,
+            contrataPie: 0,
+            observaciones: '',
+            asignaciones: [
+              { nivelCurso: '1° Básico', letraCurso: 'A', asignatura: 'Lenguaje', horasPedagogicasAula: 8, esTallerJec: false }
+            ]
+          }
         ]
       };
-      await guardarMatrizExcelEnDb(mockParsed as any, colegioTest.rbd, 2026);
+      const res = await guardarMatrizExcelEnDb(mockParsed as any, colegioTest.rbd, 2026);
+      expect(res.cursosNuevos).toBe(2);
+      expect(res.docentesGuardados).toBe(1);
+      expect(res.asignacionesGuardadas).toBe(1);
       return;
     }
 
