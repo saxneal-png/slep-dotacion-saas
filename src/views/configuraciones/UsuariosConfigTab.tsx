@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, KeyRound, Shield, Check, AlertCircle, Building2 } from 'lucide-react';
+import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, Building2, Eye, EyeOff } from 'lucide-react';
 import { AuthService, generateSalt, hashPassword } from '../../services/authService';
 import { UsuarioSistema, UserRole } from '../../types/authTypes';
 import { Establecimiento } from '../../types';
@@ -11,10 +11,11 @@ interface UsuariosConfigTabProps {
 export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }) => {
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>([]);
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [usuarioEnEdicion, setUsuarioEnEdicion] = useState<UsuarioSistema | null>(null);
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
 
-  // Form State para nuevo usuario
+  // Form State
   const [username, setUsername] = useState('');
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
@@ -22,6 +23,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
   const [cargo, setCargo] = useState('Director de Establecimiento');
   const [password, setPassword] = useState('');
   const [rbdAsignado, setRbdAsignado] = useState<string>(colegios[0]?.rbd || '3501');
+  const [activo, setActivo] = useState(true);
 
   const cargarLista = async () => {
     try {
@@ -39,21 +41,60 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
     cargarLista();
   }, []);
 
-  const handleCrearUsuario = async (e: React.FormEvent) => {
+  const abrirModalNuevo = () => {
+    setUsuarioEnEdicion(null);
+    setUsername('');
+    setNombreCompleto('');
+    setEmail('');
+    setRole('director_colegio');
+    setCargo('Director de Establecimiento');
+    setPassword('');
+    setRbdAsignado(colegios[0]?.rbd || '3501');
+    setActivo(true);
+    setMensaje(null);
+    setModalAbierto(true);
+  };
+
+  const abrirModalEditar = (u: UsuarioSistema) => {
+    setUsuarioEnEdicion(u);
+    setUsername(u.username);
+    setNombreCompleto(u.nombreCompleto);
+    setEmail(u.email || '');
+    setRole(u.role);
+    setCargo(u.cargo);
+    setPassword(''); // Opcional al editar
+    setRbdAsignado(u.rbdAsignado || colegios[0]?.rbd || '3501');
+    setActivo(u.activo ?? true);
+    setMensaje(null);
+    setModalAbierto(true);
+  };
+
+  const handleGuardarUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     setMensaje(null);
 
-    if (!username.trim() || !nombreCompleto.trim() || !password) {
-      setMensaje({ tipo: 'error', texto: 'Todos los campos requeridos deben completarse.' });
+    if (!username.trim() || !nombreCompleto.trim()) {
+      setMensaje({ tipo: 'error', texto: 'Usuario y Nombre Completo son obligatorios.' });
+      return;
+    }
+
+    if (!usuarioEnEdicion && !password) {
+      setMensaje({ tipo: 'error', texto: 'Debe ingresar una contraseña para el nuevo usuario.' });
       return;
     }
 
     try {
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(password, salt);
+      let salt = usuarioEnEdicion ? usuarioEnEdicion.salt : generateSalt();
+      let passwordHash = usuarioEnEdicion ? usuarioEnEdicion.passwordHash : '';
 
-      const nuevo: UsuarioSistema = {
-        id: `user-${Date.now()}`,
+      // Si se escribió una nueva contraseña, actualizar el hash
+      if (password) {
+        salt = generateSalt();
+        passwordHash = await hashPassword(password, salt);
+      }
+
+      const usuarioAGuardar: UsuarioSistema = {
+        id: usuarioEnEdicion ? usuarioEnEdicion.id : `user-${Date.now()}`,
         username: username.trim().toLowerCase(),
         nombreCompleto: nombreCompleto.trim(),
         email: email.trim(),
@@ -62,20 +103,20 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
         passwordHash,
         salt,
         rbdAsignado: role === 'director_colegio' ? rbdAsignado : undefined,
-        activo: true
+        activo
       };
 
-      await AuthService.guardarUsuario(nuevo);
-      setMensaje({ tipo: 'ok', texto: `Usuario "${nuevo.username}" creado exitosamente.` });
+      await AuthService.guardarUsuario(usuarioAGuardar);
+      setMensaje({
+        tipo: 'ok',
+        texto: usuarioEnEdicion
+          ? `Usuario "${usuarioAGuardar.username}" actualizado exitosamente.`
+          : `Usuario "${usuarioAGuardar.username}" creado exitosamente.`
+      });
       setModalAbierto(false);
-      // Reset form
-      setUsername('');
-      setNombreCompleto('');
-      setEmail('');
-      setPassword('');
       await cargarLista();
     } catch (err: any) {
-      setMensaje({ tipo: 'error', texto: err.message || 'Error al crear usuario' });
+      setMensaje({ tipo: 'error', texto: err.message || 'Error al guardar usuario' });
     }
   };
 
@@ -112,11 +153,11 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
             Gestión de Usuarios y Atribuciones RBAC
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Crea y administra credenciales, roles y asignación de colegios.
+            Crea, edita y administra credenciales, contraseñas, roles y asignación de colegios.
           </p>
         </div>
         <button
-          onClick={() => setModalAbierto(true)}
+          onClick={abrirModalNuevo}
           className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/30 transition"
         >
           <Plus className="w-4 h-4" />
@@ -174,15 +215,24 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {u.username !== 'admin' && (
+                    <div className="flex items-center justify-end gap-1.5">
                       <button
-                        onClick={() => handleEliminar(u.id, u.username)}
-                        className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-950/60 rounded-lg transition"
-                        title="Eliminar usuario"
+                        onClick={() => abrirModalEditar(u)}
+                        className="p-1.5 text-blue-400 hover:text-blue-200 hover:bg-blue-950/60 rounded-lg transition"
+                        title="Editar usuario y permisos"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Edit2 className="w-4 h-4" />
                       </button>
-                    )}
+                      {u.username !== 'admin' && (
+                        <button
+                          onClick={() => handleEliminar(u.id, u.username)}
+                          className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-950/60 rounded-lg transition"
+                          title="Eliminar usuario"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -191,15 +241,15 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
         </table>
       </div>
 
-      {/* Modal Crear Usuario */}
+      {/* Modal Crear / Editar Usuario */}
       {modalAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
             <h4 className="text-base font-bold text-white mb-4 flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-amber-400" />
-              Crear Nuevo Usuario
+              {usuarioEnEdicion ? `Editar Usuario: ${usuarioEnEdicion.username}` : 'Crear Nuevo Usuario'}
             </h4>
-            <form onSubmit={handleCrearUsuario} className="space-y-3">
+            <form onSubmit={handleGuardarUsuario} className="space-y-3">
               <div>
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
                   Usuario (login)
@@ -207,10 +257,11 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                 <input
                   type="text"
                   required
+                  disabled={usuarioEnEdicion?.username === 'admin'}
                   value={username}
                   onChange={e => setUsername(e.target.value)}
                   placeholder="ej: dir_pueblo_seco"
-                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
 
@@ -248,6 +299,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                   </label>
                   <select
                     value={role}
+                    disabled={usuarioEnEdicion?.username === 'admin'}
                     onChange={e => {
                       const r = e.target.value as UserRole;
                       setRole(r);
@@ -256,7 +308,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                       if (r === 'auditor') setCargo('Auditor DEP');
                       if (r === 'admin') setCargo('Administrador SLEP');
                     }}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   >
                     <option value="director_colegio">Director de Colegio</option>
                     <option value="asesor">Asesor UATP</option>
@@ -267,14 +319,14 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
 
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                    Contraseña
+                    {usuarioEnEdicion ? 'Nueva Contraseña (opcional)' : 'Contraseña'}
                   </label>
                   <input
                     type="password"
-                    required
+                    required={!usuarioEnEdicion}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder={usuarioEnEdicion ? 'Dejar en blanco para conservar' : '••••••••'}
                     className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -311,7 +363,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                   type="submit"
                   className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition"
                 >
-                  Guardar Usuario
+                  {usuarioEnEdicion ? 'Guardar Cambios' : 'Crear Usuario'}
                 </button>
               </div>
             </form>
