@@ -9,7 +9,7 @@ export interface UsuarioSistema {
   cargo: string;
   passwordHash: string;
   salt: string;
-  rbdAsignado?: number; // Para rol 'director_colegio': restringe la vista a un solo colegio
+  rbdAsignado?: string; // Para rol 'director_colegio': restringe la vista a un solo colegio
   comunasPermitidas?: string[]; // Para rol 'asesor': filtrar comunas específicas
   activo: boolean;
   ultimoAcceso?: string;

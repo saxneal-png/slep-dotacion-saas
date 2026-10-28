@@ -98,7 +98,7 @@ export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 
     email: 'direccion.liceo@slepvallediguillin.cl',
     role: 'director_colegio',
     cargo: 'Directora de Establecimiento',
-    rbdAsignado: 3501, // Vinculado a establecimiento base
+    rbdAsignado: '3501', // Vinculado a establecimiento base
     activo: true
   },
   {
