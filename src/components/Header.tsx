@@ -148,66 +148,85 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* ── 2. Navegación Principal ── */}
           <nav className="hidden lg:flex items-center bg-black/40 p-1 rounded-xl border border-white/15 shadow-inner space-x-0.5">
-            <button onClick={() => onSelectVista('colegios_asesorados')} className={navPillClass('colegios_asesorados')} title="Colegios Asesorados">
-              <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>Colegios Asesorados</span>
-            </button>
+            {(!permisos || permisos.puedeAccederTodasEscuelas) && (
+              <button onClick={() => onSelectVista('colegios_asesorados')} className={navPillClass('colegios_asesorados')} title="Colegios Asesorados">
+                <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>Colegios Asesorados</span>
+              </button>
+            )}
 
-            <button onClick={() => onSelectVista('cartera')} className={navPillClass('cartera')}>
-              <Building2 className="w-3.5 h-3.5 text-sky-400" />
-              <span>Cartera</span>
-            </button>
+            {(!permisos || permisos.puedeVerCarteraTerritorial) && (
+              <button onClick={() => onSelectVista('cartera')} className={navPillClass('cartera')}>
+                <Building2 className="w-3.5 h-3.5 text-sky-400" />
+                <span>Cartera</span>
+              </button>
+            )}
 
             <button onClick={() => onSelectVista('workflow')} className={navPillClass('workflow')}>
               <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>Espacio Escolar</span>
             </button>
 
-            <button onClick={() => onSelectVista('consolidador')} className={`${navPillClass('consolidador')} relative`}>
-              <Layers className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Consolidado</span>
-              {inconsistenciasCount > 0 && (
-                <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-black ml-0.5 animate-pulse">
-                  {inconsistenciasCount}
-                </span>
-              )}
-            </button>
+            {(!permisos || permisos.puedeVerConsolidadorMaster) && (
+              <button onClick={() => onSelectVista('consolidador')} className={`${navPillClass('consolidador')} relative`}>
+                <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Consolidado</span>
+                {inconsistenciasCount > 0 && (
+                  <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-black ml-0.5 animate-pulse">
+                    {inconsistenciasCount}
+                  </span>
+                )}
+              </button>
+            )}
 
-            <button onClick={() => onSelectVista('estadisticas')} className={navPillClass('estadisticas')}>
-              <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
-              <span>Estadísticas</span>
-            </button>
+            {(!permisos || permisos.puedeAccederTodasEscuelas) && (
+              <button onClick={() => onSelectVista('estadisticas')} className={navPillClass('estadisticas')}>
+                <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
+                <span>Estadísticas</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => onSelectVista('analizador')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                vistaActiva === 'analizador'
-                  ? 'bg-amber-500 text-white shadow-sm'
-                  : 'text-amber-300 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Analizador</span>
-            </button>
+            {(!permisos || permisos.puedeVerAnalizadorSige) && (
+              <button
+                onClick={() => onSelectVista('analizador')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  vistaActiva === 'analizador'
+                    ? 'bg-amber-500 text-white shadow-sm'
+                    : 'text-amber-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Analizador</span>
+              </button>
+            )}
           </nav>
 
           {/* ── 3. Controles Derecha ── */}
           <div className="flex items-center space-x-1.5 flex-shrink-0">
 
-            {/* Buscador de Colegios */}
-            <button
-              onClick={onAbrirNavegadorColegios}
-              className="flex items-center space-x-2 bg-black/40 hover:bg-black/60 px-3 py-1.5 rounded-xl border border-white/20 text-xs font-bold text-white transition-all shadow-sm group max-w-[170px] sm:max-w-[220px]"
-              title="Buscar escuela (⌘K / Ctrl+K)"
-            >
-              <Search className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 group-hover:scale-110 transition-transform" />
-              <span className="truncate text-xs font-semibold text-white">
-                {colegioActivo ? colegioActivo.nombre : 'Seleccionar escuela'}
-              </span>
-              <kbd className="hidden xl:inline text-[9px] bg-white/10 px-1 py-0.5 rounded text-white font-mono border border-white/20">
-                ⌘K
-              </kbd>
-            </button>
+            {/* Buscador de Colegios (Deshabilitado o restringido para rol director de escuela) */}
+            {(!permisos || permisos.puedeAccederTodasEscuelas) ? (
+              <button
+                onClick={onAbrirNavegadorColegios}
+                className="flex items-center space-x-2 bg-black/40 hover:bg-black/60 px-3 py-1.5 rounded-xl border border-white/20 text-xs font-bold text-white transition-all shadow-sm group max-w-[170px] sm:max-w-[220px]"
+                title="Buscar escuela (⌘K / Ctrl+K)"
+              >
+                <Search className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 group-hover:scale-110 transition-transform" />
+                <span className="truncate text-xs font-semibold text-white">
+                  {colegioActivo ? colegioActivo.nombre : 'Seleccionar escuela'}
+                </span>
+                <kbd className="hidden xl:inline text-[9px] bg-white/10 px-1 py-0.5 rounded text-white font-mono border border-white/20">
+                  ⌘K
+                </kbd>
+              </button>
+            ) : (
+              <div className="flex items-center space-x-2 bg-blue-950/60 px-3 py-1.5 rounded-xl border border-blue-500/40 text-xs font-bold text-blue-200 shadow-sm max-w-[170px] sm:max-w-[240px]">
+                <Building2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                <span className="truncate text-xs font-bold text-white">
+                  {colegioActivo ? colegioActivo.nombre : 'Colegio Asignado'}
+                </span>
+              </div>
+            )}
 
             {/* Selector Periodo (2026 | 2027) */}
             <div className="flex items-center bg-black/40 p-0.5 rounded-xl border border-white/20 shadow-inner">
@@ -342,20 +361,22 @@ export const Header: React.FC<HeaderProps> = ({
               {toolsOpen && (
                 <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl py-2 z-50 divide-y divide-slate-800 animate-fade-in backdrop-blur-md">
                   <div className="p-2 space-y-1">
-                    <button
-                      onClick={() => { onAbrirCentroRespaldos(); setToolsOpen(false); }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-white hover:bg-slate-800 transition-colors"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <Database className="w-4 h-4 text-emerald-400" />
-                        <span>Centro de Respaldos SQLite</span>
-                      </div>
-                      <span className={`text-[10px] font-mono font-bold ${internalEstadoGuardado === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {internalEstadoGuardado === 'saved' ? 'Activo' : 'Error'}
-                      </span>
-                    </button>
+                    {(!permisos || permisos.puedeConfigurarSistema) && (
+                      <button
+                        onClick={() => { onAbrirCentroRespaldos(); setToolsOpen(false); }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-white hover:bg-slate-800 transition-colors"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Database className="w-4 h-4 text-emerald-400" />
+                          <span>Centro de Respaldos SQLite</span>
+                        </div>
+                        <span className={`text-[10px] font-mono font-bold ${internalEstadoGuardado === 'saved' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {internalEstadoGuardado === 'saved' ? 'Activo' : 'Error'}
+                        </span>
+                      </button>
+                    )}
 
-                    {onAbrirTraspasoPeriodos && (
+                    {onAbrirTraspasoPeriodos && (!permisos || permisos.puedeTraspasarPeriodos) && (
                       <button
                         onClick={() => { onAbrirTraspasoPeriodos(); setToolsOpen(false); }}
                         className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-bold text-indigo-300 hover:bg-indigo-950/60 transition-colors"

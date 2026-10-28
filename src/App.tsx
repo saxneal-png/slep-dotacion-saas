@@ -82,6 +82,8 @@ import { LoginModal } from './components/auth/LoginModal';
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
   const [loading, setLoading] = useState(true);
+
+  const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
   const [colegios, setColegios] = useState<Establecimiento[]>([]);
   const [colegioActivo, setColegioActivo] = useState<Establecimiento | null>(null);
 
@@ -128,15 +130,19 @@ export const App: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setModalNavegadorAbierto(prev => !prev);
+        if (!permisos || permisos.puedeAccederTodasEscuelas) {
+          setModalNavegadorAbierto(prev => !prev);
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault();
-        setModalCopilotAbierto(prev => !prev);
+        if (!permisos || permisos.puedeUsarCopilotIa) {
+          setModalCopilotAbierto(prev => !prev);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [permisos]);
 
   // 1. Cargar Base de Datos y Colecciones Globales
   const cargarDatos = async (p: number = periodoActivo) => {
@@ -199,6 +205,11 @@ export const App: React.FC = () => {
   }, []);
 
   const handleSelectColegio = async (est: Establecimiento) => {
+    // Protección estricta RBAC: si el usuario es director, solo puede seleccionar su escuela asignada
+    if (session?.usuario.role === 'director_colegio' && session.usuario.rbdAsignado && est.rbd !== session.usuario.rbdAsignado) {
+      mostrarMensaje('Acceso denegado: solo tiene atribuciones sobre su establecimiento asignado.', 'error');
+      return;
+    }
     setColegioActivo(est);
     await cargarDatosColegio(est.rbd, periodoActivo);
   };
@@ -231,6 +242,21 @@ export const App: React.FC = () => {
       return true;
     }
   };
+
+  // Forzar colegio y vista fija al iniciar sesión como director
+  useEffect(() => {
+    if (session?.usuario.role === 'director_colegio' && session.usuario.rbdAsignado && colegios.length > 0) {
+      const asignado = colegios.find(c => c.rbd === session.usuario.rbdAsignado);
+      if (asignado && (!colegioActivo || colegioActivo.rbd !== asignado.rbd)) {
+        setColegioActivo(asignado);
+        cargarDatosColegio(asignado.rbd, periodoActivo);
+      }
+      // Si está en vistas territoriales restringidas, redirigir a 'workflow'
+      if (['colegios_asesorados', 'cartera', 'consolidador', 'estadisticas', 'configuraciones'].includes(vistaActiva)) {
+        setVistaActiva('workflow');
+      }
+    }
+  }, [session, colegios, vistaActiva]);
 
   // Handlers CRUD
   const handleGuardarColegio = async (est: Establecimiento) => {
@@ -590,8 +616,6 @@ export const App: React.FC = () => {
     mostrarMensaje('Sesión cerrada correctamente.');
   };
 
-  const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
-
   // Filtrado de colegios según atribución del usuario
   const colegiosPermitidos = useMemo(() => {
     if (!session) return colegios;
@@ -942,39 +966,43 @@ export const App: React.FC = () => {
       </main>
 
       {/* Modal Navegador Rápido de Colegios (Spotlight / Ctrl+K) */}
-      <SchoolNavigatorModal
-        isOpen={modalNavegadorAbierto}
-        onClose={() => setModalNavegadorAbierto(false)}
-        colegios={colegios}
-        colegioActivo={colegioActivo}
-        onSelectColegio={(est) => {
-          handleSelectColegio(est);
-          if (vistaActiva === 'cartera') setVistaActiva('workflow');
-        }}
-        diagnosticos={diagnosticosTodosColegios}
-        onCrearNuevoColegio={() => {
-          setVistaActiva('cartera');
-        }}
-      />
+      {(!permisos || permisos.puedeAccederTodasEscuelas) && (
+        <SchoolNavigatorModal
+          isOpen={modalNavegadorAbierto}
+          onClose={() => setModalNavegadorAbierto(false)}
+          colegios={colegiosPermitidos}
+          colegioActivo={colegioActivo}
+          onSelectColegio={(est) => {
+            handleSelectColegio(est);
+            if (vistaActiva === 'cartera') setVistaActiva('workflow');
+          }}
+          diagnosticos={diagnosticosTodosColegios}
+          onCrearNuevoColegio={() => {
+            setVistaActiva('cartera');
+          }}
+        />
+      )}
 
       {/* Modal Centro de Guardado y Respaldos */}
-      <SaveBackupModal
-        isOpen={modalRespaldosAbierto}
-        onClose={() => setModalRespaldosAbierto(false)}
-        colegios={colegios}
-        colegioActivo={colegioActivo}
-        periodoActivo={periodoActivo}
-        docentes={todosLosDocentes}
-        cursos={todosLosCursos}
-        salas={todasLasSalas}
-        asignaciones={todasLasAsignaciones}
-        onExportarSqlite={handleExportarSqlite}
-        onImportarSqlite={handleImportarSqlite}
-        onExportarCarteraSlep={handleExportarCarteraSlep}
-        onImportarCarteraSlep={handleImportarCarteraSlep}
-        onBorrarDotacionPeriodo={handleBorrarDotacionPeriodo}
-        onReiniciarBaseDatos={handleReiniciarBaseDatos}
-      />
+      {(!permisos || permisos.puedeConfigurarSistema) && (
+        <SaveBackupModal
+          isOpen={modalRespaldosAbierto}
+          onClose={() => setModalRespaldosAbierto(false)}
+          colegios={colegios}
+          colegioActivo={colegioActivo}
+          periodoActivo={periodoActivo}
+          docentes={todosLosDocentes}
+          cursos={todosLosCursos}
+          salas={todasLasSalas}
+          asignaciones={todasLasAsignaciones}
+          onExportarSqlite={handleExportarSqlite}
+          onImportarSqlite={handleImportarSqlite}
+          onExportarCarteraSlep={handleExportarCarteraSlep}
+          onImportarCarteraSlep={handleImportarCarteraSlep}
+          onBorrarDotacionPeriodo={handleBorrarDotacionPeriodo}
+          onReiniciarBaseDatos={handleReiniciarBaseDatos}
+        />
+      )}
 
       {/* Panel Lateral Retráctil: ¡Qué no va a saber! IA */}
       <DotacionCopilotDrawer

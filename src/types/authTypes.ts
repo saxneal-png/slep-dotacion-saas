@@ -21,6 +21,9 @@ export interface PermisosRol {
   puedeConfigurarSistema: boolean;
   puedeGestionarUsuarios: boolean;
   puedeAccederTodasEscuelas: boolean;
+  puedeVerCarteraTerritorial: boolean;
+  puedeVerConsolidadorMaster: boolean;
+  puedeVerAnalizadorSige: boolean;
   puedeExportarReportes: boolean;
   puedeUsarCopilotIa: boolean;
   puedeTraspasarPeriodos: boolean;
