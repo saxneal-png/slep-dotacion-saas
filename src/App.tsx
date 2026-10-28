@@ -75,8 +75,12 @@ import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoCo
 import { generarExcelConsolidadoSlep } from './services/excelReportService';
 import { generarExcelMatrizDotacionColegio } from './services/excelMatrizDotacionService';
 import { cargarConfiguracionGeneral } from './services/configuracionGeneralService';
+import { AuthService } from './services/authService';
+import { AuthSession } from './types/authTypes';
+import { LoginModal } from './components/auth/LoginModal';
 
 export const App: React.FC = () => {
+  const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
   const [loading, setLoading] = useState(true);
   const [colegios, setColegios] = useState<Establecimiento[]>([]);
   const [colegioActivo, setColegioActivo] = useState<Establecimiento | null>(null);
@@ -580,6 +584,27 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleLogout = () => {
+    AuthService.logout();
+    setSession(null);
+    mostrarMensaje('Sesión cerrada correctamente.');
+  };
+
+  const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
+
+  // Filtrado de colegios según atribución del usuario
+  const colegiosPermitidos = useMemo(() => {
+    if (!session) return colegios;
+    if (session.usuario.role === 'director_colegio' && session.usuario.rbdAsignado) {
+      const asignado = colegios.filter(c => c.rbd === session.usuario.rbdAsignado);
+      return asignado.length > 0 ? asignado : colegios;
+    }
+    if (session.usuario.role === 'asesor' && session.usuario.comunasPermitidas?.length) {
+      return colegios.filter(c => session.usuario.comunasPermitidas?.includes(c.comuna));
+    }
+    return colegios;
+  }, [colegios, session]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
@@ -593,9 +618,27 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] flex flex-col">
+      {!session && (
+        <LoginModal
+          onLoginSuccess={(newSession) => {
+            setSession(newSession);
+            mostrarMensaje(`¡Bienvenido, ${newSession.usuario.nombreCompleto}!`);
+            if (newSession.usuario.role === 'director_colegio' && newSession.usuario.rbdAsignado) {
+              const esc = colegios.find(c => c.rbd === newSession.usuario.rbdAsignado);
+              if (esc) {
+                handleSelectColegio(esc);
+                setVistaActiva('workflow');
+              }
+            }
+          }}
+        />
+      )}
+
       <Header
+        session={session}
+        onLogout={handleLogout}
         colegioActivo={colegioActivo}
-        colegios={colegios}
+        colegios={colegiosPermitidos}
         onSelectColegio={handleSelectColegio}
         vistaActiva={vistaActiva}
         onSelectVista={setVistaActiva}

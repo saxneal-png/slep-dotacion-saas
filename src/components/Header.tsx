@@ -3,12 +3,17 @@ import {
   Building2, FileSpreadsheet, Layers, ClipboardCheck, ChevronDown,
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
   Database, Search, Sparkles, BarChart3, CheckCircle2,
-  UserCheck, Settings, Palette, Moon, Sun, Leaf, Eye, Menu, X, Globe
+  UserCheck, Settings, Palette, Moon, Sun, Leaf, Eye, Menu, X, Globe,
+  LogOut, ShieldAlert
 } from 'lucide-react';
 import { Establecimiento } from '../types';
+import { AuthSession } from '../types/authTypes';
+import { AuthService } from '../services/authService';
 import { subscribePersist, getUltimaHoraGuardado } from '../database/db';
 
 interface HeaderProps {
+  session?: AuthSession | null;
+  onLogout?: () => void;
   colegioActivo: Establecimiento | null;
   colegios: Establecimiento[];
   onSelectColegio: (est: Establecimiento) => void;
@@ -30,6 +35,8 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  session,
+  onLogout,
   colegioActivo,
   colegios,
   onSelectColegio,
@@ -47,6 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   onAbrirCopilot,
   onAbrirConfiguraciones
 }) => {
+  const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
   const [toolsOpen, setToolsOpen]       = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -277,8 +285,8 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Configuraciones */}
-            {onAbrirConfiguraciones && (
+            {/* Configuraciones (Solo usuarios con permiso o admin) */}
+            {onAbrirConfiguraciones && (!permisos || permisos.puedeConfigurarSistema) && (
               <button
                 onClick={onAbrirConfiguraciones}
                 className={`p-2 rounded-xl border text-xs font-bold transition-all ${
@@ -290,6 +298,29 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Settings className="w-4 h-4 text-amber-400" />
               </button>
+            )}
+
+            {/* Perfil de Usuario y Logout */}
+            {session && (
+              <div className="flex items-center gap-1.5 pl-1 border-l border-white/15">
+                <div className="hidden xl:flex flex-col text-right leading-tight max-w-[120px]">
+                  <span className="text-[11px] font-bold text-white truncate">
+                    {session.usuario.nombreCompleto}
+                  </span>
+                  <span className="text-[9px] font-mono uppercase tracking-wider text-amber-300 truncate">
+                    {session.usuario.role.replace('_', ' ')}
+                  </span>
+                </div>
+                {onLogout && (
+                  <button
+                    onClick={onLogout}
+                    className="p-2 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-200 hover:text-white transition-all shadow-sm"
+                    title={`Cerrar sesión (${session.usuario.username})`}
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Menú Opciones / Herramientas */}
