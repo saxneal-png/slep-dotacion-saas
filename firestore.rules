@@ -2,36 +2,111 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. Catálogo de Establecimientos: Lectura pública/institucional, modificación restringida
+    // --- FUNCIONES AUXILIARES DE AUTORIZACIÓN (RBAC & MULTITENANCY) ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function isActiveUser() {
+      return isAuthenticated() && getUserData().activo == true;
+    }
+
+    function isAdmin() {
+      return isActiveUser() && getUserData().rol == 'admin';
+    }
+
+    function isAuditor() {
+      return isActiveUser() && getUserData().rol == 'auditor';
+    }
+
+    function canReadRbd(rbd) {
+      let user = getUserData();
+      return isActiveUser() && (
+        user.rol == 'admin' ||
+        user.rol == 'auditor' ||
+        (user.rol == 'asesor' && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
+        (user.rol == 'director_colegio' && user.rbdAsignado == rbd)
+      );
+    }
+
+    function canWriteRbd(rbd) {
+      let user = getUserData();
+      return isActiveUser() && (
+        user.rol == 'admin' ||
+        (user.rol == 'asesor' && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
+        (user.rol == 'director_colegio' && user.rbdAsignado == rbd)
+      );
+    }
+
+    // Validación de integridad normativa Ley 20.903 (tope de 44 hrs cronológicas semanales)
+    function isValidDocentePayload(data) {
+      return data.horasContrato is number &&
+             data.horasContrato >= 0 &&
+             data.horasContrato <= 44 &&
+             data.rbd is string;
+    }
+
+    // 1. PERFILES DE USUARIO (Solo el propio usuario lee su perfil; Admin gestiona perfiles; SuperAdmin saxneal puede bootstrap)
+    match /usuarios/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAuthenticated() && (
+        request.auth.uid == userId &&
+        (request.resource.data.rol != 'admin' || request.auth.token.email == 'saxneal@gmail.com')
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // 2. ESTABLECIMIENTOS (Aislamiento territorial: Director solo su RBD, Asesor su cartera, Admin/Auditor todo)
     match /establecimientos/{rbd} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if canReadRbd(rbd);
+      allow write: if canWriteRbd(rbd);
     }
 
-    // 2. Cursos SAE: Lectura institucional, escritura por usuarios autorizados
+    // 3. CURSOS SAE
     match /cursos/{cursoId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if canReadRbd(resource.data.rbd);
+      allow create, update: if canWriteRbd(request.resource.data.rbd);
+      allow delete: if canWriteRbd(resource.data.rbd);
     }
 
-    // 3. Docentes y Nómina: Protegido por autenticación
+    // 4. DOCENTES (Protección de PII + Validación de límite normativo 44 hrs Ley 20.903)
     match /docentes/{docenteId} {
-      allow read, write: if request.auth != null;
+      allow read: if canReadRbd(resource.data.rbd);
+      allow create, update: if canWriteRbd(request.resource.data.rbd) && isValidDocentePayload(request.resource.data);
+      allow delete: if canWriteRbd(resource.data.rbd);
     }
 
-    // 4. Asignaciones Curriculares Ley 20.903: Protegido por autenticación
+    // 5. ASIGNACIONES CURRICULARES LEY 20.903
     match /asignaciones/{asigId} {
-      allow read, write: if request.auth != null;
+      allow read: if canReadRbd(resource.data.rbd);
+      allow create, update: if canWriteRbd(request.resource.data.rbd) &&
+                            request.resource.data.horasPedagogicasAula >= 0 &&
+                            request.resource.data.horasPedagogicasAula <= 44;
+      allow delete: if canWriteRbd(resource.data.rbd);
     }
 
-    // 5. Bloqueos de edición concurrente: Protegido por autenticación
+    // 6. ASISTENTES DE LA EDUCACIÓN
+    match /asistentes/{asistenteId} {
+      allow read: if canReadRbd(resource.data.rbd);
+      allow create, update: if canWriteRbd(request.resource.data.rbd) &&
+                            request.resource.data.horasContrato >= 0 &&
+                            request.resource.data.horasContrato <= 45;
+      allow delete: if canWriteRbd(resource.data.rbd);
+    }
+
+    // 7. BLOQUEOS DE EDICIÓN CONCURRENTE
     match /bloqueos_edicion/{rbd} {
-      allow read, write: if request.auth != null;
+      allow read: if canReadRbd(rbd);
+      allow write: if canWriteRbd(rbd);
     }
 
-    // Regla de salvaguarda para cualquier otra colección no especificada
+    // Regla de Salvaguarda Zero Trust: Denegar cualquier otra colección no explicitada
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

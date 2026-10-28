@@ -38,3 +38,8 @@ Thumbs.db
 # Gemini internal
 .gemini/
 
+# Sensitive seeds and SQL dumps
+database/*.sql
+scripts/seed_*.cjs
+
+

@@ -34,12 +34,12 @@ class Database {
             try {
                 self::$pdo = new PDO($dsn, $user, $pass, $options);
             } catch (PDOException $e) {
+                error_log('Database Connection Error: ' . $e->getMessage());
                 http_response_code(500);
                 header('Content-Type: application/json; charset=UTF-8');
                 echo json_encode([
                     'success' => false,
-                    'error'   => 'Error de conexión a la base de datos MySQL',
-                    'message' => $e->getMessage()
+                    'error'   => 'Error interno del servidor al establecer conexión con la base de datos.'
                 ], JSON_UNESCAPED_UNICODE);
                 exit;
             }

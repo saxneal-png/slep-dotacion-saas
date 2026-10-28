@@ -12,7 +12,22 @@ use Slep\Api\Config\Database;
 use PDO;
 
 class AuthMiddleware {
-    private const SECRET_KEY = 'SLEP_VALLE_DIGUILLIN_KEY_2027_!*';
+    /**
+     * Obtiene la clave secreta desde la variable de entorno del servidor
+     */
+    private static function getSecretKey(): string {
+        $secret = getenv('JWT_SECRET_KEY') ?: ($_ENV['JWT_SECRET_KEY'] ?? null);
+        if (!$secret || strlen((string)$secret) < 32) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=UTF-8');
+            echo json_encode([
+                'success' => false,
+                'error' => 'Error de configuración de seguridad en el servidor (JWT_SECRET_KEY ausente o insegura).'
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        return (string)$secret;
+    }
 
     /**
      * Genera un token JWT simple y firmado (HMAC SHA256)
@@ -24,7 +39,7 @@ class AuthMiddleware {
 
         $base64UrlHeader = self::base64UrlEncode($header);
         $base64UrlPayload = self::base64UrlEncode(json_encode($payload));
-        $signature = hash_hmac('sha256', $base64UrlHeader . "." . $base64UrlPayload, self::SECRET_KEY, true);
+        $signature = hash_hmac('sha256', $base64UrlHeader . "." . $base64UrlPayload, self::getSecretKey(), true);
         $base64UrlSignature = self::base64UrlEncode($signature);
 
         return $base64UrlHeader . "." . $base64UrlPayload . "." . $base64UrlSignature;
@@ -53,7 +68,7 @@ class AuthMiddleware {
 
         list($header64, $payload64, $sig64) = $tokenParts;
         $signature = self::base64UrlDecode($sig64);
-        $expectedSignature = hash_hmac('sha256', $header64 . "." . $payload64, self::SECRET_KEY, true);
+        $expectedSignature = hash_hmac('sha256', $header64 . "." . $payload64, self::getSecretKey(), true);
 
         if (!hash_equals($expectedSignature, $signature)) {
             http_response_code(401);

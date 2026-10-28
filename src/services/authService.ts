@@ -1,6 +1,14 @@
 import { UsuarioSistema, UserRole, PermisosRol, AuthSession } from '../types/authTypes';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as fbSignOut,
+  sendPasswordResetEmail
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, firestore } from './firebaseConfig';
 
-const STORAGE_USERS_KEY = 'slep_usuarios_sistema_v1';
+const STORAGE_USERS_KEY = 'slep_usuarios_sistema_v2';
 const STORAGE_SESSION_KEY = 'slep_auth_session_v1';
 
 // Función para derivar hash criptográfico usando SHA-256 con Salt
@@ -78,65 +86,40 @@ export const PERMISOS_POR_ROL: Record<UserRole, PermisosRol> = {
   }
 };
 
-// Cuentas iniciales predeterminadas
-// Nota: en primer inicio se calculan y guardan los hashes de contraseñas de demostración
+// Cuenta oficial de Super Usuario Administrador
+// Las cuentas simuladas han sido eliminadas por requerimiento de seguridad institucional
 export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 'salt'> & { defaultPasswordPlain: string }> = [
   {
-    id: 'user-admin-1',
-    username: 'admin',
-    defaultPasswordPlain: 'admin123',
-    nombreCompleto: 'Director Ejecutivo / Administrador SLEP',
-    email: 'direccion@slepvallediguillin.cl',
+    id: 'user-saxneal-superadmin',
+    username: 'saxneal@gmail.com',
+    defaultPasswordPlain: 'slep1234',
+    nombreCompleto: 'Super Administrador SLEP (saxneal)',
+    email: 'saxneal@gmail.com',
     role: 'admin',
-    cargo: 'Administrador General del Sistema',
-    activo: true
-  },
-  {
-    id: 'user-asesor-1',
-    username: 'asesor',
-    defaultPasswordPlain: 'asesor123',
-    nombreCompleto: 'Rodrigo Fuentes Uribe',
-    email: 'rodrigo.fuentes@slepvallediguillin.cl',
-    role: 'asesor',
-    cargo: 'Asesor Técnico Pedagógico Territorial',
-    comunasPermitidas: ['Bulnes', 'Chillán Viejo', 'San Ignacio', 'Yungay', 'Chillán', 'El Carmen', 'Pemuco'],
-    activo: true
-  },
-  {
-    id: 'user-director-1',
-    username: 'director',
-    defaultPasswordPlain: 'director123',
-    nombreCompleto: 'Directora Liceo Bicentenario',
-    email: 'direccion.liceo@slepvallediguillin.cl',
-    role: 'director_colegio',
-    cargo: 'Directora de Establecimiento',
-    rbdAsignado: '3501', // Vinculado a establecimiento base
-    activo: true
-  },
-  {
-    id: 'user-auditor-1',
-    username: 'auditor',
-    defaultPasswordPlain: 'auditor123',
-    nombreCompleto: 'Auditoría Ministerial DEP - MINEDUC',
-    email: 'auditoria@educacionpublica.gob.cl',
-    role: 'auditor',
-    cargo: 'Fiscalizador / Revisor de Dotación',
+    cargo: 'Super Usuario / Administrador General del Territorio',
     activo: true
   }
 ];
 
 export class AuthService {
   private static async inicializarUsuariosSiNoExisten(): Promise<UsuarioSistema[]> {
+    // Purgar cuentas simuladas obsoletas de la versión 1
+    localStorage.removeItem('slep_usuarios_sistema_v1');
+
     const raw = localStorage.getItem(STORAGE_USERS_KEY);
     if (raw) {
       try {
-        return JSON.parse(raw) as UsuarioSistema[];
+        const parsed = JSON.parse(raw) as UsuarioSistema[];
+        const tieneSaxneal = parsed.some(u => (u.email || '').toLowerCase() === 'saxneal@gmail.com');
+        if (tieneSaxneal) {
+          return parsed;
+        }
       } catch (e) {
         console.error('Error parseando usuarios, resembrando...', e);
       }
     }
 
-    // Sembrar usuarios iniciales con hashing
+    // Sembrar super usuario oficial sin cuentas simuladas
     const usuariosNuevos: UsuarioSistema[] = [];
     for (const u of USUARIOS_SEMILLA_BASE) {
       const salt = generateSalt();
@@ -164,17 +147,73 @@ export class AuthService {
     return this.inicializarUsuariosSiNoExisten();
   }
 
-  public static async login(username: string, passwordPlain: string): Promise<AuthSession> {
+  public static async login(usernameOrEmail: string, passwordPlain: string): Promise<AuthSession> {
     const usuarios = await this.getUsuarios();
-    const cleanUser = username.trim().toLowerCase();
-    const encontrado = usuarios.find(u => u.username.toLowerCase() === cleanUser && u.activo);
+    const cleanInput = usernameOrEmail.trim().toLowerCase();
+    
+    // Buscar usuario por username o por email
+    const encontrado = usuarios.find(
+      u => (u.username.toLowerCase() === cleanInput || (u.email && u.email.toLowerCase() === cleanInput)) && u.activo
+    );
 
     if (!encontrado) {
       throw new Error('Usuario no encontrado o cuenta deshabilitada.');
     }
 
     const testHash = await hashPassword(passwordPlain, encontrado.salt);
-    if (testHash !== encontrado.passwordHash) {
+    const localPasswordOk = (testHash === encontrado.passwordHash);
+
+    // Intentar autenticación criptográfica en Firebase Auth para sincronizar token real
+    let fbSuccess = false;
+    if (auth && typeof window !== 'undefined' && encontrado.email) {
+      try {
+        const cred = await signInWithEmailAndPassword(auth, encontrado.email, passwordPlain);
+        fbSuccess = true;
+        if (cred.user) {
+          const uDocRef = doc(firestore, 'usuarios', cred.user.uid);
+          const uDocSnap = await getDoc(uDocRef).catch(() => null);
+          if (!uDocSnap || !uDocSnap.exists()) {
+            await setDoc(uDocRef, {
+              email: encontrado.email,
+              nombreCompleto: encontrado.nombreCompleto,
+              rol: encontrado.role,
+              rbdAsignado: encontrado.rbdAsignado || null,
+              carteraRbds: encontrado.comunasPermitidas || [],
+              activo: true,
+              sincronizadoEn: new Date().toISOString()
+            }, { merge: true }).catch(() => {});
+          }
+        }
+      } catch (fbErr: any) {
+        // Si no existe la cuenta en Firebase Auth, registrar automáticamente la cuenta oficial
+        if (fbErr?.code === 'auth/user-not-found' || fbErr?.code === 'auth/invalid-credential') {
+          try {
+            const newCred = await createUserWithEmailAndPassword(auth, encontrado.email, passwordPlain);
+            fbSuccess = true;
+            if (newCred.user) {
+              const uDocRef = doc(firestore, 'usuarios', newCred.user.uid);
+              await setDoc(uDocRef, {
+                email: encontrado.email,
+                nombreCompleto: encontrado.nombreCompleto,
+                rol: encontrado.role,
+                rbdAsignado: encontrado.rbdAsignado || null,
+                carteraRbds: encontrado.comunasPermitidas || [],
+                activo: true,
+                creadoEn: new Date().toISOString()
+              }, { merge: true }).catch(() => {});
+            }
+          } catch (createErr: any) {
+            console.warn('[AuthService] Auto-registro en Firebase Auth falló:', createErr?.code || createErr?.message);
+          }
+        }
+        if (!localPasswordOk && !fbSuccess) {
+          throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
+        }
+        console.warn('[AuthService] Firebase Auth offline o sincronizado localmente:', fbErr?.code || fbErr?.message);
+      }
+    }
+
+    if (!localPasswordOk && !fbSuccess) {
       throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
     }
 
@@ -190,7 +229,7 @@ export class AuthService {
     const { passwordHash: _, salt: __, ...usuarioSeguro } = encontrado;
     const session: AuthSession = {
       usuario: usuarioSeguro,
-      token: `token_${encontrado.id}_${Date.now()}`,
+      token: (auth?.currentUser as any)?.accessToken || `token_${encontrado.id}_${Date.now()}`,
       iniciadoEn: new Date().toISOString()
     };
 
@@ -209,22 +248,37 @@ export class AuthService {
   }
 
   public static logout(): void {
+    if (auth && typeof window !== 'undefined') {
+      fbSignOut(auth).catch(() => {});
+    }
     localStorage.removeItem(STORAGE_SESSION_KEY);
   }
 
-  public static async restablecerPasswordPorEmail(email: string, nuevaPasswordPlain: string): Promise<string> {
-    const usuarios = await this.getUsuarios();
+  public static async restablecerPasswordPorEmail(email: string, nuevaPasswordPlain?: string): Promise<string> {
     const cleanEmail = email.trim().toLowerCase();
+    
+    // Disparar correo oficial de recuperación vía Firebase Authentication
+    if (auth && typeof window !== 'undefined') {
+      try {
+        await sendPasswordResetEmail(auth, cleanEmail);
+      } catch (fbErr: any) {
+        console.warn('[AuthService] Firebase Auth password reset warning:', fbErr?.message);
+      }
+    }
+
+    const usuarios = await this.getUsuarios();
     const idx = usuarios.findIndex(u => (u.email || '').toLowerCase() === cleanEmail);
     if (idx === -1) {
       throw new Error('No se encontró ninguna cuenta asociada a este correo electrónico institucional.');
     }
 
-    const salt = generateSalt();
-    const passwordHash = await hashPassword(nuevaPasswordPlain, salt);
-    usuarios[idx].salt = salt;
-    usuarios[idx].passwordHash = passwordHash;
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    if (nuevaPasswordPlain) {
+      const salt = generateSalt();
+      const passwordHash = await hashPassword(nuevaPasswordPlain, salt);
+      usuarios[idx].salt = salt;
+      usuarios[idx].passwordHash = passwordHash;
+      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    }
     return usuarios[idx].nombreCompleto;
   }
 
@@ -259,6 +313,25 @@ export class AuthService {
       usuarios.push(usuario);
     }
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+
+    if (auth?.currentUser && typeof window !== 'undefined') {
+      try {
+        const uDocRef = doc(firestore, 'usuarios', usuario.id);
+        await setDoc(uDocRef, {
+          email: usuario.email || null,
+          username: usuario.username,
+          nombreCompleto: usuario.nombreCompleto,
+          rol: usuario.role,
+          cargo: usuario.cargo || null,
+          rbdAsignado: usuario.rbdAsignado || null,
+          carteraRbds: usuario.comunasPermitidas || [],
+          activo: usuario.activo,
+          actualizadoEn: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('[AuthService] Aviso sincronizando usuario con Firestore:', e);
+      }
+    }
   }
 
   public static async eliminarUsuario(userId: string): Promise<void> {

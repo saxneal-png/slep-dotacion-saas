@@ -6,8 +6,29 @@
 
 declare(strict_types=1);
 
-// CORS Headers para permitir consumo desde el Frontend SPA
-header('Access-Control-Allow-Origin: *');
+// CORS Seguro: Permitir únicamente orígenes institucionales del SLEP y entornos de desarrollo
+$allowedOrigins = [
+    'https://dotacionslep.web.app',
+    'https://dotacionslep.firebaseapp.com',
+    'https://dotacionslep.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000'
+];
+
+$httpOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($httpOrigin, $allowedOrigins, true)) {
+    header("Access-Control-Allow-Origin: {$httpOrigin}");
+    header('Access-Control-Allow-Credentials: true');
+} else if (empty($httpOrigin)) {
+    // Peticiones locales o herramientas de administración interna
+    header('Access-Control-Allow-Origin: *');
+} else {
+    // Origen no autorizado
+    header('Access-Control-Allow-Origin: null');
+}
+
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 header('Content-Type: application/json; charset=UTF-8');
