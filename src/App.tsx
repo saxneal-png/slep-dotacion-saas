@@ -78,12 +78,14 @@ import { cargarConfiguracionGeneral } from './services/configuracionGeneralServi
 import { AuthService } from './services/authService';
 import { AuthSession } from './types/authTypes';
 import { LoginModal } from './components/auth/LoginModal';
+import { CambiarPasswordModal } from './components/auth/CambiarPasswordModal';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
   const [loading, setLoading] = useState(true);
 
   const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
+  const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
   const [colegios, setColegios] = useState<Establecimiento[]>([]);
   const [colegioActivo, setColegioActivo] = useState<Establecimiento | null>(null);
 
@@ -661,6 +663,7 @@ export const App: React.FC = () => {
       <Header
         session={session}
         onLogout={handleLogout}
+        onAbrirCambiarPassword={() => setModalCambiarPassword(true)}
         colegioActivo={colegioActivo}
         colegios={colegiosPermitidos}
         onSelectColegio={handleSelectColegio}
@@ -1032,6 +1035,16 @@ export const App: React.FC = () => {
           mostrarMensaje(`✓ Traspaso completado exitosamente para el periodo ${destino}.`);
         }}
       />
+
+      {/* Modal Cambiar Mi Contraseña */}
+      {session && (
+        <CambiarPasswordModal
+          session={session}
+          isOpen={modalCambiarPassword}
+          onClose={() => setModalCambiarPassword(false)}
+          onSuccess={(msg) => mostrarMensaje(msg, 'success')}
+        />
+      )}
 
       {/* Modal Comparador Periodos */}
       <ComparadorPeriodosModal

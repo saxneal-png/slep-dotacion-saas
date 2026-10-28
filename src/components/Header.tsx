@@ -4,7 +4,7 @@ import {
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
   Database, Search, Sparkles, BarChart3, CheckCircle2,
   UserCheck, Settings, Palette, Moon, Sun, Leaf, Eye, Menu, X, Globe,
-  LogOut, ShieldAlert
+  LogOut, ShieldAlert, KeyRound
 } from 'lucide-react';
 import { Establecimiento } from '../types';
 import { AuthSession } from '../types/authTypes';
@@ -14,6 +14,7 @@ import { subscribePersist, getUltimaHoraGuardado } from '../database/db';
 interface HeaderProps {
   session?: AuthSession | null;
   onLogout?: () => void;
+  onAbrirCambiarPassword?: () => void;
   colegioActivo: Establecimiento | null;
   colegios: Establecimiento[];
   onSelectColegio: (est: Establecimiento) => void;
@@ -37,6 +38,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   session,
   onLogout,
+  onAbrirCambiarPassword,
   colegioActivo,
   colegios,
   onSelectColegio,
@@ -317,7 +319,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Perfil de Usuario y Logout */}
+            {/* Perfil de Usuario, Cambio de Contraseña y Logout */}
             {session && (
               <div className="flex items-center gap-1.5 pl-1 border-l border-white/15">
                 <div className="hidden xl:flex flex-col text-right leading-tight max-w-[120px]">
@@ -328,6 +330,17 @@ export const Header: React.FC<HeaderProps> = ({
                     {session.usuario.role.replace('_', ' ')}
                   </span>
                 </div>
+
+                {onAbrirCambiarPassword && (
+                  <button
+                    onClick={onAbrirCambiarPassword}
+                    className="p-2 rounded-xl bg-black/40 hover:bg-black/60 border border-white/20 text-amber-400 hover:text-amber-300 transition-all shadow-sm"
+                    title="Cambiar mi contraseña"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                  </button>
+                )}
+
                 {onLogout && (
                   <button
                     onClick={onLogout}

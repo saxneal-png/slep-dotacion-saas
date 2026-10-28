@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, Building2, Eye, EyeOff } from 'lucide-react';
+import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, Building2, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { AuthService, generateSalt, hashPassword } from '../../services/authService';
 import { UsuarioSistema, UserRole } from '../../types/authTypes';
 import { Establecimiento } from '../../types';
@@ -11,6 +11,9 @@ interface UsuariosConfigTabProps {
 export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }) => {
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>([]);
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [modalResetAbierto, setModalResetAbierto] = useState(false);
+  const [usuarioReset, setUsuarioReset] = useState<UsuarioSistema | null>(null);
+  const [nuevaPasswordReset, setNuevaPasswordReset] = useState('');
   const [usuarioEnEdicion, setUsuarioEnEdicion] = useState<UsuarioSistema | null>(null);
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
@@ -40,6 +43,28 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
   useEffect(() => {
     cargarLista();
   }, []);
+
+  const abrirModalReset = (u: UsuarioSistema) => {
+    setUsuarioReset(u);
+    setNuevaPasswordReset('123456'); // Clave sugerida por defecto
+    setModalResetAbierto(true);
+  };
+
+  const handleEjecutarReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usuarioReset || !nuevaPasswordReset) return;
+    try {
+      await AuthService.cambiarPassword(usuarioReset.id, nuevaPasswordReset);
+      setMensaje({
+        tipo: 'ok',
+        texto: `Contraseña de "${usuarioReset.username}" restablecida con éxito a "${nuevaPasswordReset}".`
+      });
+      setModalResetAbierto(false);
+      await cargarLista();
+    } catch (err: any) {
+      setMensaje({ tipo: 'error', texto: err.message || 'Error al resetear contraseña.' });
+    }
+  };
 
   const abrirModalNuevo = () => {
     setUsuarioEnEdicion(null);
@@ -217,6 +242,13 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
                       <button
+                        onClick={() => abrirModalReset(u)}
+                        className="p-1.5 text-amber-400 hover:text-amber-200 hover:bg-amber-950/60 rounded-lg transition"
+                        title={`Resetear contraseña de ${u.username}`}
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => abrirModalEditar(u)}
                         className="p-1.5 text-blue-400 hover:text-blue-200 hover:bg-blue-950/60 rounded-lg transition"
                         title="Editar usuario y permisos"
@@ -364,6 +396,57 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                   className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition"
                 >
                   {usuarioEnEdicion ? 'Guardar Cambios' : 'Crear Usuario'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Resetear Contraseña (Super Usuario / Admin) */}
+      {modalResetAbierto && usuarioReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-xl">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white">Resetear Contraseña</h4>
+                <p className="text-[11px] text-slate-400">Usuario: {usuarioReset.username}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleEjecutarReset} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                  Nueva Contraseña Temporal
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={nuevaPasswordReset}
+                  onChange={e => setNuevaPasswordReset(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  El usuario podrá ingresar con esta clave y luego cambiarla voluntariamente desde su perfil.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setModalResetAbierto(false)}
+                  className="px-3 py-2 text-xs text-slate-300 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-xl shadow-md transition"
+                >
+                  Restablecer Clave
                 </button>
               </div>
             </form>
