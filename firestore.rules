@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Reglas para Dotación SLEP Valle Diguillín
+    match /{document=**} {
+      allow read, write: if true; // Configuración inicial de desarrollo / transición
+    }
+  }
+}
