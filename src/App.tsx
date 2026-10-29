@@ -129,16 +129,23 @@ export const App: React.FC = () => {
   const [guardandoEnNube, setGuardandoEnNube] = useState(false);
 
   const handleGuardarCambiosEnNube = async () => {
+    if (!colegioActivo) {
+      mostrarMensaje('Selecciona un establecimiento para guardar sus cambios en la nube.', 'error');
+      return;
+    }
     setGuardandoEnNube(true);
-    mostrarMensaje('☁️ Guardando y sincronizando todas las tablas en Supabase PostgreSQL...');
+    mostrarMensaje(`☁️ Guardando dotación de ${colegioActivo.nombre} en Supabase...`);
     try {
-      const res = await SupabaseDotacionService.sincronizarTodaLaBaseDeDatosASupabase();
+      const res = await SupabaseDotacionService.sincronizarColegioASupabase(
+        colegioActivo.rbd,
+        periodoActivo
+      );
       mostrarMensaje(
-        `✓ Cambios guardados exitosamente en la nube: ${res.establecimientosSincronizados} escuelas, ${res.docentesSincronizados} docentes, ${res.usuariosSincronizados} usuarios y ${res.asistentesSincronizados} asistentes sincronizados.`,
+        `✓ Cambios guardados para ${colegioActivo.nombre} (${periodoActivo}): ${res.docentesSincronizados} docentes, ${res.cursosSincronizados} cursos, ${res.asignacionesSincronizadas} asignaciones y ${res.asistentesSincronizados} asistentes sincronizados en Supabase.`,
         'success'
       );
     } catch (err: any) {
-      console.error('Error sincronizando con Supabase:', err);
+      console.error('Error sincronizando escuela con Supabase:', err);
       mostrarMensaje(`Error guardando en la nube: ${err.message || err}`, 'error');
     } finally {
       setGuardandoEnNube(false);

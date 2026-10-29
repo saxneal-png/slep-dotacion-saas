@@ -546,23 +546,82 @@ export class SupabaseDotacionService {
   }
 
   /**
-   * Guarda en lote la dotación completa de un colegio en Supabase
+   * Guarda y sincroniza en Supabase EXCLUSIVAMENTE la escuela/RBD activa en el periodo dado.
+   * Diseñado para trabajo concurrente multi-usuario: no toca ni sobrescribe datos de otras escuelas.
    */
-  static async guardarDotacionBatch(
+  static async sincronizarColegioASupabase(
     rbd: string,
-    periodo: number,
-    cursos: CursoSae[],
-    docentes: Docente[],
-    asignaciones: AsignacionHoraria[],
-    asistentes: AsistenteEducacion[] = []
-  ): Promise<void> {
-    if (!isSupabaseEnabled()) return;
-    await Promise.all([
-      this.guardarCursosBatch(cursos.map(c => ({ ...c, rbd, periodo }))),
-      this.guardarDocentesBatch(docentes.map(d => ({ ...d, rbd, periodo }))),
-      this.guardarAsignacionesBatch(asignaciones.map(a => ({ ...a, rbd, periodo }))),
-      this.guardarAsistentesBatch(asistentes.map(ast => ({ ...ast, rbd, periodo })))
-    ]);
+    periodo: number = 2026
+  ): Promise<{
+    establecimientoActualizado: boolean;
+    salasSincronizadas: number;
+    cursosSincronizados: number;
+    docentesSincronizados: number;
+    asignacionesSincronizadas: number;
+    asistentesSincronizados: number;
+  }> {
+    if (!isSupabaseEnabled()) {
+      throw new Error('Supabase no está configurado o no está disponible.');
+    }
+    const cleanRbd = rbd.trim();
+    if (!cleanRbd) throw new Error('RBD de colegio inválido');
+
+    const { getDb } = await import('../database/dbCore');
+    const { obtenerEstablecimientoPorRbd } = await import('../database/repositories/establecimientosRepo');
+    const { listarSalas } = await import('../database/repositories/salasRepo');
+    const { listarCursos } = await import('../database/repositories/cursosRepo');
+    const { listarDocentes } = await import('../database/repositories/docentesRepo');
+    const { listarAsignaciones } = await import('../database/repositories/asignacionesRepo');
+    const { listarAsistentes } = await import('../database/repositories/asistentesRepo');
+
+    // 1. Obtener datos locales estrictamente limitados a este RBD y Periodo
+    const est = await obtenerEstablecimientoPorRbd(cleanRbd);
+    const salas = await listarSalas(cleanRbd);
+    const cursos = await listarCursos(cleanRbd, periodo);
+    const docentes = await listarDocentes(cleanRbd, periodo);
+    const asignaciones = await listarAsignaciones(cleanRbd, periodo);
+    const asistentes = await listarAsistentes(cleanRbd, periodo);
+
+    // 2. Persistir Establecimiento si existe
+    if (est) {
+      await this.guardarEstablecimiento(est);
+    }
+
+    // 3. Persistir Salas de esta escuela
+    if (salas.length) {
+      for (const s of salas) {
+        await this.guardarSala({ ...s, rbd: cleanRbd });
+      }
+    }
+
+    // 4. Persistir Cursos de esta escuela
+    if (cursos.length) {
+      await this.guardarCursosBatch(cursos.map(c => ({ ...c, rbd: cleanRbd, periodo })));
+    }
+
+    // 5. Persistir Docentes de esta escuela
+    if (docentes.length) {
+      await this.guardarDocentesBatch(docentes.map(d => ({ ...d, rbd: cleanRbd, periodo })));
+    }
+
+    // 6. Persistir Asignaciones Horarias de esta escuela
+    if (asignaciones.length) {
+      await this.guardarAsignacionesBatch(asignaciones.map(a => ({ ...a, rbd: cleanRbd, periodo })));
+    }
+
+    // 7. Persistir Asistentes de la Educación de esta escuela
+    if (asistentes.length) {
+      await this.guardarAsistentesBatch(asistentes.map(ast => ({ ...ast, rbd: cleanRbd, periodo })));
+    }
+
+    return {
+      establecimientoActualizado: Boolean(est),
+      salasSincronizadas: salas.length,
+      cursosSincronizados: cursos.length,
+      docentesSincronizados: docentes.length,
+      asignacionesSincronizadas: asignaciones.length,
+      asistentesSincronizados: asistentes.length
+    };
   }
 
   /**

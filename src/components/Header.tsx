@@ -252,13 +252,13 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
 
-            {/* Botón Steve Jobs: Guardar Cambios en Supabase PostgreSQL */}
+            {/* Botón Steve Jobs: Guardar Cambios en Supabase PostgreSQL (Aislado por Escuela Activa) */}
             {onGuardarCambiosEnNube && (
               <button
                 onClick={onGuardarCambiosEnNube}
                 disabled={guardandoEnNube}
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/30 transition-all group"
-                title="Sincronizar y guardar todos los cambios en Supabase PostgreSQL (rvvyjfgiwalqsdtpidxz)"
+                title={colegioActivo ? `Guardar cambios de ${colegioActivo.nombre} en Supabase PostgreSQL (sin afectar otros colegios)` : 'Guardar cambios del establecimiento en Supabase'}
               >
                 {guardandoEnNube ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
