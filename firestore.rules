@@ -18,32 +18,49 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.email == 'saxneal@gmail.com' ||
-        (isActiveUser() && (getUserData().rol == 'admin' || getUserData().rol == 'super_usuario'))
+        (isActiveUser() && (
+          getUserData().rol == 'admin' ||
+          getUserData().rol == 'super_usuario' ||
+          getUserData().rol == 'subdirector_uatp'
+        ))
       );
     }
 
     function isAuditor() {
-      return isActiveUser() && getUserData().rol == 'auditor';
+      return isActiveUser() && (
+        getUserData().rol == 'auditor' ||
+        getUserData().rol == 'subdirector_uatp'
+      );
     }
 
     function canReadRbd(rbd) {
       let user = getUserData();
-      return isActiveUser() && (
-        user.rol == 'admin' ||
-        user.rol == 'super_usuario' ||
-        user.rol == 'auditor' ||
-        (user.rol == 'asesor' && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
-        (user.rol == 'director_colegio' && user.rbdAsignado == rbd)
+      return isAuthenticated() && (
+        request.auth.token.email == 'saxneal@gmail.com' ||
+        (isActiveUser() && (
+          user.rol == 'admin' ||
+          user.rol == 'super_usuario' ||
+          user.rol == 'subdirector_uatp' ||
+          user.rol == 'coordinador_uatp' ||
+          user.rol == 'auditor' ||
+          ((user.rol == 'asesor' || user.rol == 'asesor_uatp') && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
+          ((user.rol == 'director_colegio' || user.rol == 'director_establecimiento' || user.rol == 'jefe_utp_establecimiento') && user.rbdAsignado == rbd)
+        ))
       );
     }
 
     function canWriteRbd(rbd) {
       let user = getUserData();
-      return isActiveUser() && (
-        user.rol == 'admin' ||
-        user.rol == 'super_usuario' ||
-        (user.rol == 'asesor' && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
-        (user.rol == 'director_colegio' && user.rbdAsignado == rbd)
+      return isAuthenticated() && (
+        request.auth.token.email == 'saxneal@gmail.com' ||
+        (isActiveUser() && (
+          user.rol == 'admin' ||
+          user.rol == 'super_usuario' ||
+          user.rol == 'subdirector_uatp' ||
+          user.rol == 'coordinador_uatp' ||
+          ((user.rol == 'asesor' || user.rol == 'asesor_uatp') && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
+          ((user.rol == 'director_colegio' || user.rol == 'director_establecimiento' || user.rol == 'jefe_utp_establecimiento') && user.rbdAsignado == rbd)
+        ))
       );
     }
 
@@ -55,14 +72,14 @@ service cloud.firestore {
              data.rbd is string;
     }
 
-    // 1. PERFILES DE USUARIO (El propio usuario lee su perfil; Admin y SuperAdmin gestionan usuarios)
+    // 1. PERFILES DE USUARIO (Lectura habilitada para resolución de login por username/email; escritura controlada por RBAC)
     match /usuarios/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow create: if isAuthenticated() && (
+      allow read: if true;
+      allow create, update: if isAuthenticated() && (
         isAdmin() ||
-        (request.auth.uid == userId && (request.resource.data.rol != 'admin' || request.auth.token.email == 'saxneal@gmail.com'))
+        (request.auth.uid == userId && (request.resource.data.rol != 'super_usuario' || request.auth.token.email == 'saxneal@gmail.com'))
       );
-      allow update, delete: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     // 2. ESTABLECIMIENTOS (Aislamiento territorial: Director solo su RBD, Asesor su cartera, Admin/Auditor todo)

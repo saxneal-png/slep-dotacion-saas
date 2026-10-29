@@ -256,16 +256,23 @@ export const App: React.FC = () => {
     }
   };
 
-  // Forzar colegio fijo al iniciar sesión con un rol de alcance "establecimiento" (Director / Jefe UTP)
+  // Asegurar que el colegio activo pertenezca al alcance autorizado del usuario (Establecimiento, Cartera o Equipo)
   useEffect(() => {
-    if (alcanceReal === 'establecimiento' && session?.usuario.rbdAsignado && colegios.length > 0) {
+    if (!session || colegios.length === 0) return;
+    if (alcanceReal === 'establecimiento' && session.usuario.rbdAsignado) {
       const asignado = colegios.find(c => c.rbd === session.usuario.rbdAsignado);
       if (asignado && (!colegioActivo || colegioActivo.rbd !== asignado.rbd)) {
         setColegioActivo(asignado);
         cargarDatosColegio(asignado.rbd, periodoActivo);
       }
+      return;
     }
-  }, [session, colegios, alcanceReal]);
+    const permitidos = colegiosVisibles(session.usuario, colegios, usuariosSistema);
+    if (permitidos.length > 0 && (!colegioActivo || !permitidos.some(c => c.rbd === colegioActivo.rbd))) {
+      setColegioActivo(permitidos[0]);
+      cargarDatosColegio(permitidos[0].rbd, periodoActivo);
+    }
+  }, [session, colegios, alcanceReal, usuariosSistema]);
 
   // Guard de navegación: redirige a la primera vista permitida si la actual no está autorizada
   useEffect(() => {
@@ -632,6 +639,7 @@ export const App: React.FC = () => {
   const handleLogout = () => {
     AuthService.logout();
     setSession(null);
+    setVistaActiva('colegios_asesorados');
     mostrarMensaje('Sesión cerrada correctamente.');
   };
 
@@ -661,12 +669,21 @@ export const App: React.FC = () => {
             onLoginSuccess={(newSession) => {
               setSession(newSession);
               mostrarMensaje(`¡Bienvenido, ${newSession.usuario.nombreCompleto}!`);
-              if (getDefinicionRol(normalizarRol(newSession.usuario.role)).alcance === 'establecimiento' && newSession.usuario.rbdAsignado) {
+              const defRol = getDefinicionRol(normalizarRol(newSession.usuario.role));
+              if (defRol.alcance === 'establecimiento' && newSession.usuario.rbdAsignado) {
                 const esc = colegios.find(c => c.rbd === newSession.usuario.rbdAsignado);
                 if (esc) {
-                  handleSelectColegio(esc);
-                  setVistaActiva('workflow');
+                  setColegioActivo(esc);
+                  cargarDatosColegio(esc.rbd, periodoActivo);
                 }
+                setVistaActiva('workflow');
+              } else {
+                const permitidos = colegiosVisibles(newSession.usuario, colegios, usuariosSistema);
+                if (permitidos.length > 0) {
+                  setColegioActivo(permitidos[0]);
+                  cargarDatosColegio(permitidos[0].rbd, periodoActivo);
+                }
+                setVistaActiva('colegios_asesorados');
               }
             }}
             onAbrirOlvidoPassword={() => setModalOlvidoPassword(true)}

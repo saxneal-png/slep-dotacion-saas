@@ -5,6 +5,7 @@ import { UsuarioSistema, UserRole } from '../../types/authTypes';
 import { Establecimiento } from '../../types';
 import { ROLES_DEFINICIONES, getDefinicionRol, rolesAsignablesPor, normalizarRol } from '../../security/rolesDefinitions';
 import { usePermisos } from '../../security/PermisosContext';
+import { guardarPerfilAsesor, actualizarColegiosDeAsesor } from '../../services/configuracionGeneralService';
 
 interface UsuariosConfigTabProps {
   colegios: Establecimiento[];
@@ -213,7 +214,25 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
         activo
       };
 
-      await AuthService.guardarUsuario(usuarioAGuardar, password || undefined);
+      const guardado = await AuthService.guardarUsuario(usuarioAGuardar, password || undefined);
+
+      // Si el usuario es Asesor UATP, sincronizar su perfil y cartera en el catálogo de establecimientos
+      if (guardado.role === 'asesor_uatp') {
+        try {
+          guardarPerfilAsesor({
+            id: guardado.id,
+            nombre: guardado.nombreCompleto,
+            email: guardado.email || cleanEmail,
+            cargo: guardado.cargo || 'Asesor(a) UATP',
+            colorBadge: '#2563eb'
+          });
+          if (guardado.carteraRbds && guardado.carteraRbds.length > 0) {
+            await actualizarColegiosDeAsesor(guardado.nombreCompleto, guardado.carteraRbds, colegios);
+          }
+        } catch (syncErr) {
+          console.warn('[UsuariosConfigTab] Aviso sincronizando cartera de asesor:', syncErr);
+        }
+      }
       setMensaje({
         tipo: 'ok',
         texto: usuarioEnEdicion

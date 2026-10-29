@@ -73,6 +73,17 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     for (const a of config.asesoresRegistrados) {
       map.set(a.nombre.toLowerCase().trim(), a);
     }
+    if (rol === 'asesor_uatp' && session?.usuario.nombreCompleto) {
+      const key = session.usuario.nombreCompleto.toLowerCase().trim();
+      if (!map.has(key)) {
+        map.set(key, {
+          id: session.usuario.id,
+          nombre: session.usuario.nombreCompleto,
+          email: session.usuario.email || 'uatp@slepvallediguillin.cl',
+          cargo: session.usuario.cargo || 'Asesor(a) UATP'
+        });
+      }
+    }
     for (const c of colegios) {
       if (c.asesorUatp && !map.has(c.asesorUatp.toLowerCase().trim())) {
         map.set(c.asesorUatp.toLowerCase().trim(), {
@@ -84,7 +95,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
       }
     }
     return Array.from(map.values());
-  }, [config.asesoresRegistrados, colegios]);
+  }, [config.asesoresRegistrados, colegios, rol, session]);
 
   // Perfil del Asesor actualmente filtrado
   const perfilAsesorSeleccionado = useMemo(() => {
@@ -111,7 +122,11 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
       if (asesorFiltro === 'SIN_ASIGNAR') {
         if (est.asesorUatp && est.asesorUatp.trim() !== '') return false;
       } else if (asesorFiltro !== 'TODOS') {
-        if (!est.asesorUatp || est.asesorUatp.toLowerCase().trim() !== asesorFiltro.toLowerCase().trim()) {
+        const matchPorNombre = est.asesorUatp && est.asesorUatp.toLowerCase().trim() === asesorFiltro.toLowerCase().trim();
+        const matchPorCarteraSesion =
+          session?.usuario.nombreCompleto.toLowerCase().trim() === asesorFiltro.toLowerCase().trim() &&
+          (session?.usuario.carteraRbds || []).includes(est.rbd);
+        if (!matchPorNombre && !matchPorCarteraSesion) {
           return false;
         }
       }
