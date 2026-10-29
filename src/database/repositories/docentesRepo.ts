@@ -1,6 +1,5 @@
 import { Docente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
-import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export async function listarDocentes(rbd: string, periodo: number = 2026): Promise<Docente[]> {
@@ -337,9 +336,6 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
   ]);
   await persistDb(true);
   if (!skipCloudSync) {
-    FirebaseDotacionService.guardarDocente({ ...d, id: docId, periodo: docPeriodo }).catch(err =>
-      console.warn('[docentesRepo] Aviso sincronizando con Firestore:', err)
-    );
     SupabaseDotacionService.guardarDocente({ ...d, id: docId, periodo: docPeriodo }).catch(err =>
       console.warn('[docentesRepo] Aviso sincronizando con Supabase:', err)
     );
@@ -476,9 +472,6 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
     throw err;
   }
   await persistDb(true);
-  FirebaseDotacionService.guardarDocentesBatch(docentes).catch(err =>
-    console.warn('[docentesRepo] Aviso sincronizando lote con Firestore:', err)
-  );
   SupabaseDotacionService.guardarDocentesBatch(docentes).catch(err =>
     console.warn('[docentesRepo] Aviso sincronizando lote con Supabase:', err)
   );
@@ -489,9 +482,6 @@ export async function eliminarDocente(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM docentes WHERE id = ?", [id]);
   await persistDb(true);
-  FirebaseDotacionService.eliminarDocente(id).catch(err =>
-    console.warn('[docentesRepo] Aviso eliminando en Firestore:', err)
-  );
   SupabaseDotacionService.eliminarDocente(id).catch(err =>
     console.warn('[docentesRepo] Aviso eliminando en Supabase:', err)
   );

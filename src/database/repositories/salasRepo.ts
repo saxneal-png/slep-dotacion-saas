@@ -1,6 +1,5 @@
 import { SalaInfraestructura } from '../../types';
 import { getDb, persistDb } from '../dbCore';
-import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export async function listarSalas(rbd: string): Promise<SalaInfraestructura[]> {
@@ -47,9 +46,6 @@ export async function guardarSala(s: SalaInfraestructura, skipCloudSync: boolean
     SupabaseDotacionService.guardarSala(s).catch(err =>
       console.warn('[salasRepo] Aviso sincronizando con Supabase:', err)
     );
-    FirebaseDotacionService.guardarSala(s).catch(err =>
-      console.warn('[salasRepo] Aviso sincronizando con Firestore:', err)
-    );
   }
 }
 
@@ -59,8 +55,5 @@ export async function eliminarSala(id: string): Promise<void> {
   persistDb();
   SupabaseDotacionService.eliminarSala(id).catch(err =>
     console.warn('[salasRepo] Aviso eliminando en Supabase:', err)
-  );
-  FirebaseDotacionService.eliminarSala(id).catch(err =>
-    console.warn('[salasRepo] Aviso eliminando en Firestore:', err)
   );
 }

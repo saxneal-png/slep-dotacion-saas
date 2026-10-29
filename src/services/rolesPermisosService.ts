@@ -5,8 +5,6 @@ import {
   PERMISOS_POR_DEFECTO, TODAS_LAS_CLAVES, normalizarPermisos, PERMISOS_CONFIGURACIONES
 } from '../security/permissionCatalog';
 import { ROL_IDS, getDefinicionRol, normalizarRol } from '../security/rolesDefinitions';
-import { doc, getDoc, setDoc, collection, addDoc } from 'firebase/firestore';
-import { auth, firestore } from './firebaseConfig';
 
 export const STORAGE_MATRIZ_KEY = 'slep_roles_permisos_v1';
 export const STORAGE_BITACORA_KEY = 'slep_roles_permisos_bitacora_v1';
@@ -66,29 +64,9 @@ function registrarBitacora(entry: Omit<CambioPermisosBitacora, 'id' | 'fecha'>) 
   lista.unshift(full);
   storage()?.setItem(STORAGE_BITACORA_KEY, JSON.stringify(lista.slice(0, MAX_BITACORA)));
 
-  if (typeof window !== 'undefined' && firestore) {
-    const payloadFirestore: Record<string, any> = {
-      rolId: full.rolId,
-      agregados: full.agregados,
-      removidos: full.removidos,
-      usuario: full.usuario || 'usuario_sistema',
-      motivo: full.motivo?.trim() || 'Actualización manual de permisos',
-      fecha: full.fecha,
-      id: full.id
-    };
-    addDoc(collection(firestore, 'auditoria_permisos'), payloadFirestore).catch(e =>
-      console.warn('[RolesPermisos] No se pudo registrar bitácora remota:', e?.code || e)
-    );
-  }
 }
 
-function publicarRemoto(rol: RolId, data: MatrizRol) {
-  if (typeof window !== 'undefined' && firestore) {
-    setDoc(doc(firestore, 'config_roles', rol), data, { merge: false }).catch(e =>
-      console.warn('[RolesPermisos] No se pudo sincronizar rol con Firestore:', e?.code || e)
-    );
-  }
-}
+function publicarRemoto(rol: RolId, data: MatrizRol) {}
 
 export interface DiffPermisos {
   agregados: PermisoKey[];
@@ -217,27 +195,7 @@ export class RolesPermisosService {
   }
 
   /** Descarga la matriz publicada en Firestore (si hay sesión remota) y la aplica localmente. */
-  static async sincronizarDesdeFirestore(): Promise<boolean> {
-    if (typeof window === 'undefined' || !firestore || !auth?.currentUser) return false;
-    try {
-      const m = { ...this.cargarMatriz() };
-      let cambios = false;
-      for (const rol of ROL_IDS) {
-        if (rol === 'super_usuario') continue;
-        const snap = await getDoc(doc(firestore, 'config_roles', rol));
-        const data = snap.exists() ? (snap.data() as MatrizRol) : null;
-        if (data && Array.isArray(data.permisos) && (data.version || 0) > (m[rol].version || 0)) {
-          m[rol] = { ...data, permisos: normalizarPermisos(rol, data.permisos) };
-          cambios = true;
-        }
-      }
-      if (cambios) persistir(m);
-      return cambios;
-    } catch (e: any) {
-      console.warn('[RolesPermisos] Sincronización remota no disponible:', e?.code || e?.message || e);
-      return false;
-    }
-  }
+  static async sincronizarDesdeFirestore(): Promise<boolean> { return false; }
 
   /** Vista agregada heredada (`PermisosRol`) derivada de la matriz granular. */
   static derivarPermisosLegados(rol: unknown): PermisosRol {

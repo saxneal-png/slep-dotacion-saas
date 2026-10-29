@@ -1,7 +1,6 @@
 import { Database } from 'sql.js';
 import { AsistenteEducacion, EstamentoAsistente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
-import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export function mapRowToAsistente(row: any[]): AsistenteEducacion {
@@ -213,9 +212,6 @@ export async function guardarAsistente(
   if ('exec' in asistenteOrDb) {
     if (maybeAsistente) {
       guardarAsistenteSync(asistenteOrDb as Database, maybeAsistente);
-      FirebaseDotacionService.guardarAsistente(maybeAsistente).catch(err =>
-        console.warn('[asistentesRepo] Aviso sincronizando con Firestore:', err)
-      );
       SupabaseDotacionService.guardarAsistente(maybeAsistente).catch(err =>
         console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
       );
@@ -226,9 +222,6 @@ export async function guardarAsistente(
   const ast = asistenteOrDb as AsistenteEducacion;
   guardarAsistenteSync(db, ast);
   await persistDb();
-  FirebaseDotacionService.guardarAsistente(ast).catch(err =>
-    console.warn('[asistentesRepo] Aviso sincronizando con Firestore:', err)
-  );
   SupabaseDotacionService.guardarAsistente(ast).catch(err =>
     console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
   );
@@ -323,9 +316,6 @@ export async function guardarAsistentesBatch(
     const periodo = typeof periodoOrReemplazar === 'number' ? periodoOrReemplazar : 2026;
     const reemplazar = Boolean(maybeReemplazar);
     guardarAsistentesBatchSync(db, asistentes, rbd, periodo, reemplazar);
-    FirebaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
-      console.warn('[asistentesRepo] Aviso sincronizando lote con Firestore:', err)
-    );
     SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
       console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
     );
@@ -340,9 +330,6 @@ export async function guardarAsistentesBatch(
   const db = await getDb();
   guardarAsistentesBatchSync(db, asistentes, rbd, periodo, reemplazar);
   await persistDb();
-  FirebaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
-    console.warn('[asistentesRepo] Aviso sincronizando lote con Firestore:', err)
-  );
   SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
     console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
   );
@@ -361,9 +348,6 @@ export async function eliminarAsistente(
   if (typeof idOrDb !== 'string') {
     const targetId = String(maybeId || '');
     eliminarAsistenteSync(idOrDb, targetId);
-    FirebaseDotacionService.eliminarAsistente(targetId).catch(err =>
-      console.warn('[asistentesRepo] Aviso eliminando en Firestore:', err)
-    );
     SupabaseDotacionService.eliminarAsistente(targetId).catch(err =>
       console.warn('[asistentesRepo] Aviso eliminando en Supabase:', err)
     );
@@ -372,9 +356,6 @@ export async function eliminarAsistente(
   const db = await getDb();
   eliminarAsistenteSync(db, idOrDb);
   await persistDb();
-  FirebaseDotacionService.eliminarAsistente(idOrDb).catch(err =>
-    console.warn('[asistentesRepo] Aviso eliminando en Firestore:', err)
-  );
   SupabaseDotacionService.eliminarAsistente(idOrDb).catch(err =>
     console.warn('[asistentesRepo] Aviso eliminando en Supabase:', err)
   );

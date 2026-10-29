@@ -1,6 +1,5 @@
 import { Establecimiento } from '../../types';
 import { getDb, persistDb } from '../dbCore';
-import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export async function listarEstablecimientos(): Promise<Establecimiento[]> {
@@ -63,9 +62,6 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
     SupabaseDotacionService.guardarEstablecimiento(e).catch(err =>
       console.warn('[establecimientosRepo] Aviso sincronizando con Supabase:', err)
     );
-    FirebaseDotacionService.guardarEstablecimiento(e).catch(err =>
-      console.warn('[establecimientosRepo] Aviso sincronizando con Firestore:', err)
-    );
   }
 }
 
@@ -98,8 +94,5 @@ export async function eliminarEstablecimiento(id: string): Promise<void> {
   persistDb();
   SupabaseDotacionService.eliminarEstablecimiento(id).catch(err =>
     console.warn('[establecimientosRepo] Aviso eliminando en Supabase:', err)
-  );
-  FirebaseDotacionService.eliminarEstablecimiento(id).catch(err =>
-    console.warn('[establecimientosRepo] Aviso eliminando en Firestore:', err)
   );
 }
