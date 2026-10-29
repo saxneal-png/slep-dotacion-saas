@@ -33,7 +33,7 @@ export async function listarTodasLasSalas(): Promise<SalaInfraestructura[]> {
   }));
 }
 
-export async function guardarSala(s: SalaInfraestructura): Promise<void> {
+export async function guardarSala(s: SalaInfraestructura, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   db.run(`
     INSERT INTO salas_infraestructura (id, rbd, pabellon, nombre_sala, superficie_m2, tipo, aforo_maximo)
@@ -43,12 +43,14 @@ export async function guardarSala(s: SalaInfraestructura): Promise<void> {
       superficie_m2=excluded.superficie_m2, tipo=excluded.tipo, aforo_maximo=excluded.aforo_maximo;
   `, [s.id, s.rbd, s.pabellon || null, s.nombreSala, s.superficieM2, s.tipo, s.aforoMaximo]);
   persistDb();
-  SupabaseDotacionService.guardarSala(s).catch(err =>
-    console.warn('[salasRepo] Aviso sincronizando con Supabase:', err)
-  );
-  FirebaseDotacionService.guardarSala(s).catch(err =>
-    console.warn('[salasRepo] Aviso sincronizando con Firestore:', err)
-  );
+  if (!skipCloudSync) {
+    SupabaseDotacionService.guardarSala(s).catch(err =>
+      console.warn('[salasRepo] Aviso sincronizando con Supabase:', err)
+    );
+    FirebaseDotacionService.guardarSala(s).catch(err =>
+      console.warn('[salasRepo] Aviso sincronizando con Firestore:', err)
+    );
+  }
 }
 
 export async function eliminarSala(id: string): Promise<void> {

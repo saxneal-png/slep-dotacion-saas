@@ -1,6 +1,7 @@
 import { UsuarioSistema } from '../../types/authTypes';
 import { getDb, persistDb } from '../dbCore';
 import { normalizarRol } from '../../security/rolesDefinitions';
+import { supabase, isSupabaseEnabled } from '../../services/supabaseClient';
 
 export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
   try {
@@ -97,6 +98,24 @@ export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
       u.ultimoAcceso || null
     ]);
     await persistDb();
+    if (isSupabaseEnabled()) {
+      supabase.from('usuarios_sistema').upsert({
+        id: u.id,
+        username: u.username || u.email || u.id,
+        email: u.email || null,
+        nombre_completo: u.nombreCompleto,
+        role: u.role,
+        cargo: u.cargo || null,
+        rbd_asignado: u.rbdAsignado || null,
+        cartera_rbds_json: carteraJson || '[]',
+        asesores_supervisados_json: asesoresJson || '[]',
+        comunas_permitidas_json: comunasJson || '[]',
+        password_hash: u.passwordHash || null,
+        salt: u.salt || null,
+        gemini_api_key: u.geminiApiKey || null,
+        activo: u.activo !== false
+      }, { onConflict: 'id' }).then(() => {});
+    }
   } catch (err) {
     console.warn('[usuariosRepo] Error guardando usuario en SQLite:', err);
   }
@@ -169,6 +188,9 @@ export async function eliminarUsuarioDb(id: string): Promise<void> {
     const db = await getDb();
     db.run("DELETE FROM usuarios_sistema WHERE id = ?", [id]);
     await persistDb();
+    if (isSupabaseEnabled()) {
+      supabase.from('usuarios_sistema').delete().eq('id', id).then(() => {});
+    }
   } catch (err) {
     console.warn('[usuariosRepo] Error eliminando usuario de SQLite:', err);
   }

@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { auth, firestore, firebaseConfig } from './firebaseConfig';
+import { supabase, isSupabaseEnabled } from './supabaseClient';
 import {
   listarUsuariosDb,
   guardarUsuarioDb,
@@ -213,8 +214,75 @@ export class AuthService {
       // Fallback seguro si SQLite aún no está inicializado
     }
 
-    // 2. Sincronización bidireccional en la nube con Firestore cuando hay conectividad
-    if (typeof window !== 'undefined' && firestore) {
+    // 2.0 Sincronización desde Supabase PostgreSQL (Fuente Primaria en Nube)
+    if (isSupabaseEnabled()) {
+      try {
+        const { data: supaUsers, error: supaErr } = await supabase
+          .from('usuarios_sistema')
+          .select('*');
+        if (!supaErr && supaUsers && supaUsers.length > 0) {
+          const mapPorClave = new Map<string, UsuarioSistema>();
+          usuarios.forEach(u => {
+            const key = (u.email || u.username || u.id).toLowerCase();
+            mapPorClave.set(key, u);
+          });
+
+          for (const row of supaUsers) {
+            const emailKey = (row.email || '').toLowerCase();
+            const userKey = (row.username || '').toLowerCase();
+            const existing =
+              usuarios.find(u => u.id === row.id) ||
+              (emailKey ? usuarios.find(u => (u.email || '').toLowerCase() === emailKey) : undefined) ||
+              (userKey ? usuarios.find(u => u.username.toLowerCase() === userKey) : undefined);
+
+            let carteraRbds: string[] = existing?.carteraRbds || [];
+            try {
+              const parsed = typeof row.cartera_rbds_json === 'string'
+                ? JSON.parse(row.cartera_rbds_json)
+                : row.cartera_rbds_json;
+              if (Array.isArray(parsed) && parsed.length > 0) carteraRbds = parsed;
+            } catch {}
+
+            let asesoresSupervisados: string[] = existing?.asesoresSupervisados || [];
+            try {
+              const parsed = typeof row.asesores_supervisados_json === 'string'
+                ? JSON.parse(row.asesores_supervisados_json)
+                : row.asesores_supervisados_json;
+              if (Array.isArray(parsed) && parsed.length > 0) asesoresSupervisados = parsed;
+            } catch {}
+
+            const esSuper = emailKey === SUPER_USUARIO_EMAIL;
+            const rol = esSuper ? 'super_usuario' : normalizarRol(row.role || existing?.role || 'asesor_uatp');
+
+            const synced: UsuarioSistema = {
+              id: row.id,
+              username: row.username || existing?.username || row.email || row.id,
+              email: row.email || existing?.email || undefined,
+              nombreCompleto: row.nombre_completo || existing?.nombreCompleto || 'Usuario SLEP',
+              role: rol,
+              cargo: row.cargo || existing?.cargo || 'Funcionario SLEP',
+              rbdAsignado: row.rbd_asignado || existing?.rbdAsignado || undefined,
+              carteraRbds,
+              asesoresSupervisados,
+              passwordHash: row.password_hash || existing?.passwordHash || '',
+              salt: row.salt || existing?.salt || '',
+              activo: row.activo !== false
+            };
+
+            const key = (synced.email || synced.username || synced.id).toLowerCase();
+            mapPorClave.set(key, synced);
+          }
+
+          usuarios = Array.from(mapPorClave.values());
+          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+        }
+      } catch {
+        // Fallback silencioso a local
+      }
+    }
+
+    // 2. Sincronización bidireccional en la nube con Firestore cuando hay conectividad y sesión activa
+    if (typeof window !== 'undefined' && firestore && auth?.currentUser) {
       try {
         const snapshot = await getDocs(collection(firestore, 'usuarios'));
         const firestoreKeys = new Set<string>();
@@ -286,7 +354,7 @@ export class AuthService {
           );
         });
 
-        if (faltantesEnFirestore.length > 0) {
+        if (faltantesEnFirestore.length > 0 && auth?.currentUser) {
           const batch = writeBatch(firestore);
           const nowIso = new Date().toISOString();
           for (const u of faltantesEnFirestore.slice(0, 450)) {
@@ -307,9 +375,7 @@ export class AuthService {
               actualizadoEn: nowIso
             }, { merge: true });
           }
-          await batch.commit().catch(err =>
-            console.warn('[AuthService] Aviso subiendo usuarios iniciales a Firestore:', err)
-          );
+          await batch.commit().catch(() => {});
         }
 
         localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
@@ -923,7 +989,7 @@ export class AuthService {
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuariosBatchDb(usuarios);
 
-    // Sincronizar información de directores en la tabla establecimientos (SQLite + Firestore)
+    // Sincronizar información de directores en la tabla establecimientos local SQLite
     try {
       const estActuales = await listarEstablecimientos();
       const mapEst = new Map(estActuales.map(e => [e.rbd.trim(), e]));
@@ -937,7 +1003,7 @@ export class AuthService {
             director: d.director,
             telefono: d.telefono || prev.telefono,
             email: d.email || prev.email
-          });
+          }, true);
         } else {
           await guardarEstablecimiento({
             id: `est-${rbd}`,
@@ -949,15 +1015,15 @@ export class AuthService {
             director: d.director,
             telefono: d.telefono,
             email: d.email
-          });
+          }, true);
         }
       }
     } catch (estErr) {
       console.warn('[AuthService] Aviso actualizando directores en establecimientos:', estErr);
     }
 
-    // Sincronizar masivamente en Firestore usando writeBatch (sin requerir auth.currentUser)
-    if (typeof window !== 'undefined' && firestore) {
+    // Sincronizar masivamente en Firestore solo si existe sesión activa de Firebase Auth
+    if (typeof window !== 'undefined' && firestore && auth?.currentUser) {
       try {
         const batch = writeBatch(firestore);
         const nowIso = new Date().toISOString();

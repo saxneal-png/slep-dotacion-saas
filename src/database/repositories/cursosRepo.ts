@@ -83,7 +83,7 @@ export async function listarTodosLosCursos(periodo: number = 2026): Promise<Curs
   });
 }
 
-export async function guardarCurso(c: CursoSae): Promise<void> {
+export async function guardarCurso(c: CursoSae, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   const talleresJson = c.talleresJec && c.talleresJec.length ? JSON.stringify(c.talleresJec) : null;
   const gradosJson = c.gradosCombinados && c.gradosCombinados.length ? JSON.stringify(c.gradosCombinados) : null;
@@ -131,12 +131,14 @@ export async function guardarCurso(c: CursoSae): Promise<void> {
     c.planEstudioId || null
   ]);
   persistDb();
-  SupabaseDotacionService.guardarCurso(c).catch(err =>
-    console.warn('[cursosRepo] Aviso sincronizando con Supabase:', err)
-  );
-  FirebaseDotacionService.guardarCurso(c).catch(err =>
-    console.warn('[cursosRepo] Aviso sincronizando con Firestore:', err)
-  );
+  if (!skipCloudSync) {
+    SupabaseDotacionService.guardarCurso(c).catch(err =>
+      console.warn('[cursosRepo] Aviso sincronizando con Supabase:', err)
+    );
+    FirebaseDotacionService.guardarCurso(c).catch(err =>
+      console.warn('[cursosRepo] Aviso sincronizando con Firestore:', err)
+    );
+  }
 }
 
 export async function eliminarCurso(id: string): Promise<void> {

@@ -199,7 +199,7 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
   });
 }
 
-export async function guardarDocente(d: Docente): Promise<void> {
+export async function guardarDocente(d: Docente, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   const docPeriodo = d.periodo || 2026;
   
@@ -336,12 +336,14 @@ export async function guardarDocente(d: Docente): Promise<void> {
     d.observacionesSlep || null
   ]);
   await persistDb(true);
-  FirebaseDotacionService.guardarDocente({ ...d, id: docId, periodo: docPeriodo }).catch(err =>
-    console.warn('[docentesRepo] Aviso sincronizando con Firestore:', err)
-  );
-  SupabaseDotacionService.guardarDocente({ ...d, id: docId, periodo: docPeriodo }).catch(err =>
-    console.warn('[docentesRepo] Aviso sincronizando con Supabase:', err)
-  );
+  if (!skipCloudSync) {
+    FirebaseDotacionService.guardarDocente({ ...d, id: docId, periodo: docPeriodo }).catch(err =>
+      console.warn('[docentesRepo] Aviso sincronizando con Firestore:', err)
+    );
+    SupabaseDotacionService.guardarDocente({ ...d, id: docId, periodo: docPeriodo }).catch(err =>
+      console.warn('[docentesRepo] Aviso sincronizando con Supabase:', err)
+    );
+  }
 }
 
 export async function guardarDocentesBatch(docentes: Docente[]): Promise<number> {

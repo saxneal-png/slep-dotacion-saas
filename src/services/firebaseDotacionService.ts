@@ -9,7 +9,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { firestore } from './firebaseConfig';
+import { firestore, auth } from './firebaseConfig';
 import {
   Establecimiento,
   SalaInfraestructura,
@@ -35,7 +35,8 @@ function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Record<str
 export function isCloudSyncEnabled(): boolean {
   if (typeof window === 'undefined' || !firestore) return false;
   if (typeof process !== 'undefined' && (process.env as any)?.VITEST) return false;
-  return true;
+  // Evitar intentos de escritura a Firestore sin sesión autenticada (la base principal ahora es Supabase)
+  return Boolean(auth?.currentUser);
 }
 
 /**

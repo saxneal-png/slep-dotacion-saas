@@ -25,7 +25,7 @@ export async function listarEstablecimientos(): Promise<Establecimiento[]> {
   }));
 }
 
-export async function guardarEstablecimiento(e: Establecimiento): Promise<void> {
+export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   const rbdNorm = e.rbd.trim();
 
@@ -59,12 +59,14 @@ export async function guardarEstablecimiento(e: Establecimiento): Promise<void> 
     ]);
   }
   persistDb();
-  SupabaseDotacionService.guardarEstablecimiento(e).catch(err =>
-    console.warn('[establecimientosRepo] Aviso sincronizando con Supabase:', err)
-  );
-  FirebaseDotacionService.guardarEstablecimiento(e).catch(err =>
-    console.warn('[establecimientosRepo] Aviso sincronizando con Firestore:', err)
-  );
+  if (!skipCloudSync) {
+    SupabaseDotacionService.guardarEstablecimiento(e).catch(err =>
+      console.warn('[establecimientosRepo] Aviso sincronizando con Supabase:', err)
+    );
+    FirebaseDotacionService.guardarEstablecimiento(e).catch(err =>
+      console.warn('[establecimientosRepo] Aviso sincronizando con Firestore:', err)
+    );
+  }
 }
 
 export async function obtenerEstablecimientoPorRbd(rbd: string): Promise<Establecimiento | null> {

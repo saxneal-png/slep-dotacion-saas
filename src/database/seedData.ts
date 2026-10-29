@@ -42,14 +42,14 @@ export async function sincronizarCatalogoEstablecimientos(): Promise<void> {
         director: dirInfo?.director || school.director || undefined,
         telefono: dirInfo?.telefono || undefined,
         email: dirInfo?.email || undefined,
-      });
+      }, true);
     } else if (dirInfo && (!prev.director || !prev.email || !prev.telefono)) {
       await guardarEstablecimiento({
         ...prev,
         director: prev.director || dirInfo.director,
         telefono: prev.telefono || dirInfo.telefono,
         email: prev.email || dirInfo.email,
-      });
+      }, true);
     }
   }
 }
@@ -115,7 +115,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
   ];
 
   for (const est of establecimientosSeed) {
-    await guardarEstablecimiento(est);
+    await guardarEstablecimiento(est, true);
   }
 
   // 2. Salas de Liceo Manuel Bulnes (RBD 3451)
@@ -129,7 +129,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
   ];
 
   for (const s of salasSeed) {
-    await guardarSala(s);
+    await guardarSala(s, true);
   }
 
   // 3. Cursos SAE de Liceo Manuel Bulnes
@@ -141,7 +141,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
   ];
 
   for (const c of cursosSeed) {
-    await guardarCurso(c);
+    await guardarCurso(c, true);
   }
 
   // 4. Docentes de Liceo Manuel Bulnes y Colegio Quilamapu
@@ -198,7 +198,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
   ];
 
   for (const d of docentesSeed) {
-    await guardarDocente(d);
+    await guardarDocente(d, true);
   }
 
   // 5. Asignaciones de Ejemplo
@@ -211,6 +211,6 @@ export async function checkAndSeedInitialData(): Promise<void> {
   ];
 
   for (const a of asigsSeed) {
-    await guardarAsignacion(a);
+    await guardarAsignacion(a, true);
   }
 }

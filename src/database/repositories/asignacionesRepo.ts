@@ -75,7 +75,7 @@ export async function listarTodasLasAsignaciones(periodo: number = 2026): Promis
   });
 }
 
-export async function guardarAsignacion(a: AsignacionHoraria): Promise<void> {
+export async function guardarAsignacion(a: AsignacionHoraria, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   const asigPeriodo = a.periodo || 2026;
   const cursosCompartidosJson = a.cursosCompartidosIds && a.cursosCompartidosIds.length > 0 
@@ -114,12 +114,14 @@ export async function guardarAsignacion(a: AsignacionHoraria): Promise<void> {
     cursosCompartidosJson, esDiferenciado
   ]);
   persistDb();
-  FirebaseDotacionService.guardarAsignacion({ ...a, periodo: asigPeriodo }).catch(err =>
-    console.warn('[asignacionesRepo] Aviso sincronizando con Firestore:', err)
-  );
-  SupabaseDotacionService.guardarAsignacion({ ...a, periodo: asigPeriodo }).catch(err =>
-    console.warn('[asignacionesRepo] Aviso sincronizando con Supabase:', err)
-  );
+  if (!skipCloudSync) {
+    FirebaseDotacionService.guardarAsignacion({ ...a, periodo: asigPeriodo }).catch(err =>
+      console.warn('[asignacionesRepo] Aviso sincronizando con Firestore:', err)
+    );
+    SupabaseDotacionService.guardarAsignacion({ ...a, periodo: asigPeriodo }).catch(err =>
+      console.warn('[asignacionesRepo] Aviso sincronizando con Supabase:', err)
+    );
+  }
 }
 
 export async function listarAsignacionesPorDocente(docenteId: string, rbd?: string, periodo: number = 2026): Promise<AsignacionHoraria[]> {
