@@ -291,8 +291,8 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* Botón IA Copilot */}
-            {onAbrirCopilot && (
+            {/* Botón IA Copilot (Oculto para Directores y perfiles sin permiso IA) */}
+            {onAbrirCopilot && (!permisos || permisos.puedeUsarCopilotIa) && (
               <button
                 onClick={onAbrirCopilot}
                 className="hidden sm:flex items-center space-x-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-xl text-xs font-black transition-all shadow-md border border-blue-400/40 group"

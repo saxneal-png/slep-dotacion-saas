@@ -798,6 +798,7 @@ export const App: React.FC = () => {
               todosLosDocentes={todosLosDocentes}
               todasLasAsignaciones={todasLasAsignaciones}
               periodoActivo={periodoActivo}
+              permisos={permisos}
               initialTab={workspaceInitialTab}
               onTogglePeriodo={handleTogglePeriodo}
               onRefreshData={() => cargarDatos(periodoActivo)}

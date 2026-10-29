@@ -40,6 +40,8 @@ export const PERMISOS_POR_ROL: Record<UserRole, PermisosRol> = {
     puedeExportarReportes: true,
     puedeUsarCopilotIa: true,
     puedeTraspasarPeriodos: true,
+    puedeImportarMatriz: true,
+    puedeVerCentroDescargas: true,
     esSoloLectura: false
   },
   asesor: {
@@ -54,6 +56,8 @@ export const PERMISOS_POR_ROL: Record<UserRole, PermisosRol> = {
     puedeExportarReportes: true,
     puedeUsarCopilotIa: true,
     puedeTraspasarPeriodos: true,
+    puedeImportarMatriz: true,
+    puedeVerCentroDescargas: true,
     esSoloLectura: false
   },
   director_colegio: {
@@ -66,8 +70,10 @@ export const PERMISOS_POR_ROL: Record<UserRole, PermisosRol> = {
     puedeVerConsolidadorMaster: false,
     puedeVerAnalizadorSige: false,
     puedeExportarReportes: true,
-    puedeUsarCopilotIa: true,
+    puedeUsarCopilotIa: false,
     puedeTraspasarPeriodos: false,
+    puedeImportarMatriz: false,
+    puedeVerCentroDescargas: false,
     esSoloLectura: false
   },
   auditor: {
@@ -82,6 +88,8 @@ export const PERMISOS_POR_ROL: Record<UserRole, PermisosRol> = {
     puedeExportarReportes: true,
     puedeUsarCopilotIa: false,
     puedeTraspasarPeriodos: false,
+    puedeImportarMatriz: false,
+    puedeVerCentroDescargas: true,
     esSoloLectura: true
   }
 };

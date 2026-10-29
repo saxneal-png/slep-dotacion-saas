@@ -28,6 +28,7 @@ import { ImportarEstablecimientoModal } from '../components/ImportarEstablecimie
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
 import { CentroDescargasModal } from '../components/CentroDescargasModal';
 import { ProgresoDotacionBar } from '../components/ProgresoDotacionBar';
+import { PermisosRol } from '../types/authTypes';
 
 export interface ColegioWorkspaceViewProps {
   colegio: Establecimiento;
@@ -37,6 +38,7 @@ export interface ColegioWorkspaceViewProps {
   asignaciones: AsignacionHoraria[];
   asistentes?: AsistenteEducacion[];
   diagnostico: DiagnosticoColegioCompleto | null;
+  permisos?: PermisosRol | null;
   onGuardarSala: (s: SalaInfraestructura) => Promise<void> | void;
   onEliminarSala: (id: string) => Promise<void> | void;
   onGuardarCurso: (c: CursoSae) => Promise<void> | void;
@@ -74,6 +76,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   asignaciones,
   asistentes = [],
   diagnostico,
+  permisos,
   onGuardarSala,
   onEliminarSala,
   onGuardarCurso,
@@ -186,8 +189,8 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           {/* Barra de Acciones Desduplicada */}
           <div className="flex items-center gap-2 flex-wrap">
             
-            {/* 1. Asistente IA */}
-            {onAbrirCopilot && (
+            {/* 1. Asistente IA (Solo usuarios con permiso de IA: Asesores y SuperAdmin) */}
+            {onAbrirCopilot && (!permisos || permisos.puedeUsarCopilotIa) && (
               <button
                 onClick={onAbrirCopilot}
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/25 border border-blue-400/30 group active:scale-[0.98]"
@@ -198,152 +201,173 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
               </button>
             )}
 
-            {/* 2. Importar Matriz Excel */}
-            <button
-              onClick={() => setModalMatrizAbierto(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm border border-slate-700/80 active:scale-[0.98]"
-              title="Importar planilla Excel oficial con asignaciones"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-orange-400" />
-              <span>Importar Matriz</span>
-            </button>
-
-            {/* 3. Centro de Descargas Unificado */}
-            <button
-              onClick={() => setModalCentroDescargasAbierto(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-[0.98]"
-              title="Descargar PAL 2027 DEP, GDP, Matriz Excel, Coeficientes Asistentes o Ficha"
-            >
-              <FileDown className="w-4 h-4 text-emerald-200" />
-              <span>Centro de Descargas</span>
-            </button>
-
-            {/* 4. Traspaso de Dotación */}
-            <button
-              onClick={() => setModalTraspasoAbierto(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/20 active:scale-[0.98]"
-              title="Asistente guiado de traspaso de dotación 2026 a 2027"
-            >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>Traspaso 2026 ➔ 2027</span>
-            </button>
-
-            {/* 5. Menú Desplegable Consolidado de Acciones & Reportes */}
-            <div className="relative">
+            {/* 2. Importar Matriz Excel (Oculto para Directores) */}
+            {(!permisos || permisos.puedeImportarMatriz) && (
               <button
-                onClick={() => setMenuAvanzadoAbierto(!menuAvanzadoAbierto)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98]"
-                title="Más acciones, exportaciones y reportes"
+                onClick={() => setModalMatrizAbierto(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm border border-slate-700/80 active:scale-[0.98]"
+                title="Importar planilla Excel oficial con asignaciones"
               >
-                <span>Acciones & Reportes</span>
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${menuAvanzadoAbierto ? 'rotate-180' : ''}`} />
+                <FileSpreadsheet className="w-4 h-4 text-orange-400" />
+                <span>Importar Matriz</span>
               </button>
+            )}
 
-              {menuAvanzadoAbierto && (
-                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-fade-in divide-y divide-slate-100 dark:divide-slate-800 backdrop-blur-md">
-                  
-                  {/* Reportes y Exportaciones */}
-                  <div className="p-1 space-y-0.5">
-                    <button
-                      onClick={() => {
-                        setModalComparadorAbierto(true);
-                        setMenuAvanzadoAbierto(false);
-                      }}
-                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors text-left"
-                    >
-                      <Scale className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      <span>Comparar 2026 vs 2027</span>
-                    </button>
+            {/* 3. Centro de Descargas Unificado (Oculto para Directores) */}
+            {(!permisos || permisos.puedeVerCentroDescargas) && (
+              <button
+                onClick={() => setModalCentroDescargasAbierto(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-[0.98]"
+                title="Descargar PAL 2027 DEP, GDP, Matriz Excel, Coeficientes Asistentes o Ficha"
+              >
+                <FileDown className="w-4 h-4 text-emerald-200" />
+                <span>Centro de Descargas</span>
+              </button>
+            )}
 
-                    {onExportarMatrizExcelColegio && (
+            {/* 4. Traspaso de Dotación (Oculto para Directores) */}
+            {(!permisos || permisos.puedeTraspasarPeriodos) && (
+              <button
+                onClick={() => setModalTraspasoAbierto(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/20 active:scale-[0.98]"
+                title="Asistente guiado de traspaso de dotación 2026 a 2027"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>Traspaso 2026 ➔ 2027</span>
+              </button>
+            )}
+
+            {/* 5. Exportación Directa de Matriz Oficial para Director / Menú Desplegable para Asesor y Admin */}
+            {permisos && !permisos.puedeAccederTodasEscuelas ? (
+              /* Director: Botón directo y limpio para Exportar Matriz Oficial Excel (.xlsx) */
+              onExportarMatrizExcelColegio && (
+                <button
+                  onClick={() => onExportarMatrizExcelColegio(colegio, periodoActivo)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/25 active:scale-[0.98]"
+                  title="Exportar Matriz Oficial Excel (.xlsx) de este establecimiento"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+                  <span>Exportar Matriz Oficial (.xlsx)</span>
+                </button>
+              )
+            ) : (
+              /* Asesor / Admin: Menú completo de Acciones & Reportes */
+              <div className="relative">
+                <button
+                  onClick={() => setMenuAvanzadoAbierto(!menuAvanzadoAbierto)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98]"
+                  title="Más acciones, exportaciones y reportes"
+                >
+                  <span>Acciones & Reportes</span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${menuAvanzadoAbierto ? 'rotate-180' : ''}`} />
+                </button>
+
+                {menuAvanzadoAbierto && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-fade-in divide-y divide-slate-100 dark:divide-slate-800 backdrop-blur-md">
+                    
+                    {/* Reportes y Exportaciones */}
+                    <div className="p-1 space-y-0.5">
                       <button
                         onClick={() => {
-                          onExportarMatrizExcelColegio(colegio, periodoActivo);
+                          setModalComparadorAbierto(true);
                           setMenuAvanzadoAbierto(false);
                         }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors text-left"
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors text-left"
                       >
-                        <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>Exportar Matriz Oficial Excel (.xlsx)</span>
+                        <Scale className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        <span>Comparar 2026 vs 2027</span>
                       </button>
-                    )}
 
-                    <button
-                      onClick={() => {
-                        setModalGdpAbierto(true);
-                        setMenuAvanzadoAbierto(false);
-                      }}
-                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/60 hover:text-amber-700 dark:hover:text-amber-300 transition-colors text-left"
-                    >
-                      <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                      <span>Exportar Planilla GDP Oficial (.xlsx)</span>
-                    </button>
+                      {onExportarMatrizExcelColegio && (
+                        <button
+                          onClick={() => {
+                            onExportarMatrizExcelColegio(colegio, periodoActivo);
+                            setMenuAvanzadoAbierto(false);
+                          }}
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors text-left"
+                        >
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>Exportar Matriz Oficial Excel (.xlsx)</span>
+                        </button>
+                      )}
 
-                    {onExportarDotacionColegio && (
                       <button
                         onClick={() => {
-                          onExportarDotacionColegio(colegio, periodoActivo);
+                          setModalGdpAbierto(true);
                           setMenuAvanzadoAbierto(false);
                         }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/60 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-left"
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/60 hover:text-amber-700 dark:hover:text-amber-300 transition-colors text-left"
                       >
-                        <FileDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                        <span>Exportar Ficha (.slep)</span>
+                        <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        <span>Exportar Planilla GDP Oficial (.xlsx)</span>
                       </button>
-                    )}
 
-                    <button
-                      onClick={() => {
-                        setModalImportarEstablecimientoAbierto(true);
-                        setMenuAvanzadoAbierto(false);
-                      }}
-                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
-                    >
-                      <FileUp className="w-4 h-4 text-slate-500" />
-                      <span>Importar Ficha (.slep)</span>
-                    </button>
+                      {onExportarDotacionColegio && (
+                        <button
+                          onClick={() => {
+                            onExportarDotacionColegio(colegio, periodoActivo);
+                            setMenuAvanzadoAbierto(false);
+                          }}
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/60 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-left"
+                        >
+                          <FileDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <span>Exportar Ficha (.slep)</span>
+                        </button>
+                      )}
 
-                    <button
-                      onClick={() => {
-                        onAbrirModuloSige();
-                        setMenuAvanzadoAbierto(false);
-                      }}
-                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-950/60 hover:text-orange-700 dark:hover:text-orange-300 transition-colors text-left"
-                    >
-                      <FileUp className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                      <span>Cargar Nómina SIGE</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        window.print();
-                        setMenuAvanzadoAbierto(false);
-                      }}
-                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
-                    >
-                      <Printer className="w-4 h-4 text-slate-500" />
-                      <span>Imprimir Informe Oficial</span>
-                    </button>
-                  </div>
-
-                  {/* Zona de Peligro */}
-                  {onLimpiarDotacionColegio && (
-                    <div className="p-1">
                       <button
                         onClick={() => {
-                          setModalVaciarSeguroAbierto(true);
+                          setModalImportarEstablecimientoAbierto(true);
                           setMenuAvanzadoAbierto(false);
                         }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors text-left"
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
                       >
-                        <Trash2 className="w-4 h-4 text-rose-500" />
-                        <span>Vaciar Dotación del Período</span>
+                        <FileUp className="w-4 h-4 text-slate-500" />
+                        <span>Importar Ficha (.slep)</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          onAbrirModuloSige();
+                          setMenuAvanzadoAbierto(false);
+                        }}
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-950/60 hover:text-orange-700 dark:hover:text-orange-300 transition-colors text-left"
+                      >
+                        <FileUp className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                        <span>Cargar Nómina SIGE</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          window.print();
+                          setMenuAvanzadoAbierto(false);
+                        }}
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
+                      >
+                        <Printer className="w-4 h-4 text-slate-500" />
+                        <span>Imprimir Informe Oficial</span>
                       </button>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+
+                    {/* Zona de Peligro */}
+                    {onLimpiarDotacionColegio && (
+                      <div className="p-1">
+                        <button
+                          onClick={() => {
+                            setModalVaciarSeguroAbierto(true);
+                            setMenuAvanzadoAbierto(false);
+                          }}
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors text-left"
+                        >
+                          <Trash2 className="w-4 h-4 text-rose-500" />
+                          <span>Vaciar Dotación del Período</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
         </div>

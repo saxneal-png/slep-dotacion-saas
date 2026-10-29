@@ -28,6 +28,8 @@ export interface PermisosRol {
   puedeExportarReportes: boolean;
   puedeUsarCopilotIa: boolean;
   puedeTraspasarPeriodos: boolean;
+  puedeImportarMatriz: boolean;
+  puedeVerCentroDescargas: boolean;
   esSoloLectura: boolean;
 }
 
