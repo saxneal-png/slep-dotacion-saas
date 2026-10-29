@@ -218,7 +218,7 @@ export class RolesPermisosService {
 
   /** Descarga la matriz publicada en Firestore (si hay sesión remota) y la aplica localmente. */
   static async sincronizarDesdeFirestore(): Promise<boolean> {
-    if (typeof window === 'undefined' || !firestore) return false;
+    if (typeof window === 'undefined' || !firestore || !auth?.currentUser) return false;
     try {
       const m = { ...this.cargarMatriz() };
       let cambios = false;
