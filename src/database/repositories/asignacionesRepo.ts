@@ -1,6 +1,7 @@
 import { AsignacionHoraria } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
+import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export async function listarAsignaciones(rbd: string, periodo: number = 2026): Promise<AsignacionHoraria[]> {
   const db = await getDb();
@@ -116,6 +117,9 @@ export async function guardarAsignacion(a: AsignacionHoraria): Promise<void> {
   FirebaseDotacionService.guardarAsignacion({ ...a, periodo: asigPeriodo }).catch(err =>
     console.warn('[asignacionesRepo] Aviso sincronizando con Firestore:', err)
   );
+  SupabaseDotacionService.guardarAsignacion({ ...a, periodo: asigPeriodo }).catch(err =>
+    console.warn('[asignacionesRepo] Aviso sincronizando con Supabase:', err)
+  );
 }
 
 export async function listarAsignacionesPorDocente(docenteId: string, rbd?: string, periodo: number = 2026): Promise<AsignacionHoraria[]> {
@@ -207,6 +211,9 @@ export async function guardarAsignacionesBatch(asignaciones: AsignacionHoraria[]
     FirebaseDotacionService.guardarAsignacionesBatch(asignaciones).catch(err =>
       console.warn('[asignacionesRepo] Aviso sincronizando lote con Firestore:', err)
     );
+    SupabaseDotacionService.guardarAsignacionesBatch(asignaciones).catch(err =>
+      console.warn('[asignacionesRepo] Aviso sincronizando lote con Supabase:', err)
+    );
   } catch (err) {
     db.run("ROLLBACK;");
     throw err;
@@ -219,6 +226,9 @@ export async function eliminarAsignacion(id: string): Promise<void> {
   persistDb();
   FirebaseDotacionService.eliminarAsignacion(id).catch(err =>
     console.warn('[asignacionesRepo] Aviso eliminando en Firestore:', err)
+  );
+  SupabaseDotacionService.eliminarAsignacion(id).catch(err =>
+    console.warn('[asignacionesRepo] Aviso eliminando en Supabase:', err)
   );
 }
 

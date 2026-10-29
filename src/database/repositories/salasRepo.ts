@@ -1,6 +1,7 @@
 import { SalaInfraestructura } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
+import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export async function listarSalas(rbd: string): Promise<SalaInfraestructura[]> {
   const db = await getDb();
@@ -42,6 +43,9 @@ export async function guardarSala(s: SalaInfraestructura): Promise<void> {
       superficie_m2=excluded.superficie_m2, tipo=excluded.tipo, aforo_maximo=excluded.aforo_maximo;
   `, [s.id, s.rbd, s.pabellon || null, s.nombreSala, s.superficieM2, s.tipo, s.aforoMaximo]);
   persistDb();
+  SupabaseDotacionService.guardarSala(s).catch(err =>
+    console.warn('[salasRepo] Aviso sincronizando con Supabase:', err)
+  );
   FirebaseDotacionService.guardarSala(s).catch(err =>
     console.warn('[salasRepo] Aviso sincronizando con Firestore:', err)
   );
@@ -51,6 +55,9 @@ export async function eliminarSala(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM salas_infraestructura WHERE id = ?", [id]);
   persistDb();
+  SupabaseDotacionService.eliminarSala(id).catch(err =>
+    console.warn('[salasRepo] Aviso eliminando en Supabase:', err)
+  );
   FirebaseDotacionService.eliminarSala(id).catch(err =>
     console.warn('[salasRepo] Aviso eliminando en Firestore:', err)
   );

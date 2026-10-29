@@ -2,6 +2,7 @@ import { Database } from 'sql.js';
 import { AsistenteEducacion, EstamentoAsistente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
+import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export function mapRowToAsistente(row: any[]): AsistenteEducacion {
   const horasContrato = Number(row[8]) || 0;
@@ -215,6 +216,9 @@ export async function guardarAsistente(
       FirebaseDotacionService.guardarAsistente(maybeAsistente).catch(err =>
         console.warn('[asistentesRepo] Aviso sincronizando con Firestore:', err)
       );
+      SupabaseDotacionService.guardarAsistente(maybeAsistente).catch(err =>
+        console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
+      );
     }
     return;
   }
@@ -224,6 +228,9 @@ export async function guardarAsistente(
   await persistDb();
   FirebaseDotacionService.guardarAsistente(ast).catch(err =>
     console.warn('[asistentesRepo] Aviso sincronizando con Firestore:', err)
+  );
+  SupabaseDotacionService.guardarAsistente(ast).catch(err =>
+    console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
   );
 }
 
@@ -319,6 +326,9 @@ export async function guardarAsistentesBatch(
     FirebaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
       console.warn('[asistentesRepo] Aviso sincronizando lote con Firestore:', err)
     );
+    SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
+      console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
+    );
     return;
   }
 
@@ -332,6 +342,9 @@ export async function guardarAsistentesBatch(
   await persistDb();
   FirebaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
     console.warn('[asistentesRepo] Aviso sincronizando lote con Firestore:', err)
+  );
+  SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
+    console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
   );
 }
 
@@ -351,6 +364,9 @@ export async function eliminarAsistente(
     FirebaseDotacionService.eliminarAsistente(targetId).catch(err =>
       console.warn('[asistentesRepo] Aviso eliminando en Firestore:', err)
     );
+    SupabaseDotacionService.eliminarAsistente(targetId).catch(err =>
+      console.warn('[asistentesRepo] Aviso eliminando en Supabase:', err)
+    );
     return;
   }
   const db = await getDb();
@@ -358,6 +374,9 @@ export async function eliminarAsistente(
   await persistDb();
   FirebaseDotacionService.eliminarAsistente(idOrDb).catch(err =>
     console.warn('[asistentesRepo] Aviso eliminando en Firestore:', err)
+  );
+  SupabaseDotacionService.eliminarAsistente(idOrDb).catch(err =>
+    console.warn('[asistentesRepo] Aviso eliminando en Supabase:', err)
   );
 }
 

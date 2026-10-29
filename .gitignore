@@ -40,6 +40,12 @@ Thumbs.db
 
 # Sensitive seeds and SQL dumps
 database/*.sql
+!database/supabase_schema.sql
+database/*.sqlite
+database/*.json
 scripts/seed_*.cjs
+
+# Supabase CLI temp
+supabase/.temp/
 
 

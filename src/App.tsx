@@ -72,6 +72,7 @@ import {
 } from './database/db';
 
 import { checkAndSeedInitialData } from './database/seedData';
+import { SupabaseDotacionService } from './services/supabaseDotacionService';
 import { FirebaseDotacionService } from './services/firebaseDotacionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { generarExcelConsolidadoSlep } from './services/excelReportService';
@@ -129,15 +130,15 @@ export const App: React.FC = () => {
 
   const handleGuardarCambiosEnNube = async () => {
     setGuardandoEnNube(true);
-    mostrarMensaje('☁️ Guardando y sincronizando todas las tablas en Cloud Firestore...');
+    mostrarMensaje('☁️ Guardando y sincronizando todas las tablas en Supabase PostgreSQL...');
     try {
-      const res = await FirebaseDotacionService.sincronizarTodaLaBaseDeDatosAFirestore();
+      const res = await SupabaseDotacionService.sincronizarTodaLaBaseDeDatosASupabase();
       mostrarMensaje(
         `✓ Cambios guardados exitosamente en la nube: ${res.establecimientosSincronizados} escuelas, ${res.docentesSincronizados} docentes, ${res.usuariosSincronizados} usuarios y ${res.asistentesSincronizados} asistentes sincronizados.`,
         'success'
       );
     } catch (err: any) {
-      console.error('Error sincronizando con Firestore:', err);
+      console.error('Error sincronizando con Supabase:', err);
       mostrarMensaje(`Error guardando en la nube: ${err.message || err}`, 'error');
     } finally {
       setGuardandoEnNube(false);

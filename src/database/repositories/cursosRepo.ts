@@ -1,6 +1,7 @@
 import { CursoSae } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
+import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
 export async function listarCursos(rbd: string, periodo: number = 2026): Promise<CursoSae[]> {
   const db = await getDb();
@@ -130,6 +131,9 @@ export async function guardarCurso(c: CursoSae): Promise<void> {
     c.planEstudioId || null
   ]);
   persistDb();
+  SupabaseDotacionService.guardarCurso(c).catch(err =>
+    console.warn('[cursosRepo] Aviso sincronizando con Supabase:', err)
+  );
   FirebaseDotacionService.guardarCurso(c).catch(err =>
     console.warn('[cursosRepo] Aviso sincronizando con Firestore:', err)
   );
@@ -139,6 +143,9 @@ export async function eliminarCurso(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM cursos_sae WHERE id = ?", [id]);
   persistDb();
+  SupabaseDotacionService.eliminarCurso(id).catch(err =>
+    console.warn('[cursosRepo] Aviso eliminando en Supabase:', err)
+  );
   FirebaseDotacionService.eliminarCurso(id).catch(err =>
     console.warn('[cursosRepo] Aviso eliminando en Firestore:', err)
   );

@@ -252,20 +252,20 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
 
-            {/* Botón Steve Jobs: Guardar Cambios en la Nube (Firebase Cloud) */}
+            {/* Botón Steve Jobs: Guardar Cambios en Supabase PostgreSQL */}
             {onGuardarCambiosEnNube && (
               <button
                 onClick={onGuardarCambiosEnNube}
                 disabled={guardandoEnNube}
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/30 transition-all group"
-                title="Sincroniza y guarda todos los cambios en Cloud Firestore"
+                title="Sincronizar y guardar todos los cambios en Supabase PostgreSQL (rvvyjfgiwalqsdtpidxz)"
               >
                 {guardandoEnNube ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
                 ) : (
                   <CloudUpload className="w-3.5 h-3.5 text-emerald-200 group-hover:scale-110 transition-transform" />
                 )}
-                <span className="hidden sm:inline">Guardar Cambios</span>
+                <span>Guardar Cambios</span>
               </button>
             )}
 
