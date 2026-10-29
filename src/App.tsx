@@ -72,6 +72,7 @@ import {
 } from './database/db';
 
 import { checkAndSeedInitialData } from './database/seedData';
+import { FirebaseDotacionService } from './services/firebaseDotacionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { generarExcelConsolidadoSlep } from './services/excelReportService';
 import { generarExcelMatrizDotacionColegio } from './services/excelMatrizDotacionService';
@@ -124,6 +125,24 @@ export const App: React.FC = () => {
     }
   });
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
+  const [guardandoEnNube, setGuardandoEnNube] = useState(false);
+
+  const handleGuardarCambiosEnNube = async () => {
+    setGuardandoEnNube(true);
+    mostrarMensaje('☁️ Guardando y sincronizando todas las tablas en Cloud Firestore...');
+    try {
+      const res = await FirebaseDotacionService.sincronizarTodaLaBaseDeDatosAFirestore();
+      mostrarMensaje(
+        `✓ Cambios guardados exitosamente en la nube: ${res.establecimientosSincronizados} escuelas, ${res.docentesSincronizados} docentes, ${res.usuariosSincronizados} usuarios y ${res.asistentesSincronizados} asistentes sincronizados.`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Error sincronizando con Firestore:', err);
+      mostrarMensaje(`Error guardando en la nube: ${err.message || err}`, 'error');
+    } finally {
+      setGuardandoEnNube(false);
+    }
+  };
 
   // Modales Steve Jobs: Navegador Rápido, Centro de Respaldos, Copilot IA y Traspaso
   const [modalNavegadorAbierto, setModalNavegadorAbierto] = useState(false);
@@ -733,6 +752,8 @@ export const App: React.FC = () => {
         onAbrirTraspasoPeriodos={() => setModalTraspasoAbierto(true)}
         onAbrirCopilot={() => setModalCopilotAbierto(true)}
         onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
+        onGuardarCambiosEnNube={handleGuardarCambiosEnNube}
+        guardandoEnNube={guardandoEnNube}
       />
 
       {/* Toast Notificación */}

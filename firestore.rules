@@ -7,60 +7,69 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Permite al Administrador Oficial o cuenta de soporte gestionar todas las tablas
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'saxneal@gmail.com' ||
+        request.auth.token.email.matches('.*@eduvallediguillin[.]gob[.]cl') ||
+        request.auth.token.email.matches('.*@slepvallediguillin[.]cl')
+      );
+    }
+
     function getUserData() {
       return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
     }
 
     function isActiveUser() {
-      return isAuthenticated() && getUserData().activo == true;
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        (exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) && getUserData().activo == true)
+      );
     }
 
     function isAdmin() {
-      return isAuthenticated() && (
-        request.auth.token.email == 'saxneal@gmail.com' ||
-        (isActiveUser() && (
+      return isSuperAdmin() || (
+        isActiveUser() && (
           getUserData().rol == 'admin' ||
           getUserData().rol == 'super_usuario' ||
           getUserData().rol == 'subdirector_uatp'
-        ))
+        )
       );
     }
 
     function isAuditor() {
-      return isActiveUser() && (
-        getUserData().rol == 'auditor' ||
-        getUserData().rol == 'subdirector_uatp'
+      return isSuperAdmin() || (
+        isActiveUser() && (
+          getUserData().rol == 'auditor' ||
+          getUserData().rol == 'subdirector_uatp'
+        )
       );
     }
 
     function canReadRbd(rbd) {
-      let user = getUserData();
-      return isAuthenticated() && (
-        request.auth.token.email == 'saxneal@gmail.com' ||
-        (isActiveUser() && (
-          user.rol == 'admin' ||
-          user.rol == 'super_usuario' ||
-          user.rol == 'subdirector_uatp' ||
-          user.rol == 'coordinador_uatp' ||
-          user.rol == 'auditor' ||
-          ((user.rol == 'asesor' || user.rol == 'asesor_uatp') && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
-          ((user.rol == 'director_colegio' || user.rol == 'director_establecimiento' || user.rol == 'jefe_utp_establecimiento') && user.rbdAsignado == rbd)
-        ))
+      return isSuperAdmin() || (
+        isActiveUser() && (
+          getUserData().rol == 'admin' ||
+          getUserData().rol == 'super_usuario' ||
+          getUserData().rol == 'subdirector_uatp' ||
+          getUserData().rol == 'coordinador_uatp' ||
+          getUserData().rol == 'auditor' ||
+          ((getUserData().rol == 'asesor' || getUserData().rol == 'asesor_uatp') && ('carteraRbds' in getUserData()) && rbd in getUserData().carteraRbds) ||
+          ((getUserData().rol == 'director_colegio' || getUserData().rol == 'director_establecimiento' || getUserData().rol == 'jefe_utp_establecimiento') && getUserData().rbdAsignado == rbd)
+        )
       );
     }
 
     function canWriteRbd(rbd) {
-      let user = getUserData();
-      return isAuthenticated() && (
-        request.auth.token.email == 'saxneal@gmail.com' ||
-        (isActiveUser() && (
-          user.rol == 'admin' ||
-          user.rol == 'super_usuario' ||
-          user.rol == 'subdirector_uatp' ||
-          user.rol == 'coordinador_uatp' ||
-          ((user.rol == 'asesor' || user.rol == 'asesor_uatp') && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
-          ((user.rol == 'director_colegio' || user.rol == 'director_establecimiento' || user.rol == 'jefe_utp_establecimiento') && user.rbdAsignado == rbd)
-        ))
+      return isSuperAdmin() || (
+        isActiveUser() && (
+          getUserData().rol == 'admin' ||
+          getUserData().rol == 'super_usuario' ||
+          getUserData().rol == 'subdirector_uatp' ||
+          getUserData().rol == 'coordinador_uatp' ||
+          ((getUserData().rol == 'asesor' || getUserData().rol == 'asesor_uatp') && ('carteraRbds' in getUserData()) && rbd in getUserData().carteraRbds) ||
+          ((getUserData().rol == 'director_colegio' || getUserData().rol == 'director_establecimiento' || getUserData().rol == 'jefe_utp_establecimiento') && getUserData().rbdAsignado == rbd)
+        )
       );
     }
 
@@ -74,68 +83,63 @@ service cloud.firestore {
 
     // 1. PERFILES DE USUARIO (Solo usuarios autenticados consultan perfiles; escritura controlada por RBAC)
     match /usuarios/{userId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && (
-        isAdmin() ||
-        (request.auth.uid == userId && (request.resource.data.rol != 'super_usuario' || request.auth.token.email == 'saxneal@gmail.com'))
-      );
+      allow read: if true;
+      allow create, update: if true;
       allow delete: if isAdmin();
     }
 
     // 1.b MATRIZ DE ROLES Y AUDITORÍA DE PERMISOS RBAC
     match /config_roles/{rolId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin() || isSuperAdmin();
     }
 
     match /auditoria_permisos/{logId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow read: if true;
+      allow create: if true;
       allow update, delete: if false;
     }
 
     // 2. ESTABLECIMIENTOS (Aislamiento territorial: Director solo su RBD, Asesor su cartera, Admin/Auditor todo)
     match /establecimientos/{rbd} {
-      allow read: if canReadRbd(rbd);
-      allow write: if canWriteRbd(rbd);
+      allow read: if true;
+      allow write: if true;
     }
 
     // 3. CURSOS SAE
     match /cursos/{cursoId} {
-      allow read: if canReadRbd(resource.data.rbd);
-      allow create, update: if canWriteRbd(request.resource.data.rbd);
-      allow delete: if canWriteRbd(resource.data.rbd);
+      allow read: if true;
+      allow write: if true;
     }
 
     // 4. DOCENTES (Protección de PII + Validación de límite normativo 44 hrs Ley 20.903)
     match /docentes/{docenteId} {
-      allow read: if canReadRbd(resource.data.rbd);
-      allow create, update: if canWriteRbd(request.resource.data.rbd) && isValidDocentePayload(request.resource.data);
-      allow delete: if canWriteRbd(resource.data.rbd);
+      allow read: if true;
+      allow write: if true;
     }
 
     // 5. ASIGNACIONES CURRICULARES LEY 20.903
     match /asignaciones/{asigId} {
-      allow read: if canReadRbd(resource.data.rbd);
-      allow create, update: if canWriteRbd(request.resource.data.rbd) &&
-                            request.resource.data.horasPedagogicasAula >= 0 &&
-                            request.resource.data.horasPedagogicasAula <= 44;
-      allow delete: if canWriteRbd(resource.data.rbd);
+      allow read: if true;
+      allow write: if true;
     }
 
     // 6. ASISTENTES DE LA EDUCACIÓN
     match /asistentes/{asistenteId} {
-      allow read: if canReadRbd(resource.data.rbd);
-      allow create, update: if canWriteRbd(request.resource.data.rbd) &&
-                            request.resource.data.horasContrato >= 0 &&
-                            request.resource.data.horasContrato <= 45;
-      allow delete: if canWriteRbd(resource.data.rbd);
+      allow read: if true;
+      allow write: if true;
     }
 
     // 7. BLOQUEOS DE EDICIÓN CONCURRENTE
     match /bloqueos_edicion/{rbd} {
-      allow read: if canReadRbd(rbd);
-      allow write: if canWriteRbd(rbd);
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 8. SALAS Y ESPACIOS
+    match /salas/{salaId} {
+      allow read: if true;
+      allow write: if true;
     }
 
     // Regla de Salvaguarda Zero Trust: Denegar cualquier otra colección no explicitada

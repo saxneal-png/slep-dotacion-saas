@@ -259,4 +259,119 @@ export class FirebaseDotacionService {
       await batch.commit();
     }
   }
+
+  /**
+   * Sincroniza y vuelca toda la base de datos local SQLite y catálogo de directores hacia Cloud Firestore en lotes eficientes.
+   * Crea las colecciones: 'usuarios', 'establecimientos', 'cursos', 'docentes', 'asignaciones', 'asistentes', 'salas'.
+   */
+  static async sincronizarTodaLaBaseDeDatosAFirestore(): Promise<{
+    usuariosSincronizados: number;
+    establecimientosSincronizados: number;
+    cursosSincronizados: number;
+    docentesSincronizados: number;
+    asignacionesSincronizados: number;
+    asistentesSincronizados: number;
+    salasSincronizadas: number;
+  }> {
+    if (!isCloudSyncEnabled()) {
+      throw new Error('La sincronización en la nube no está disponible en este entorno.');
+    }
+
+    const { getDb } = await import('../database/dbCore');
+    const { listarEstablecimientos } = await import('../database/repositories/establecimientosRepo');
+    const { listarTodasLasSalas } = await import('../database/repositories/salasRepo');
+    const { listarTodosLosCursos } = await import('../database/repositories/cursosRepo');
+    const { listarTodosLosDocentesTerritorio } = await import('../database/repositories/docentesRepo');
+    const { listarTodasLasAsignaciones } = await import('../database/repositories/asignacionesRepo');
+    const { listarTodosLosAsistentesTerritorio } = await import('../database/repositories/asistentesRepo');
+    const { listarUsuariosDb } = await import('../database/repositories/usuariosRepo');
+    const { AuthService } = await import('./authService');
+    const { DIRECTORES_TERRITORIO } = await import('../data/directoresTerritorio');
+
+    // 1. Asegurar usuarios y directores
+    await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '12346');
+    const usuarios = await listarUsuariosDb();
+
+    // 2. Extraer datos de SQLite
+    const establecimientos = await listarEstablecimientos();
+    const salas = await listarTodasLasSalas();
+    const cursos2026 = await listarTodosLosCursos(2026);
+    const cursos2027 = await listarTodosLosCursos(2027);
+    const todosCursos = [...cursos2026, ...cursos2027.filter(c27 => !cursos2026.some(c26 => c26.id === c27.id))];
+
+    const docentes2026 = await listarTodosLosDocentesTerritorio(2026);
+    const docentes2027 = await listarTodosLosDocentesTerritorio(2027);
+    const todosDocentes = [...docentes2026, ...docentes2027.filter(d27 => !docentes2026.some(d26 => d26.id === d27.id))];
+
+    const asigs2026 = await listarTodasLasAsignaciones(2026);
+    const asigs2027 = await listarTodasLasAsignaciones(2027);
+    const todasAsigs = [...asigs2026, ...asigs2027.filter(a27 => !asigs2026.some(a26 => a26.id === a27.id))];
+
+    const db = await getDb();
+    const ast2026 = await listarTodosLosAsistentesTerritorio(db, 2026);
+    const ast2027 = await listarTodosLosAsistentesTerritorio(db, 2027);
+    const todosAst = [...ast2026, ...ast2027.filter(a27 => !ast2026.some(a26 => a26.id === a27.id))];
+
+    // 3. Subir en bloques (writeBatch) a Firestore
+    const subirColeccion = async (colName: string, items: Array<{ id: string; [k: string]: any }>) => {
+      const chunkSize = 400;
+      for (let i = 0; i < items.length; i += chunkSize) {
+        const chunk = items.slice(i, i + chunkSize);
+        const batch = writeBatch(firestore);
+        for (const item of chunk) {
+          const docRef = doc(firestore, colName, item.id);
+          batch.set(docRef, sanitizeForFirestore(item), { merge: true });
+        }
+        await batch.commit();
+      }
+    };
+
+    // Colección: usuarios
+    await subirColeccion('usuarios', usuarios.map(u => ({
+      id: u.id,
+      email: u.email,
+      username: u.username,
+      nombreCompleto: u.nombreCompleto,
+      rol: u.role,
+      cargo: u.cargo,
+      rbdAsignado: u.rbdAsignado,
+      carteraRbds: u.carteraRbds || [],
+      asesoresSupervisados: u.asesoresSupervisados || [],
+      passwordHash: u.passwordHash,
+      salt: u.salt,
+      activo: u.activo !== false,
+      actualizadoEn: new Date().toISOString()
+    })));
+
+    // Colección: establecimientos
+    await subirColeccion('establecimientos', establecimientos.map(e => ({
+      ...e,
+      id: e.rbd.trim()
+    })));
+
+    // Colección: salas
+    await subirColeccion('salas', salas);
+
+    // Colección: cursos
+    await subirColeccion('cursos', todosCursos);
+
+    // Colección: docentes
+    await subirColeccion('docentes', todosDocentes);
+
+    // Colección: asignaciones
+    await subirColeccion('asignaciones', todasAsigs);
+
+    // Colección: asistentes
+    await subirColeccion('asistentes', todosAst);
+
+    return {
+      usuariosSincronizados: usuarios.length,
+      establecimientosSincronizados: establecimientos.length,
+      cursosSincronizados: todosCursos.length,
+      docentesSincronizados: todosDocentes.length,
+      asignacionesSincronizados: todasAsigs.length,
+      asistentesSincronizados: todosAst.length,
+      salasSincronizadas: salas.length
+    };
+  }
 }

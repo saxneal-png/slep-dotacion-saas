@@ -2,9 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Building2, FileSpreadsheet, Layers, ClipboardCheck, ChevronDown,
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
-  Database, Search, Sparkles, BarChart3, CheckCircle2,
+  Database, Search, Sparkles, BarChart3, CheckCircle2, CloudUpload,
   UserCheck, Settings, Palette, Moon, Sun, Leaf, Eye, Menu, X, Globe,
-  LogOut, ShieldAlert, KeyRound
+  LogOut, ShieldAlert, KeyRound, Loader2
 } from 'lucide-react';
 import { Establecimiento } from '../types';
 import { AuthSession } from '../types/authTypes';
@@ -33,6 +33,8 @@ interface HeaderProps {
   onAbrirImportadorMatriz?: () => void;
   onAbrirCopilot?: () => void;
   onAbrirConfiguraciones?: () => void;
+  onGuardarCambiosEnNube?: () => Promise<void>;
+  guardandoEnNube?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -54,7 +56,9 @@ export const Header: React.FC<HeaderProps> = ({
   onAbrirTraspasoPeriodos,
   onAbrirImportadorMatriz,
   onAbrirCopilot,
-  onAbrirConfiguraciones
+  onAbrirConfiguraciones,
+  onGuardarCambiosEnNube,
+  guardandoEnNube = false
 }) => {
   const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
   const [toolsOpen, setToolsOpen]       = useState(false);
@@ -247,6 +251,23 @@ export const Header: React.FC<HeaderProps> = ({
                 Periodo 2027
               </span>
             </div>
+
+            {/* Botón Steve Jobs: Guardar Cambios en la Nube (Firebase Cloud) */}
+            {onGuardarCambiosEnNube && (
+              <button
+                onClick={onGuardarCambiosEnNube}
+                disabled={guardandoEnNube}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/30 transition-all group"
+                title="Sincroniza y guarda todos los cambios en Cloud Firestore"
+              >
+                {guardandoEnNube ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                ) : (
+                  <CloudUpload className="w-3.5 h-3.5 text-emerald-200 group-hover:scale-110 transition-transform" />
+                )}
+                <span className="hidden sm:inline">Guardar Cambios</span>
+              </button>
+            )}
 
             {/* Theme Switcher */}
             <div className="relative" ref={themeRef}>
