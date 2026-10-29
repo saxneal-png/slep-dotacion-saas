@@ -738,7 +738,7 @@ export const App: React.FC = () => {
         >
         {vistaActiva === 'colegios_asesorados' && (
           <ColegiosAsesoradosView
-            colegios={colegios}
+            colegios={colegiosPermitidos}
             colegioActivo={colegioActivo}
             onSelectColegio={handleSelectColegio}
             onAbrirWorkflow={(est) => {
@@ -774,7 +774,7 @@ export const App: React.FC = () => {
 
         {vistaActiva === 'cartera' && (
           <CarteraView
-            colegios={colegios}
+            colegios={colegiosPermitidos}
             colegioActivo={colegioActivo}
             onSelectColegio={handleSelectColegio}
             onGuardarColegio={handleGuardarColegio}
@@ -887,7 +887,7 @@ export const App: React.FC = () => {
 
         {vistaActiva === 'planes_estudio' && (
           <PlanesEstudioView
-            colegios={colegios}
+            colegios={colegiosPermitidos}
             colegioActivo={colegioActivo}
             todosLosCursos={todosLosCursos}
             periodoActivo={periodoActivo}
@@ -949,7 +949,7 @@ export const App: React.FC = () => {
 
         {vistaActiva === 'consolidador' && (
           <ConsolidadorMasterView
-            establecimientos={colegios}
+            establecimientos={colegiosPermitidos}
             docentes={todosLosDocentes}
             asistentes={todosLosAsistentes}
             cursos={todosLosCursos}
@@ -963,7 +963,7 @@ export const App: React.FC = () => {
 
         {vistaActiva === 'estadisticas' && (
           <EstadisticasView
-            colegios={colegios}
+            colegios={colegiosPermitidos}
             colegioActivo={colegioActivo}
             onSelectColegio={handleSelectColegio}
             todosLosCursos={todosLosCursos}
@@ -1063,7 +1063,7 @@ export const App: React.FC = () => {
         isOpen={modalTraspasoAbierto}
         onClose={() => setModalTraspasoAbierto(false)}
         colegioActivo={colegioActivo}
-        colegios={colegios}
+        colegios={colegiosPermitidos}
         periodoOrigen={2026}
         periodoDestino={2027}
         onTraspasoCompletado={async (rbd, destino) => {

@@ -30,13 +30,25 @@ export function generateSalt(): string {
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Genera una clave temporal aleatoria criptográficamente segura (CSPRNG)
+ * sin dejar cadenas fijas en el código fuente.
+ */
+export function generarPasswordTemporalSegura(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const arr = new Uint8Array(10);
+  crypto.getRandomValues(arr);
+  const token = Array.from(arr).map(b => alphabet[b % alphabet.length]).join('');
+  return `Slep-${token}`;
+}
+
 // Cuenta oficial de Super Usuario Administrador
-// Las cuentas simuladas han sido eliminadas por requerimiento de seguridad institucional
-export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 'salt'> & { defaultPasswordPlain: string }> = [
+// Sin contraseñas en texto plano en el código fuente (resguardo SAST / GitGuardian).
+// La autenticación real se delega a Firebase Auth o al hash sellado en el primer inicio de sesión.
+export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 'salt'>> = [
   {
     id: 'user-saxneal-superadmin',
     username: 'saxneal@gmail.com',
-    defaultPasswordPlain: 'slep1234',
     nombreCompleto: 'Super Administrador SLEP (saxneal)',
     email: 'saxneal@gmail.com',
     role: 'super_usuario',
@@ -81,11 +93,13 @@ export class AuthService {
       }
     }
 
-    // Sembrar super usuario oficial sin cuentas simuladas
+    // Sembrar super usuario oficial sin contraseñas en texto plano en el código
+    const env = (import.meta as any).env || {};
+    const initialSalt = env.VITE_SUPERADMIN_INITIAL_SALT || '';
+    const initialHash = env.VITE_SUPERADMIN_INITIAL_HASH || '';
+
     const usuariosNuevos: UsuarioSistema[] = [];
     for (const u of USUARIOS_SEMILLA_BASE) {
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(u.defaultPasswordPlain, salt);
       usuariosNuevos.push({
         id: u.id,
         username: u.username,
@@ -93,8 +107,8 @@ export class AuthService {
         email: u.email,
         role: u.role,
         cargo: u.cargo,
-        passwordHash,
-        salt,
+        passwordHash: initialHash,
+        salt: initialSalt,
         rbdAsignado: u.rbdAsignado,
         comunasPermitidas: u.comunasPermitidas,
         activo: u.activo
@@ -299,8 +313,9 @@ export class AuthService {
       throw new Error('Usuario no encontrado o cuenta deshabilitada.');
     }
 
-    // Si el perfil en Firestore fue creado antes de almacenar passwordHash/salt, sellar la contraseña en su primer ingreso válido
-    if (!encontrado.passwordHash && !encontrado.salt && passwordPlain.trim().length >= 4 && encontrado.email !== SUPER_USUARIO_EMAIL) {
+    // Si el perfil fue inicializado sin passwordHash/salt local (o antes de almacenar hash en Firestore),
+    // sellar criptográficamente la contraseña en su primer ingreso válido (>= 6 caracteres)
+    if (!encontrado.passwordHash && !encontrado.salt && passwordPlain.trim().length >= 6) {
       const nuevoSalt = generateSalt();
       encontrado.salt = nuevoSalt;
       encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
@@ -534,6 +549,17 @@ export class AuthService {
       }
     }
 
+    // 5. Si el usuario modificado es el de la sesión actual, refrescar inmediatamente la sesión activa
+    const sesionActual = this.getSessionActual();
+    if (sesionActual && (sesionActual.usuario.id === usuario.id || sesionActual.usuario.username === usuario.username)) {
+      const { passwordHash: _, salt: __, ...usuarioSeguro } = usuario;
+      const sesionActualizada: AuthSession = {
+        ...sesionActual,
+        usuario: usuarioSeguro
+      };
+      localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionActualizada));
+    }
+
     return usuario;
   }
 
@@ -607,7 +633,7 @@ export class AuthService {
     telefono?: string;
     cargo?: string;
     carteraRbds?: string[];
-  }): Promise<{ usuario: UsuarioSistema; esNuevo: boolean; passwordTemporal?: string }> {
+  }, modoCartera: 'reemplazar' | 'agregar' = 'reemplazar'): Promise<{ usuario: UsuarioSistema; esNuevo: boolean; passwordTemporal?: string }> {
     const cleanEmail = (asesor.email || '').trim().toLowerCase();
     const cleanNombre = (asesor.nombre || '').trim();
     if (!cleanEmail && !cleanNombre) {
@@ -615,7 +641,7 @@ export class AuthService {
     }
 
     const usuarios = await this.getUsuarios();
-    // Buscar si ya existe por email o por username
+    // Buscar si ya existe por email o por username o por nombre
     const usernameGenerado = cleanEmail ? cleanEmail.split('@')[0] : cleanNombre.toLowerCase().replace(/\s+/g, '.');
 
     let existente = usuarios.find(u =>
@@ -627,18 +653,25 @@ export class AuthService {
     let passwordTemporal: string | undefined = undefined;
 
     if (existente) {
-      // Actualizar datos y cartera de colegios
+      // Actualizar datos y cartera de colegios (reemplazo o unión según el modo)
       existente.nombreCompleto = cleanNombre || existente.nombreCompleto;
       existente.email = cleanEmail || existente.email;
       existente.role = 'asesor_uatp';
       existente.cargo = asesor.cargo || existente.cargo || 'Asesor Técnico Pedagógico UATP';
-      existente.carteraRbds = Array.from(new Set([...(existente.carteraRbds || []), ...(asesor.carteraRbds || [])]));
+      
+      const nuevosRbds = asesor.carteraRbds || [];
+      if (modoCartera === 'reemplazar') {
+        existente.carteraRbds = Array.from(new Set(nuevosRbds));
+      } else {
+        existente.carteraRbds = Array.from(new Set([...(existente.carteraRbds || []), ...nuevosRbds]));
+      }
+
       existente.activo = true;
       await this.guardarUsuario(existente);
       return { usuario: existente, esNuevo: false };
     } else {
-      // Crear nuevo usuario activo con clave por defecto
-      passwordTemporal = 'slep2027';
+      // Crear nuevo usuario activo con clave temporal aleatoria criptográficamente segura (CSPRNG)
+      passwordTemporal = generarPasswordTemporalSegura();
       const salt = generateSalt();
       const passwordHash = await hashPassword(passwordTemporal, salt);
       const nuevo: UsuarioSistema = {
@@ -650,7 +683,7 @@ export class AuthService {
         cargo: asesor.cargo || 'Asesor Técnico Pedagógico UATP',
         passwordHash,
         salt,
-        carteraRbds: asesor.carteraRbds || [],
+        carteraRbds: Array.from(new Set(asesor.carteraRbds || [])),
         activo: true
       };
 

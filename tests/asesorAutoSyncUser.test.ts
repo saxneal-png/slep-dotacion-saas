@@ -25,14 +25,14 @@ describe('Sincronización Automática: Registro de Asesor -> Usuario Activo', ()
     });
 
     expect(res.esNuevo).toBe(true);
-    expect(res.passwordTemporal).toBe('slep2027');
+    expect(res.passwordTemporal).toMatch(/^Slep-[A-Za-z0-9]{10}$/);
     expect(res.usuario.role).toBe('asesor_uatp');
     expect(res.usuario.username).toBe('marcela.vega');
     expect(res.usuario.carteraRbds).toEqual(['3501', '3502']);
     expect(res.usuario.activo).toBe(true);
 
     // Debe poder iniciar sesión con sus credenciales generadas
-    const sesion = await AuthService.login('marcela.vega@slepvallediguillin.cl', 'slep2027');
+    const sesion = await AuthService.login('marcela.vega@slepvallediguillin.cl', res.passwordTemporal!);
     expect(sesion.usuario.email).toBe('marcela.vega@slepvallediguillin.cl');
     expect(sesion.usuario.role).toBe('asesor_uatp');
   });

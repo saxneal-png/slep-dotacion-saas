@@ -50,10 +50,16 @@ export function colegiosVisibles(
 
   if (rbds.size > 0) return colegios.filter(c => rbds.has(c.rbd));
 
-  // Compatibilidad: cartera aún no configurada
+  // Compatibilidad: cartera aún no configurada explícitamente pero con comunas preferentes
   if (usuario.comunasPermitidas?.length) {
     return colegios.filter(c => usuario.comunasPermitidas!.includes(c.comuna));
   }
+
+  // Si tiene rol con alcance 'cartera' o 'equipo' pero no tiene colegios asignados, no debe ver todo el territorio
+  if (alcance === 'cartera' || alcance === 'equipo') {
+    return [];
+  }
+
   return colegios;
 }
 

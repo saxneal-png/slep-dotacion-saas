@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle } from 'lucide-react';
-import { AuthService, generateSalt, hashPassword } from '../../services/authService';
+import { AuthService, generateSalt, hashPassword, generarPasswordTemporalSegura } from '../../services/authService';
 import { UsuarioSistema, UserRole } from '../../types/authTypes';
 import { Establecimiento } from '../../types';
 import { ROLES_DEFINICIONES, getDefinicionRol, rolesAsignablesPor, normalizarRol } from '../../security/rolesDefinitions';
@@ -9,6 +9,7 @@ import { guardarPerfilAsesor, actualizarColegiosDeAsesor } from '../../services/
 
 interface UsuariosConfigTabProps {
   colegios: Establecimiento[];
+  onColegiosActualizados?: () => Promise<void>;
 }
 
 const BADGE_COLORES: Record<string, string> = {
@@ -31,7 +32,7 @@ const CARGO_POR_ROL: Record<UserRole, string> = {
 
 const SUPER_EMAIL = 'saxneal@gmail.com';
 
-export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }) => {
+export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, onColegiosActualizados }) => {
   const { can, rol: rolActor } = usePermisos();
   const puedeEditar = can('usuarios.editar');
   const puedeEliminar = can('usuarios.eliminar');
@@ -87,7 +88,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
 
   const abrirModalReset = (u: UsuarioSistema) => {
     setUsuarioReset(u);
-    setNuevaPasswordReset('123456'); // Clave sugerida por defecto
+    setNuevaPasswordReset(generarPasswordTemporalSegura());
     setModalResetAbierto(true);
   };
 
@@ -150,7 +151,15 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
     setCargo(u.cargo);
     setPassword(''); // Opcional al editar
     setRbdAsignado(u.rbdAsignado || colegios[0]?.rbd || '');
-    setCarteraRbds(u.carteraRbds || []);
+    
+    // Obtener cartera completa combinando carteraRbds explícito con los colegios que tienen a este usuario asignado
+    const nombreNorm = u.nombreCompleto.trim().toLowerCase();
+    const rbdsEnColegios = colegios
+      .filter(c => (c.asesorUatp || '').trim().toLowerCase() === nombreNorm)
+      .map(c => c.rbd);
+    const carteraCombinada = Array.from(new Set([...(u.carteraRbds || []), ...rbdsEnColegios]));
+
+    setCarteraRbds(carteraCombinada);
     setAsesoresSupervisados(u.asesoresSupervisados || []);
     setBusquedaCartera('');
     setActivo(u.activo ?? true);
@@ -226,8 +235,10 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
             cargo: guardado.cargo || 'Asesor(a) UATP',
             colorBadge: '#2563eb'
           });
-          if (guardado.carteraRbds && guardado.carteraRbds.length > 0) {
-            await actualizarColegiosDeAsesor(guardado.nombreCompleto, guardado.carteraRbds, colegios);
+          // Actualizar SQLite siempre con la cartera seleccionada (incluso si está vacía para limpiar asignaciones previas)
+          await actualizarColegiosDeAsesor(guardado.nombreCompleto, guardado.carteraRbds || [], colegios);
+          if (onColegiosActualizados) {
+            await onColegiosActualizados();
           }
         } catch (syncErr) {
           console.warn('[UsuariosConfigTab] Aviso sincronizando cartera de asesor:', syncErr);
@@ -273,7 +284,12 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
         </span>
       );
     }
-    return <span className="text-slate-200 text-[11px]">{(u.carteraRbds || []).length} colegio(s) en cartera</span>;
+    const nombreNorm = u.nombreCompleto.trim().toLowerCase();
+    const rbdsEnColegios = colegios
+      .filter(c => (c.asesorUatp || '').trim().toLowerCase() === nombreNorm)
+      .map(c => c.rbd);
+    const countTotal = Array.from(new Set([...(u.carteraRbds || []), ...rbdsEnColegios])).length;
+    return <span className="text-slate-200 text-[11px]">{countTotal} colegio(s) en cartera</span>;
   };
 
   const usuariosVisibles = filtroRol === 'todos' ? usuarios : usuarios.filter(u => normalizarRol(u.role) === filtroRol);

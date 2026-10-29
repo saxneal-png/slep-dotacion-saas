@@ -27,7 +27,8 @@ import {
   establecerAsesorActivo,
   restablecerConfiguracionPorDefecto,
   reasignarColegiosMasivo,
-  actualizarColegiosDeAsesor
+  actualizarColegiosDeAsesor,
+  sincronizarEquipoAsesoresConUsuariosLocales
 } from '../services/configuracionGeneralService';
 import { sincronizarCatalogoEstablecimientos } from '../database/seedData';
 
@@ -87,6 +88,16 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
     setMensajeGuardado(msg);
     setTimeout(() => setMensajeGuardado(null), 3500);
   };
+
+  // Reconciliación bidireccional al montar o al cambiar de pestaña
+  useEffect(() => {
+    AuthService.getUsuarios().then(us => {
+      const cfg = sincronizarEquipoAsesoresConUsuariosLocales(us, colegios);
+      setConfig(cfg);
+    }).catch(() => {
+      setConfig(cargarConfiguracionGeneral());
+    });
+  }, [tabActiva, colegios]);
 
   // Guardar configuración completa
   const handleGuardarConfig = (nuevaConfig: ConfiguracionGeneral) => {
@@ -203,11 +214,23 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
     setFormComunasAsesor(asesor.comunasPreferentes || []);
     setFormColorBadge(asesor.colorBadge || '#2563eb');
     
-    // Colegios actualmente asignados a este asesor
-    const rbdsAsignados = colegios
-      .filter(c => c.asesorUatp?.toLowerCase().trim() === asesor.nombre.toLowerCase().trim())
+    // Colegios actualmente asignados a este asesor (unificando por nombre en colegios y por usuario registrado)
+    const asesorNombreNorm = asesor.nombre.toLowerCase().trim();
+    const rbdsEnColegios = colegios
+      .filter(c => (c.asesorUatp || '').toLowerCase().trim() === asesorNombreNorm)
       .map(c => c.rbd);
-    setFormColegiosAsignados(rbdsAsignados);
+
+    AuthService.getUsuarios().then(us => {
+      const u = us.find(x =>
+        x.nombreCompleto.toLowerCase().trim() === asesorNombreNorm ||
+        (asesor.email && (x.email || '').toLowerCase().trim() === asesor.email.toLowerCase().trim())
+      );
+      const combinados = Array.from(new Set([...rbdsEnColegios, ...(u?.carteraRbds || [])]));
+      setFormColegiosAsignados(combinados);
+    }).catch(() => {
+      setFormColegiosAsignados(rbdsEnColegios);
+    });
+
     setBusquedaColegioModal('');
     setFiltroComunaModal('ALL');
     setModalAsesorAbierto(true);
@@ -472,7 +495,10 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
 
       {/* 0. PESTAÑA GESTIÓN DE USUARIOS */}
       {tabActiva === 'usuarios' && (
-        <UsuariosConfigTab colegios={colegios} />
+        <UsuariosConfigTab
+          colegios={colegios}
+          onColegiosActualizados={onColegiosActualizados}
+        />
       )}
 
       {/* 1. PESTAÑA PERFIL & ASESORES UATP */}

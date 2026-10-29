@@ -21,12 +21,12 @@ describe('Autenticación y Super Usuario Oficial SLEP', () => {
     localStorage.clear();
   });
 
-  it('no debe contener cuentas simuladas (admin123, asesor123, director123) en la semilla oficial', () => {
+  it('no debe contener cuentas simuladas ni contraseñas en texto plano en la semilla oficial', () => {
     expect(USUARIOS_SEMILLA_BASE.length).toBe(1);
-    const superUser = USUARIOS_SEMILLA_BASE[0];
+    const superUser = USUARIOS_SEMILLA_BASE[0] as any;
     expect(superUser.email).toBe('saxneal@gmail.com');
     expect(superUser.role).toBe('super_usuario');
-    expect(superUser.defaultPasswordPlain).toBe('slep1234');
+    expect(superUser.defaultPasswordPlain).toBeUndefined();
 
     // Verificar que ninguna cuenta simulada previa esté en la semilla
     const usernames = USUARIOS_SEMILLA_BASE.map(u => u.username);
@@ -49,8 +49,9 @@ describe('Autenticación y Super Usuario Oficial SLEP', () => {
     expect(usuarios[0].role).toBe('super_usuario');
   });
 
-  it('permite iniciar sesión con saxneal@gmail.com y slep1234 con permisos completos de administrador', async () => {
-    const session = await AuthService.login('saxneal@gmail.com', 'slep1234');
+  it('permite iniciar sesión con saxneal@gmail.com sellando criptográficamente su contraseña en el primer acceso', async () => {
+    const testPass = 'ClaveSeguraTest_99';
+    const session = await AuthService.login('saxneal@gmail.com', testPass);
     expect(session).toBeDefined();
     expect(session.usuario.email).toBe('saxneal@gmail.com');
     expect(session.usuario.role).toBe('super_usuario');
@@ -65,6 +66,7 @@ describe('Autenticación y Super Usuario Oficial SLEP', () => {
   });
 
   it('rechaza intentos de login con contraseñas erróneas o usuarios simulados antiguos', async () => {
+    await AuthService.login('saxneal@gmail.com', 'ClaveRealSellada_88');
     await expect(AuthService.login('saxneal@gmail.com', 'clave_incorrecta')).rejects.toThrow();
     await expect(AuthService.login('admin', 'admin123')).rejects.toThrow(/Usuario no encontrado/);
     await expect(AuthService.login('asesor', 'asesor123')).rejects.toThrow(/Usuario no encontrado/);
@@ -85,26 +87,27 @@ describe('Autenticación y Super Usuario Oficial SLEP', () => {
       activo: true
     };
 
-    await AuthService.guardarUsuario(nuevoUsuario as any, 'slep1234');
+    const testUserPass = 'ClavePruebaDirector_77';
+    await AuthService.guardarUsuario(nuevoUsuario as any, testUserPass);
 
     // 2. Verificar que Javier Álvarez puede iniciar sesión con su email o con su username
-    const sesionEmail = await AuthService.login('javier.alvarez@slepvallediguillin.gob.cl', 'slep1234');
+    const sesionEmail = await AuthService.login('javier.alvarez@slepvallediguillin.gob.cl', testUserPass);
     expect(sesionEmail.usuario.username).toBe('javier.alvarez');
     expect(sesionEmail.usuario.rbdAsignado).toBe('3656');
     expect(sesionEmail.usuario.role).toBe('director_establecimiento');
 
-    const sesionUsername = await AuthService.login('javier.alvarez', 'slep1234');
+    const sesionUsername = await AuthService.login('javier.alvarez', testUserPass);
     expect(sesionUsername.usuario.id).toBe('user-javier-test');
 
     // 3. Deshabilitar usuario mediante toggleEstadoUsuario
     await AuthService.toggleEstadoUsuario('user-javier-test', false);
 
     // 4. Intentar ingresar con usuario deshabilitado debe ser rechazado
-    await expect(AuthService.login('javier.alvarez', 'slep1234')).rejects.toThrow(/deshabilitada/);
+    await expect(AuthService.login('javier.alvarez', testUserPass)).rejects.toThrow(/deshabilitada/);
 
     // 5. Rehabilitar usuario
     await AuthService.toggleEstadoUsuario('user-javier-test', true);
-    const sesionRehabilitada = await AuthService.login('javier.alvarez', 'slep1234');
+    const sesionRehabilitada = await AuthService.login('javier.alvarez', testUserPass);
     expect(sesionRehabilitada.usuario.activo).toBe(true);
   });
 

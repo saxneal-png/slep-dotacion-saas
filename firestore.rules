@@ -72,14 +72,26 @@ service cloud.firestore {
              data.rbd is string;
     }
 
-    // 1. PERFILES DE USUARIO (Lectura habilitada para resolución de login por username/email; escritura controlada por RBAC)
+    // 1. PERFILES DE USUARIO (Solo usuarios autenticados consultan perfiles; escritura controlada por RBAC)
     match /usuarios/{userId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && (
         isAdmin() ||
         (request.auth.uid == userId && (request.resource.data.rol != 'super_usuario' || request.auth.token.email == 'saxneal@gmail.com'))
       );
       allow delete: if isAdmin();
+    }
+
+    // 1.b MATRIZ DE ROLES Y AUDITORÍA DE PERMISOS RBAC
+    match /config_roles/{rolId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /auditoria_permisos/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // 2. ESTABLECIMIENTOS (Aislamiento territorial: Director solo su RBD, Asesor su cartera, Admin/Auditor todo)

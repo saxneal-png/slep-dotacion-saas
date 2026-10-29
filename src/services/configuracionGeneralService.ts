@@ -241,20 +241,46 @@ export function establecerAsesorActivo(asesorId: string): ConfiguracionGeneral {
 
 /**
  * Agrega o actualiza un asesor en la lista de asesores registrados.
+ * Unifica por id, correo institucional o nombre completo para evitar duplicaciones.
  */
 export function guardarPerfilAsesor(asesor: PerfilAsesor): ConfiguracionGeneral {
   const config = cargarConfiguracionGeneral();
-  const idx = config.asesoresRegistrados.findIndex(a => a.id === asesor.id);
+  const cleanId = (asesor.id || '').trim();
+  const cleanEmail = (asesor.email || '').trim().toLowerCase();
+  const cleanNombre = (asesor.nombre || '').trim().toLowerCase();
+
+  const idx = config.asesoresRegistrados.findIndex(a => {
+    if (cleanId && a.id === cleanId) return true;
+    if (cleanEmail && (a.email || '').trim().toLowerCase() === cleanEmail) return true;
+    if (cleanNombre && (a.nombre || '').trim().toLowerCase() === cleanNombre) return true;
+    return false;
+  });
+
   if (idx >= 0) {
-    config.asesoresRegistrados[idx] = asesor;
-    if (config.asesorActivoId === asesor.id) {
-      config.asesorActivoNombre = asesor.nombre;
-      config.asesorActivoEmail = asesor.email;
+    const previo = config.asesoresRegistrados[idx];
+    config.asesoresRegistrados[idx] = {
+      ...previo,
+      ...asesor,
+      id: previo.id || asesor.id,
+      nombre: asesor.nombre.trim(),
+      email: asesor.email.trim(),
+      cargo: asesor.cargo?.trim() || previo.cargo,
+      telefono: asesor.telefono?.trim() || previo.telefono,
+      colorBadge: asesor.colorBadge || previo.colorBadge || '#2563eb'
+    };
+    if (config.asesorActivoId === previo.id || config.asesorActivoId === asesor.id) {
+      config.asesorActivoNombre = asesor.nombre.trim();
+      config.asesorActivoEmail = asesor.email.trim();
       config.asesorActivoTelefono = asesor.telefono;
       config.asesorActivoCargo = asesor.cargo;
     }
   } else {
-    config.asesoresRegistrados.push(asesor);
+    config.asesoresRegistrados.push({
+      ...asesor,
+      id: asesor.id || `asesor-${Date.now()}`,
+      nombre: asesor.nombre.trim(),
+      email: asesor.email.trim()
+    });
   }
   guardarConfiguracionGeneral(config);
   return config;
@@ -275,6 +301,62 @@ export function eliminarPerfilAsesor(asesorId: string): ConfiguracionGeneral {
     config.asesorActivoCargo = primer.cargo;
   }
   guardarConfiguracionGeneral(config);
+  return config;
+}
+
+/**
+ * Reconcilia bidireccionalmente el registro de Asesores UATP de la configuración con
+ * los usuarios del sistema que posean el rol 'asesor_uatp'.
+ */
+export function sincronizarEquipoAsesoresConUsuariosLocales(
+  usuarios: { id: string; username: string; nombreCompleto: string; email?: string; role: string; cargo?: string; carteraRbds?: string[] }[],
+  colegios: Establecimiento[] = []
+): ConfiguracionGeneral {
+  const config = cargarConfiguracionGeneral();
+  let huboCambios = false;
+
+  const asesoresUsuarios = usuarios.filter(u => u.role === 'asesor_uatp');
+
+  for (const u of asesoresUsuarios) {
+    const cleanEmail = (u.email || '').trim().toLowerCase();
+    const cleanNombre = u.nombreCompleto.trim().toLowerCase();
+
+    const idx = config.asesoresRegistrados.findIndex(a =>
+      a.id === u.id ||
+      (cleanEmail && (a.email || '').trim().toLowerCase() === cleanEmail) ||
+      (a.nombre || '').trim().toLowerCase() === cleanNombre
+    );
+
+    if (idx >= 0) {
+      const previo = config.asesoresRegistrados[idx];
+      if (
+        previo.nombre !== u.nombreCompleto ||
+        (u.email && previo.email !== u.email) ||
+        (u.cargo && previo.cargo !== u.cargo)
+      ) {
+        config.asesoresRegistrados[idx] = {
+          ...previo,
+          nombre: u.nombreCompleto,
+          email: u.email || previo.email,
+          cargo: u.cargo || previo.cargo
+        };
+        huboCambios = true;
+      }
+    } else {
+      config.asesoresRegistrados.push({
+        id: u.id,
+        nombre: u.nombreCompleto,
+        email: u.email || `${u.username}@slepvallediguillin.cl`,
+        cargo: u.cargo || 'Asesor Técnico Pedagógico UATP',
+        colorBadge: '#2563eb'
+      });
+      huboCambios = true;
+    }
+  }
+
+  if (huboCambios) {
+    guardarConfiguracionGeneral(config);
+  }
   return config;
 }
 
