@@ -76,7 +76,10 @@ import { generarExcelConsolidadoSlep } from './services/excelReportService';
 import { generarExcelMatrizDotacionColegio } from './services/excelMatrizDotacionService';
 import { cargarConfiguracionGeneral } from './services/configuracionGeneralService';
 import { AuthService } from './services/authService';
-import { AuthSession } from './types/authTypes';
+import { AuthSession, UsuarioSistema } from './types/authTypes';
+import { useEvaluadorPermisos, PermisosProvider } from './security/PermisosContext';
+import { getDefinicionRol, normalizarRol } from './security/rolesDefinitions';
+import { colegiosVisibles, puedeAccederRbd } from './services/scopeService';
 import { LoginModal } from './components/auth/LoginModal';
 import { CambiarPasswordModal } from './components/auth/CambiarPasswordModal';
 import { OlvidoPasswordModal } from './components/auth/OlvidoPasswordModal';
@@ -85,7 +88,13 @@ export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
   const [loading, setLoading] = useState(true);
 
-  const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
+  const evaluadorPermisos = useEvaluadorPermisos(session);
+  const permisos = evaluadorPermisos.legado;
+  const alcanceReal = session ? getDefinicionRol(normalizarRol(session.usuario.role)).alcance : null;
+  const [usuariosSistema, setUsuariosSistema] = useState<UsuarioSistema[]>([]);
+  useEffect(() => {
+    if (session) AuthService.getUsuarios().then(setUsuariosSistema).catch(() => setUsuariosSistema([]));
+  }, [session?.usuario.id]);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
   const [modalOlvidoPassword, setModalOlvidoPassword] = useState(false);
   const [colegios, setColegios] = useState<Establecimiento[]>([]);
@@ -209,9 +218,9 @@ export const App: React.FC = () => {
   }, []);
 
   const handleSelectColegio = async (est: Establecimiento) => {
-    // Protección estricta RBAC: si el usuario es director, solo puede seleccionar su escuela asignada
-    if (session?.usuario.role === 'director_colegio' && session.usuario.rbdAsignado && est.rbd !== session.usuario.rbdAsignado) {
-      mostrarMensaje('Acceso denegado: solo tiene atribuciones sobre su establecimiento asignado.', 'error');
+    // Protección estricta RBAC: el usuario solo puede seleccionar establecimientos dentro de su alcance
+    if (session && !puedeAccederRbd(session.usuario, est.rbd, colegios, usuariosSistema)) {
+      mostrarMensaje('Acceso denegado: el establecimiento está fuera de su alcance asignado.', 'error');
       return;
     }
     setColegioActivo(est);
@@ -247,20 +256,26 @@ export const App: React.FC = () => {
     }
   };
 
-  // Forzar colegio y vista fija al iniciar sesión como director
+  // Forzar colegio fijo al iniciar sesión con un rol de alcance "establecimiento" (Director / Jefe UTP)
   useEffect(() => {
-    if (session?.usuario.role === 'director_colegio' && session.usuario.rbdAsignado && colegios.length > 0) {
+    if (alcanceReal === 'establecimiento' && session?.usuario.rbdAsignado && colegios.length > 0) {
       const asignado = colegios.find(c => c.rbd === session.usuario.rbdAsignado);
       if (asignado && (!colegioActivo || colegioActivo.rbd !== asignado.rbd)) {
         setColegioActivo(asignado);
         cargarDatosColegio(asignado.rbd, periodoActivo);
       }
-      // Si está en vistas territoriales restringidas, redirigir a 'workflow'
-      if (['colegios_asesorados', 'cartera', 'consolidador', 'estadisticas', 'configuraciones'].includes(vistaActiva)) {
-        setVistaActiva('workflow');
-      }
     }
-  }, [session, colegios, vistaActiva]);
+  }, [session, colegios, alcanceReal]);
+
+  // Guard de navegación: redirige a la primera vista permitida si la actual no está autorizada
+  useEffect(() => {
+    if (!session) return;
+    if (!evaluadorPermisos.puedeVerVista(vistaActiva)) {
+      const candidatas = ['colegios_asesorados', 'workflow', 'cartera', 'consolidador', 'estadisticas', 'planes_estudio'];
+      const destino = candidatas.find(v => evaluadorPermisos.puedeVerVista(v));
+      if (destino && destino !== vistaActiva) setVistaActiva(destino);
+    }
+  }, [session, vistaActiva, evaluadorPermisos]);
 
   // Handlers CRUD
   const handleGuardarColegio = async (est: Establecimiento) => {
@@ -620,18 +635,11 @@ export const App: React.FC = () => {
     mostrarMensaje('Sesión cerrada correctamente.');
   };
 
-  // Filtrado de colegios según atribución del usuario
+  // Filtrado de colegios según el alcance del rol (global / equipo / cartera / establecimiento)
   const colegiosPermitidos = useMemo(() => {
     if (!session) return colegios;
-    if (session.usuario.role === 'director_colegio' && session.usuario.rbdAsignado) {
-      const asignado = colegios.filter(c => c.rbd === session.usuario.rbdAsignado);
-      return asignado.length > 0 ? asignado : colegios;
-    }
-    if (session.usuario.role === 'asesor' && session.usuario.comunasPermitidas?.length) {
-      return colegios.filter(c => session.usuario.comunasPermitidas?.includes(c.comuna));
-    }
-    return colegios;
-  }, [colegios, session]);
+    return colegiosVisibles(session.usuario, colegios, usuariosSistema);
+  }, [colegios, session, usuariosSistema]);
 
   if (loading) {
     return (
@@ -645,14 +653,15 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] flex flex-col">
+    <PermisosProvider value={evaluadorPermisos}>
+      <div className="min-h-screen bg-[#F4F7F9] flex flex-col">
       {!session && (
         <>
           <LoginModal
             onLoginSuccess={(newSession) => {
               setSession(newSession);
               mostrarMensaje(`¡Bienvenido, ${newSession.usuario.nombreCompleto}!`);
-              if (newSession.usuario.role === 'director_colegio' && newSession.usuario.rbdAsignado) {
+              if (getDefinicionRol(normalizarRol(newSession.usuario.role)).alcance === 'establecimiento' && newSession.usuario.rbdAsignado) {
                 const esc = colegios.find(c => c.rbd === newSession.usuario.rbdAsignado);
                 if (esc) {
                   handleSelectColegio(esc);
@@ -1088,5 +1097,6 @@ export const App: React.FC = () => {
         </button>
       </aside>
     </div>
+    </PermisosProvider>
   );
 };

@@ -9,6 +9,8 @@ import { Establecimiento, CursoSae, Docente, AsignacionHoraria, PerfilAsesor, As
 import { DiagnosticoColegioCompleto, calcularDiagnosticoColegio } from '../services/dotacionCalculationService';
 import { cargarConfiguracionGeneral, reasignarColegiosMasivo } from '../services/configuracionGeneralService';
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
+import { usePermisos } from '../security/PermisosContext';
+import { AuthService } from '../services/authService';
 
 interface ColegiosAsesoradosViewProps {
   colegios: Establecimiento[];
@@ -43,8 +45,16 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   onGuardarColegio,
   onAbrirConfiguraciones
 }) => {
+  const { rol } = usePermisos();
+  const session = useMemo(() => AuthService.getSessionActual(), []);
   const [config] = useState(() => cargarConfiguracionGeneral());
-  const [asesorFiltro, setAsesorFiltro] = useState<string>(config.asesorActivoNombre || 'TODOS');
+  const [asesorFiltro, setAsesorFiltro] = useState<string>(() => {
+    // Si el usuario conectado es Asesor UATP, pre-filtrar automáticamente con su nombre
+    if (rol === 'asesor_uatp' && session?.usuario.nombreCompleto) {
+      return session.usuario.nombreCompleto;
+    }
+    return config.asesorActivoNombre || 'TODOS';
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedComuna, setSelectedComuna] = useState<string>('ALL');
   const [selectedRegimen, setSelectedRegimen] = useState<string>('ALL');
@@ -222,6 +232,16 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     setProcesandoReasignacion(true);
     try {
       await reasignarColegiosMasivo(colegiosSeleccionadosBatch, asesorDestinoBatch, colegios);
+
+      // Sincronizar automáticamente la cartera del asesor destino como usuario activo
+      const asesorObj = todosLosAsesores.find(a => a.nombre.toLowerCase().trim() === asesorDestinoBatch.toLowerCase().trim());
+      await AuthService.sincronizarAsesorComoUsuario({
+        id: asesorObj?.id,
+        nombre: asesorDestinoBatch,
+        email: asesorObj?.email || `${asesorDestinoBatch.toLowerCase().replace(/\s+/g, '.')}@slepvallediguillin.cl`,
+        carteraRbds: colegiosSeleccionadosBatch
+      });
+
       setMensajeFeedback(`✓ Se han reasignado ${colegiosSeleccionadosBatch.length} establecimientos a ${asesorDestinoBatch}.`);
       setColegiosSeleccionadosBatch([]);
       setModalReasignarAbierto(false);

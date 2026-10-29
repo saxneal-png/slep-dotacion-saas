@@ -1,12 +1,16 @@
 import { UsuarioSistema, UserRole, PermisosRol, AuthSession } from '../types/authTypes';
+import { normalizarRol } from '../security/rolesDefinitions';
+import { RolesPermisosService } from './rolesPermisosService';
+import { initializeApp, deleteApp } from 'firebase/app';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as fbSignOut,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  getAuth
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, firestore } from './firebaseConfig';
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { auth, firestore, firebaseConfig } from './firebaseConfig';
 
 const STORAGE_USERS_KEY = 'slep_usuarios_sistema_v2';
 const STORAGE_SESSION_KEY = 'slep_auth_session_v1';
@@ -26,74 +30,6 @@ export function generateSalt(): string {
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Matriz oficial de atribuciones por Rol
-export const PERMISOS_POR_ROL: Record<UserRole, PermisosRol> = {
-  admin: {
-    puedeEditarDotacion: true,
-    puedeEliminarRegistros: true,
-    puedeConfigurarSistema: true,
-    puedeGestionarUsuarios: true,
-    puedeAccederTodasEscuelas: true,
-    puedeVerCarteraTerritorial: true,
-    puedeVerConsolidadorMaster: true,
-    puedeVerAnalizadorSige: true,
-    puedeExportarReportes: true,
-    puedeUsarCopilotIa: true,
-    puedeTraspasarPeriodos: true,
-    puedeImportarMatriz: true,
-    puedeVerCentroDescargas: true,
-    esSoloLectura: false
-  },
-  asesor: {
-    puedeEditarDotacion: true,
-    puedeEliminarRegistros: true,
-    puedeConfigurarSistema: false,
-    puedeGestionarUsuarios: false,
-    puedeAccederTodasEscuelas: true,
-    puedeVerCarteraTerritorial: true,
-    puedeVerConsolidadorMaster: true,
-    puedeVerAnalizadorSige: true,
-    puedeExportarReportes: true,
-    puedeUsarCopilotIa: true,
-    puedeTraspasarPeriodos: true,
-    puedeImportarMatriz: true,
-    puedeVerCentroDescargas: true,
-    esSoloLectura: false
-  },
-  director_colegio: {
-    puedeEditarDotacion: true,
-    puedeEliminarRegistros: false,
-    puedeConfigurarSistema: false,
-    puedeGestionarUsuarios: false,
-    puedeAccederTodasEscuelas: false,
-    puedeVerCarteraTerritorial: false,
-    puedeVerConsolidadorMaster: false,
-    puedeVerAnalizadorSige: false,
-    puedeExportarReportes: true,
-    puedeUsarCopilotIa: false,
-    puedeTraspasarPeriodos: false,
-    puedeImportarMatriz: false,
-    puedeVerCentroDescargas: false,
-    esSoloLectura: false
-  },
-  auditor: {
-    puedeEditarDotacion: false,
-    puedeEliminarRegistros: false,
-    puedeConfigurarSistema: false,
-    puedeGestionarUsuarios: false,
-    puedeAccederTodasEscuelas: true,
-    puedeVerCarteraTerritorial: true,
-    puedeVerConsolidadorMaster: true,
-    puedeVerAnalizadorSige: false,
-    puedeExportarReportes: true,
-    puedeUsarCopilotIa: false,
-    puedeTraspasarPeriodos: false,
-    puedeImportarMatriz: false,
-    puedeVerCentroDescargas: true,
-    esSoloLectura: true
-  }
-};
-
 // Cuenta oficial de Super Usuario Administrador
 // Las cuentas simuladas han sido eliminadas por requerimiento de seguridad institucional
 export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 'salt'> & { defaultPasswordPlain: string }> = [
@@ -103,11 +39,22 @@ export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 
     defaultPasswordPlain: 'slep1234',
     nombreCompleto: 'Super Administrador SLEP (saxneal)',
     email: 'saxneal@gmail.com',
-    role: 'admin',
+    role: 'super_usuario',
     cargo: 'Super Usuario / Administrador General del Territorio',
     activo: true
   }
 ];
+
+const SUPER_USUARIO_EMAIL = 'saxneal@gmail.com';
+
+/** Migra roles heredados (admin/asesor/director_colegio/auditor) a los roles UATP vigentes. */
+export function migrarUsuario(u: UsuarioSistema): { usuario: UsuarioSistema; cambiado: boolean } {
+  let cambiado = false;
+  const rol = (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL ? 'super_usuario' : normalizarRol(u.role);
+  const out: UsuarioSistema = { ...u };
+  if (rol !== u.role) { out.role = rol; cambiado = true; }
+  return { usuario: out, cambiado };
+}
 
 export class AuthService {
   private static async inicializarUsuariosSiNoExisten(): Promise<UsuarioSistema[]> {
@@ -118,9 +65,16 @@ export class AuthService {
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as UsuarioSistema[];
-        const tieneSaxneal = parsed.some(u => (u.email || '').toLowerCase() === 'saxneal@gmail.com');
+        const tieneSaxneal = parsed.some(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL);
         if (tieneSaxneal) {
-          return parsed;
+          let huboMigracion = false;
+          const migrados = parsed.map(u => {
+            const r = migrarUsuario(u);
+            if (r.cambiado) huboMigracion = true;
+            return r.usuario;
+          });
+          if (huboMigracion) localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(migrados));
+          return migrados;
         }
       } catch (e) {
         console.error('Error parseando usuarios, resembrando...', e);
@@ -152,53 +106,148 @@ export class AuthService {
   }
 
   public static async getUsuarios(): Promise<UsuarioSistema[]> {
-    return this.inicializarUsuariosSiNoExisten();
+    let usuarios = await this.inicializarUsuariosSiNoExisten();
+
+    // Sincronización en la nube con Firestore cuando hay conectividad
+    if (auth?.currentUser && typeof window !== 'undefined') {
+      try {
+        const snapshot = await getDocs(collection(firestore, 'usuarios'));
+        if (!snapshot.empty) {
+          const mapLocales = new Map(usuarios.map(u => [u.id, u]));
+          snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            const existing = mapLocales.get(docSnap.id) || usuarios.find(u => (u.email || '').toLowerCase() === (data.email || '').toLowerCase());
+            const esSuper = (data.email || '').toLowerCase() === SUPER_USUARIO_EMAIL;
+            const rol = esSuper ? 'super_usuario' : normalizarRol(data.rol || 'asesor_uatp');
+
+            const synced: UsuarioSistema = {
+              id: docSnap.id,
+              username: data.username || data.email || docSnap.id,
+              email: data.email || undefined,
+              nombreCompleto: data.nombreCompleto || 'Usuario SLEP',
+              role: rol,
+              cargo: data.cargo || undefined,
+              rbdAsignado: data.rbdAsignado || undefined,
+              carteraRbds: data.carteraRbds || [],
+              asesoresSupervisados: data.asesoresSupervisados || [],
+              passwordHash: existing?.passwordHash || '',
+              salt: existing?.salt || '',
+              activo: data.activo !== false
+            };
+            mapLocales.set(docSnap.id, synced);
+          });
+
+          // Asegurar que saxneal@gmail.com siempre exista
+          if (!Array.from(mapLocales.values()).some(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL)) {
+            const superLocal = usuarios.find(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL);
+            if (superLocal) mapLocales.set(superLocal.id, superLocal);
+          }
+
+          usuarios = Array.from(mapLocales.values());
+          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+        }
+      } catch {
+        // En modo offline o con reglas de seguridad restrictivas, fallback seguro a local
+      }
+    }
+
+    return usuarios;
   }
 
   public static async login(usernameOrEmail: string, passwordPlain: string): Promise<AuthSession> {
     const cleanInput = usernameOrEmail.trim().toLowerCase();
     let usuarios = await this.getUsuarios();
     
-    // Buscar usuario por username o por email
-    let encontrado = usuarios.find(
-      u => (u.username.toLowerCase() === cleanInput || (u.email && u.email.toLowerCase() === cleanInput)) && u.activo
-    );
-
-    // 1. Si no se encuentra en el almacenamiento local pero es saxneal@gmail.com (SuperAdmin oficial)
-    if (!encontrado && (cleanInput === 'saxneal@gmail.com' || cleanInput === 'saxneal')) {
+    // 1. Si no hay usuarios o es el superusuario saxneal@gmail.com, asegurar inicialización
+    if (cleanInput === SUPER_USUARIO_EMAIL || cleanInput === 'saxneal') {
       usuarios = await this.inicializarUsuariosSiNoExisten();
-      encontrado = usuarios.find(u => (u.email || '').toLowerCase() === 'saxneal@gmail.com');
     }
 
-    // 2. Si aún no está en local pero existe en Firebase Auth, consultar Firestore /usuarios
-    if (!encontrado && auth && typeof window !== 'undefined') {
+    // 2. Buscar usuario en el almacenamiento local por username o email
+    let encontrado = usuarios.find(
+      u => (u.username.toLowerCase() === cleanInput || (u.email && u.email.toLowerCase() === cleanInput))
+    );
+
+    // Si el usuario está registrado en local pero está deshabilitado
+    if (encontrado && !encontrado.activo) {
+      throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
+    }
+
+    // Determinar el email para autenticar contra Firebase Auth
+    let emailToAuth = cleanInput.includes('@') ? cleanInput : (encontrado?.email || '');
+
+    let fbSuccess = false;
+    let fbUser: any = null;
+
+    // 3. Intentar autenticación real en Firebase Authentication
+    if (auth && typeof window !== 'undefined' && emailToAuth) {
       try {
-        const cred = await signInWithEmailAndPassword(auth, cleanInput, passwordPlain);
-        if (cred.user) {
-          const uDocSnap = await getDoc(doc(firestore, 'usuarios', cred.user.uid)).catch(() => null);
-          const uData = uDocSnap?.data();
-          const rol = uData?.rol || (cleanInput === 'saxneal@gmail.com' ? 'admin' : 'asesor');
-          const salt = generateSalt();
-          const passwordHash = await hashPassword(passwordPlain, salt);
-          const nuevoUsuario: UsuarioSistema = {
-            id: cred.user.uid,
-            username: cred.user.email || cleanInput,
-            email: cred.user.email || cleanInput,
-            nombreCompleto: uData?.nombreCompleto || 'Super Administrador SLEP (saxneal)',
-            role: rol,
-            cargo: uData?.cargo || 'Administrador General del Sistema',
-            rbdAsignado: uData?.rbdAsignado || null,
-            comunasPermitidas: uData?.carteraRbds || [],
-            passwordHash,
-            salt,
-            activo: true
-          };
-          usuarios.push(nuevoUsuario);
-          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
-          encontrado = nuevoUsuario;
+        const cred = await signInWithEmailAndPassword(auth, emailToAuth, passwordPlain);
+        fbSuccess = true;
+        fbUser = cred.user;
+
+        // Cargar perfil remoto desde Firestore /usuarios/{uid}
+        const uDocSnap = await getDoc(doc(firestore, 'usuarios', fbUser.uid)).catch(() => null);
+        const uData = uDocSnap?.data();
+
+        // Verificar si la cuenta fue deshabilitada en Firestore
+        if (uData && uData.activo === false) {
+          await fbSignOut(auth).catch(() => {});
+          throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
         }
-      } catch (fbLoginErr: any) {
-        // Ignorar si falla para emitir el error estándar de usuario no encontrado
+
+        const isSuper = (fbUser.email || '').toLowerCase() === SUPER_USUARIO_EMAIL;
+        const rol = isSuper ? 'super_usuario' : normalizarRol(uData?.rol || encontrado?.role || 'asesor_uatp');
+        const salt = generateSalt();
+        const passwordHash = await hashPassword(passwordPlain, salt);
+
+        const usuarioRemoto: UsuarioSistema = {
+          id: fbUser.uid,
+          username: uData?.username || encontrado?.username || fbUser.email || cleanInput,
+          email: fbUser.email || cleanInput,
+          nombreCompleto: uData?.nombreCompleto || encontrado?.nombreCompleto || (isSuper ? 'Super Administrador SLEP (saxneal)' : 'Usuario SLEP'),
+          role: rol,
+          cargo: uData?.cargo || encontrado?.cargo || (isSuper ? 'Super Usuario / Administrador General' : 'Funcionario SLEP'),
+          rbdAsignado: uData?.rbdAsignado || encontrado?.rbdAsignado || undefined,
+          carteraRbds: uData?.carteraRbds || encontrado?.carteraRbds || [],
+          asesoresSupervisados: uData?.asesoresSupervisados || encontrado?.asesoresSupervisados || [],
+          passwordHash,
+          salt,
+          activo: true
+        };
+
+        encontrado = usuarioRemoto;
+
+        // Sincronizar doc en Firestore si faltaba o no tenía el rol correcto
+        if (!uData || uData.rol !== rol) {
+          const uDocRef = doc(firestore, 'usuarios', fbUser.uid);
+          await setDoc(uDocRef, {
+            email: usuarioRemoto.email,
+            username: usuarioRemoto.username,
+            nombreCompleto: usuarioRemoto.nombreCompleto,
+            rol: usuarioRemoto.role,
+            cargo: usuarioRemoto.cargo || null,
+            rbdAsignado: usuarioRemoto.rbdAsignado || null,
+            carteraRbds: usuarioRemoto.carteraRbds || [],
+            asesoresSupervisados: usuarioRemoto.asesoresSupervisados || [],
+            activo: true,
+            actualizadoEn: new Date().toISOString()
+          }, { merge: true }).catch(() => {});
+        }
+      } catch (fbErr: any) {
+        if (fbErr.message?.includes('deshabilitada')) {
+          throw fbErr;
+        }
+        // Si no existe la cuenta en Firebase Auth pero es el Super Usuario oficial, auto-registrar
+        if ((fbErr?.code === 'auth/user-not-found' || fbErr?.code === 'auth/invalid-credential') && emailToAuth === SUPER_USUARIO_EMAIL) {
+          try {
+            const newCred = await createUserWithEmailAndPassword(auth, emailToAuth, passwordPlain);
+            fbSuccess = true;
+            fbUser = newCred.user;
+          } catch (createErr: any) {
+            console.warn('[AuthService] Auto-registro de Super Usuario en Firebase Auth falló:', createErr?.message);
+          }
+        }
       }
     }
 
@@ -206,68 +255,25 @@ export class AuthService {
       throw new Error('Usuario no encontrado o cuenta deshabilitada.');
     }
 
+    // Validación de contraseña local (offline o fallback criptográfico con Salt)
     const testHash = await hashPassword(passwordPlain, encontrado.salt);
     const localPasswordOk = (testHash === encontrado.passwordHash);
-
-    // Intentar autenticación criptográfica en Firebase Auth para sincronizar token real
-    let fbSuccess = false;
-    if (auth && typeof window !== 'undefined' && encontrado.email) {
-      try {
-        const cred = await signInWithEmailAndPassword(auth, encontrado.email, passwordPlain);
-        fbSuccess = true;
-        if (cred.user) {
-          const uDocRef = doc(firestore, 'usuarios', cred.user.uid);
-          const uDocSnap = await getDoc(uDocRef).catch(() => null);
-          if (!uDocSnap || !uDocSnap.exists()) {
-            await setDoc(uDocRef, {
-              email: encontrado.email,
-              nombreCompleto: encontrado.nombreCompleto,
-              rol: encontrado.role,
-              rbdAsignado: encontrado.rbdAsignado || null,
-              carteraRbds: encontrado.comunasPermitidas || [],
-              activo: true,
-              sincronizadoEn: new Date().toISOString()
-            }, { merge: true }).catch(() => {});
-          }
-        }
-      } catch (fbErr: any) {
-        // Si no existe la cuenta en Firebase Auth, registrar automáticamente la cuenta oficial
-        if (fbErr?.code === 'auth/user-not-found' || fbErr?.code === 'auth/invalid-credential') {
-          try {
-            const newCred = await createUserWithEmailAndPassword(auth, encontrado.email, passwordPlain);
-            fbSuccess = true;
-            if (newCred.user) {
-              const uDocRef = doc(firestore, 'usuarios', newCred.user.uid);
-              await setDoc(uDocRef, {
-                email: encontrado.email,
-                nombreCompleto: encontrado.nombreCompleto,
-                rol: encontrado.role,
-                rbdAsignado: encontrado.rbdAsignado || null,
-                carteraRbds: encontrado.comunasPermitidas || [],
-                activo: true,
-                creadoEn: new Date().toISOString()
-              }, { merge: true }).catch(() => {});
-            }
-          } catch (createErr: any) {
-            console.warn('[AuthService] Auto-registro en Firebase Auth falló:', createErr?.code || createErr?.message);
-          }
-        }
-        if (!localPasswordOk && !fbSuccess) {
-          throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
-        }
-        console.warn('[AuthService] Firebase Auth offline o sincronizado localmente:', fbErr?.code || fbErr?.message);
-      }
-    }
 
     if (!localPasswordOk && !fbSuccess) {
       throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
     }
 
-    // Actualizar último acceso
+    // Actualizar último acceso y refrescar cache
     encontrado.ultimoAcceso = new Date().toISOString();
+    const existingIdx = usuarios.findIndex(u => u.id === encontrado!.id);
+    if (existingIdx >= 0) {
+      usuarios[existingIdx] = encontrado;
+    } else {
+      usuarios.push(encontrado);
+    }
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
 
-    // Si el usuario tiene una ApiKey personal configurada, activarla para la sesión actual
+    // Si el usuario tiene una ApiKey personal configurada, activarla
     if (encontrado.geminiApiKey) {
       localStorage.setItem('gemini_api_key', encontrado.geminiApiKey);
     }
@@ -287,7 +293,15 @@ export class AuthService {
     const raw = localStorage.getItem(STORAGE_SESSION_KEY);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as AuthSession;
+      const s = JSON.parse(raw) as AuthSession;
+      if (s?.usuario) {
+        const rol = (s.usuario.email || '').toLowerCase() === SUPER_USUARIO_EMAIL ? 'super_usuario' : normalizarRol(s.usuario.role);
+        if (rol !== s.usuario.role) {
+          s.usuario = { ...s.usuario, role: rol };
+          localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(s));
+        }
+      }
+      return s;
     } catch {
       return null;
     }
@@ -350,9 +364,56 @@ export class AuthService {
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
   }
 
-  public static async guardarUsuario(usuario: UsuarioSistema): Promise<void> {
+  public static async guardarUsuario(usuario: UsuarioSistema, passwordPlain?: string): Promise<UsuarioSistema> {
     const usuarios = await this.getUsuarios();
-    const idx = usuarios.findIndex(u => u.id === usuario.id);
+    usuario = { ...usuario, role: normalizarRol(usuario.role) };
+    if ((usuario.email || '').toLowerCase() === SUPER_USUARIO_EMAIL) {
+      usuario.role = 'super_usuario';
+      usuario.activo = true;
+    }
+
+    // 1. Si se especificó contraseña, calcular Salt y SHA-256
+    if (passwordPlain) {
+      const salt = generateSalt();
+      usuario.salt = salt;
+      usuario.passwordHash = await hashPassword(passwordPlain, salt);
+    }
+
+    // 2. Si se proporciona contraseña y email, aprovisionar credencial oficial en Firebase Authentication
+    // Usamos una app secundaria para aprovisionar sin desloguear la sesión del Super Usuario activo
+    if (typeof window !== 'undefined' && firebaseConfig?.apiKey && passwordPlain && usuario.email) {
+      let secondaryApp: any = null;
+      try {
+        const tempName = `AdminUserProvisioner_${Date.now()}`;
+        secondaryApp = initializeApp(firebaseConfig, tempName);
+        const secondaryAuth = getAuth(secondaryApp);
+        const cred = await createUserWithEmailAndPassword(secondaryAuth, usuario.email.trim(), passwordPlain);
+        if (cred?.user?.uid) {
+          usuario.id = cred.user.uid;
+        }
+        await fbSignOut(secondaryAuth).catch(() => {});
+      } catch (authErr: any) {
+        if (authErr?.code === 'auth/email-already-in-use') {
+          // El usuario ya existe en Firebase Auth, continuaremos sincronizando su perfil
+        } else {
+          console.warn('[AuthService] Provisioning en Firebase Auth reportó:', authErr?.message || authErr);
+        }
+      } finally {
+        if (secondaryApp) {
+          await deleteApp(secondaryApp).catch(() => {});
+        }
+      }
+    }
+
+    // 3. Validar existencia de al menos un Super Usuario activo
+    const idx = usuarios.findIndex(u => u.id === usuario.id || (u.email && u.email.toLowerCase() === (usuario.email || '').toLowerCase()));
+    const resultante = idx >= 0
+      ? usuarios.map((u, i) => (i === idx ? usuario : u))
+      : [...usuarios, usuario];
+    if (!resultante.some(u => u.role === 'super_usuario' && u.activo)) {
+      throw new Error('Debe existir al menos un Super Usuario activo en el sistema.');
+    }
+
     if (idx >= 0) {
       usuarios[idx] = usuario;
     } else {
@@ -360,33 +421,150 @@ export class AuthService {
     }
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
 
+    // 4. Sincronizar documento en Firestore /usuarios/{usuario.id}
     if (auth?.currentUser && typeof window !== 'undefined') {
       try {
         const uDocRef = doc(firestore, 'usuarios', usuario.id);
         await setDoc(uDocRef, {
+          id: usuario.id,
           email: usuario.email || null,
           username: usuario.username,
           nombreCompleto: usuario.nombreCompleto,
           rol: usuario.role,
           cargo: usuario.cargo || null,
           rbdAsignado: usuario.rbdAsignado || null,
-          carteraRbds: usuario.comunasPermitidas || [],
-          activo: usuario.activo,
+          carteraRbds: usuario.carteraRbds || [],
+          asesoresSupervisados: usuario.asesoresSupervisados || [],
+          activo: usuario.activo !== false,
           actualizadoEn: new Date().toISOString()
         }, { merge: true });
       } catch (e) {
         console.warn('[AuthService] Aviso sincronizando usuario con Firestore:', e);
       }
     }
+
+    return usuario;
+  }
+
+  public static async toggleEstadoUsuario(userId: string, nuevoEstado: boolean): Promise<UsuarioSistema> {
+    const usuarios = await this.getUsuarios();
+    const idx = usuarios.findIndex(u => u.id === userId);
+    if (idx === -1) throw new Error('Usuario no encontrado.');
+
+    const u = usuarios[idx];
+    if ((u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL && !nuevoEstado) {
+      throw new Error('No es posible deshabilitar la cuenta del Super Usuario oficial.');
+    }
+
+    u.activo = nuevoEstado;
+    usuarios[idx] = u;
+    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+
+    if (auth?.currentUser && typeof window !== 'undefined') {
+      try {
+        const uDocRef = doc(firestore, 'usuarios', userId);
+        await setDoc(uDocRef, {
+          activo: nuevoEstado,
+          actualizadoEn: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('[AuthService] Aviso sincronizando estado activo en Firestore:', err);
+      }
+    }
+
+    return u;
   }
 
   public static async eliminarUsuario(userId: string): Promise<void> {
     let usuarios = await this.getUsuarios();
+    const objetivo = usuarios.find(u => u.id === userId);
+    if (objetivo && (objetivo.email || '').toLowerCase() === SUPER_USUARIO_EMAIL) {
+      throw new Error('La cuenta oficial de Super Usuario no puede eliminarse.');
+    }
     usuarios = usuarios.filter(u => u.id !== userId);
+    if (!usuarios.some(u => u.role === 'super_usuario' && u.activo)) {
+      throw new Error('Debe existir al menos un Super Usuario activo en el sistema.');
+    }
+    // Quitar referencias del usuario eliminado en equipos de coordinadores
+    usuarios = usuarios.map(u => u.asesoresSupervisados?.includes(userId)
+      ? { ...u, asesoresSupervisados: u.asesoresSupervisados.filter(id => id !== userId) }
+      : u);
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+
+    if (auth?.currentUser && typeof window !== 'undefined') {
+      try {
+        await deleteDoc(doc(firestore, 'usuarios', userId));
+      } catch (err) {
+        console.warn('[AuthService] Aviso eliminando usuario de Firestore:', err);
+      }
+    }
   }
 
-  public static getPermisos(role: UserRole): PermisosRol {
-    return PERMISOS_POR_ROL[role] || PERMISOS_POR_ROL.auditor;
+  /** Vista agregada (heredada) de permisos derivada de la matriz granular editable. */
+  public static getPermisos(role: UserRole | string): PermisosRol {
+    return RolesPermisosService.derivarPermisosLegados(role);
+  }
+
+  /**
+   * Sincroniza automáticamente un Asesor UATP (desde el registro de asesores)
+   * asegurando que exista como cuenta de usuario activa con rol 'asesor_uatp' y su cartera de colegios.
+   */
+  public static async sincronizarAsesorComoUsuario(asesor: {
+    id?: string;
+    nombre: string;
+    email: string;
+    telefono?: string;
+    cargo?: string;
+    carteraRbds?: string[];
+  }): Promise<{ usuario: UsuarioSistema; esNuevo: boolean; passwordTemporal?: string }> {
+    const cleanEmail = (asesor.email || '').trim().toLowerCase();
+    const cleanNombre = (asesor.nombre || '').trim();
+    if (!cleanEmail && !cleanNombre) {
+      throw new Error('El asesor debe tener al menos un nombre o correo institucional.');
+    }
+
+    const usuarios = await this.getUsuarios();
+    // Buscar si ya existe por email o por username
+    const usernameGenerado = cleanEmail ? cleanEmail.split('@')[0] : cleanNombre.toLowerCase().replace(/\s+/g, '.');
+
+    let existente = usuarios.find(u =>
+      (cleanEmail && (u.email || '').toLowerCase() === cleanEmail) ||
+      u.username.toLowerCase() === usernameGenerado ||
+      u.nombreCompleto.toLowerCase() === cleanNombre.toLowerCase()
+    );
+
+    let passwordTemporal: string | undefined = undefined;
+
+    if (existente) {
+      // Actualizar datos y cartera de colegios
+      existente.nombreCompleto = cleanNombre || existente.nombreCompleto;
+      existente.email = cleanEmail || existente.email;
+      existente.role = 'asesor_uatp';
+      existente.cargo = asesor.cargo || existente.cargo || 'Asesor Técnico Pedagógico UATP';
+      existente.carteraRbds = Array.from(new Set([...(existente.carteraRbds || []), ...(asesor.carteraRbds || [])]));
+      existente.activo = true;
+      await this.guardarUsuario(existente);
+      return { usuario: existente, esNuevo: false };
+    } else {
+      // Crear nuevo usuario activo con clave por defecto
+      passwordTemporal = 'slep2027';
+      const salt = generateSalt();
+      const passwordHash = await hashPassword(passwordTemporal, salt);
+      const nuevo: UsuarioSistema = {
+        id: asesor.id && asesor.id.startsWith('user-') ? asesor.id : `user-asesor-${Date.now()}`,
+        username: usernameGenerado,
+        nombreCompleto: cleanNombre,
+        email: cleanEmail,
+        role: 'asesor_uatp',
+        cargo: asesor.cargo || 'Asesor Técnico Pedagógico UATP',
+        passwordHash,
+        salt,
+        carteraRbds: asesor.carteraRbds || [],
+        activo: true
+      };
+
+      await this.guardarUsuario(nuevo);
+      return { usuario: nuevo, esNuevo: true, passwordTemporal };
+    }
   }
 }

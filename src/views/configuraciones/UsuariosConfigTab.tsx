@@ -1,48 +1,88 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, Building2, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle } from 'lucide-react';
 import { AuthService, generateSalt, hashPassword } from '../../services/authService';
 import { UsuarioSistema, UserRole } from '../../types/authTypes';
 import { Establecimiento } from '../../types';
+import { ROLES_DEFINICIONES, getDefinicionRol, rolesAsignablesPor, normalizarRol } from '../../security/rolesDefinitions';
+import { usePermisos } from '../../security/PermisosContext';
 
 interface UsuariosConfigTabProps {
   colegios: Establecimiento[];
 }
 
+const BADGE_COLORES: Record<string, string> = {
+  rose: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+  violet: 'bg-violet-500/20 text-violet-300 border-violet-500/40',
+  indigo: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+  sky: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+  emerald: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  teal: 'bg-teal-500/20 text-teal-300 border-teal-500/40'
+};
+
+const CARGO_POR_ROL: Record<UserRole, string> = {
+  super_usuario: 'Super Usuario / Administrador General',
+  subdirector_uatp: 'Subdirector(a) UATP',
+  coordinador_uatp: 'Coordinador(a) UATP',
+  asesor_uatp: 'Asesor(a) UATP',
+  director_establecimiento: 'Director(a) de Establecimiento',
+  jefe_utp_establecimiento: 'Jefe(a) UTP de Establecimiento'
+};
+
+const SUPER_EMAIL = 'saxneal@gmail.com';
+
 export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }) => {
+  const { can, rol: rolActor } = usePermisos();
+  const puedeEditar = can('usuarios.editar');
+  const puedeEliminar = can('usuarios.eliminar');
+  const rolesAsignables = rolActor ? rolesAsignablesPor(rolActor) : [];
+
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>([]);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalResetAbierto, setModalResetAbierto] = useState(false);
   const [usuarioReset, setUsuarioReset] = useState<UsuarioSistema | null>(null);
   const [nuevaPasswordReset, setNuevaPasswordReset] = useState('');
   const [usuarioEnEdicion, setUsuarioEnEdicion] = useState<UsuarioSistema | null>(null);
-  const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
+  const [filtroRol, setFiltroRol] = useState<'todos' | UserRole>('todos');
 
   // Form State
   const [username, setUsername] = useState('');
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<UserRole>('director_colegio');
-  const [cargo, setCargo] = useState('Director de Establecimiento');
+  const [role, setRole] = useState<UserRole>('director_establecimiento');
+  const [cargo, setCargo] = useState(CARGO_POR_ROL.director_establecimiento);
   const [password, setPassword] = useState('');
-  const [rbdAsignado, setRbdAsignado] = useState<string>(colegios[0]?.rbd || '3501');
+  const [rbdAsignado, setRbdAsignado] = useState<string>(colegios[0]?.rbd || '');
+  const [carteraRbds, setCarteraRbds] = useState<string[]>([]);
+  const [asesoresSupervisados, setAsesoresSupervisados] = useState<string[]>([]);
+  const [busquedaCartera, setBusquedaCartera] = useState('');
   const [activo, setActivo] = useState(true);
+
+  const alcanceForm = getDefinicionRol(role).alcance;
+  const esCuentaOficial = (usuarioEnEdicion?.email || '').toLowerCase() === SUPER_EMAIL;
 
   const cargarLista = async () => {
     try {
-      setCargando(true);
-      const lista = await AuthService.getUsuarios();
-      setUsuarios(lista);
+      setUsuarios(await AuthService.getUsuarios());
     } catch (e) {
       console.error(e);
-    } finally {
-      setCargando(false);
     }
   };
 
   useEffect(() => {
     cargarLista();
   }, []);
+
+  const asesoresDisponibles = useMemo(
+    () => usuarios.filter(u => normalizarRol(u.role) === 'asesor_uatp' && u.id !== usuarioEnEdicion?.id),
+    [usuarios, usuarioEnEdicion]
+  );
+
+  const colegiosFiltrados = useMemo(() => {
+    const q = busquedaCartera.trim().toLowerCase();
+    if (!q) return colegios;
+    return colegios.filter(c => c.nombre.toLowerCase().includes(q) || c.rbd.includes(q) || (c.comuna || '').toLowerCase().includes(q));
+  }, [colegios, busquedaCartera]);
 
   const abrirModalReset = (u: UsuarioSistema) => {
     setUsuarioReset(u);
@@ -54,7 +94,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
     e.preventDefault();
     if (!usuarioReset || !nuevaPasswordReset) return;
     try {
-      await AuthService.cambiarPassword(usuarioReset.id, nuevaPasswordReset);
+      await AuthService.guardarUsuario(usuarioReset, nuevaPasswordReset);
       setMensaje({
         tipo: 'ok',
         texto: `Contraseña de "${usuarioReset.username}" restablecida con éxito a "${nuevaPasswordReset}".`
@@ -66,15 +106,35 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
     }
   };
 
+  const handleToggleActivo = async (u: UsuarioSistema) => {
+    try {
+      const nuevoEstado = !u.activo;
+      await AuthService.toggleEstadoUsuario(u.id, nuevoEstado);
+      setMensaje({
+        tipo: 'ok',
+        texto: `Usuario "${u.username}" ${nuevoEstado ? 'habilitado' : 'deshabilitado'} exitosamente.`
+      });
+      await cargarLista();
+    } catch (err: any) {
+      setMensaje({ tipo: 'error', texto: err.message || 'Error al modificar estado del usuario.' });
+    }
+  };
+
   const abrirModalNuevo = () => {
+    const rolInicial: UserRole = rolesAsignables.some(r => r.id === 'director_establecimiento')
+      ? 'director_establecimiento'
+      : (rolesAsignables[rolesAsignables.length - 1]?.id || 'jefe_utp_establecimiento');
     setUsuarioEnEdicion(null);
     setUsername('');
     setNombreCompleto('');
     setEmail('');
-    setRole('director_colegio');
-    setCargo('Director de Establecimiento');
+    setRole(rolInicial);
+    setCargo(CARGO_POR_ROL[rolInicial]);
     setPassword('');
-    setRbdAsignado(colegios[0]?.rbd || '3501');
+    setRbdAsignado(colegios[0]?.rbd || '');
+    setCarteraRbds([]);
+    setAsesoresSupervisados([]);
+    setBusquedaCartera('');
     setActivo(true);
     setMensaje(null);
     setModalAbierto(true);
@@ -85,14 +145,20 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
     setUsername(u.username);
     setNombreCompleto(u.nombreCompleto);
     setEmail(u.email || '');
-    setRole(u.role);
+    setRole(normalizarRol(u.role));
     setCargo(u.cargo);
     setPassword(''); // Opcional al editar
-    setRbdAsignado(u.rbdAsignado || colegios[0]?.rbd || '3501');
+    setRbdAsignado(u.rbdAsignado || colegios[0]?.rbd || '');
+    setCarteraRbds(u.carteraRbds || []);
+    setAsesoresSupervisados(u.asesoresSupervisados || []);
+    setBusquedaCartera('');
     setActivo(u.activo ?? true);
     setMensaje(null);
     setModalAbierto(true);
   };
+
+  const toggleEnLista = (lista: string[], valor: string) =>
+    lista.includes(valor) ? lista.filter(v => v !== valor) : [...lista, valor];
 
   const handleGuardarUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,6 +174,16 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
       return;
     }
 
+    if (!esCuentaOficial && !rolesAsignables.some(r => r.id === role)) {
+      setMensaje({ tipo: 'error', texto: 'No tiene atribuciones para asignar ese rol.' });
+      return;
+    }
+
+    if (alcanceForm === 'establecimiento' && !rbdAsignado) {
+      setMensaje({ tipo: 'error', texto: 'Debe asignar un establecimiento a este rol.' });
+      return;
+    }
+
     try {
       let salt = usuarioEnEdicion ? usuarioEnEdicion.salt : generateSalt();
       let passwordHash = usuarioEnEdicion ? usuarioEnEdicion.passwordHash : '';
@@ -118,25 +194,31 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
         passwordHash = await hashPassword(password, salt);
       }
 
+      const cleanUsername = username.trim().toLowerCase();
+      const cleanEmail = email.trim() || (cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@slepvallediguillin.cl`);
+
       const usuarioAGuardar: UsuarioSistema = {
+        ...(usuarioEnEdicion || {}),
         id: usuarioEnEdicion ? usuarioEnEdicion.id : `user-${Date.now()}`,
-        username: username.trim().toLowerCase(),
+        username: cleanUsername,
         nombreCompleto: nombreCompleto.trim(),
-        email: email.trim(),
+        email: cleanEmail,
         role,
         cargo: cargo.trim(),
         passwordHash,
         salt,
-        rbdAsignado: role === 'director_colegio' ? rbdAsignado : undefined,
+        rbdAsignado: alcanceForm === 'establecimiento' ? rbdAsignado : undefined,
+        carteraRbds: alcanceForm === 'cartera' || alcanceForm === 'equipo' ? carteraRbds : [],
+        asesoresSupervisados: alcanceForm === 'equipo' ? asesoresSupervisados : [],
         activo
       };
 
-      await AuthService.guardarUsuario(usuarioAGuardar);
+      await AuthService.guardarUsuario(usuarioAGuardar, password || undefined);
       setMensaje({
         tipo: 'ok',
         texto: usuarioEnEdicion
           ? `Usuario "${usuarioAGuardar.username}" actualizado exitosamente.`
-          : `Usuario "${usuarioAGuardar.username}" creado exitosamente.`
+          : `Usuario "${usuarioAGuardar.username}" creado y habilitado exitosamente.`
       });
       setModalAbierto(false);
       await cargarLista();
@@ -145,49 +227,69 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
     }
   };
 
-  const handleEliminar = async (id: string, uname: string) => {
-    if (uname === 'admin') {
-      alert('No se puede eliminar la cuenta principal de Administrador.');
-      return;
-    }
-    if (window.confirm(`¿Estás seguro de eliminar al usuario "${uname}"?`)) {
-      await AuthService.eliminarUsuario(id);
-      await cargarLista();
+  const handleEliminar = async (u: UsuarioSistema) => {
+    if (window.confirm(`¿Estás seguro de eliminar al usuario "${u.username}"?`)) {
+      try {
+        await AuthService.eliminarUsuario(u.id);
+        await cargarLista();
+      } catch (err: any) {
+        setMensaje({ tipo: 'error', texto: err.message || 'No se pudo eliminar el usuario.' });
+      }
     }
   };
 
-  const getRoleBadge = (r: UserRole) => {
-    switch (r) {
-      case 'admin':
-        return { label: 'Admin SLEP', color: 'bg-red-500/20 text-red-300 border-red-500/40' };
-      case 'asesor':
-        return { label: 'Asesor UATP', color: 'bg-blue-500/20 text-blue-300 border-blue-500/40' };
-      case 'director_colegio':
-        return { label: 'Director Colegio', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' };
-      case 'auditor':
-        return { label: 'Auditor DEP', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+  const describirAlcance = (u: UsuarioSistema) => {
+    const def = getDefinicionRol(normalizarRol(u.role));
+    if (def.alcance === 'global') return <span className="text-slate-500 italic text-[11px]">Todo el territorio</span>;
+    if (def.alcance === 'establecimiento') {
+      const cole = u.rbdAsignado ? colegios.find(c => c.rbd === u.rbdAsignado) : null;
+      return cole
+        ? <span className="text-slate-200 text-xs font-semibold">{cole.nombre} (RBD {cole.rbd})</span>
+        : <span className="text-red-400 text-[11px] font-bold">Sin establecimiento asignado</span>;
     }
+    if (def.alcance === 'equipo') {
+      return (
+        <span className="text-slate-200 text-[11px]">
+          {(u.asesoresSupervisados || []).length} asesor(es) · {(u.carteraRbds || []).length} colegio(s) propios
+        </span>
+      );
+    }
+    return <span className="text-slate-200 text-[11px]">{(u.carteraRbds || []).length} colegio(s) en cartera</span>;
   };
+
+  const usuariosVisibles = filtroRol === 'todos' ? usuarios : usuarios.filter(u => normalizarRol(u.role) === filtroRol);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between pb-4 border-b border-slate-700">
+      <div className="flex items-center justify-between pb-4 border-b border-slate-700 gap-3 flex-wrap">
         <div>
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Users className="w-5 h-5 text-blue-400" />
             Gestión de Usuarios y Atribuciones RBAC
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Crea, edita y administra credenciales, contraseñas, roles y asignación de colegios.
+            Crea, edita y administra credenciales, contraseñas, roles y alcance territorial (cartera, equipo o establecimiento).
           </p>
         </div>
-        <button
-          onClick={abrirModalNuevo}
-          className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/30 transition"
-        >
-          <Plus className="w-4 h-4" />
-          Nuevo Usuario
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={filtroRol}
+            onChange={e => setFiltroRol(e.target.value as any)}
+            className="px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white"
+          >
+            <option value="todos">Todos los roles</option>
+            {ROLES_DEFINICIONES.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+          </select>
+          {puedeEditar && (
+            <button
+              onClick={abrirModalNuevo}
+              className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/30 transition"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Usuario
+            </button>
+          )}
+        </div>
       </div>
 
       {mensaje && (
@@ -205,65 +307,101 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
           <thead className="bg-slate-800/80 text-[11px] font-bold uppercase text-slate-400 border-b border-slate-700">
             <tr>
               <th className="px-4 py-3">Usuario</th>
-              <th className="px-4 py-3">Nombre & Cargo</th>
+              <th className="px-4 py-3">Nombre &amp; Cargo</th>
               <th className="px-4 py-3">Rol</th>
-              <th className="px-4 py-3">Colegio Asignado</th>
+              <th className="px-4 py-3">Alcance</th>
+              <th className="px-4 py-3">Estado</th>
               <th className="px-4 py-3 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 font-medium">
-            {usuarios.map(u => {
-              const badge = getRoleBadge(u.role);
-              const cole = u.rbdAsignado ? colegios.find(c => c.rbd === u.rbdAsignado) : null;
+            {usuariosVisibles.map(u => {
+              const def = getDefinicionRol(normalizarRol(u.role));
+              const oficial = (u.email || '').toLowerCase() === SUPER_EMAIL;
+              const editableParaActor = oficial
+                ? rolActor === 'super_usuario'
+                : rolesAsignables.some(r => r.id === def.id);
               return (
-                <tr key={u.id} className="hover:bg-slate-800/40 transition">
-                  <td className="px-4 py-3 font-bold text-white flex items-center gap-2">
-                    <Shield className="w-3.5 h-3.5 text-blue-400" />
-                    <span>{u.username}</span>
+                <tr key={u.id} className={`hover:bg-slate-800/40 transition ${u.activo ? '' : 'opacity-60 bg-red-950/10'}`}>
+                  <td className="px-4 py-3 font-bold text-white">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-blue-400" />
+                      <span>{u.username}</span>
+                      {!u.activo && <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">Inactivo</span>}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-semibold text-slate-200">{u.nombreCompleto}</div>
                     <div className="text-[10px] text-slate-400">{u.cargo}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${badge.color}`}>
-                      {badge.label}
+                    <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${BADGE_COLORES[def.color]}`}>
+                      {def.nombre}
                     </span>
                   </td>
+                  <td className="px-4 py-3">{describirAlcance(u)}</td>
                   <td className="px-4 py-3">
-                    {cole ? (
-                      <span className="text-slate-200 text-xs font-semibold">
-                        {cole.nombre} (RBD {cole.rbd})
+                    {oficial ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Activo (Raíz)</span>
                       </span>
                     ) : (
-                      <span className="text-slate-500 italic text-[11px]">Todos los Colegios</span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActivo(u)}
+                        disabled={!puedeEditar || !editableParaActor}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition ${
+                          u.activo
+                            ? 'bg-emerald-950/60 text-emerald-300 border-emerald-600/50 hover:bg-emerald-900/50'
+                            : 'bg-rose-950/60 text-rose-300 border-rose-600/50 hover:bg-rose-900/50'
+                        } ${(!puedeEditar || !editableParaActor) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer shadow-sm'}`}
+                        title={u.activo ? 'Cuenta habilitada. Clic para deshabilitar' : 'Cuenta inactiva. Clic para habilitar'}
+                      >
+                        {u.activo ? (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span>Habilitado</span>
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-3 h-3 text-rose-400" />
+                            <span>Deshabilitado</span>
+                          </>
+                        )}
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() => abrirModalReset(u)}
-                        className="p-1.5 text-amber-400 hover:text-amber-200 hover:bg-amber-950/60 rounded-lg transition"
-                        title={`Resetear contraseña de ${u.username}`}
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => abrirModalEditar(u)}
-                        className="p-1.5 text-blue-400 hover:text-blue-200 hover:bg-blue-950/60 rounded-lg transition"
-                        title="Editar usuario y permisos"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      {u.username !== 'admin' && (
+                      {puedeEditar && editableParaActor && (
+                        <>
+                          <button
+                            onClick={() => abrirModalReset(u)}
+                            className="p-1.5 text-amber-400 hover:text-amber-200 hover:bg-amber-950/60 rounded-lg transition"
+                            title={`Resetear contraseña de ${u.username}`}
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => abrirModalEditar(u)}
+                            className="p-1.5 text-blue-400 hover:text-blue-200 hover:bg-blue-950/60 rounded-lg transition"
+                            title="Editar usuario y permisos"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {puedeEliminar && editableParaActor && !oficial && (
                         <button
-                          onClick={() => handleEliminar(u.id, u.username)}
+                          onClick={() => handleEliminar(u)}
                           className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-950/60 rounded-lg transition"
                           title="Eliminar usuario"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       )}
+                      {(!editableParaActor || !puedeEditar) && <Lock className="w-3.5 h-3.5 text-slate-600" />}
                     </div>
                   </td>
                 </tr>
@@ -276,7 +414,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
       {/* Modal Crear / Editar Usuario */}
       {modalAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
             <h4 className="text-base font-bold text-white mb-4 flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-amber-400" />
               {usuarioEnEdicion ? `Editar Usuario: ${usuarioEnEdicion.username}` : 'Crear Nuevo Usuario'}
@@ -289,7 +427,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                 <input
                   type="text"
                   required
-                  disabled={usuarioEnEdicion?.username === 'admin'}
+                  disabled={esCuentaOficial}
                   value={username}
                   onChange={e => setUsername(e.target.value)}
                   placeholder="ej: dir_pueblo_seco"
@@ -297,18 +435,31 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                  Nombre Completo
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nombreCompleto}
-                  onChange={e => setNombreCompleto(e.target.value)}
-                  placeholder="ej: María González Tapia"
-                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                    Nombre Completo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={nombreCompleto}
+                    onChange={e => setNombreCompleto(e.target.value)}
+                    placeholder="ej: María González Tapia"
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                    Cargo
+                  </label>
+                  <input
+                    type="text"
+                    value={cargo}
+                    onChange={e => setCargo(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -317,10 +468,11 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                 </label>
                 <input
                   type="email"
+                  disabled={esCuentaOficial}
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="direccion@slepvallediguillin.cl"
-                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
 
@@ -331,22 +483,19 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                   </label>
                   <select
                     value={role}
-                    disabled={usuarioEnEdicion?.username === 'admin'}
+                    disabled={esCuentaOficial}
                     onChange={e => {
                       const r = e.target.value as UserRole;
                       setRole(r);
-                      if (r === 'director_colegio') setCargo('Director de Establecimiento');
-                      if (r === 'asesor') setCargo('Asesor UATP');
-                      if (r === 'auditor') setCargo('Auditor DEP');
-                      if (r === 'admin') setCargo('Administrador SLEP');
+                      setCargo(CARGO_POR_ROL[r]);
                     }}
                     className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   >
-                    <option value="director_colegio">Director de Colegio</option>
-                    <option value="asesor">Asesor UATP</option>
-                    <option value="auditor">Auditor DEP</option>
-                    <option value="admin">Administrador General</option>
+                    {(esCuentaOficial ? ROLES_DEFINICIONES.filter(r => r.id === 'super_usuario') : rolesAsignables).map(r => (
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    ))}
                   </select>
+                  <p className="text-[10px] text-slate-500 mt-1">{getDefinicionRol(role).descripcion}</p>
                 </div>
 
                 <div>
@@ -364,10 +513,10 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                 </div>
               </div>
 
-              {role === 'director_colegio' && (
+              {alcanceForm === 'establecimiento' && (
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                    Colegio Asignado (Exclusivo)
+                    Establecimiento Asignado (Exclusivo)
                   </label>
                   <select
                     value={rbdAsignado}
@@ -381,6 +530,71 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios }
                     ))}
                   </select>
                 </div>
+              )}
+
+              {alcanceForm === 'equipo' && (
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                    Equipo de Asesores Supervisados ({asesoresSupervisados.length})
+                  </label>
+                  <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-2 space-y-1">
+                    {asesoresDisponibles.length === 0 && (
+                      <p className="text-[11px] text-slate-500 italic p-1">No hay usuarios con rol Asesor UATP registrados.</p>
+                    )}
+                    {asesoresDisponibles.map(a => (
+                      <label key={a.id} className="flex items-center gap-2 text-xs text-slate-200 px-1 py-0.5 rounded hover:bg-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={asesoresSupervisados.includes(a.id)}
+                          onChange={() => setAsesoresSupervisados(l => toggleEnLista(l, a.id))}
+                        />
+                        <span>{a.nombreCompleto}</span>
+                        <span className="text-[10px] text-slate-500">({(a.carteraRbds || []).length} colegios)</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(alcanceForm === 'cartera' || alcanceForm === 'equipo') && (
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
+                    {alcanceForm === 'equipo' ? 'Colegios a cargo directo' : 'Cartera de Establecimientos'} ({carteraRbds.length})
+                  </label>
+                  <div className="relative mb-1">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+                    <input
+                      type="text"
+                      value={busquedaCartera}
+                      onChange={e => setBusquedaCartera(e.target.value)}
+                      placeholder="Buscar por nombre, RBD o comuna…"
+                      className="w-full pl-8 pr-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-2 space-y-0.5">
+                    {colegiosFiltrados.map(c => (
+                      <label key={c.id} className="flex items-center gap-2 text-xs text-slate-200 px-1 py-0.5 rounded hover:bg-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={carteraRbds.includes(c.rbd)}
+                          onChange={() => setCarteraRbds(l => toggleEnLista(l, c.rbd))}
+                        />
+                        <span className="truncate">{c.nombre}</span>
+                        <span className="text-[10px] text-slate-500 shrink-0">RBD {c.rbd} · {c.comuna}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    También se incluyen automáticamente los colegios cuyo "Asesor UATP" coincide con el nombre del usuario.
+                  </p>
+                </div>
+              )}
+
+              {!esCuentaOficial && (
+                <label className="flex items-center gap-2 text-xs text-slate-300">
+                  <input type="checkbox" checked={activo} onChange={e => setActivo(e.target.checked)} />
+                  Cuenta activa
+                </label>
               )}
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">

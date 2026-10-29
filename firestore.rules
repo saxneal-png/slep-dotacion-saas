@@ -16,7 +16,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isActiveUser() && getUserData().rol == 'admin';
+      return isAuthenticated() && (
+        request.auth.token.email == 'saxneal@gmail.com' ||
+        (isActiveUser() && (getUserData().rol == 'admin' || getUserData().rol == 'super_usuario'))
+      );
     }
 
     function isAuditor() {
@@ -27,6 +30,7 @@ service cloud.firestore {
       let user = getUserData();
       return isActiveUser() && (
         user.rol == 'admin' ||
+        user.rol == 'super_usuario' ||
         user.rol == 'auditor' ||
         (user.rol == 'asesor' && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
         (user.rol == 'director_colegio' && user.rbdAsignado == rbd)
@@ -37,6 +41,7 @@ service cloud.firestore {
       let user = getUserData();
       return isActiveUser() && (
         user.rol == 'admin' ||
+        user.rol == 'super_usuario' ||
         (user.rol == 'asesor' && ('carteraRbds' in user) && rbd in user.carteraRbds) ||
         (user.rol == 'director_colegio' && user.rbdAsignado == rbd)
       );
@@ -50,12 +55,12 @@ service cloud.firestore {
              data.rbd is string;
     }
 
-    // 1. PERFILES DE USUARIO (Solo el propio usuario lee su perfil; Admin gestiona perfiles; SuperAdmin saxneal puede bootstrap)
+    // 1. PERFILES DE USUARIO (El propio usuario lee su perfil; Admin y SuperAdmin gestionan usuarios)
     match /usuarios/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
       allow create: if isAuthenticated() && (
-        request.auth.uid == userId &&
-        (request.resource.data.rol != 'admin' || request.auth.token.email == 'saxneal@gmail.com')
+        isAdmin() ||
+        (request.auth.uid == userId && (request.resource.data.rol != 'admin' || request.auth.token.email == 'saxneal@gmail.com'))
       );
       allow update, delete: if isAdmin();
     }

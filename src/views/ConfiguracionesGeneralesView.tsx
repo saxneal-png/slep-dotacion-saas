@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { PlanesEstudioConfigTab } from './configuraciones/PlanesEstudioConfigTab';
 import { UsuariosConfigTab } from './configuraciones/UsuariosConfigTab';
+import { RolesPermisosConfigTab } from './configuraciones/RolesPermisosConfigTab';
+import { usePermisos, Can } from '../security/PermisosContext';
+import { AuthService } from '../services/authService';
 import {
   ConfiguracionGeneral,
   PerfilAsesor,
@@ -57,8 +60,11 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
   onImportarCarteraSlep,
   onVolver
 }) => {
+  const { can, esSuperUsuario } = usePermisos();
   const [config, setConfig] = useState<ConfiguracionGeneral>(() => cargarConfiguracionGeneral());
-  const [tabActiva, setTabActiva] = useState<'usuarios' | 'perfil' | 'normativa' | 'planes' | 'ia' | 'ui' | 'db'>('usuarios');
+  const [tabActiva, setTabActiva] = useState<'roles' | 'usuarios' | 'perfil' | 'normativa' | 'planes' | 'ia' | 'ui' | 'db'>(() => {
+    return esSuperUsuario ? 'roles' : 'usuarios';
+  });
   const [mensajeGuardado, setMensajeGuardado] = useState<string | null>(null);
   const [probandoGemini, setProbandoGemini] = useState(false);
   const [resultadoTestGemini, setResultadoTestGemini] = useState<{ exito: boolean; mensaje: string } | null>(null);
@@ -229,12 +235,25 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
       // Actualizar asignación exacta de colegios por RBD
       await actualizarColegiosDeAsesor(asesorGuardar.nombre, formColegiosAsignados, colegios);
 
+      // Sincronizar automáticamente al Asesor como Usuario Activo del Sistema (Rol: Asesor UATP)
+      const resSync = await AuthService.sincronizarAsesorComoUsuario({
+        id: asesorGuardar.id,
+        nombre: asesorGuardar.nombre,
+        email: asesorGuardar.email,
+        telefono: asesorGuardar.telefono,
+        cargo: asesorGuardar.cargo,
+        carteraRbds: formColegiosAsignados
+      });
+
       if (onColegiosActualizados) {
         await onColegiosActualizados();
       }
 
       setModalAsesorAbierto(false);
-      mostrarMensaje(`✓ Asesor "${asesorGuardar.nombre}" y su cartera de ${formColegiosAsignados.length} colegios guardados correctamente.`);
+      const detalleClave = resSync.esNuevo && resSync.passwordTemporal
+        ? ` Usuario activado con clave inicial: "${resSync.passwordTemporal}".`
+        : ' Cuenta de usuario actualizada.';
+      mostrarMensaje(`✓ Asesor "${asesorGuardar.nombre}" y su cartera de ${formColegiosAsignados.length} colegios vinculados con éxito.${detalleClave}`);
     } catch (err: any) {
       alert(`Error al guardar asesor y cartera de colegios: ${err.message || err}`);
     } finally {
@@ -340,18 +359,35 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
 
       {/* Navegación por Pestañas */}
       <div className="flex items-center gap-1.5 overflow-x-auto bg-slate-200/70 p-1 rounded-2xl border border-slate-300/60 shadow-inner">
-        
-        <button
-          onClick={() => setTabActiva('usuarios')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            tabActiva === 'usuarios'
-              ? 'bg-white text-blue-700 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-          }`}
-        >
-          <Users className="w-4 h-4 text-blue-600" />
-          <span>Gestión de Usuarios (RBAC)</span>
-        </button>
+
+        {/* Pestaña Exclusiva Super Usuario: Roles y Permisos */}
+        {can('roles.ver') && (
+          <button
+            onClick={() => setTabActiva('roles')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              tabActiva === 'roles'
+                ? 'bg-white text-emerald-700 shadow-sm border border-emerald-300/60'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <Shield className="w-4 h-4 text-emerald-600" />
+            <span>Roles & Permisos (RBAC)</span>
+          </button>
+        )}
+
+        {can('usuarios.ver') && (
+          <button
+            onClick={() => setTabActiva('usuarios')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              tabActiva === 'usuarios'
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <Users className="w-4 h-4 text-blue-600" />
+            <span>Gestión de Usuarios</span>
+          </button>
+        )}
 
         <button
           onClick={() => setTabActiva('perfil')}
@@ -429,7 +465,12 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
 
       {/* CONTENIDO DE LAS PESTAÑAS */}
 
-      {/* 0. PESTAÑA GESTIÓN DE USUARIOS RBAC */}
+      {/* -1. PESTAÑA ROLES & PERMISOS (SUPER USUARIO) */}
+      {tabActiva === 'roles' && can('roles.ver') && (
+        <RolesPermisosConfigTab />
+      )}
+
+      {/* 0. PESTAÑA GESTIÓN DE USUARIOS */}
       {tabActiva === 'usuarios' && (
         <UsuariosConfigTab colegios={colegios} />
       )}
