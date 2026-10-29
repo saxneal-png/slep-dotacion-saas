@@ -108,4 +108,12 @@ export {
   eliminarAsistentesColegioPeriodo
 } from './repositories/asistentesRepo';
 
+export {
+  listarUsuariosDb,
+  guardarUsuarioDb,
+  guardarUsuariosBatchDb,
+  eliminarUsuarioDb
+} from './repositories/usuariosRepo';
+
+
 

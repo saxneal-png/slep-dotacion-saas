@@ -10,8 +10,19 @@ import {
   sendPasswordResetEmail,
   getAuth
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { auth, firestore, firebaseConfig } from './firebaseConfig';
+import {
+  listarUsuariosDb,
+  guardarUsuarioDb,
+  guardarUsuariosBatchDb,
+  eliminarUsuarioDb
+} from '../database/repositories/usuariosRepo';
+import {
+  listarEstablecimientos,
+  guardarEstablecimiento
+} from '../database/repositories/establecimientosRepo';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 
 const STORAGE_USERS_KEY = 'slep_usuarios_sistema_v2';
 const STORAGE_SESSION_KEY = 'slep_auth_session_v1';
@@ -173,10 +184,41 @@ export class AuthService {
   public static async getUsuarios(): Promise<UsuarioSistema[]> {
     let usuarios = await this.inicializarUsuariosSiNoExisten();
 
-    // Sincronización en la nube con Firestore cuando hay conectividad
+    // 1. Fusionar usuarios desde SQLite WASM (usuarios_sistema) si existen
+    try {
+      const sqlUsers = await listarUsuariosDb();
+      if (sqlUsers.length > 0) {
+        const mapLocal = new Map<string, UsuarioSistema>();
+        usuarios.forEach(u => mapLocal.set((u.email || u.username || u.id).toLowerCase(), u));
+        for (const su of sqlUsers) {
+          const key = (su.email || su.username || su.id).toLowerCase();
+          const prev = mapLocal.get(key);
+          if (!prev) {
+            mapLocal.set(key, su);
+          } else {
+            mapLocal.set(key, {
+              ...prev,
+              ...su,
+              passwordHash: su.passwordHash || prev.passwordHash,
+              salt: su.salt || prev.salt,
+              rbdAsignado: su.rbdAsignado || prev.rbdAsignado,
+              carteraRbds: (su.carteraRbds && su.carteraRbds.length > 0) ? su.carteraRbds : (prev.carteraRbds || []),
+              asesoresSupervisados: (su.asesoresSupervisados && su.asesoresSupervisados.length > 0) ? su.asesoresSupervisados : (prev.asesoresSupervisados || [])
+            });
+          }
+        }
+        usuarios = Array.from(mapLocal.values());
+      }
+    } catch {
+      // Fallback seguro si SQLite aún no está inicializado
+    }
+
+    // 2. Sincronización bidireccional en la nube con Firestore cuando hay conectividad
     if (typeof window !== 'undefined' && firestore) {
       try {
         const snapshot = await getDocs(collection(firestore, 'usuarios'));
+        const firestoreKeys = new Set<string>();
+
         if (!snapshot.empty) {
           const mapPorClave = new Map<string, UsuarioSistema>();
           usuarios.forEach(u => {
@@ -188,6 +230,10 @@ export class AuthService {
             const data = docSnap.data();
             const emailKey = (data.email || '').toLowerCase();
             const userKey = (data.username || '').toLowerCase();
+            if (emailKey) firestoreKeys.add(emailKey);
+            if (userKey) firestoreKeys.add(userKey);
+            firestoreKeys.add(docSnap.id.toLowerCase());
+
             const existing =
               usuarios.find(u => u.id === docSnap.id) ||
               (emailKey ? usuarios.find(u => (u.email || '').toLowerCase() === emailKey) : undefined) ||
@@ -226,12 +272,54 @@ export class AuthService {
           }
 
           usuarios = Array.from(mapPorClave.values());
-          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
         }
+
+        // 3. Subir a Firestore en bloque (writeBatch) cualquier usuario local que aún no exista en la colección /usuarios
+        const faltantesEnFirestore = usuarios.filter(u => {
+          const eKey = (u.email || '').toLowerCase();
+          const uKey = (u.username || '').toLowerCase();
+          const idKey = u.id.toLowerCase();
+          return !(
+            (eKey && firestoreKeys.has(eKey)) ||
+            (uKey && firestoreKeys.has(uKey)) ||
+            firestoreKeys.has(idKey)
+          );
+        });
+
+        if (faltantesEnFirestore.length > 0) {
+          const batch = writeBatch(firestore);
+          const nowIso = new Date().toISOString();
+          for (const u of faltantesEnFirestore.slice(0, 450)) {
+            const uDocRef = doc(firestore, 'usuarios', u.id);
+            batch.set(uDocRef, {
+              id: u.id,
+              email: u.email || null,
+              username: u.username,
+              nombreCompleto: u.nombreCompleto,
+              rol: u.role,
+              cargo: u.cargo || null,
+              rbdAsignado: u.rbdAsignado || null,
+              carteraRbds: u.carteraRbds || [],
+              asesoresSupervisados: u.asesoresSupervisados || [],
+              passwordHash: u.passwordHash || null,
+              salt: u.salt || null,
+              activo: u.activo !== false,
+              actualizadoEn: nowIso
+            }, { merge: true });
+          }
+          await batch.commit().catch(err =>
+            console.warn('[AuthService] Aviso subiendo usuarios iniciales a Firestore:', err)
+          );
+        }
+
+        localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
       } catch {
         // En modo offline o con reglas de seguridad restrictivas, fallback seguro a local
       }
     }
+
+    // 4. Persistir todos los usuarios en la tabla SQLite usuarios_sistema
+    guardarUsuariosBatchDb(usuarios).catch(() => {});
 
     return usuarios;
   }
@@ -401,6 +489,7 @@ export class AuthService {
       usuarios.push(encontrado);
     }
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    guardarUsuarioDb(encontrado).catch(() => {});
 
     // Si el usuario tiene una ApiKey personal configurada, activarla
     if (encontrado.geminiApiKey) {
@@ -467,6 +556,14 @@ export class AuthService {
       usuarios[idx].salt = salt;
       usuarios[idx].passwordHash = passwordHash;
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+      guardarUsuarioDb(usuarios[idx]).catch(() => {});
+      if (typeof window !== 'undefined' && firestore) {
+        setDoc(doc(firestore, 'usuarios', usuarios[idx].id), {
+          passwordHash,
+          salt,
+          actualizadoEn: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      }
     }
     return usuarios[idx].nombreCompleto;
   }
@@ -478,6 +575,7 @@ export class AuthService {
       usuarios[idx].geminiApiKey = apiKey.trim();
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
       localStorage.setItem('gemini_api_key', apiKey.trim());
+      guardarUsuarioDb(usuarios[idx]).catch(() => {});
     }
   }
 
@@ -491,8 +589,9 @@ export class AuthService {
     usuarios[idx].salt = salt;
     usuarios[idx].passwordHash = passwordHash;
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    await guardarUsuarioDb(usuarios[idx]);
 
-    if (auth?.currentUser && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && firestore) {
       try {
         await setDoc(doc(firestore, 'usuarios', userId), {
           passwordHash,
@@ -575,9 +674,10 @@ export class AuthService {
       usuarios.push(usuario);
     }
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    await guardarUsuarioDb(usuario);
 
     // 4. Sincronizar documento completo (incluyendo passwordHash y salt) en Firestore /usuarios/{usuario.id}
-    if (auth?.currentUser && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && firestore) {
       try {
         const uDocRef = doc(firestore, 'usuarios', usuario.id);
         await setDoc(uDocRef, {
@@ -627,8 +727,9 @@ export class AuthService {
     u.activo = nuevoEstado;
     usuarios[idx] = u;
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    await guardarUsuarioDb(u);
 
-    if (auth?.currentUser && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && firestore) {
       try {
         const uDocRef = doc(firestore, 'usuarios', userId);
         await setDoc(uDocRef, {
@@ -658,8 +759,10 @@ export class AuthService {
       ? { ...u, asesoresSupervisados: u.asesoresSupervisados.filter(id => id !== userId) }
       : u);
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    await eliminarUsuarioDb(userId);
+    await guardarUsuariosBatchDb(usuarios);
 
-    if (auth?.currentUser && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && firestore) {
       try {
         await deleteDoc(doc(firestore, 'usuarios', userId));
       } catch (err) {
@@ -818,16 +921,52 @@ export class AuthService {
     }
 
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    await guardarUsuariosBatchDb(usuarios);
 
-    // Si hay sesión activa en Firebase Auth, sincronizar en Firestore usuarios directores
-    if (auth?.currentUser && typeof window !== 'undefined' && firestore) {
+    // Sincronizar información de directores en la tabla establecimientos (SQLite + Firestore)
+    try {
+      const estActuales = await listarEstablecimientos();
+      const mapEst = new Map(estActuales.map(e => [e.rbd.trim(), e]));
       for (const d of directores) {
-        const emailLower = d.email.toLowerCase();
-        const u = usuarios.find(usr => usr.email?.toLowerCase() === emailLower);
-        if (u) {
-          try {
+        const rbd = d.rbd.trim();
+        const prev = mapEst.get(rbd);
+        const cat = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === rbd);
+        if (prev) {
+          await guardarEstablecimiento({
+            ...prev,
+            director: d.director,
+            telefono: d.telefono || prev.telefono,
+            email: d.email || prev.email
+          });
+        } else {
+          await guardarEstablecimiento({
+            id: `est-${rbd}`,
+            rbd,
+            nombre: cat?.nombre || d.nombreEstablecimiento,
+            comuna: (cat?.comuna as any) || (d.comuna as any) || 'Chillán',
+            regimen: cat?.tipo === 'JARDIN' || cat?.tipo === 'SALA_CUNA' ? 'No JEC' : 'JEC',
+            porcentajePrioritarios: 75.0,
+            director: d.director,
+            telefono: d.telefono,
+            email: d.email
+          });
+        }
+      }
+    } catch (estErr) {
+      console.warn('[AuthService] Aviso actualizando directores en establecimientos:', estErr);
+    }
+
+    // Sincronizar masivamente en Firestore usando writeBatch (sin requerir auth.currentUser)
+    if (typeof window !== 'undefined' && firestore) {
+      try {
+        const batch = writeBatch(firestore);
+        const nowIso = new Date().toISOString();
+        for (const d of directores) {
+          const emailLower = d.email.trim().toLowerCase();
+          const u = usuarios.find(usr => usr.email?.toLowerCase() === emailLower);
+          if (u) {
             const uDocRef = doc(firestore, 'usuarios', u.id);
-            await setDoc(uDocRef, {
+            batch.set(uDocRef, {
               id: u.id,
               email: u.email,
               username: u.username,
@@ -835,13 +974,16 @@ export class AuthService {
               rol: u.role,
               cargo: u.cargo,
               rbdAsignado: u.rbdAsignado,
-              activo: u.activo,
-              actualizadoEn: new Date().toISOString()
+              passwordHash: u.passwordHash || null,
+              salt: u.salt || null,
+              activo: u.activo !== false,
+              actualizadoEn: nowIso
             }, { merge: true });
-          } catch (syncErr) {
-            console.warn(`[AuthService] Aviso sincronizando en Firestore directivo ${u.email}:`, syncErr);
           }
         }
+        await batch.commit();
+      } catch (syncErr) {
+        console.warn('[AuthService] Aviso sincronizando lote de directores en Firestore:', syncErr);
       }
     }
 

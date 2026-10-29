@@ -301,9 +301,12 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
     try {
       const res = await AuthService.generarUsuariosDirectoresMasivo();
       await cargarLista();
+      if (onColegiosActualizados) {
+        await onColegiosActualizados();
+      }
       setMensaje({
         tipo: 'ok',
-        texto: `✓ Proceso masivo exitoso: ${res.creados} creados, ${res.actualizados} sincronizados de ${res.totalProcesados} directores territoriales.`
+        texto: `✓ Base de datos actualizada (SQLite + Cloud Firestore): ${res.creados} creados, ${res.actualizados} sincronizados de ${res.totalProcesados} directores territoriales.`
       });
     } catch (err: any) {
       setMensaje({

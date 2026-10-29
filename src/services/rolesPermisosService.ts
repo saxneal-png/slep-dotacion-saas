@@ -66,7 +66,7 @@ function registrarBitacora(entry: Omit<CambioPermisosBitacora, 'id' | 'fecha'>) 
   lista.unshift(full);
   storage()?.setItem(STORAGE_BITACORA_KEY, JSON.stringify(lista.slice(0, MAX_BITACORA)));
 
-  if (auth?.currentUser && typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && firestore) {
     const payloadFirestore: Record<string, any> = {
       rolId: full.rolId,
       agregados: full.agregados,
@@ -83,7 +83,7 @@ function registrarBitacora(entry: Omit<CambioPermisosBitacora, 'id' | 'fecha'>) 
 }
 
 function publicarRemoto(rol: RolId, data: MatrizRol) {
-  if (auth?.currentUser && typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && firestore) {
     setDoc(doc(firestore, 'config_roles', rol), data, { merge: false }).catch(e =>
       console.warn('[RolesPermisos] No se pudo sincronizar rol con Firestore:', e?.code || e)
     );
@@ -218,7 +218,7 @@ export class RolesPermisosService {
 
   /** Descarga la matriz publicada en Firestore (si hay sesión remota) y la aplica localmente. */
   static async sincronizarDesdeFirestore(): Promise<boolean> {
-    if (!auth?.currentUser || typeof window === 'undefined') return false;
+    if (typeof window === 'undefined' || !firestore) return false;
     try {
       const m = { ...this.cargarMatriz() };
       let cambios = false;

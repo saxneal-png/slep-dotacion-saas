@@ -192,6 +192,24 @@ CREATE TABLE IF NOT EXISTS asistentes_educacion (
   observaciones_slep TEXT,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
+
+CREATE TABLE IF NOT EXISTS usuarios_sistema (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  email TEXT,
+  nombre_completo TEXT NOT NULL,
+  role TEXT NOT NULL,
+  cargo TEXT,
+  rbd_asignado TEXT,
+  cartera_rbds_json TEXT,
+  asesores_supervisados_json TEXT,
+  comunas_permitidas_json TEXT,
+  password_hash TEXT,
+  salt TEXT,
+  gemini_api_key TEXT,
+  activo INTEGER DEFAULT 1,
+  ultimo_acceso TEXT
+);
 `;
 
 export function runMigrations(db: Database): void {
@@ -395,7 +413,9 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_auditoria_rbd_periodo ON auditoria_cambios(rbd, periodo);',
     'CREATE INDEX IF NOT EXISTS idx_asistentes_rbd_periodo ON asistentes_educacion(rbd, periodo);',
     'CREATE INDEX IF NOT EXISTS idx_asistentes_run ON asistentes_educacion(run);',
-    'CREATE INDEX IF NOT EXISTS idx_asistentes_estamento ON asistentes_educacion(estamento);'
+    'CREATE INDEX IF NOT EXISTS idx_asistentes_estamento ON asistentes_educacion(estamento);',
+    'CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios_sistema(email);',
+    'CREATE INDEX IF NOT EXISTS idx_usuarios_role ON usuarios_sistema(role);'
   ];
 
   for (const idxSql of indexes) {

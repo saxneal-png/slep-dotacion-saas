@@ -15,23 +15,40 @@ import {
   poblarPlanesEstudioEnDb
 } from './db';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
+import { DIRECTORES_TERRITORIO } from '../data/directoresTerritorio';
 
 /**
- * Sincroniza los 121 establecimientos del catálogo oficial en la tabla SQLite.
+ * Sincroniza los 121 establecimientos del catálogo oficial en la tabla SQLite,
+ * incluyendo los directores oficiales, correos y teléfonos del territorio.
  */
 export async function sincronizarCatalogoEstablecimientos(): Promise<void> {
   const existing = await listarEstablecimientos();
-  const existingByRbd = new Set(existing.map(e => e.rbd.trim()));
+  const existingMap = new Map(existing.map(e => [e.rbd.trim(), e]));
+  const directoresPorRbd = new Map(DIRECTORES_TERRITORIO.map(d => [d.rbd.trim(), d]));
 
   for (const school of SLEP_VALLE_DIGUILLIN_SCHOOLS) {
-    if (!existingByRbd.has(school.rbd)) {
+    const rbd = school.rbd.trim();
+    const dirInfo = directoresPorRbd.get(rbd);
+    const prev = existingMap.get(rbd);
+
+    if (!prev) {
       await guardarEstablecimiento({
-        id: `est-${school.rbd}`,
-        rbd: school.rbd,
+        id: `est-${rbd}`,
+        rbd,
         nombre: school.nombre,
         comuna: school.comuna,
         regimen: school.tipo === 'JARDIN' || school.tipo === 'SALA_CUNA' ? 'No JEC' : 'JEC',
         porcentajePrioritarios: 75.0,
+        director: dirInfo?.director || school.director || undefined,
+        telefono: dirInfo?.telefono || undefined,
+        email: dirInfo?.email || undefined,
+      });
+    } else if (dirInfo && (!prev.director || !prev.email || !prev.telefono)) {
+      await guardarEstablecimiento({
+        ...prev,
+        director: prev.director || dirInfo.director,
+        telefono: prev.telefono || dirInfo.telefono,
+        email: prev.email || dirInfo.email,
       });
     }
   }

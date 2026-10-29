@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { AuthService, hashPassword } from '../src/services/authService';
 import { DIRECTORES_TERRITORIO } from '../src/data/directoresTerritorio';
+import { listarUsuariosDb, listarEstablecimientos } from '../src/database/db';
 
 describe('Aprovisionamiento Masivo de Usuarios Directores de Establecimiento', () => {
   const store: Record<string, string> = {};
@@ -75,5 +76,19 @@ describe('Aprovisionamiento Masivo de Usuarios Directores de Establecimiento', (
     expect(sesion.usuario.email).toBe('mario.silva@eduvallediguillin.gob.cl');
     expect(sesion.usuario.role).toBe('director_establecimiento');
     expect(sesion.usuario.rbdAsignado).toBe('3980');
+  });
+
+  it('persiste los 89 directores en la base de datos SQLite (usuarios_sistema y establecimientos)', async () => {
+    await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '12346');
+
+    const usuariosDb = await listarUsuariosDb();
+    const directoresDb = usuariosDb.filter(u => u.role === 'director_establecimiento');
+    expect(directoresDb.length).toBe(89);
+
+    const establecimientosDb = await listarEstablecimientos();
+    const estBecerra = establecimientosDb.find(e => e.rbd === '17742');
+    expect(estBecerra).toBeDefined();
+    expect(estBecerra?.director).toBe('José Becerra');
+    expect(estBecerra?.email).toBe('jose.becerra@eduvallediguillin.gob.cl');
   });
 });

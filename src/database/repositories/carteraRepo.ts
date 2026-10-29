@@ -16,6 +16,7 @@ import { listarCursos, guardarCurso } from './cursosRepo';
 import { listarDocentes, listarTodosLosDocentesTerritorio, guardarDocente } from './docentesRepo';
 import { listarAsignaciones, listarTodasLasAsignaciones, guardarAsignacion } from './asignacionesRepo';
 import { listarAsistentes, listarTodosLosAsistentesTerritorio, guardarAsistente } from './asistentesRepo';
+import { listarUsuariosDb, guardarUsuariosBatchDb } from './usuariosRepo';
 import { calcularDiagnosticoColegio } from '../../services/dotacionCalculationService';
 import { normalizarRut } from '../../utils/rutUtils';
 
@@ -75,6 +76,7 @@ export async function exportarCarteraCompleta(asesorNombre: string, asesorEmail:
   const docentes = await listarTodosLosDocentesTerritorio();
   const asignaciones = await listarTodasLasAsignaciones();
   const asistentes = await listarTodosLosAsistentesTerritorio(db);
+  const usuarios = await listarUsuariosDb();
 
   return {
     tipo: 'CARTERA_TERRITORIAL',
@@ -86,7 +88,8 @@ export async function exportarCarteraCompleta(asesorNombre: string, asesorEmail:
     cursos,
     docentes,
     asignaciones,
-    asistentes
+    asistentes,
+    usuarios
   };
 }
 
@@ -253,6 +256,13 @@ export async function importarCartera(data: any): Promise<{
       }
     }
 
+    if (Array.isArray(data.usuarios) && data.usuarios.length > 0) {
+      try {
+        await guardarUsuariosBatchDb(data.usuarios);
+      } catch (e: any) {
+        errores.push(`Error en usuarios: ${e.message}`);
+      }
+    }
     await persistDb(true);
     return {
       importados: data.establecimientos.length,

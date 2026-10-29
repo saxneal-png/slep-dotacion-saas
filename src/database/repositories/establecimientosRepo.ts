@@ -1,5 +1,6 @@
 import { Establecimiento } from '../../types';
 import { getDb, persistDb } from '../dbCore';
+import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
 
 export async function listarEstablecimientos(): Promise<Establecimiento[]> {
   const db = await getDb();
@@ -57,6 +58,9 @@ export async function guardarEstablecimiento(e: Establecimiento): Promise<void> 
     ]);
   }
   persistDb();
+  FirebaseDotacionService.guardarEstablecimiento(e).catch(err =>
+    console.warn('[establecimientosRepo] Aviso sincronizando con Firestore:', err)
+  );
 }
 
 export async function obtenerEstablecimientoPorRbd(rbd: string): Promise<Establecimiento | null> {
@@ -86,4 +90,7 @@ export async function eliminarEstablecimiento(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM establecimientos WHERE id = ?", [id]);
   persistDb();
+  FirebaseDotacionService.eliminarEstablecimiento(id).catch(err =>
+    console.warn('[establecimientosRepo] Aviso eliminando en Firestore:', err)
+  );
 }

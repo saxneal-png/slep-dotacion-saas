@@ -12,7 +12,7 @@ import { guardarEstablecimiento } from './establecimientosRepo';
 import { guardarCurso } from './cursosRepo';
 import { guardarDocente } from './docentesRepo';
 import { guardarAsignacion } from './asignacionesRepo';
-import { guardarAsistenteSync } from './asistentesRepo';
+import { guardarAsistente } from './asistentesRepo';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
 import { homologarAsignaturaPorRegla } from '../../services/analizador/homologationService';
 import type { AsistenteAnalizadoRecord } from '../../services/analizador/asistentesClassifier';
@@ -418,7 +418,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
         activo: true,
       };
 
-      guardarAsistenteSync(db, asistenteObj);
+      await guardarAsistente(db, asistenteObj);
       asistentesGuardados++;
     }
   }

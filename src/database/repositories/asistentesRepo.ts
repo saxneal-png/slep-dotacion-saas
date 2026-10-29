@@ -1,6 +1,7 @@
 import { Database } from 'sql.js';
 import { AsistenteEducacion, EstamentoAsistente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
+import { FirebaseDotacionService } from '../../services/firebaseDotacionService';
 
 export function mapRowToAsistente(row: any[]): AsistenteEducacion {
   const horasContrato = Number(row[8]) || 0;
@@ -209,12 +210,21 @@ export async function guardarAsistente(
   maybeAsistente?: AsistenteEducacion
 ): Promise<void> {
   if ('exec' in asistenteOrDb) {
-    if (maybeAsistente) guardarAsistenteSync(asistenteOrDb as Database, maybeAsistente);
+    if (maybeAsistente) {
+      guardarAsistenteSync(asistenteOrDb as Database, maybeAsistente);
+      FirebaseDotacionService.guardarAsistente(maybeAsistente).catch(err =>
+        console.warn('[asistentesRepo] Aviso sincronizando con Firestore:', err)
+      );
+    }
     return;
   }
   const db = await getDb();
-  guardarAsistenteSync(db, asistenteOrDb as AsistenteEducacion);
+  const ast = asistenteOrDb as AsistenteEducacion;
+  guardarAsistenteSync(db, ast);
   await persistDb();
+  FirebaseDotacionService.guardarAsistente(ast).catch(err =>
+    console.warn('[asistentesRepo] Aviso sincronizando con Firestore:', err)
+  );
 }
 
 export function guardarAsistentesBatchSync(
@@ -306,6 +316,9 @@ export async function guardarAsistentesBatch(
     const periodo = typeof periodoOrReemplazar === 'number' ? periodoOrReemplazar : 2026;
     const reemplazar = Boolean(maybeReemplazar);
     guardarAsistentesBatchSync(db, asistentes, rbd, periodo, reemplazar);
+    FirebaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
+      console.warn('[asistentesRepo] Aviso sincronizando lote con Firestore:', err)
+    );
     return;
   }
 
@@ -317,6 +330,9 @@ export async function guardarAsistentesBatch(
   const db = await getDb();
   guardarAsistentesBatchSync(db, asistentes, rbd, periodo, reemplazar);
   await persistDb();
+  FirebaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
+    console.warn('[asistentesRepo] Aviso sincronizando lote con Firestore:', err)
+  );
 }
 
 export function eliminarAsistenteSync(db: Database, id: string): void {
@@ -330,12 +346,19 @@ export async function eliminarAsistente(
   maybeId?: string
 ): Promise<void> {
   if (typeof idOrDb !== 'string') {
-    eliminarAsistenteSync(idOrDb, String(maybeId || ''));
+    const targetId = String(maybeId || '');
+    eliminarAsistenteSync(idOrDb, targetId);
+    FirebaseDotacionService.eliminarAsistente(targetId).catch(err =>
+      console.warn('[asistentesRepo] Aviso eliminando en Firestore:', err)
+    );
     return;
   }
   const db = await getDb();
   eliminarAsistenteSync(db, idOrDb);
   await persistDb();
+  FirebaseDotacionService.eliminarAsistente(idOrDb).catch(err =>
+    console.warn('[asistentesRepo] Aviso eliminando en Firestore:', err)
+  );
 }
 
 export function eliminarAsistentesColegioPeriodoSync(db: Database, rbd: string, periodo: number = 2026): void {
