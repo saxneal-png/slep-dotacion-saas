@@ -1,3 +1,4 @@
+import { persistDb } from '../dbCore';
 import { MatrizExcelParseResult, CursoSae, Docente, AsignacionHoraria } from '../../types';
 import { listarCursos, guardarCurso } from './cursosRepo';
 import { guardarDocente } from './docentesRepo';
@@ -139,5 +140,6 @@ export async function guardarMatrizExcelEnDb(
     }
   }
 
+  await persistDb(true);
   return { cursosNuevos, docentesGuardados, asignacionesGuardadas };
 }

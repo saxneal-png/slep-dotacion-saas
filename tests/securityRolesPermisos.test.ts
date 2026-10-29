@@ -40,20 +40,20 @@ describe('Roles, Permisos y Scope Territorial RBAC', () => {
 
   it('permite al super usuario modificar permisos de otros roles y persistirlos', () => {
     const rol = 'asesor_uatp';
-    const permisoInicial = RolesPermisosService.tienePermiso(rol, k('traspaso_periodos', 'ejecutar'));
+    const permisoInicial = RolesPermisosService.tienePermiso(rol, k('config_normativa', 'editar'));
     expect(permisoInicial).toBe(false);
 
     // Asignar el permiso
     const permisosActuales = RolesPermisosService.getPermisosRol(rol);
-    RolesPermisosService.guardarPermisosRol(rol, [...permisosActuales, k('traspaso_periodos', 'ejecutar')], 'saxneal');
+    RolesPermisosService.guardarPermisosRol(rol, [...permisosActuales, k('config_normativa', 'editar')], 'saxneal');
 
-    expect(RolesPermisosService.tienePermiso(rol, k('traspaso_periodos', 'ejecutar'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso(rol, k('config_normativa', 'editar'))).toBe(true);
 
     // Debe quedar registrado en la bitácora
     const bitacora = RolesPermisosService.getBitacora();
     expect(bitacora.length).toBeGreaterThan(0);
     expect(bitacora[0].rolId).toBe(rol);
-    expect(bitacora[0].agregados).toContain(k('traspaso_periodos', 'ejecutar'));
+    expect(bitacora[0].agregados).toContain(k('config_normativa', 'editar'));
   });
 
   it('aplica la regla de dependencia: si se otorga editar/eliminar, se agrega automáticamente "ver"', () => {

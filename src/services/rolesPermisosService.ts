@@ -67,7 +67,16 @@ function registrarBitacora(entry: Omit<CambioPermisosBitacora, 'id' | 'fecha'>) 
   storage()?.setItem(STORAGE_BITACORA_KEY, JSON.stringify(lista.slice(0, MAX_BITACORA)));
 
   if (auth?.currentUser && typeof window !== 'undefined') {
-    addDoc(collection(firestore, 'auditoria_permisos'), full).catch(e =>
+    const payloadFirestore: Record<string, any> = {
+      rolId: full.rolId,
+      agregados: full.agregados,
+      removidos: full.removidos,
+      usuario: full.usuario || 'usuario_sistema',
+      motivo: full.motivo?.trim() || 'Actualización manual de permisos',
+      fecha: full.fecha,
+      id: full.id
+    };
+    addDoc(collection(firestore, 'auditoria_permisos'), payloadFirestore).catch(e =>
       console.warn('[RolesPermisos] No se pudo registrar bitácora remota:', e?.code || e)
     );
   }
@@ -178,7 +187,7 @@ export class RolesPermisosService {
     };
     m[rol] = data;
     persistir(m);
-    registrarBitacora({ rolId: rol, ...diff, usuario: actor, motivo });
+    registrarBitacora({ rolId: rol, ...diff, usuario: actor, motivo: (motivo && motivo.trim()) ? motivo.trim() : 'Actualización de permisos' });
     publicarRemoto(rol, data);
     return diff;
   }

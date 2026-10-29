@@ -1,3 +1,4 @@
+import { persistDb } from '../dbCore';
 import {
   Establecimiento,
   SalaInfraestructura,
@@ -179,6 +180,7 @@ export async function importarCartera(data: any): Promise<{
       }
     }
 
+    await persistDb(true);
     return {
       importados: 1,
       colegiosNombres: [est.nombre],
@@ -251,6 +253,7 @@ export async function importarCartera(data: any): Promise<{
       }
     }
 
+    await persistDb(true);
     return {
       importados: data.establecimientos.length,
       colegiosNombres,

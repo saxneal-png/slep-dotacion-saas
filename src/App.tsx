@@ -65,6 +65,7 @@ import {
   listarTodosLosDocentesTerritorio,
   listarTodasLasAsignaciones,
   subscribePersist,
+  persistDb,
   getUltimaHoraGuardado,
   borrarDotacionPeriodo,
   reiniciarTodaLaBaseDatos
@@ -130,7 +131,23 @@ export const App: React.FC = () => {
   const [modalCopilotAbierto, setModalCopilotAbierto] = useState(false);
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
-  const [periodoActivo, setPeriodoActivo] = useState<number>(2027);
+  const [periodoActivo, setPeriodoActivoState] = useState<number>(() => {
+    try {
+      const g = typeof window !== 'undefined' ? localStorage.getItem('slep_dotacion_periodo_activo') : null;
+      if (g) {
+        const val = parseInt(g, 10);
+        if (!isNaN(val) && (val === 2026 || val === 2027)) return val;
+      }
+    } catch {}
+    return 2026;
+  });
+
+  const setPeriodoActivo = (p: number) => {
+    setPeriodoActivoState(p);
+    try {
+      localStorage.setItem('slep_dotacion_periodo_activo', String(p));
+    } catch {}
+  };
   const [workspaceInitialTab, setWorkspaceInitialTab] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
 
   const mostrarMensaje = (mensaje: string, tipo: 'success' | 'error' = 'success') => {
@@ -495,6 +512,7 @@ export const App: React.FC = () => {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const res = await importarCartera(parsed);
+      await persistDb(true);
       await cargarDatos();
       const nombresInfo = res.colegiosNombres?.length ? `: ${res.colegiosNombres.join(', ')}` : '';
       mostrarMensaje(`Dotación importada con éxito (${res.importados} establecimiento/s${nombresInfo}).`);
@@ -511,7 +529,7 @@ export const App: React.FC = () => {
     try {
       await guardarEstablecimiento(est);
       await guardarDocentesBatch(docentesImportados);
-
+      await persistDb(true);
       await cargarDatos();
       const listEst = await listarEstablecimientos();
       const estActivo = listEst.find(c => c.rbd === est.rbd) || est;

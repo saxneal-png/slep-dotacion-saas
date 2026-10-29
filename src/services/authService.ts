@@ -1,6 +1,7 @@
 import { UsuarioSistema, UserRole, PermisosRol, AuthSession } from '../types/authTypes';
 import { normalizarRol } from '../security/rolesDefinitions';
 import { RolesPermisosService } from './rolesPermisosService';
+import { DIRECTORES_TERRITORIO, DirectorItem } from '../data/directoresTerritorio';
 import { initializeApp, deleteApp } from 'firebase/app';
 import {
   signInWithEmailAndPassword,
@@ -80,11 +81,41 @@ export class AuthService {
         const tieneSaxneal = parsed.some(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL);
         if (tieneSaxneal) {
           let huboMigracion = false;
-          const migrados = parsed.map(u => {
+          let migrados = parsed.map(u => {
             const r = migrarUsuario(u);
             if (r.cambiado) huboMigracion = true;
             return r.usuario;
           });
+
+          // Verificar si ya se sembraron los directores del territorio
+          const tieneDirectores = migrados.some(u => u.role === 'director_establecimiento');
+          if (!tieneDirectores && DIRECTORES_TERRITORIO.length > 0) {
+            huboMigracion = true;
+            const passwordDirectores = '12346';
+            for (const d of DIRECTORES_TERRITORIO) {
+              const cleanEmail = d.email.trim().toLowerCase();
+              const yaExiste = migrados.some(
+                u => (u.email && u.email.toLowerCase() === cleanEmail) || u.username.toLowerCase() === cleanEmail
+              );
+              if (!yaExiste) {
+                const salt = generateSalt();
+                const passwordHash = await hashPassword(passwordDirectores, salt);
+                migrados.push({
+                  id: `user-dir-${d.rbd}`,
+                  username: cleanEmail,
+                  email: cleanEmail,
+                  nombreCompleto: d.director,
+                  role: 'director_establecimiento',
+                  cargo: d.cargo,
+                  rbdAsignado: d.rbd,
+                  passwordHash,
+                  salt,
+                  activo: true
+                });
+              }
+            }
+          }
+
           if (huboMigracion) localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(migrados));
           return migrados;
         }
@@ -112,6 +143,26 @@ export class AuthService {
         rbdAsignado: u.rbdAsignado,
         comunasPermitidas: u.comunasPermitidas,
         activo: u.activo
+      });
+    }
+
+    // Sembrar directores territoriales iniciales con contraseña 12346
+    const passwordDirectores = '12346';
+    for (const d of DIRECTORES_TERRITORIO) {
+      const cleanEmail = d.email.trim().toLowerCase();
+      const salt = generateSalt();
+      const passwordHash = await hashPassword(passwordDirectores, salt);
+      usuariosNuevos.push({
+        id: `user-dir-${d.rbd}`,
+        username: cleanEmail,
+        email: cleanEmail,
+        nombreCompleto: d.director,
+        role: 'director_establecimiento',
+        cargo: d.cargo,
+        rbdAsignado: d.rbd,
+        passwordHash,
+        salt,
+        activo: true
       });
     }
 
@@ -690,5 +741,115 @@ export class AuthService {
       await this.guardarUsuario(nuevo, passwordTemporal);
       return { usuario: nuevo, esNuevo: true, passwordTemporal };
     }
+  }
+
+  /**
+   * Genera masivamente los usuarios directores de escuelas y liceos del territorio SLEP.
+   * Asigna su correo SLEP oficial como username/email, contraseña inicial '12346' (hasheada con salt único)
+   * y rol 'director_establecimiento' vinculado estrictamente a su RBD asignado.
+   */
+  public static async generarUsuariosDirectoresMasivo(
+    directores: DirectorItem[] = DIRECTORES_TERRITORIO,
+    passwordInicial: string = '12346'
+  ): Promise<{
+    totalProcesados: number;
+    creados: number;
+    actualizados: number;
+    errores: string[];
+  }> {
+    const usuarios = await this.getUsuarios();
+    let creados = 0;
+    let actualizados = 0;
+    const errores: string[] = [];
+
+    for (const d of directores) {
+      try {
+        const cleanEmail = (d.email || '').trim().toLowerCase();
+        const cleanRbd = (d.rbd || '').trim();
+        const cleanNombre = (d.director || '').trim();
+        if (!cleanEmail || !cleanRbd) {
+          errores.push(`RBD ${d.rbd}: Falta correo electrónico o RBD válido.`);
+          continue;
+        }
+
+        const idx = usuarios.findIndex(
+          u =>
+            (u.email && u.email.toLowerCase() === cleanEmail) ||
+            u.username.toLowerCase() === cleanEmail ||
+            (u.role === 'director_establecimiento' && u.rbdAsignado === cleanRbd)
+        );
+
+        const salt = generateSalt();
+        const passwordHash = await hashPassword(passwordInicial, salt);
+
+        if (idx >= 0) {
+          // Si el usuario ya existe, actualizar rbdAsignado, cargo, email, username y resetear clave si no la ha cambiado
+          const uExistente = usuarios[idx];
+          uExistente.username = cleanEmail;
+          uExistente.email = cleanEmail;
+          uExistente.nombreCompleto = cleanNombre || uExistente.nombreCompleto;
+          uExistente.role = 'director_establecimiento';
+          uExistente.cargo = d.cargo || `Director(a) - ${d.nombreEstablecimiento}`;
+          uExistente.rbdAsignado = cleanRbd;
+          uExistente.passwordHash = passwordHash;
+          uExistente.salt = salt;
+          uExistente.activo = true;
+          actualizados++;
+        } else {
+          // Crear nuevo usuario director
+          const nuevoDirector: UsuarioSistema = {
+            id: `user-dir-${cleanRbd}-${Date.now().toString(36)}`,
+            username: cleanEmail,
+            email: cleanEmail,
+            nombreCompleto: cleanNombre || `Director(a) RBD ${cleanRbd}`,
+            role: 'director_establecimiento',
+            cargo: d.cargo || `Director(a) - ${d.nombreEstablecimiento}`,
+            passwordHash,
+            salt,
+            rbdAsignado: cleanRbd,
+            activo: true
+          };
+          usuarios.push(nuevoDirector);
+          creados++;
+        }
+      } catch (err: any) {
+        errores.push(`RBD ${d.rbd} (${d.director}): ${err.message || err}`);
+      }
+    }
+
+    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+
+    // Si hay sesión activa en Firebase Auth, sincronizar en Firestore usuarios directores
+    if (auth?.currentUser && typeof window !== 'undefined' && firestore) {
+      for (const d of directores) {
+        const emailLower = d.email.toLowerCase();
+        const u = usuarios.find(usr => usr.email?.toLowerCase() === emailLower);
+        if (u) {
+          try {
+            const uDocRef = doc(firestore, 'usuarios', u.id);
+            await setDoc(uDocRef, {
+              id: u.id,
+              email: u.email,
+              username: u.username,
+              nombreCompleto: u.nombreCompleto,
+              rol: u.role,
+              cargo: u.cargo,
+              rbdAsignado: u.rbdAsignado,
+              activo: u.activo,
+              actualizadoEn: new Date().toISOString()
+            }, { merge: true });
+          } catch (syncErr) {
+            console.warn(`[AuthService] Aviso sincronizando en Firestore directivo ${u.email}:`, syncErr);
+          }
+        }
+      }
+    }
+
+    return {
+      totalProcesados: directores.length,
+      creados,
+      actualizados,
+      errores
+    };
   }
 }

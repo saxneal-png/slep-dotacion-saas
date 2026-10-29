@@ -93,7 +93,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
   // Guardar cambios con confirmación
   const handleEjecutarGuardado = () => {
     try {
-      RolesPermisosService.guardarPermisosRol(rolSeleccionado, permisosEditados, 'Super Usuario', motivoCambio || undefined);
+      RolesPermisosService.guardarPermisosRol(rolSeleccionado, permisosEditados, 'Super Usuario', motivoCambio?.trim() || 'Modificación de permisos de rol');
       setMensaje({ tipo: 'ok', texto: `Permisos del rol "${defRol.nombre}" actualizados y persistidos exitosamente.` });
       setModalConfirmar(false);
       setMotivoCambio('');

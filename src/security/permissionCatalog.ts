@@ -139,6 +139,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
     ...solo('ver', ...MODS_TERRITORIAL),
     ...todo(...MODS_ESTABLECIMIENTO),
     ...todo(...MODS_DATOS),
+    ...todo('traspaso_periodos'),
     ...todo('copilot', 'gemini_export')
   ],
 

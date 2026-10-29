@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle } from 'lucide-react';
+import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { AuthService, generateSalt, hashPassword, generarPasswordTemporalSegura } from '../../services/authService';
 import { UsuarioSistema, UserRole } from '../../types/authTypes';
 import { Establecimiento } from '../../types';
@@ -46,6 +46,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
   const [usuarioEnEdicion, setUsuarioEnEdicion] = useState<UsuarioSistema | null>(null);
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const [filtroRol, setFiltroRol] = useState<'todos' | UserRole>('todos');
+  const [generandoDirectores, setGenerandoDirectores] = useState(false);
 
   // Form State
   const [username, setUsername] = useState('');
@@ -292,6 +293,28 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
     return <span className="text-slate-200 text-[11px]">{countTotal} colegio(s) en cartera</span>;
   };
 
+  const handleGenerarDirectoresMasivo = async () => {
+    if (!window.confirm('¿Confirmas generar o sincronizar masivamente las 89 cuentas de Directores del territorio con contraseña inicial 12346 y su correo SLEP como usuario?')) {
+      return;
+    }
+    setGenerandoDirectores(true);
+    try {
+      const res = await AuthService.generarUsuariosDirectoresMasivo();
+      await cargarLista();
+      setMensaje({
+        tipo: 'ok',
+        texto: `✓ Proceso masivo exitoso: ${res.creados} creados, ${res.actualizados} sincronizados de ${res.totalProcesados} directores territoriales.`
+      });
+    } catch (err: any) {
+      setMensaje({
+        tipo: 'error',
+        texto: `Error al generar usuarios masivos: ${err.message || err}`
+      });
+    } finally {
+      setGenerandoDirectores(false);
+    }
+  };
+
   const usuariosVisibles = filtroRol === 'todos' ? usuarios : usuarios.filter(u => normalizarRol(u.role) === filtroRol);
 
   return (
@@ -316,13 +339,24 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
             {ROLES_DEFINICIONES.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
           </select>
           {puedeEditar && (
-            <button
-              onClick={abrirModalNuevo}
-              className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/30 transition"
-            >
-              <Plus className="w-4 h-4" />
-              Nuevo Usuario
-            </button>
+            <>
+              <button
+                onClick={handleGenerarDirectoresMasivo}
+                disabled={generandoDirectores}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 rounded-xl shadow-md shadow-amber-600/30 transition"
+                title="Generar masivamente los 89 usuarios para los directores de escuelas y liceos del territorio"
+              >
+                {generandoDirectores ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-amber-200" />}
+                <span>Generar Usuarios Directores</span>
+              </button>
+              <button
+                onClick={abrirModalNuevo}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/30 transition"
+              >
+                <Plus className="w-4 h-4" />
+                Nuevo Usuario
+              </button>
+            </>
           )}
         </div>
       </div>

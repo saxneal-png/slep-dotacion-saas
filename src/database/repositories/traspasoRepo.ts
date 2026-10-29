@@ -423,7 +423,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
     }
   }
 
-  persistDb();
+  await persistDb(true);
 
   return {
     colegiosProcesados: targetOverride ? 1 : targetRbds.size,

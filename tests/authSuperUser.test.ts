@@ -44,9 +44,10 @@ describe('Autenticación y Super Usuario Oficial SLEP', () => {
 
     const usuarios = await AuthService.getUsuarios();
     expect(localStorage.getItem('slep_usuarios_sistema_v1')).toBeNull();
-    expect(usuarios.length).toBe(1);
-    expect(usuarios[0].email).toBe('saxneal@gmail.com');
-    expect(usuarios[0].role).toBe('super_usuario');
+    const superUser = usuarios.find(u => u.email === 'saxneal@gmail.com');
+    expect(superUser).toBeDefined();
+    expect(superUser?.email).toBe('saxneal@gmail.com');
+    expect(superUser?.role).toBe('super_usuario');
   });
 
   it('permite iniciar sesión con saxneal@gmail.com sellando criptográficamente su contraseña en el primer acceso', async () => {
