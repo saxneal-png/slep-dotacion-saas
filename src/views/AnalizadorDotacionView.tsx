@@ -81,11 +81,13 @@ const FALLBACK_MODELS: GeminiModel[] = [
 ];
 
 interface AnalizadorDotacionViewProps {
+  periodoActivo?: number;
   onSyncWithDatabase?: () => Promise<void>;
-  onNavigateToColegio?: (rbd: string, tab?: string) => void;
+  onNavigateToColegio?: (rbd: string, tab?: string, periodo?: number) => void;
 }
 
 export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
+  periodoActivo = 2026,
   onSyncWithDatabase,
   onNavigateToColegio
 }) => {
@@ -960,12 +962,13 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
         asistentes={asistentes}
         apiKey={apiKey}
         selectedModel={selectedModel}
-        onTransferSuccess={async (res, targetRbd) => {
+        periodoPorDefecto={periodoActivo}
+        onTransferSuccess={async (res, targetRbd, periodoDestino = periodoActivo) => {
           if (onSyncWithDatabase) await onSyncWithDatabase();
           const asistPart = typeof res.asistentesGuardados === 'number' && res.asistentesGuardados > 0 ? `, ${res.asistentesGuardados} asistentes` : '';
-          showToast(`¡Traspaso exitoso! ${res.colegiosProcesados} colegio(s), ${res.cursosCreados} cursos, ${res.asignacionesGuardadas} asignaciones${asistPart} guardados en 2026.`);
+          showToast(`¡Traspaso exitoso! ${res.colegiosProcesados} colegio(s), ${res.cursosCreados} cursos, ${res.asignacionesGuardadas} asignaciones${asistPart} guardados en período ${periodoDestino}.`);
           if (targetRbd && onNavigateToColegio) {
-            onNavigateToColegio(targetRbd, 'workflow');
+            onNavigateToColegio(targetRbd, 'workflow', periodoDestino);
           }
         }}
       />

@@ -48,7 +48,8 @@ interface TraspasoDotacionModalProps {
   asistentes?: AsistenteAnalizadoRecord[];
   apiKey?: string;
   selectedModel: string;
-  onTransferSuccess: (result: TraspasoResult, targetRbd?: string) => void;
+  periodoPorDefecto?: number;
+  onTransferSuccess: (result: TraspasoResult, targetRbd?: string, periodoDestino?: number) => void;
 }
 
 export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
@@ -61,8 +62,10 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
   asistentes = [],
   apiKey,
   selectedModel,
+  periodoPorDefecto = 2026,
   onTransferSuccess,
 }) => {
+  const [periodoDestino, setPeriodoDestino] = useState<number>(periodoPorDefecto);
   const [loadingHomologation, setLoadingHomologation] = useState(false);
   const [homologacionItems, setHomologacionItems] = useState<HomologacionItem[]>([]);
   const [editedHomologaciones, setEditedHomologaciones] = useState<Record<string, string>>({});
@@ -86,6 +89,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
 
     setStep('review');
     setResult(null);
+    setPeriodoDestino(periodoPorDefecto || 2026);
     setSelectedRbds(schools.map((s) => s.rbd));
     if (schools.length > 0 && !targetRbdOverride) {
       setTargetRbdOverride(schools[0].rbd);
@@ -210,7 +214,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
     setExecuting(true);
     try {
       const config: TraspasoConfig = {
-        periodo: 2026,
+        periodo: periodoDestino,
         modo,
         alcance,
         homologaciones: editedHomologaciones,
@@ -251,14 +255,14 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight">Traspaso Inteligente a Dotación 2026</h2>
+                <h2 className="text-lg font-bold tracking-tight">Traspaso Inteligente a Dotación Oficial</h2>
                 <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-orange-500/30 text-orange-300 border border-orange-400/30 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" />
                   {selectedModel}
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Homologación oficial de asignaturas según planes MINEDUC y alimentación de la cartera escolar 2026
+                Homologación oficial de asignaturas según planes MINEDUC y alimentación de la cartera escolar {periodoDestino}
               </p>
             </div>
           </div>
@@ -324,66 +328,101 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
               </div>
             )}
 
-            {/* Selector de Alcance del Traspaso */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-orange-600" />
-                <span>Selecciona qué deseas llevar a la Aplicación Oficial:</span>
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setAlcance('COMPLETO')}
-                  className={`p-3.5 rounded-xl border text-left transition-all ${
-                    alcance === 'COMPLETO'
-                      ? 'bg-orange-50/80 border-orange-500 ring-2 ring-orange-500/20 shadow-sm'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-800">🌟 Dotación Integral</span>
-                    {alcance === 'COMPLETO' && <CheckCircle2 className="w-4 h-4 text-orange-600" />}
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Traspasa cursos, docentes, homologación y asistentes de la educación en bloque.
-                  </p>
-                </button>
+            {/* Selector de Período y Alcance del Traspaso */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2">
+                  <Clock className="w-4 h-4 text-orange-600" />
+                  <span>¿A qué período deseas llevar la dotación analizada?</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3 max-w-md">
+                  <button
+                    type="button"
+                    onClick={() => setPeriodoDestino(2026)}
+                    className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${
+                      periodoDestino === 2026
+                        ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-600/25 ring-2 ring-orange-500/20'
+                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
+                    }`}
+                  >
+                    <span>2026 (Año Actual)</span>
+                    {periodoDestino === 2026 && <CheckCircle2 className="w-4 h-4 text-white" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPeriodoDestino(2027)}
+                    className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${
+                      periodoDestino === 2027
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/20'
+                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
+                    }`}
+                  >
+                    <span>2027 (Proyección PAL / SAE)</span>
+                    {periodoDestino === 2027 && <CheckCircle2 className="w-4 h-4 text-white" />}
+                  </button>
+                </div>
+              </div>
 
-                <button
-                  type="button"
-                  onClick={() => setAlcance('SOLO_ASISTENTES')}
-                  className={`p-3.5 rounded-xl border text-left transition-all ${
-                    alcance === 'SOLO_ASISTENTES'
-                      ? 'bg-purple-50/80 border-purple-500 ring-2 ring-purple-500/20 shadow-sm'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-800">👥 Solo Asistentes</span>
-                    {alcance === 'SOLO_ASISTENTES' && <CheckCircle2 className="w-4 h-4 text-purple-600" />}
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Traspasa únicamente la nómina de asistentes, cargos, subvenciones y notas IA.
-                  </p>
-                </button>
+              <div className="pt-2 border-t border-slate-200/80">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2">
+                  <Sparkles className="w-4 h-4 text-orange-600" />
+                  <span>Selecciona qué deseas llevar a la Aplicación Oficial:</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAlcance('COMPLETO')}
+                    className={`p-3.5 rounded-xl border text-left transition-all ${
+                      alcance === 'COMPLETO'
+                        ? 'bg-orange-50/80 border-orange-500 ring-2 ring-orange-500/20 shadow-sm'
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-800">🌟 Dotación Integral</span>
+                      {alcance === 'COMPLETO' && <CheckCircle2 className="w-4 h-4 text-orange-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Traspasa cursos, docentes, homologación y asistentes de la educación en bloque.
+                    </p>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setAlcance('SOLO_DOCENTES')}
-                  className={`p-3.5 rounded-xl border text-left transition-all ${
-                    alcance === 'SOLO_DOCENTES'
-                      ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-800">🎓 Solo Docentes y Cursos</span>
-                    {alcance === 'SOLO_DOCENTES' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Traspasa la malla curricular, docentes y asignaciones horarias oficiales.
-                  </p>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlcance('SOLO_ASISTENTES')}
+                    className={`p-3.5 rounded-xl border text-left transition-all ${
+                      alcance === 'SOLO_ASISTENTES'
+                        ? 'bg-purple-50/80 border-purple-500 ring-2 ring-purple-500/20 shadow-sm'
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-800">👥 Solo Asistentes</span>
+                      {alcance === 'SOLO_ASISTENTES' && <CheckCircle2 className="w-4 h-4 text-purple-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Traspasa únicamente la nómina de asistentes, cargos, subvenciones y notas IA.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAlcance('SOLO_DOCENTES')}
+                    className={`p-3.5 rounded-xl border text-left transition-all ${
+                      alcance === 'SOLO_DOCENTES'
+                        ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-800">🎓 Solo Docentes y Cursos</span>
+                      {alcance === 'SOLO_DOCENTES' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Traspasa la malla curricular, docentes y asignaciones horarias oficiales.
+                    </p>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -393,7 +432,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
                 <div className="flex-1">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-1.5">
                     <Building2 className="w-4 h-4 text-orange-600" />
-                    <span>Establecimiento Destino en Dotación 2026:</span>
+                    <span>Establecimiento Destino en Dotación {periodoDestino}:</span>
                   </label>
                   <select
                     value={targetRbdOverride}
@@ -803,9 +842,9 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
             </div>
 
             <div>
-              <h3 className="text-xl font-bold text-slate-900">¡Traspaso Exitoso a Dotación 2026!</h3>
+              <h3 className="text-xl font-bold text-slate-900">¡Traspaso Exitoso a Dotación {periodoDestino}!</h3>
               <p className="text-xs text-slate-500 mt-1">
-                Los datos procesados y sus asignaturas homologadas fueron guardados en la base SQLite local con régimen de planes de estudio oficiales.
+                Los datos procesados y sus asignaturas homologadas fueron guardados en la base SQLite local para el período {periodoDestino} con régimen de planes de estudio oficiales.
               </p>
             </div>
 
@@ -842,12 +881,12 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
               <button
                 onClick={() => {
                   const targetRbd = selectedRbds[0];
-                  if (result) onTransferSuccess(result, targetRbd);
+                  if (result) onTransferSuccess(result, targetRbd, periodoDestino);
                   onClose();
                 }}
                 className="w-full sm:w-auto px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-600/30 flex items-center justify-center gap-2 transition-all"
               >
-                <span>Ir al Colegio en Dotación 2026</span>
+                <span>Ir al Colegio en Dotación {periodoDestino}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -876,12 +915,12 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
                 {executing ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Guardando en SQLite 2026...</span>
+                    <span>Guardando en SQLite {periodoDestino}...</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Confirmar Traspaso a Dotación 2026</span>
+                    <span>Confirmar Traspaso a Dotación {periodoDestino}</span>
                   </>
                 )}
               </button>

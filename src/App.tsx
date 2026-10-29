@@ -980,16 +980,17 @@ export const App: React.FC = () => {
 
         {vistaActiva === 'analizador' && (
           <AnalizadorDotacionView
+            periodoActivo={periodoActivo}
             onSyncWithDatabase={async () => {
               await cargarDatos(periodoActivo);
             }}
-            onNavigateToColegio={async (rbd: string, tabDestino: string = 'workflow') => {
-              await cargarDatos(2026);
+            onNavigateToColegio={async (rbd: string, tabDestino: string = 'workflow', pDestino: number = 2026) => {
+              await cargarDatos(pDestino);
               const list = await listarEstablecimientos();
               const est = list.find((c) => c.rbd === rbd) || colegios.find((c) => c.rbd === rbd);
               if (est) {
                 await handleSelectColegio(est);
-                setPeriodoActivo(2026);
+                setPeriodoActivo(pDestino);
                 if (tabDestino === 'asistentes' || tabDestino === 'docentes' || tabDestino === 'cursos' || tabDestino === 'pie' || tabDestino === 'salas') {
                   setWorkspaceInitialTab(tabDestino as any);
                 } else {
@@ -997,7 +998,7 @@ export const App: React.FC = () => {
                 }
                 setVistaActiva('workflow');
                 const destinoTxt = tabDestino === 'asistentes' ? ' (Dotación de Asistentes)' : '';
-                mostrarMensaje(`Navegando a ${est.nombre}${destinoTxt} en Dotación 2026`);
+                mostrarMensaje(`Navegando a ${est.nombre}${destinoTxt} en Dotación ${pDestino}`);
               }
             }}
           />
