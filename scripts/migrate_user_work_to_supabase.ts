@@ -178,7 +178,7 @@ async function runMigrateUserWork() {
       titulo: d.titulo || null,
       calidad_juridica: d.calidad_juridica || 'TITULAR',
       estamento: d.estamento || 'DOCENTE_AULA',
-      horas_contrato: Number(d.horas_contrato || 44),
+      horas_contrato: Math.max(1, Math.min(44, Number(d.horas_contrato || 44))),
       horas_subvencion_general_titular: Number(d.horas_subvencion_general_titular || 0),
       horas_subvencion_general_contrata: Number(d.horas_subvencion_general_contrata || 0),
       horas_sep_titular: Number(d.horas_sep_titular || 0),

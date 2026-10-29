@@ -147,7 +147,7 @@ export function mapDocenteToDb(docente: Docente) {
     titulo: docente.titulo || null,
     calidad_juridica: docente.calidadJuridica || 'TITULAR',
     estamento: docente.estamento || 'DOCENTE_AULA',
-    horas_contrato: docente.horasContrato || 44,
+    horas_contrato: Math.max(1, Math.min(44, Number(docente.horasContrato || 44))),
     horas_subvencion_general_titular: docente.horasSubvencionGeneralTitular || 0,
     horas_subvencion_general_contrata: docente.horasSubvencionGeneralContrata || 0,
     horas_sep_titular: docente.horasSepTitular || 0,
@@ -611,66 +611,88 @@ export class SupabaseDotacionService {
 
     const usuarios = await listarUsuariosDb();
 
-    // 1. Establecimientos
+    // 1. Establecimientos (Entidad Padre Fundamental para evitar errores de Foreign Key 23503)
     if (establecimientos.length) {
       await this.guardarEstablecimientosBatch(establecimientos);
     }
 
+    const estRbdsValidos = new Set(establecimientos.map(e => e.rbd.trim()));
+
     // 2. Salas
     if (salas.length) {
-      for (const s of salas) {
+      const salasValidas = salas.filter(s => estRbdsValidos.has(s.rbd.trim()));
+      for (const s of salasValidas) {
         await this.guardarSala(s);
       }
     }
 
-    // 3. Cursos
-    if (todosCursos.length) {
-      await this.guardarCursosBatch(todosCursos);
+    // 3. Cursos (Filtrados por RBD válido en establecimientos)
+    const cursosValidos = todosCursos.filter(c => estRbdsValidos.has(c.rbd.trim()));
+    if (cursosValidos.length) {
+      await this.guardarCursosBatch(cursosValidos);
     }
 
-    // 4. Docentes
-    if (todosDocentes.length) {
-      await this.guardarDocentesBatch(todosDocentes);
+    // 4. Docentes (Filtrados por RBD válido en establecimientos)
+    const docentesValidos = todosDocentes.filter(d => estRbdsValidos.has(d.rbd.trim()));
+    if (docentesValidos.length) {
+      await this.guardarDocentesBatch(docentesValidos);
     }
 
-    // 5. Asignaciones
-    if (todasAsigs.length) {
-      await this.guardarAsignacionesBatch(todasAsigs);
+    // 5. Asignaciones Horarias (Filtradas con integridad referencial completa RBD + Curso + Docente)
+    const cursoIdsValidos = new Set(cursosValidos.map(c => c.id));
+    const docenteIdsValidos = new Set(docentesValidos.map(d => d.id));
+    const asigsValidas = todasAsigs.filter(a =>
+      estRbdsValidos.has(a.rbd.trim()) &&
+      cursoIdsValidos.has(a.cursoId) &&
+      docenteIdsValidos.has(a.docenteId)
+    );
+    if (asigsValidas.length) {
+      await this.guardarAsignacionesBatch(asigsValidas);
     }
 
-    // 6. Asistentes
-    if (todosAst.length) {
-      await this.guardarAsistentesBatch(todosAst);
+    // 6. Asistentes de la Educación
+    const astValidos = todosAst.filter(a => estRbdsValidos.has(a.rbd.trim()));
+    if (astValidos.length) {
+      await this.guardarAsistentesBatch(astValidos);
     }
 
-    // 7. Usuarios
+    // 7. Usuarios (Sanitizando duplicados de correo para evitar 23505)
     if (usuarios.length) {
-      const usersDb = usuarios.map(u => ({
-        id: u.id,
-        username: u.username || u.email || u.id,
-        email: u.email || null,
-        nombre_completo: u.nombreCompleto,
-        role: u.role,
-        cargo: u.cargo || null,
-        rbd_asignado: u.rbdAsignado || null,
-        cartera_rbds_json: JSON.stringify(u.carteraRbds || []),
-        asesores_supervisados_json: JSON.stringify(u.asesoresSupervisados || []),
-        comunas_permitidas_json: JSON.stringify(u.comunasPermitidas || []),
-        password_hash: u.passwordHash || null,
-        salt: u.salt || null,
-        gemini_api_key: u.geminiApiKey || null,
-        activo: u.activo !== false
-      }));
+      const seenEmails = new Set<string>();
+      const usersDb = usuarios.map(u => {
+        let emailVal = u.email ? u.email.trim().toLowerCase() : null;
+        if (emailVal && seenEmails.has(emailVal)) {
+          emailVal = null;
+        } else if (emailVal) {
+          seenEmails.add(emailVal);
+        }
+        return {
+          id: u.id,
+          username: u.username || u.email || u.id,
+          email: emailVal,
+          nombre_completo: u.nombreCompleto,
+          role: u.role,
+          cargo: u.cargo || null,
+          rbd_asignado: u.rbdAsignado || null,
+          cartera_rbds_json: JSON.stringify(u.carteraRbds || []),
+          asesores_supervisados_json: JSON.stringify(u.asesoresSupervisados || []),
+          comunas_permitidas_json: JSON.stringify(u.comunasPermitidas || []),
+          password_hash: u.passwordHash || null,
+          salt: u.salt || null,
+          gemini_api_key: u.geminiApiKey || null,
+          activo: u.activo !== false
+        };
+      });
       await supabase.from('usuarios_sistema').upsert(usersDb, { onConflict: 'id' });
     }
 
     return {
       establecimientosSincronizados: establecimientos.length,
       salasSincronizadas: salas.length,
-      cursosSincronizados: todosCursos.length,
-      docentesSincronizados: todosDocentes.length,
-      asignacionesSincronizados: todasAsigs.length,
-      asistentesSincronizados: todosAst.length,
+      cursosSincronizados: cursosValidos.length,
+      docentesSincronizados: docentesValidos.length,
+      asignacionesSincronizados: asigsValidas.length,
+      asistentesSincronizados: astValidos.length,
       usuariosSincronizados: usuarios.length
     };
   }
