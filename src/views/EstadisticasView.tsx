@@ -742,9 +742,15 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                           <td className="px-2 py-2">
                             <div className="text-slate-700 font-medium">{d.estamento.replace('_', ' ')}</div>
                             <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                              d.calidadJuridica === 'TITULAR' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              d.calidadJuridica === 'TITULAR' 
+                                ? 'bg-emerald-100 text-emerald-800' 
+                                : d.calidadJuridica === 'CONTRATA'
+                                ? 'bg-amber-100 text-amber-800'
+                                : d.calidadJuridica === 'REEMPLAZANTE'
+                                ? 'bg-sky-100 text-sky-800'
+                                : 'bg-purple-100 text-purple-800'
                             }`}>
-                              {d.calidadJuridica}
+                              {d.calidadJuridica === 'POSTULANDO_A_TITULARIDAD' ? 'Post. Titularidad' : d.calidadJuridica === 'REEMPLAZANTE' ? 'Reemplazante' : d.calidadJuridica}
                             </span>
                           </td>
                           <td className="px-2 py-2 text-center font-bold text-slate-800">

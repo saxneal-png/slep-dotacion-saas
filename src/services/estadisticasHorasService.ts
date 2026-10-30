@@ -248,7 +248,7 @@ export function calcularEstadisticasColegio(
 
     // Financiamiento docente
     const sTit = doc.horasSubvencionGeneralTitular || (doc.calidadJuridica === 'TITULAR' && !doc.horasSepTitular && !doc.horasPieTitular ? doc.horasContrato : 0);
-    const sCon = doc.horasSubvencionGeneralContrata || (doc.calidadJuridica === 'CONTRATA' && !doc.horasSepContrata && !doc.horasPieContrata ? doc.horasContrato : 0);
+    const sCon = doc.horasSubvencionGeneralContrata || (doc.calidadJuridica !== 'TITULAR' && !doc.horasSepContrata && !doc.horasPieContrata ? doc.horasContrato : 0);
     const spTit = doc.horasSepTitular || 0;
     const spCon = doc.horasSepContrata || 0;
     const pTit = doc.horasPieTitular || 0;

@@ -361,7 +361,7 @@ export async function generarExcelGdpColegio(
       .map(d => {
         // Horas exclusivas de subvención regular contrata
         const hCtta = Number(d.horasSubvencionGeneralContrata || 0) ||
-          (d.calidadJuridica === 'CONTRATA' && !d.horasPieContrata && !d.horasSepContrata && d.estamento !== 'DOCENTE_DIFERENCIAL' ? (d.horasContrato || 0) : 0);
+          (d.calidadJuridica !== 'TITULAR' && !d.horasPieContrata && !d.horasSepContrata && d.estamento !== 'DOCENTE_DIFERENCIAL' ? (d.horasContrato || 0) : 0);
         return { docente: d, horasContrata: hCtta };
       })
       .filter(item => item.horasContrata > 0);

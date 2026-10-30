@@ -87,7 +87,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const deferredBusqueda = useDeferredValue(busquedaDocente);
   const [filtroEstamento, setFiltroEstamento] = useState<string>('TODOS');
   const [filtroEstadoCarga, setFiltroEstadoCarga] = useState<'TODOS' | 'SOBREASIGNADOS' | 'HOLGURA' | 'EXACTO'>('TODOS');
-  const [filtroCalidad, setFiltroCalidad] = useState<'TODOS' | 'TITULAR' | 'CONTRATA'>('TODOS');
+  const [filtroCalidad, setFiltroCalidad] = useState<'TODOS' | CalidadJuridicaDocente>('TODOS');
   const [filtroFinanciamiento, setFiltroFinanciamiento] = useState<'TODOS' | 'SUBV_GRAL' | 'SEP' | 'PIE'>('TODOS');
   const [filtroMultiEscuela, setFiltroMultiEscuela] = useState<boolean>(false);
   const [ordenDocentes, setOrdenDocentes] = useState<'APELLIDOS_ASC' | 'HORAS_DESC' | 'HORAS_ASC' | 'VACANTES_DESC'>('APELLIDOS_ASC');
@@ -633,9 +633,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               onChange={(e) => setFiltroCalidad(e.target.value as any)}
               className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
-              <option value="TODOS">Titulares y Contratas</option>
+              <option value="TODOS">Todas las Calidades</option>
               <option value="TITULAR">Solo Titulares</option>
               <option value="CONTRATA">Solo Contratas</option>
+              <option value="REEMPLAZANTE">Solo Reemplazantes</option>
+              <option value="POSTULANDO_A_TITULARIDAD">Postulando a Titularidad</option>
             </select>
           </div>
 
@@ -885,9 +887,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       </div>
                       <div className="flex items-center justify-center gap-1 mt-0.5 text-[10px] text-slate-500">
                         <span className={`px-1.5 py-0.2 rounded font-semibold ${
-                          d.calidadJuridica === 'TITULAR' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          d.calidadJuridica === 'TITULAR' 
+                            ? 'bg-emerald-100 text-emerald-800' 
+                            : d.calidadJuridica === 'CONTRATA'
+                            ? 'bg-amber-100 text-amber-800'
+                            : d.calidadJuridica === 'REEMPLAZANTE'
+                            ? 'bg-sky-100 text-sky-800'
+                            : 'bg-purple-100 text-purple-800'
                         }`}>
-                          {d.calidadJuridica}
+                          {d.calidadJuridica === 'POSTULANDO_A_TITULARIDAD' ? 'Post. Titularidad' : d.calidadJuridica === 'REEMPLAZANTE' ? 'Reemplazante' : d.calidadJuridica}
                         </span>
                       </div>
                     </td>

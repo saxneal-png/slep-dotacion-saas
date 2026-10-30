@@ -110,7 +110,7 @@ export interface PlanEstudioCurricular {
   esPersonalizado?: boolean;
 }
 
-export type CalidadJuridicaDocente = 'TITULAR' | 'CONTRATA';
+export type CalidadJuridicaDocente = 'TITULAR' | 'CONTRATA' | 'REEMPLAZANTE' | 'POSTULANDO_A_TITULARIDAD';
 
 export type EstamentoDocente = 
   | 'DOCENTE_AULA'
