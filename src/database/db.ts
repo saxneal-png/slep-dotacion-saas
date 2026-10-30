@@ -67,6 +67,12 @@ export {
 } from './repositories/matrizExcelRepo';
 
 export {
+  exportarPaqueteEstablecimiento,
+  importarPaqueteEstablecimiento,
+  normalizarPaqueteEstablecimiento
+} from './repositories/exportImportEstablecimientoRepo';
+
+export {
   ejecutarTraspasoDotacionAnalizador
 } from './repositories/traspasoRepo';
 

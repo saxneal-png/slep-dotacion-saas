@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, FileDown, Building2, CheckCircle2, ShieldCheck, Layers, Users, BookOpen } from 'lucide-react';
-import { Establecimiento, CursoSae, Docente, SalaInfraestructura, AsignacionHoraria } from '../types';
+import { X, FileDown, Building2, CheckCircle2, ShieldCheck, Layers, Users, BookOpen, GraduationCap } from 'lucide-react';
+import { Establecimiento, CursoSae, Docente, SalaInfraestructura, AsignacionHoraria, AsistenteEducacion } from '../types';
 import { exportarPaqueteEstablecimiento } from '../database/repositories/exportImportEstablecimientoRepo';
+import { guardarArchivoNativoOEnNavegador } from '../services/excelReportService';
 import saveAs from 'file-saver';
 
 interface ExportarEstablecimientoModalProps {
@@ -11,6 +12,7 @@ interface ExportarEstablecimientoModalProps {
   periodo: number;
   cursos: CursoSae[];
   docentes: Docente[];
+  asistentes?: AsistenteEducacion[];
   salas: SalaInfraestructura[];
   asignaciones: AsignacionHoraria[];
 }
@@ -22,6 +24,7 @@ export const ExportarEstablecimientoModal: React.FC<ExportarEstablecimientoModal
   periodo,
   cursos,
   docentes,
+  asistentes = [],
   salas,
   asignaciones
 }) => {
@@ -35,9 +38,25 @@ export const ExportarEstablecimientoModal: React.FC<ExportarEstablecimientoModal
       setExportando(true);
       const paquete = await exportarPaqueteEstablecimiento(establecimiento.rbd, periodo);
       const jsonStr = JSON.stringify(paquete, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
-      const sanitizedName = establecimiento.nombre.replace(/[^a-zA-Z0-9_-]/g, '_');
-      saveAs(blob, `Dotacion_${establecimiento.rbd}_${sanitizedName}_${periodo}.slep.json`);
+      const sanitizedName = establecimiento.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
+      const filename = `Dotacion_${sanitizedName}_RBD${establecimiento.rbd}_${periodo}.slep`;
+
+      const guardado = await guardarArchivoNativoOEnNavegador(
+        jsonStr,
+        filename,
+        'application/json;charset=utf-8',
+        [
+          { name: 'Fichas de Dotación SLEP (*.slep)', extensions: ['slep', 'json', 'slep.json'] },
+          { name: 'Archivos JSON (*.json)', extensions: ['json'] }
+        ]
+      );
+
+      if (!guardado) {
+        // Fallback a saveAs en caso de navegador tradicional sin File System Access API
+        const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+        saveAs(blob, filename);
+      }
+
       setExito(true);
       setTimeout(() => {
         setExito(false);
@@ -56,7 +75,7 @@ export const ExportarEstablecimientoModal: React.FC<ExportarEstablecimientoModal
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
       <div 
-        className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="bg-[#002B49] text-white p-5 flex items-center justify-between">
@@ -65,8 +84,8 @@ export const ExportarEstablecimientoModal: React.FC<ExportarEstablecimientoModal
               <FileDown className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base">Exportar Dotación de Establecimiento</h3>
-              <p className="text-xs text-slate-300">Generar paquete oficial (.slep.json) para intercambio o respaldo</p>
+              <h3 className="font-bold text-base">Exportar Ficha de Dotación (.slep)</h3>
+              <p className="text-xs text-slate-300">Generar archivo portable oficial (.slep) para intercambio o respaldo</p>
             </div>
           </div>
           <button 
@@ -77,60 +96,67 @@ export const ExportarEstablecimientoModal: React.FC<ExportarEstablecimientoModal
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
-          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-            <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
+        <div className="p-6 space-y-4 text-xs">
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100 text-sm">
               <Building2 className="w-4 h-4 text-orange-600" />
               <span>{establecimiento.nombre}</span>
-              <span className="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono">RBD: {establecimiento.rbd}</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono">
+                RBD: {establecimiento.rbd}
+              </span>
             </div>
-            <div className="text-xs text-slate-500 mt-1">
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               Comuna: <strong>{establecimiento.comuna}</strong> • Régimen: <strong>{establecimiento.regimen}</strong> • Período: <strong>{periodo}</strong>
             </div>
           </div>
 
-          <div className="text-xs font-semibold text-slate-700">
-            Resumen de datos incluidos en el paquete:
+          <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            Resumen de datos que se incluirán en el archivo .slep:
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-center">
-              <BookOpen className="w-4 h-4 text-blue-600 mx-auto mb-1" />
-              <div className="text-base font-black text-blue-900">{cursos.length}</div>
-              <div className="text-[10px] text-blue-700 font-medium">Cursos SAE</div>
+          <div className="grid grid-cols-5 gap-2 text-center">
+            <div className="p-2.5 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/60 rounded-xl">
+              <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400 mx-auto mb-1" />
+              <div className="text-base font-black text-blue-900 dark:text-blue-200">{cursos.length}</div>
+              <div className="text-[10px] text-blue-700 dark:text-blue-300 font-medium">Cursos</div>
             </div>
-            <div className="p-3 bg-purple-50/70 border border-purple-100 rounded-xl text-center">
-              <Users className="w-4 h-4 text-purple-600 mx-auto mb-1" />
-              <div className="text-base font-black text-purple-900">{docentes.length}</div>
-              <div className="text-[10px] text-purple-700 font-medium">Docentes</div>
+            <div className="p-2.5 bg-purple-50/70 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/60 rounded-xl">
+              <Users className="w-4 h-4 text-purple-600 dark:text-purple-400 mx-auto mb-1" />
+              <div className="text-base font-black text-purple-900 dark:text-purple-200">{docentes.length}</div>
+              <div className="text-[10px] text-purple-700 dark:text-purple-300 font-medium">Docentes</div>
             </div>
-            <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-xl text-center">
-              <Layers className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
-              <div className="text-base font-black text-emerald-900">{asignaciones.length}</div>
-              <div className="text-[10px] text-emerald-700 font-medium">Asignaciones</div>
+            <div className="p-2.5 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/60 rounded-xl">
+              <GraduationCap className="w-4 h-4 text-amber-600 dark:text-amber-400 mx-auto mb-1" />
+              <div className="text-base font-black text-amber-900 dark:text-amber-200">{asistentes.length}</div>
+              <div className="text-[10px] text-amber-700 dark:text-amber-300 font-medium">Asistentes</div>
             </div>
-            <div className="p-3 bg-amber-50/70 border border-amber-100 rounded-xl text-center">
-              <ShieldCheck className="w-4 h-4 text-amber-600 mx-auto mb-1" />
-              <div className="text-base font-black text-amber-900">{salas.length}</div>
-              <div className="text-[10px] text-amber-700 font-medium">Salas Físicas</div>
+            <div className="p-2.5 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/60 rounded-xl">
+              <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mx-auto mb-1" />
+              <div className="text-base font-black text-emerald-900 dark:text-emerald-200">{asignaciones.length}</div>
+              <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-medium">Asignaciones</div>
+            </div>
+            <div className="p-2.5 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 rounded-xl">
+              <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mx-auto mb-1" />
+              <div className="text-base font-black text-indigo-900 dark:text-indigo-200">{salas.length}</div>
+              <div className="text-[10px] text-indigo-700 dark:text-indigo-300 font-medium">Salas</div>
             </div>
           </div>
 
-          <div className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center">
-            <span>Horas de Contrato Totales: <strong>{totalHorasContrato}h</strong></span>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+            <span>Horas Contrato Docentes: <strong>{totalHorasContrato}h</strong></span>
             <span>Horas Aula Asignadas: <strong>{totalHorasAsignadas} HA</strong></span>
           </div>
 
-          <div className="text-[11px] text-slate-400">
-            ℹ️ Este archivo exportado puede ser importado en cualquier otra instalación o compartido con directores y asesores de la UATP.
+          <div className="text-[11px] text-slate-400 dark:text-slate-500">
+            ℹ️ Este archivo <strong>.slep</strong> es portable y puede ser importado en cualquier otra instalación o compartido con directores y asesores del SLEP.
           </div>
         </div>
 
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5">
+        <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2.5">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+            className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             Cancelar
           </button>
@@ -148,7 +174,7 @@ export const ExportarEstablecimientoModal: React.FC<ExportarEstablecimientoModal
             ) : (
               <>
                 <FileDown className="w-4 h-4" />
-                <span>{exportando ? 'Generando paquete...' : 'Descargar Paquete (.slep.json)'}</span>
+                <span>{exportando ? 'Generando archivo...' : 'Descargar Ficha (.slep)'}</span>
               </>
             )}
           </button>

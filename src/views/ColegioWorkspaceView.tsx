@@ -571,6 +571,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         periodo={periodoActivo || 2026}
         cursos={cursos}
         docentes={docentes}
+        asistentes={asistentes}
         salas={salas}
         asignaciones={asignaciones}
       />
