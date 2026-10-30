@@ -62,7 +62,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
   asistentes = [],
   apiKey,
   selectedModel,
-  periodoPorDefecto = 2026,
+  periodoPorDefecto = 2027,
   onTransferSuccess,
 }) => {
   const [periodoDestino, setPeriodoDestino] = useState<number>(periodoPorDefecto);
@@ -89,7 +89,7 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
 
     setStep('review');
     setResult(null);
-    setPeriodoDestino(periodoPorDefecto || 2026);
+    setPeriodoDestino(periodoPorDefecto || 2027);
     setSelectedRbds(schools.map((s) => s.rbd));
     if (schools.length > 0 && !targetRbdOverride) {
       setTargetRbdOverride(schools[0].rbd);
@@ -338,15 +338,15 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
                 <div className="grid grid-cols-2 gap-3 max-w-md">
                   <button
                     type="button"
-                    onClick={() => setPeriodoDestino(2026)}
+                    onClick={() => setPeriodoDestino(2027)}
                     className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${
-                      periodoDestino === 2026
+                      periodoDestino === 2027
                         ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-600/25 ring-2 ring-orange-500/20'
                         : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
                     }`}
                   >
                     <span>2026 (Año Actual)</span>
-                    {periodoDestino === 2026 && <CheckCircle2 className="w-4 h-4 text-white" />}
+                    {periodoDestino === 2027 && <CheckCircle2 className="w-4 h-4 text-white" />}
                   </button>
                   <button
                     type="button"

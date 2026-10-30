@@ -166,7 +166,7 @@ export const App: React.FC = () => {
         if (!isNaN(val) && (val === 2026 || val === 2027)) return val;
       }
     } catch {}
-    return 2026;
+    return 2027;
   });
 
   const setPeriodoActivo = (p: number) => {
@@ -180,6 +180,37 @@ export const App: React.FC = () => {
   const mostrarMensaje = (mensaje: string, tipo: 'success' | 'error' = 'success') => {
     setNotificacion({ tipo, mensaje });
     setTimeout(() => setNotificacion(null), 4000);
+  };
+
+  const [sincronizandoNube, setSincronizandoNube] = useState(false);
+
+  const handleRefrescarDesdeNube = async () => {
+    if (!colegioActivo) {
+      mostrarMensaje('Selecciona un establecimiento para refrescar sus datos.', 'error');
+      return;
+    }
+    setSincronizandoNube(true);
+    mostrarMensaje(`☁️ Consultando dotación de ${colegioActivo.nombre} en Supabase...`);
+    try {
+      const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(
+        colegioActivo.rbd,
+        periodoActivo
+      );
+      if (res.hayDatosRemotos) {
+        await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
+        mostrarMensaje(
+          `✓ Datos sincronizados desde Supabase para ${colegioActivo.nombre}: ${res.docentesDescargados} docentes, ${res.cursosDescargados} cursos, ${res.asignacionesDescargadas} asignaciones y ${res.asistentesDescargados} asistentes cargados en tu sesión.`,
+          'success'
+        );
+      } else {
+        mostrarMensaje(`No se encontraron registros adicionales en Supabase para ${colegioActivo.nombre} (${periodoActivo}).`, 'success');
+      }
+    } catch (err: any) {
+      console.error('Error al sincronizar desde Supabase:', err);
+      mostrarMensaje(`Error al refrescar desde Supabase: ${err.message || err}`, 'error');
+    } finally {
+      setSincronizandoNube(false);
+    }
   };
 
   // Atajos de teclado globales: Ctrl+K / Cmd+K (Navegador) y Ctrl+J / Cmd+J (Copilot IA)
@@ -238,12 +269,29 @@ export const App: React.FC = () => {
     }
   };
 
-  const cargarDatosColegio = async (rbd: string, p: number = periodoActivo) => {
-    const s = await listarSalas(rbd);
-    const c = await listarCursos(rbd, p);
-    const d = await listarDocentes(rbd, p);
-    const a = await listarAsignaciones(rbd, p);
-    const ast = await listarAsistentes(rbd, p);
+  const cargarDatosColegio = async (rbd: string, p: number = periodoActivo, autoSyncCloud: boolean = false) => {
+    let s = await listarSalas(rbd);
+    let c = await listarCursos(rbd, p);
+    let d = await listarDocentes(rbd, p);
+    let a = await listarAsignaciones(rbd, p);
+    let ast = await listarAsistentes(rbd, p);
+
+    // Si localmente está en blanco o se solicita autoSyncCloud, intentar hidratar desde Supabase
+    if (autoSyncCloud || (c.length === 0 && d.length === 0 && ast.length === 0)) {
+      try {
+        const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(rbd, p);
+        if (res.hayDatosRemotos) {
+          s = await listarSalas(rbd);
+          c = await listarCursos(rbd, p);
+          d = await listarDocentes(rbd, p);
+          a = await listarAsignaciones(rbd, p);
+          ast = await listarAsistentes(rbd, p);
+        }
+      } catch (err) {
+        console.warn('[cargarDatosColegio] Aviso consultando Supabase:', err);
+      }
+    }
+
     setSalas(s);
     setCursos(c);
     setDocentes(d);
@@ -762,6 +810,8 @@ export const App: React.FC = () => {
         onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
         onGuardarCambiosEnNube={handleGuardarCambiosEnNube}
         guardandoEnNube={guardandoEnNube}
+        sincronizandoNube={sincronizandoNube}
+        onRefrescarNube={handleRefrescarDesdeNube}
       />
 
       {/* Toast Notificación */}

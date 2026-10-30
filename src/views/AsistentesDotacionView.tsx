@@ -68,7 +68,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
   asistentes,
   matricula = 0,
   salasParvulo = 0,
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   onGuardarAsistente,
   onGuardarAsistentesBatch,
   onEliminarAsistente

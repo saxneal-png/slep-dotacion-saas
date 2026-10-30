@@ -108,7 +108,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   onEliminarCurso,
   onGuardarAsignacion,
   onEliminarAsignacion,
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   onSincronizarMalla,
   onGestionarPlanes
 }) => {

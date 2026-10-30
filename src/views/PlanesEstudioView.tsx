@@ -38,7 +38,7 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
   colegios,
   colegioActivo,
   todosLosCursos,
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   onSelectColegio,
   onAbrirWorkflow,
   onRefreshCursos

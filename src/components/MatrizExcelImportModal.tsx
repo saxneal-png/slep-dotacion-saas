@@ -32,7 +32,7 @@ export const MatrizExcelImportModal: React.FC<MatrizExcelImportModalProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const [rbdDestino, setRbdDestino] = useState<string>(colegioActivo?.rbd || (colegios[0]?.rbd || ''));
-  const [periodoDestino, setPeriodoDestino] = useState<number>(periodoPorDefecto || 2026);
+  const [periodoDestino, setPeriodoDestino] = useState<number>(periodoPorDefecto || 2027);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

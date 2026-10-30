@@ -74,7 +74,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   onGuardarAsignacion,
   onEliminarAsignacion,
   onNavegarAPestana,
-  periodoActivo = 2026
+  periodoActivo = 2027
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Docente | null>(null);

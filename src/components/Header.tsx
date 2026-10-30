@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Building2, FileSpreadsheet, Layers, ClipboardCheck, ChevronDown,
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
-  Database, Search, Sparkles, BarChart3, CheckCircle2, CloudUpload,
+  Database, Search, Sparkles, BarChart3, CheckCircle2, CloudUpload, RefreshCw,
   UserCheck, Settings, Palette, Moon, Sun, Leaf, Eye, Menu, X, Globe,
   LogOut, ShieldAlert, KeyRound, Loader2
 } from 'lucide-react';
@@ -35,6 +35,8 @@ interface HeaderProps {
   onAbrirConfiguraciones?: () => void;
   onGuardarCambiosEnNube?: () => Promise<void>;
   guardandoEnNube?: boolean;
+  onRefrescarNube?: () => Promise<void>;
+  sincronizandoNube?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -58,7 +60,9 @@ export const Header: React.FC<HeaderProps> = ({
   onAbrirCopilot,
   onAbrirConfiguraciones,
   onGuardarCambiosEnNube,
-  guardandoEnNube = false
+  guardandoEnNube = false,
+  onRefrescarNube,
+  sincronizandoNube = false
 }) => {
   const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
   const [toolsOpen, setToolsOpen]       = useState(false);
@@ -251,6 +255,19 @@ export const Header: React.FC<HeaderProps> = ({
                 Periodo 2027
               </span>
             </div>
+
+            {/* Botón Refrescar/Sincronizar desde Supabase hacia local */}
+            {onRefrescarNube && (
+              <button
+                onClick={onRefrescarNube}
+                disabled={sincronizandoNube || guardandoEnNube}
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800/80 hover:bg-slate-700/80 disabled:opacity-50 text-sky-200 border border-sky-400/30 transition-all shadow-sm group"
+                title={colegioActivo ? `Traer y sincronizar la última versión de ${colegioActivo.nombre} desde la nube` : 'Sincronizar establecimiento desde Supabase'}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-sky-300 group-hover:rotate-180 transition-transform ${sincronizandoNube ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">Refrescar Nube</span>
+              </button>
+            )}
 
             {/* Botón Steve Jobs: Guardar Cambios en Supabase PostgreSQL (Aislado por Escuela Activa) */}
             {onGuardarCambiosEnNube && (

@@ -87,7 +87,7 @@ interface AnalizadorDotacionViewProps {
 }
 
 export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   onSyncWithDatabase,
   onNavigateToColegio
 }) => {
@@ -397,7 +397,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
           await guardarCurso({
             id: `curso-${s.rbd}-${sc.curso.replace(/\s+/g, '-')}`,
             rbd: s.rbd,
-            periodo: 2026,
+            periodo: periodoActivo || 2027,
             nivel: sc.nivel,
             letra: sc.letra,
             regimen: 'JEC',
@@ -414,7 +414,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
           await guardarDocente({
             id: `doc-${s.rbd}-${dl.rut.replace(/[^0-9kK]/g, '')}`,
             rbd: s.rbd,
-            periodo: 2026,
+            periodo: periodoActivo || 2027,
             run: dl.rut || `TEMP-${dl.teacher_name.slice(0, 8)}`,
             nombres: dl.teacher_name.split(' ')[0] || 'Docente',
             apellidos: dl.teacher_name.split(' ').slice(1).join(' ') || '',
@@ -431,7 +431,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
             await guardarAsignacion({
               id: `asig-${s.rbd}-${dl.rut}-${asig.curso}-${asig.asignatura}`.replace(/\s+/g, '-'),
               rbd: s.rbd,
-              periodo: 2026,
+              periodo: periodoActivo || 2027,
               cursoId: `curso-${s.rbd}-${asig.curso.replace(/\s+/g, '-')}`,
               docenteId: `doc-${s.rbd}-${dl.rut.replace(/[^0-9kK]/g, '')}`,
               asignatura: asig.asignatura,
@@ -446,7 +446,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
           const mappedAsistentes: AsistenteEducacion[] = schoolAsistentes.map((a) => ({
             id: a.id,
             rbd: s.rbd,
-            periodo: 2026,
+            periodo: periodoActivo || 2027,
             run: a.run,
             nombres: a.nombres,
             apellidos: a.apellidos,
@@ -467,7 +467,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
             observaciones: a.observaciones_ia || a.observaciones_originales,
             activo: true,
           }));
-          await guardarAsistentesBatch(mappedAsistentes, s.rbd, 2026, false);
+          await guardarAsistentesBatch(mappedAsistentes, s.rbd, periodoActivo || 2027, false);
         }
       }
 
@@ -511,7 +511,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
         await guardarCurso({
           id: `curso-${rbd}-${sc.curso.replace(/\s+/g, '-')}`,
           rbd: rbd,
-          periodo: 2026,
+          periodo: periodoActivo || 2027,
           nivel: sc.nivel,
           letra: sc.letra,
           regimen: 'JEC',
@@ -528,7 +528,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
         await guardarDocente({
           id: `doc-${rbd}-${dl.rut.replace(/[^0-9kK]/g, '')}`,
           rbd: rbd,
-          periodo: 2026,
+          periodo: periodoActivo || 2027,
           run: dl.rut || `TEMP-${dl.teacher_name.slice(0, 8)}`,
           nombres: dl.teacher_name.split(' ')[0] || 'Docente',
           apellidos: dl.teacher_name.split(' ').slice(1).join(' ') || '',
@@ -544,7 +544,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
           await guardarAsignacion({
             id: `asig-${rbd}-${dl.rut}-${asig.curso}-${asig.asignatura}`.replace(/\s+/g, '-'),
             rbd: rbd,
-            periodo: 2026,
+            periodo: periodoActivo || 2027,
             cursoId: `curso-${rbd}-${asig.curso.replace(/\s+/g, '-')}`,
             docenteId: `doc-${rbd}-${dl.rut.replace(/[^0-9kK]/g, '')}`,
             asignatura: asig.asignatura,
@@ -559,7 +559,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
         const mappedAsistentes: AsistenteEducacion[] = schoolAsistentes.map((a) => ({
           id: a.id,
           rbd: rbd,
-          periodo: 2026,
+          periodo: periodoActivo || 2027,
           run: a.run,
           nombres: a.nombres,
           apellidos: a.apellidos,
@@ -580,7 +580,7 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
           observaciones: a.observaciones_ia || a.observaciones_originales,
           activo: true,
         }));
-        await guardarAsistentesBatch(mappedAsistentes, rbd, 2026, true);
+        await guardarAsistentesBatch(mappedAsistentes, rbd, periodoActivo || 2027, true);
       }
 
       if (onSyncWithDatabase) {

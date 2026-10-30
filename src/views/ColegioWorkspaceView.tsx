@@ -94,7 +94,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   todosLosColegios = [],
   todosLosDocentes = [],
   todasLasAsignaciones = [],
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   initialTab,
   onTogglePeriodo,
   onRefreshData,

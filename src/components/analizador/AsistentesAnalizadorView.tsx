@@ -209,7 +209,7 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
         const item: AsistenteEducacion = {
           id: a.id,
           rbd: a.rbd,
-          periodo: 2026,
+          periodo: 2027,
           run: a.run,
           nombres: a.nombres,
           apellidos: a.apellidos,
@@ -238,7 +238,7 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
       }
 
       for (const [rbd, lista] of mapPorRbd.entries()) {
-        await guardarAsistentesBatch(lista, rbd, 2026, true);
+        await guardarAsistentesBatch(lista, rbd, 2027, true);
       }
 
       if (onSyncWithDatabase) {
@@ -247,7 +247,7 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
 
       const primerRbd = mapPorRbd.keys().next().value || null;
       setLastSavedRbd(primerRbd);
-      showToast(`¡Traspaso exitoso! Se guardaron ${asistentes.length} asistentes en SQLite (Período 2026).`);
+      showToast(`¡Traspaso exitoso! Se guardaron ${asistentes.length} asistentes en SQLite (Período 2027).`);
     } catch (e: any) {
       showToast(`Error al guardar en base de datos: ${e.message}`, 'error');
     } finally {

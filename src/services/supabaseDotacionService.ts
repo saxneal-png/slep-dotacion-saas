@@ -551,7 +551,7 @@ export class SupabaseDotacionService {
    */
   static async sincronizarColegioASupabase(
     rbd: string,
-    periodo: number = 2026
+    periodo: number = 2027
   ): Promise<{
     establecimientoActualizado: boolean;
     salasSincronizadas: number;
@@ -621,6 +621,146 @@ export class SupabaseDotacionService {
       docentesSincronizados: docentes.length,
       asignacionesSincronizadas: asignaciones.length,
       asistentesSincronizados: asistentes.length
+    };
+  }
+
+  /**
+   * Descarga la dotación completa de un RBD y Periodo desde Supabase PostgreSQL
+   * e hidrata de forma atómica la base de datos local SQLite (IndexedDB).
+   * Fundamental para que el Super Usuario u otros colegas vean los cambios guardados remotamente.
+   */
+  static async descargarEIntegrarColegioDesdeSupabase(
+    rbd: string,
+    periodo: number = 2027
+  ): Promise<{
+    hayDatosRemotos: boolean;
+    establecimientoActualizado: boolean;
+    salasDescargadas: number;
+    cursosDescargados: number;
+    docentesDescargados: number;
+    asignacionesDescargadas: number;
+    asistentesDescargados: number;
+  }> {
+    if (!isSupabaseEnabled()) {
+      return {
+        hayDatosRemotos: false,
+        establecimientoActualizado: false,
+        salasDescargadas: 0,
+        cursosDescargados: 0,
+        docentesDescargados: 0,
+        asignacionesDescargadas: 0,
+        asistentesDescargados: 0
+      };
+    }
+    const cleanRbd = rbd.trim();
+    if (!cleanRbd) throw new Error('RBD de colegio inválido');
+
+    // 1. Consultar datos en Supabase
+    const [estRes, salasRes, cursosRes, docRes, asigRes, astRes] = await Promise.all([
+      supabase.from('establecimientos').select('*').eq('rbd', cleanRbd).maybeSingle(),
+      supabase.from('salas_infraestructura').select('*').eq('rbd', cleanRbd),
+      supabase.from('cursos_sae').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
+      supabase.from('docentes').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
+      supabase.from('asignaciones_horarias').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
+      supabase.from('asistentes_educacion').select('*').eq('rbd', cleanRbd).eq('periodo', periodo)
+    ]);
+
+    const tieneRegistros = Boolean(
+      (cursosRes.data && cursosRes.data.length > 0) ||
+      (docRes.data && docRes.data.length > 0) ||
+      (asigRes.data && asigRes.data.length > 0) ||
+      (astRes.data && astRes.data.length > 0) ||
+      (salasRes.data && salasRes.data.length > 0)
+    );
+
+    if (!tieneRegistros && !estRes.data) {
+      return {
+        hayDatosRemotos: false,
+        establecimientoActualizado: false,
+        salasDescargadas: 0,
+        cursosDescargados: 0,
+        docentesDescargados: 0,
+        asignacionesDescargadas: 0,
+        asistentesDescargados: 0
+      };
+    }
+
+    // 2. Importar repositorios locales
+    const { guardarEstablecimiento } = await import('../database/repositories/establecimientosRepo');
+    const { guardarSala } = await import('../database/repositories/salasRepo');
+    const { guardarCurso } = await import('../database/repositories/cursosRepo');
+    const { guardarDocente } = await import('../database/repositories/docentesRepo');
+    const { guardarAsignacion } = await import('../database/repositories/asignacionesRepo');
+    const { guardarAsistentesBatch } = await import('../database/repositories/asistentesRepo');
+    const { persistDb } = await import('../database/dbCore');
+
+    // 3. Integrar Establecimiento (skipCloudSync = true para evitar bucles de re-subida)
+    let estActualizado = false;
+    if (estRes.data) {
+      const estObj = mapEstablecimientoFromDb(estRes.data);
+      await guardarEstablecimiento(estObj, true);
+      estActualizado = true;
+    }
+
+    // 4. Integrar Salas
+    let salasCount = 0;
+    if (salasRes.data && salasRes.data.length > 0) {
+      for (const row of salasRes.data) {
+        const s = mapSalaFromDb(row);
+        await guardarSala(s, true);
+        salasCount++;
+      }
+    }
+
+    // 5. Integrar Cursos
+    let cursosCount = 0;
+    if (cursosRes.data && cursosRes.data.length > 0) {
+      for (const row of cursosRes.data) {
+        const c = mapCursoFromDb(row);
+        await guardarCurso(c, true);
+        cursosCount++;
+      }
+    }
+
+    // 6. Integrar Docentes
+    let docCount = 0;
+    if (docRes.data && docRes.data.length > 0) {
+      for (const row of docRes.data) {
+        const d = mapDocenteFromDb(row);
+        await guardarDocente(d, true);
+        docCount++;
+      }
+    }
+
+    // 7. Integrar Asignaciones
+    let asigCount = 0;
+    if (asigRes.data && asigRes.data.length > 0) {
+      for (const row of asigRes.data) {
+        const a = mapAsignacionFromDb(row);
+        await guardarAsignacion(a, true);
+        asigCount++;
+      }
+    }
+
+    // 8. Integrar Asistentes
+    let astCount = 0;
+    if (astRes.data && astRes.data.length > 0) {
+      const asistentesObj = astRes.data.map(mapAsistenteFromDb);
+      await guardarAsistentesBatch(asistentesObj, cleanRbd, periodo, true);
+      astCount = asistentesObj.length;
+    }
+
+    // Persistir estado consolidado en IndexedDB
+    await persistDb(true);
+
+    return {
+      hayDatosRemotos: true,
+      establecimientoActualizado: estActualizado,
+      salasDescargadas: salasCount,
+      cursosDescargados: cursosCount,
+      docentesDescargados: docCount,
+      asignacionesDescargadas: asigCount,
+      asistentesDescargados: astCount
     };
   }
 

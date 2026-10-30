@@ -49,7 +49,7 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
   onAbrirWorkflow,
   onExportarSqlite,
   onImportarSqlite,
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   onLimpiarDotacionColegio,
   onExportarDotacionColegio,
   onExportarMatrizExcelColegio,
