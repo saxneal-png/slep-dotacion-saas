@@ -22,23 +22,23 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
   it('carga la configuración por defecto cuando no hay datos guardados', () => {
     const config = cargarConfiguracionGeneral();
     expect(config).toBeDefined();
-    expect(config.asesorActivoNombre).toBe('Rodrigo Fuentes Uribe');
-    expect(config.asesoresRegistrados.length).toBeGreaterThanOrEqual(4);
+    expect(config.asesorActivoNombre).toBe('');
+    expect(config.asesoresRegistrados.length).toBe(0);
     expect(config.parametrosMineduc.umbralPrioritarios60_40).toBe(80);
     expect(config.parametrosMineduc.topeHorasDocenteSlep).toBe(44);
-    expect(config.ui.periodoPredeterminado).toBe(2026);
+    expect(config.ui.periodoPredeterminado).toBe(2027);
   });
 
   it('guarda y recupera cambios en la configuración general', () => {
     const config = cargarConfiguracionGeneral();
-    config.asesorActivoNombre = 'Marcela Navarrete Díaz';
+    config.asesorActivoNombre = 'Valeska Alarcón';
     config.parametrosMineduc.umbralPrioritarios60_40 = 75;
     config.gemini.model = 'gemini-1.5-pro';
 
     guardarConfiguracionGeneral(config);
 
     const reloaded = cargarConfiguracionGeneral();
-    expect(reloaded.asesorActivoNombre).toBe('Marcela Navarrete Díaz');
+    expect(reloaded.asesorActivoNombre).toBe('Valeska Alarcón');
     expect(reloaded.parametrosMineduc.umbralPrioritarios60_40).toBe(75);
     expect(reloaded.gemini.model).toBe('gemini-1.5-pro');
   });
@@ -89,7 +89,7 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
       comuna: 'San Ignacio',
       regimen: 'JEC',
       porcentajePrioritarios: 85,
-      asesorUatp: 'Rodrigo Fuentes Uribe'
+      asesorUatp: 'Valeska Alarcón'
     };
     const colegio2: Establecimiento = {
       id: 'est-test-reasignar-2',
@@ -98,21 +98,21 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
       comuna: 'Bulnes',
       regimen: 'JEC',
       porcentajePrioritarios: 80,
-      asesorUatp: 'Rodrigo Fuentes Uribe'
+      asesorUatp: 'Valeska Alarcón'
     };
 
     await guardarEstablecimiento(colegio1);
     await guardarEstablecimiento(colegio2);
 
     const lista = await listarEstablecimientos();
-    await reasignarColegiosMasivo(['99901', '99902'], 'Marcela Navarrete Díaz', lista);
+    await reasignarColegiosMasivo(['99901', '99902'], 'Edison Peña', lista);
 
     const actualizados = await listarEstablecimientos();
     const c1 = actualizados.find(c => c.rbd === '99901');
     const c2 = actualizados.find(c => c.rbd === '99902');
 
-    expect(c1?.asesorUatp).toBe('Marcela Navarrete Díaz');
-    expect(c2?.asesorUatp).toBe('Marcela Navarrete Díaz');
+    expect(c1?.asesorUatp).toBe('Edison Peña');
+    expect(c2?.asesorUatp).toBe('Edison Peña');
   });
 
   it('permite actualizar la cartera exacta de colegios asignados a un asesor (actualizarColegiosDeAsesor)', async () => {
@@ -124,7 +124,7 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
       comuna: 'Chillán',
       regimen: 'JEC',
       porcentajePrioritarios: 70,
-      asesorUatp: 'Rodrigo Fuentes Uribe'
+      asesorUatp: 'Valeska Alarcón'
     };
     const colegioB: Establecimiento = {
       id: 'est-portfolio-2',
@@ -133,7 +133,7 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
       comuna: 'El Carmen',
       regimen: 'JEC',
       porcentajePrioritarios: 80,
-      asesorUatp: 'Rodrigo Fuentes Uribe'
+      asesorUatp: 'Valeska Alarcón'
     };
     const colegioC: Establecimiento = {
       id: 'est-portfolio-3',
@@ -150,9 +150,9 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
     await guardarEstablecimiento(colegioC);
 
     const lista = await listarEstablecimientos();
-    // Asignar solo 88802 y 88803 a Rodrigo Fuentes Uribe (desasigna 88801)
+    // Asignar solo 88802 y 88803 a Valeska Alarcón (desasigna 88801)
     const { actualizarColegiosDeAsesor } = await import('../src/services/configuracionGeneralService');
-    await actualizarColegiosDeAsesor('Rodrigo Fuentes Uribe', ['88802', '88803'], lista);
+    await actualizarColegiosDeAsesor('Valeska Alarcón', ['88802', '88803'], lista);
 
     const actualizados = await listarEstablecimientos();
     const cA = actualizados.find(c => c.rbd === '88801');
@@ -160,7 +160,7 @@ describe('Servicio de Configuraciones Generales y Colegios Asesorados', () => {
     const cC = actualizados.find(c => c.rbd === '88803');
 
     expect(cA?.asesorUatp).toBeUndefined();
-    expect(cB?.asesorUatp).toBe('Rodrigo Fuentes Uribe');
-    expect(cC?.asesorUatp).toBe('Rodrigo Fuentes Uribe');
+    expect(cB?.asesorUatp).toBe('Valeska Alarcón');
+    expect(cC?.asesorUatp).toBe('Valeska Alarcón');
   });
 });

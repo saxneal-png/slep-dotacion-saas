@@ -11,6 +11,7 @@ import { cargarConfiguracionGeneral, reasignarColegiosMasivo } from '../services
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
 import { usePermisos } from '../security/PermisosContext';
 import { AuthService } from '../services/authService';
+import { UsuarioSistema } from '../types/authTypes';
 
 interface ColegiosAsesoradosViewProps {
   colegios: Establecimiento[];
@@ -27,6 +28,7 @@ interface ColegiosAsesoradosViewProps {
   periodoActivo: number;
   onGuardarColegio: (est: Establecimiento) => Promise<void>;
   onAbrirConfiguraciones: () => void;
+  usuariosSistema?: UsuarioSistema[];
 }
 
 export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
@@ -43,7 +45,8 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   todasLasAsignaciones,
   periodoActivo,
   onGuardarColegio,
-  onAbrirConfiguraciones
+  onAbrirConfiguraciones,
+  usuariosSistema = []
 }) => {
   const { rol } = usePermisos();
   const session = useMemo(() => AuthService.getSessionActual(), []);
@@ -53,7 +56,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     if (rol === 'asesor_uatp' && session?.usuario.nombreCompleto) {
       return session.usuario.nombreCompleto;
     }
-    return config.asesorActivoNombre || 'TODOS';
+    return 'TODOS';
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedComuna, setSelectedComuna] = useState<string>('ALL');
@@ -67,15 +70,44 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   const [procesandoReasignacion, setProcesandoReasignacion] = useState(false);
   const [mensajeFeedback, setMensajeFeedback] = useState<string | null>(null);
 
-  // Lista de asesores únicos
+  const NOMBRES_PRUEBA_SET = useMemo(() => new Set([
+    'rodrigo fuentes uribe',
+    'marcela navarrete díaz',
+    'marcela navarrete diaz',
+    'claudia morales san martín',
+    'claudia morales san martin',
+    'gonzalo sepúlveda alarcón',
+    'gonzalo sepulveda alarcon',
+    'uatp valle diguillín',
+    'uatp valle diguillin'
+  ]), []);
+
+  // Lista de asesores únicos oficiales
   const todosLosAsesores = useMemo(() => {
     const map = new Map<string, PerfilAsesor>();
     for (const a of config.asesoresRegistrados) {
-      map.set(a.nombre.toLowerCase().trim(), a);
+      const key = a.nombre.toLowerCase().trim();
+      if (!NOMBRES_PRUEBA_SET.has(key)) {
+        map.set(key, a);
+      }
+    }
+    // Incluir usuarios del sistema que tengan rol asesor_uatp
+    for (const u of (usuariosSistema || [])) {
+      if (u.role === 'asesor_uatp') {
+        const key = u.nombreCompleto.toLowerCase().trim();
+        if (!NOMBRES_PRUEBA_SET.has(key) && !map.has(key)) {
+          map.set(key, {
+            id: u.id,
+            nombre: u.nombreCompleto,
+            email: u.email || 'uatp@slepvallediguillin.cl',
+            cargo: u.cargo || 'Asesor(a) UATP'
+          });
+        }
+      }
     }
     if (rol === 'asesor_uatp' && session?.usuario.nombreCompleto) {
       const key = session.usuario.nombreCompleto.toLowerCase().trim();
-      if (!map.has(key)) {
+      if (!NOMBRES_PRUEBA_SET.has(key) && !map.has(key)) {
         map.set(key, {
           id: session.usuario.id,
           nombre: session.usuario.nombreCompleto,
@@ -85,17 +117,20 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
       }
     }
     for (const c of colegios) {
-      if (c.asesorUatp && !map.has(c.asesorUatp.toLowerCase().trim())) {
-        map.set(c.asesorUatp.toLowerCase().trim(), {
-          id: `asesor-auto-${c.asesorUatp}`,
-          nombre: c.asesorUatp,
-          email: 'uatp@slepvallediguillin.cl',
-          cargo: 'Asesor UATP'
-        });
+      if (c.asesorUatp) {
+        const key = c.asesorUatp.toLowerCase().trim();
+        if (!NOMBRES_PRUEBA_SET.has(key) && !map.has(key)) {
+          map.set(key, {
+            id: `asesor-auto-${c.asesorUatp}`,
+            nombre: c.asesorUatp,
+            email: 'uatp@slepvallediguillin.cl',
+            cargo: 'Asesor UATP'
+          });
+        }
       }
     }
     return Array.from(map.values());
-  }, [config.asesoresRegistrados, colegios, rol, session]);
+  }, [config.asesoresRegistrados, colegios, rol, session, usuariosSistema, NOMBRES_PRUEBA_SET]);
 
   // Perfil del Asesor actualmente filtrado
   const perfilAsesorSeleccionado = useMemo(() => {
@@ -126,7 +161,9 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
         const matchPorCarteraSesion =
           session?.usuario.nombreCompleto.toLowerCase().trim() === asesorFiltro.toLowerCase().trim() &&
           (session?.usuario.carteraRbds || []).includes(est.rbd);
-        if (!matchPorNombre && !matchPorCarteraSesion) {
+        const asesorUser = (usuariosSistema || []).find(u => u.nombreCompleto.toLowerCase().trim() === asesorFiltro.toLowerCase().trim());
+        const matchPorCarteraUsuario = asesorUser && (asesorUser.carteraRbds || []).includes(est.rbd);
+        if (!matchPorNombre && !matchPorCarteraSesion && !matchPorCarteraUsuario) {
           return false;
         }
       }

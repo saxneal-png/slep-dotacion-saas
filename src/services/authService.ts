@@ -221,21 +221,14 @@ export class AuthService {
           .from('usuarios_sistema')
           .select('*');
         if (!supaErr && supaUsers && supaUsers.length > 0) {
-          const mapPorClave = new Map<string, UsuarioSistema>();
-          usuarios.forEach(u => {
-            const key = (u.email || u.username || u.id).toLowerCase();
-            mapPorClave.set(key, u);
-          });
+          const remoteUsers: UsuarioSistema[] = [];
 
           for (const row of supaUsers) {
             const emailKey = (row.email || '').toLowerCase();
-            const userKey = (row.username || '').toLowerCase();
-            const existing =
-              usuarios.find(u => u.id === row.id) ||
-              (emailKey ? usuarios.find(u => (u.email || '').toLowerCase() === emailKey) : undefined) ||
-              (userKey ? usuarios.find(u => u.username.toLowerCase() === userKey) : undefined);
+            const esSuper = emailKey === SUPER_USUARIO_EMAIL;
+            const rol = esSuper ? 'super_usuario' : normalizarRol(row.role || 'asesor_uatp');
 
-            let carteraRbds: string[] = existing?.carteraRbds || [];
+            let carteraRbds: string[] = [];
             try {
               const parsed = typeof row.cartera_rbds_json === 'string'
                 ? JSON.parse(row.cartera_rbds_json)
@@ -243,7 +236,7 @@ export class AuthService {
               if (Array.isArray(parsed) && parsed.length > 0) carteraRbds = parsed;
             } catch {}
 
-            let asesoresSupervisados: string[] = existing?.asesoresSupervisados || [];
+            let asesoresSupervisados: string[] = [];
             try {
               const parsed = typeof row.asesores_supervisados_json === 'string'
                 ? JSON.parse(row.asesores_supervisados_json)
@@ -251,29 +244,41 @@ export class AuthService {
               if (Array.isArray(parsed) && parsed.length > 0) asesoresSupervisados = parsed;
             } catch {}
 
-            const esSuper = emailKey === SUPER_USUARIO_EMAIL;
-            const rol = esSuper ? 'super_usuario' : normalizarRol(row.role || existing?.role || 'asesor_uatp');
-
-            const synced: UsuarioSistema = {
+            remoteUsers.push({
               id: row.id,
-              username: row.username || existing?.username || row.email || row.id,
-              email: row.email || existing?.email || undefined,
-              nombreCompleto: row.nombre_completo || existing?.nombreCompleto || 'Usuario SLEP',
+              username: row.username || row.email || row.id,
+              email: row.email || undefined,
+              nombreCompleto: row.nombre_completo || 'Usuario SLEP',
               role: rol,
-              cargo: row.cargo || existing?.cargo || 'Funcionario SLEP',
-              rbdAsignado: row.rbd_asignado || existing?.rbdAsignado || undefined,
+              cargo: row.cargo || 'Funcionario SLEP',
+              rbdAsignado: row.rbd_asignado || undefined,
               carteraRbds,
               asesoresSupervisados,
-              passwordHash: row.password_hash || existing?.passwordHash || '',
-              salt: row.salt || existing?.salt || '',
+              passwordHash: row.password_hash || '',
+              salt: row.salt || '',
               activo: row.activo !== false
-            };
-
-            const key = (synced.email || synced.username || synced.id).toLowerCase();
-            mapPorClave.set(key, synced);
+            });
           }
 
-          usuarios = Array.from(mapPorClave.values());
+          // Asegurar super usuario si no estuviera en Supabase
+          if (!remoteUsers.some(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL)) {
+            const superLocal = usuarios.find(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL);
+            if (superLocal) remoteUsers.push(superLocal);
+          }
+
+          // Purgar de SQLite cualquier usuario obsoleto que ya no esté en Supabase
+          try {
+            const { getDb, persistDb } = await import('../database/dbCore');
+            const db = await getDb();
+            const validIds = remoteUsers.map(u => u.id);
+            const placeholders = validIds.map(() => '?').join(',');
+            if (placeholders) {
+              db.run('DELETE FROM usuarios_sistema WHERE id NOT IN (' + placeholders + ')', validIds);
+              await persistDb();
+            }
+          } catch (_) {}
+
+          usuarios = remoteUsers;
           localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
         }
       } catch {

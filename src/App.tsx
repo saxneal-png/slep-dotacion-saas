@@ -73,6 +73,7 @@ import {
 
 import { checkAndSeedInitialData } from './database/seedData';
 import { SupabaseDotacionService } from './services/supabaseDotacionService';
+import { isSupabaseEnabled } from './services/supabaseClient';
 import { FirebaseDotacionService } from './services/firebaseDotacionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { generarExcelConsolidadoSlep } from './services/excelReportService';

@@ -3,53 +3,7 @@ import { guardarEstablecimiento, listarEstablecimientos } from '../database/db';
 
 const STORAGE_KEY_CONFIG = 'slep_configuracion_general_v1';
 
-export const ASESORES_INICIALES_PREDETERMINADOS: PerfilAsesor[] = [
-  {
-    id: 'asesor-1',
-    nombre: 'Rodrigo Fuentes Uribe',
-    email: 'rodrigo.fuentes@slepvallediguillin.cl',
-    telefono: '+56 9 8452 1140',
-    cargo: 'Asesor Técnico Pedagógico UATP',
-    comunasPreferentes: ['Bulnes', 'Chillán Viejo'],
-    colorBadge: '#2563eb' // blue-600
-  },
-  {
-    id: 'asesor-2',
-    nombre: 'Marcela Navarrete Díaz',
-    email: 'marcela.navarrete@slepvallediguillin.cl',
-    telefono: '+56 9 9234 5580',
-    cargo: 'Asesora Técnico Pedagógica UATP',
-    comunasPreferentes: ['San Ignacio', 'Yungay'],
-    colorBadge: '#7c3aed' // purple-600
-  },
-  {
-    id: 'asesor-3',
-    nombre: 'Claudia Morales San Martín',
-    email: 'claudia.morales@slepvallediguillin.cl',
-    telefono: '+56 9 7123 9944',
-    cargo: 'Coordinadora de Acompañamiento UATP',
-    comunasPreferentes: ['Chillán', 'El Carmen'],
-    colorBadge: '#059669' // emerald-600
-  },
-  {
-    id: 'asesor-4',
-    nombre: 'Gonzalo Sepúlveda Alarcón',
-    email: 'gonzalo.sepulveda@slepvallediguillin.cl',
-    telefono: '+56 9 6345 8812',
-    cargo: 'Asesor Especialista PIE & Inclusión',
-    comunasPreferentes: ['Pemuco', 'Yungay'],
-    colorBadge: '#ea580c' // orange-600
-  },
-  {
-    id: 'asesor-5',
-    nombre: 'UATP Valle Diguillín',
-    email: 'uatp@slepvallediguillin.cl',
-    telefono: '+56 42 283 5000',
-    cargo: 'Equipo Central UATP',
-    comunasPreferentes: ['Chillán', 'Bulnes', 'Chillán Viejo', 'El Carmen', 'Pemuco', 'San Ignacio', 'Yungay'],
-    colorBadge: '#475569' // slate-600
-  }
-];
+export const ASESORES_INICIALES_PREDETERMINADOS: PerfilAsesor[] = [];
 
 export const PARAMETROS_MINEDUC_DEFAULT: ParametrosMineducConfig = {
   umbralPrioritarios60_40: 80,
@@ -71,7 +25,7 @@ export const GEMINI_CONFIG_DEFAULT: GeminiConfig = {
 };
 
 export const UI_CONFIG_DEFAULT: PreferenciasUiConfig = {
-  periodoPredeterminado: 2026,
+  periodoPredeterminado: 2027,
   vistaInicial: 'colegios_asesorados',
   densidadTablas: 'comoda',
   mostrarAlertasFlotantes: true,
@@ -79,12 +33,12 @@ export const UI_CONFIG_DEFAULT: PreferenciasUiConfig = {
 };
 
 export const CONFIGURACION_DEFAULT: ConfiguracionGeneral = {
-  asesorActivoId: 'asesor-1',
-  asesorActivoNombre: 'Rodrigo Fuentes Uribe',
-  asesorActivoEmail: 'rodrigo.fuentes@slepvallediguillin.cl',
-  asesorActivoTelefono: '+56 9 8452 1140',
-  asesorActivoCargo: 'Asesor Técnico Pedagógico UATP',
-  asesoresRegistrados: ASESORES_INICIALES_PREDETERMINADOS,
+  asesorActivoId: '',
+  asesorActivoNombre: '',
+  asesorActivoEmail: '',
+  asesorActivoTelefono: undefined,
+  asesorActivoCargo: '',
+  asesoresRegistrados: [],
   parametrosMineduc: PARAMETROS_MINEDUC_DEFAULT,
   gemini: GEMINI_CONFIG_DEFAULT,
   ui: UI_CONFIG_DEFAULT,
@@ -155,8 +109,32 @@ export function cargarConfiguracionGeneral(): ConfiguracionGeneral {
     }
 
     // Asegurar estructura completa y campos por defecto si faltan
-    if (!config.asesoresRegistrados || config.asesoresRegistrados.length === 0) {
-      config.asesoresRegistrados = ASESORES_INICIALES_PREDETERMINADOS;
+    if (!config.asesoresRegistrados) {
+      config.asesoresRegistrados = [];
+    }
+
+    // Purgar perfiles de prueba obsoletos si existían en localStorage
+    const nombresPrueba = new Set([
+      'rodrigo fuentes uribe',
+      'marcela navarrete díaz',
+      'marcela navarrete diaz',
+      'claudia morales san martín',
+      'claudia morales san martin',
+      'gonzalo sepúlveda alarcón',
+      'gonzalo sepulveda alarcon',
+      'uatp valle diguillín',
+      'uatp valle diguillin'
+    ]);
+    if (config.asesoresRegistrados.some(a => nombresPrueba.has(a.nombre.toLowerCase().trim()))) {
+      config.asesoresRegistrados = config.asesoresRegistrados.filter(a => !nombresPrueba.has(a.nombre.toLowerCase().trim()));
+      safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
+    }
+    if (config.asesorActivoNombre && nombresPrueba.has(config.asesorActivoNombre.toLowerCase().trim())) {
+      config.asesorActivoId = '';
+      config.asesorActivoNombre = '';
+      config.asesorActivoEmail = '';
+      config.asesorActivoCargo = '';
+      safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
     }
     if (!config.parametrosMineduc) {
       config.parametrosMineduc = { ...PARAMETROS_MINEDUC_DEFAULT };
@@ -315,7 +293,39 @@ export function sincronizarEquipoAsesoresConUsuariosLocales(
   const config = cargarConfiguracionGeneral();
   let huboCambios = false;
 
+  const nombresPrueba = new Set([
+    'rodrigo fuentes uribe',
+    'marcela navarrete díaz',
+    'marcela navarrete diaz',
+    'claudia morales san martín',
+    'claudia morales san martin',
+    'gonzalo sepúlveda alarcón',
+    'gonzalo sepulveda alarcon',
+    'uatp valle diguillín',
+    'uatp valle diguillin'
+  ]);
+
   const asesoresUsuarios = usuarios.filter(u => u.role === 'asesor_uatp');
+
+  // Purga estricta: los asesores registrados deben corresponder a usuarios activos con rol asesor_uatp
+  if (asesoresUsuarios.length > 0) {
+    const validEmails = new Set(asesoresUsuarios.map(u => (u.email || '').trim().toLowerCase()).filter(Boolean));
+    const validUsernames = new Set(asesoresUsuarios.map(u => u.username.trim().toLowerCase()));
+    const validNombres = new Set(asesoresUsuarios.map(u => u.nombreCompleto.trim().toLowerCase()));
+    const validIds = new Set(asesoresUsuarios.map(u => u.id));
+
+    const previosCount = config.asesoresRegistrados.length;
+    config.asesoresRegistrados = config.asesoresRegistrados.filter(a => {
+      const nom = a.nombre.trim().toLowerCase();
+      const mail = (a.email || '').trim().toLowerCase();
+      if (nombresPrueba.has(nom)) return false;
+      return validIds.has(a.id) || validEmails.has(mail) || validNombres.has(nom);
+    });
+
+    if (config.asesoresRegistrados.length !== previosCount) {
+      huboCambios = true;
+    }
+  }
 
   for (const u of asesoresUsuarios) {
     const cleanEmail = (u.email || '').trim().toLowerCase();

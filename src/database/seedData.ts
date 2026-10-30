@@ -72,7 +72,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
       regimen: 'JEC',
       porcentajePrioritarios: 82.5, // Aplica 60/40
       director: 'Carlos Miranda Valenzuela',
-      asesorUatp: 'Rodrigo Fuentes Uribe',
+      asesorUatp: undefined,
       telefono: '+56 42 2631200',
       email: 'contacto@liceomanuelbulnes.cl'
     },
@@ -84,7 +84,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
       regimen: 'JEC',
       porcentajePrioritarios: 68.0, // Aplica 65/35
       director: 'María Elena Salazar',
-      asesorUatp: 'Rodrigo Fuentes Uribe',
+      asesorUatp: undefined,
       telefono: '+56 42 2278900',
       email: 'quilamapu@slepvallediguillin.cl'
     },
@@ -96,7 +96,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
       regimen: 'JEC',
       porcentajePrioritarios: 85.0, // Aplica 60/40
       director: 'Juan Pablo Rivas',
-      asesorUatp: 'Marcela Navarrete Díaz',
+      asesorUatp: undefined,
       telefono: '+56 42 2451100',
       email: 'sanignacio@slepvallediguillin.cl'
     },
@@ -108,7 +108,7 @@ export async function checkAndSeedInitialData(): Promise<void> {
       regimen: 'JEC',
       porcentajePrioritarios: 74.0, // Aplica 65/35
       director: 'Patricia Andrea Morales',
-      asesorUatp: 'Marcela Navarrete Díaz',
+      asesorUatp: undefined,
       telefono: '+56 42 2682300',
       email: 'liceoyungay@slepvallediguillin.cl'
     }
