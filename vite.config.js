@@ -16,15 +16,27 @@ export default defineConfig({
     build: {
         outDir: 'dist',
         emptyOutDir: true,
-        chunkSizeWarningLimit: 800,
+        chunkSizeWarningLimit: 1200,
         rollupOptions: {
             output: {
-                manualChunks: {
-                    'vendor-react': ['react', 'react-dom'],
-                    'vendor-icons': ['lucide-react'],
-                    'vendor-xlsx': ['xlsx'],
-                    'vendor-exceljs': ['exceljs'],
-                    'vendor-sql': ['sql.js']
+                manualChunks: function (id) {
+                    if (id.includes('node_modules')) {
+                        if (id.includes('exceljs'))
+                            return 'vendor-exceljs';
+                        if (id.includes('xlsx'))
+                            return 'vendor-xlsx';
+                        if (id.includes('sql.js'))
+                            return 'vendor-sql';
+                        if (id.includes('lucide-react'))
+                            return 'vendor-icons';
+                        if (id.includes('@supabase') || id.includes('@gotrue') || id.includes('@postgrest'))
+                            return 'vendor-supabase';
+                        if (id.includes('react') || id.includes('scheduler'))
+                            return 'vendor-react';
+                    }
+                    if (id.includes('packages/mineduc-engine')) {
+                        return 'mineduc-engine';
+                    }
                 }
             }
         }

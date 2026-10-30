@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
-import { SchoolNavigatorModal } from './components/SchoolNavigatorModal';
-import { SaveBackupModal } from './components/SaveBackupModal';
-import { DotacionCopilotDrawer } from './components/DotacionCopilotDrawer';
-import { ModalTraspasoDotacion } from './components/ModalTraspasoDotacion';
-import { ComparadorPeriodosModal } from './components/ComparadorPeriodosModal';
+const SchoolNavigatorModal = React.lazy(() => import('./components/SchoolNavigatorModal').then(m => ({ default: m.SchoolNavigatorModal })));
+const SaveBackupModal = React.lazy(() => import('./components/SaveBackupModal').then(m => ({ default: m.SaveBackupModal })));
+const DotacionCopilotDrawer = React.lazy(() => import('./components/DotacionCopilotDrawer').then(m => ({ default: m.DotacionCopilotDrawer })));
+const ModalTraspasoDotacion = React.lazy(() => import('./components/ModalTraspasoDotacion').then(m => ({ default: m.ModalTraspasoDotacion })));
+const ComparadorPeriodosModal = React.lazy(() => import('./components/ComparadorPeriodosModal').then(m => ({ default: m.ComparadorPeriodosModal })));
 import { Sparkles } from 'lucide-react';
 
 const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
@@ -74,10 +74,7 @@ import {
 import { checkAndSeedInitialData } from './database/seedData';
 import { SupabaseDotacionService } from './services/supabaseDotacionService';
 import { isSupabaseEnabled } from './services/supabaseClient';
-import { FirebaseDotacionService } from './services/firebaseDotacionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
-import { generarExcelConsolidadoSlep } from './services/excelReportService';
-import { generarExcelMatrizDotacionColegio } from './services/excelMatrizDotacionService';
 import { cargarConfiguracionGeneral } from './services/configuracionGeneralService';
 import { AuthService } from './services/authService';
 import { AuthSession, UsuarioSistema } from './types/authTypes';
@@ -555,6 +552,7 @@ export const App: React.FC = () => {
         mostrarMensaje(`🤖 Gemini AI activado — analizando dotación de ${est.nombre}...`);
       }
 
+      const { generarExcelMatrizDotacionColegio } = await import('./services/excelMatrizDotacionService');
       const bytes = await generarExcelMatrizDotacionColegio(
         est,
         docentesColegio,
@@ -710,6 +708,7 @@ export const App: React.FC = () => {
   // Exportar Excel Oficial
   const handleExportarExcel = async () => {
     try {
+      const { generarExcelConsolidadoSlep } = await import('./services/excelReportService');
       const bytes = await generarExcelConsolidadoSlep(
         colegios,
         todosLosDocentes,

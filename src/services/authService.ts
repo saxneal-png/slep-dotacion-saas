@@ -2,16 +2,6 @@ import { UsuarioSistema, UserRole, PermisosRol, AuthSession } from '../types/aut
 import { normalizarRol } from '../security/rolesDefinitions';
 import { RolesPermisosService } from './rolesPermisosService';
 import { DIRECTORES_TERRITORIO, DirectorItem } from '../data/directoresTerritorio';
-import { initializeApp, deleteApp } from 'firebase/app';
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut as fbSignOut,
-  sendPasswordResetEmail,
-  getAuth
-} from 'firebase/auth';
-import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
-import { auth, firestore, firebaseConfig } from './firebaseConfig';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
 import {
   listarUsuariosDb,
@@ -286,109 +276,6 @@ export class AuthService {
       }
     }
 
-    // 2. Sincronización bidireccional en la nube con Firestore cuando hay conectividad y sesión activa
-    if (typeof window !== 'undefined' && firestore && auth?.currentUser) {
-      try {
-        const snapshot = await getDocs(collection(firestore, 'usuarios'));
-        const firestoreKeys = new Set<string>();
-
-        if (!snapshot.empty) {
-          const mapPorClave = new Map<string, UsuarioSistema>();
-          usuarios.forEach(u => {
-            const key = (u.email || u.username || u.id).toLowerCase();
-            mapPorClave.set(key, u);
-          });
-
-          snapshot.forEach(docSnap => {
-            const data = docSnap.data();
-            const emailKey = (data.email || '').toLowerCase();
-            const userKey = (data.username || '').toLowerCase();
-            if (emailKey) firestoreKeys.add(emailKey);
-            if (userKey) firestoreKeys.add(userKey);
-            firestoreKeys.add(docSnap.id.toLowerCase());
-
-            const existing =
-              usuarios.find(u => u.id === docSnap.id) ||
-              (emailKey ? usuarios.find(u => (u.email || '').toLowerCase() === emailKey) : undefined) ||
-              (userKey ? usuarios.find(u => u.username.toLowerCase() === userKey) : undefined);
-
-            const esSuper = emailKey === SUPER_USUARIO_EMAIL;
-            const rol = esSuper ? 'super_usuario' : normalizarRol(data.rol || existing?.role || 'asesor_uatp');
-
-            const synced: UsuarioSistema = {
-              id: docSnap.id,
-              username: data.username || existing?.username || data.email || docSnap.id,
-              email: data.email || existing?.email || undefined,
-              nombreCompleto: data.nombreCompleto || existing?.nombreCompleto || 'Usuario SLEP',
-              role: rol,
-              cargo: data.cargo || existing?.cargo || 'Funcionario SLEP',
-              rbdAsignado: data.rbdAsignado || existing?.rbdAsignado || undefined,
-              carteraRbds: (Array.isArray(data.carteraRbds) && data.carteraRbds.length > 0)
-                ? data.carteraRbds
-                : (existing?.carteraRbds || []),
-              asesoresSupervisados: (Array.isArray(data.asesoresSupervisados) && data.asesoresSupervisados.length > 0)
-                ? data.asesoresSupervisados
-                : (existing?.asesoresSupervisados || []),
-              passwordHash: data.passwordHash || existing?.passwordHash || '',
-              salt: data.salt || existing?.salt || '',
-              activo: data.activo !== false
-            };
-
-            const key = (synced.email || synced.username || synced.id).toLowerCase();
-            mapPorClave.set(key, synced);
-          });
-
-          // Asegurar que saxneal@gmail.com siempre exista
-          if (!Array.from(mapPorClave.values()).some(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL)) {
-            const superLocal = usuarios.find(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL);
-            if (superLocal) mapPorClave.set(SUPER_USUARIO_EMAIL, superLocal);
-          }
-
-          usuarios = Array.from(mapPorClave.values());
-        }
-
-        // 3. Subir a Firestore en bloque (writeBatch) cualquier usuario local que aún no exista en la colección /usuarios
-        const faltantesEnFirestore = usuarios.filter(u => {
-          const eKey = (u.email || '').toLowerCase();
-          const uKey = (u.username || '').toLowerCase();
-          const idKey = u.id.toLowerCase();
-          return !(
-            (eKey && firestoreKeys.has(eKey)) ||
-            (uKey && firestoreKeys.has(uKey)) ||
-            firestoreKeys.has(idKey)
-          );
-        });
-
-        if (faltantesEnFirestore.length > 0 && auth?.currentUser) {
-          const batch = writeBatch(firestore);
-          const nowIso = new Date().toISOString();
-          for (const u of faltantesEnFirestore.slice(0, 450)) {
-            const uDocRef = doc(firestore, 'usuarios', u.id);
-            batch.set(uDocRef, {
-              id: u.id,
-              email: u.email || null,
-              username: u.username,
-              nombreCompleto: u.nombreCompleto,
-              rol: u.role,
-              cargo: u.cargo || null,
-              rbdAsignado: u.rbdAsignado || null,
-              carteraRbds: u.carteraRbds || [],
-              asesoresSupervisados: u.asesoresSupervisados || [],
-              passwordHash: u.passwordHash || null,
-              salt: u.salt || null,
-              activo: u.activo !== false,
-              actualizadoEn: nowIso
-            }, { merge: true });
-          }
-          await batch.commit().catch(() => {});
-        }
-
-        localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
-      } catch {
-        // En modo offline o con reglas de seguridad restrictivas, fallback seguro a local
-      }
-    }
-
     // 4. Persistir todos los usuarios en la tabla SQLite usuarios_sistema
     guardarUsuariosBatchDb(usuarios).catch(() => {});
 
@@ -416,109 +303,6 @@ export class AuthService {
     if (encontrado && !encontrado.activo) {
       throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
     }
-
-    // Determinar el email para autenticar contra Firebase Auth
-    let emailToAuth = cleanInput.includes('@') ? cleanInput : (encontrado?.email || '');
-
-    let fbSuccess = false;
-    let fbUser: any = null;
-
-    // 3. Intentar autenticación en Firebase Authentication si hay email disponible
-    if (auth && typeof window !== 'undefined' && emailToAuth) {
-      try {
-        const cred = await signInWithEmailAndPassword(auth, emailToAuth, passwordPlain);
-        fbSuccess = true;
-        fbUser = cred.user;
-
-        // Cargar perfil remoto desde Firestore: primero por UID, y si no existe, buscar en colección /usuarios por email/username
-        let uDocSnap = await getDoc(doc(firestore, 'usuarios', fbUser.uid)).catch(() => null);
-        let uData = uDocSnap?.exists() ? uDocSnap.data() : undefined;
-
-        if (!uData) {
-          try {
-            const allSnap = await getDocs(collection(firestore, 'usuarios'));
-            allSnap.forEach(d => {
-              const data = d.data();
-              if (
-                (data.email || '').toLowerCase() === emailToAuth.toLowerCase() ||
-                (data.username || '').toLowerCase() === cleanInput
-              ) {
-                uData = data;
-              }
-            });
-          } catch {
-            // Ignorar si la lectura general falla
-          }
-        }
-
-        // Verificar si la cuenta fue deshabilitada en Firestore
-        if (uData && uData.activo === false) {
-          await fbSignOut(auth).catch(() => {});
-          throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
-        }
-
-        const isSuper = (fbUser.email || '').toLowerCase() === SUPER_USUARIO_EMAIL;
-        const rol = isSuper ? 'super_usuario' : normalizarRol(uData?.rol || encontrado?.role || 'asesor_uatp');
-        const salt = encontrado?.salt || uData?.salt || generateSalt();
-        const passwordHash = await hashPassword(passwordPlain, salt);
-
-        const usuarioRemoto: UsuarioSistema = {
-          id: uData?.id || encontrado?.id || fbUser.uid,
-          username: uData?.username || encontrado?.username || fbUser.email || cleanInput,
-          email: fbUser.email || emailToAuth,
-          nombreCompleto: uData?.nombreCompleto || encontrado?.nombreCompleto || (isSuper ? 'Super Administrador SLEP (saxneal)' : 'Usuario SLEP'),
-          role: rol,
-          cargo: uData?.cargo || encontrado?.cargo || (isSuper ? 'Super Usuario / Administrador General' : 'Funcionario SLEP'),
-          rbdAsignado: uData?.rbdAsignado || encontrado?.rbdAsignado || undefined,
-          carteraRbds: (Array.isArray(uData?.carteraRbds) && uData.carteraRbds.length > 0)
-            ? uData.carteraRbds
-            : (encontrado?.carteraRbds || []),
-          asesoresSupervisados: (Array.isArray(uData?.asesoresSupervisados) && uData.asesoresSupervisados.length > 0)
-            ? uData.asesoresSupervisados
-            : (encontrado?.asesoresSupervisados || []),
-          passwordHash,
-          salt,
-          activo: true
-        };
-
-        encontrado = usuarioRemoto;
-
-        // Sincronizar documento en Firestore con hash y perfil actualizado
-        const uDocRef = doc(firestore, 'usuarios', usuarioRemoto.id);
-        await setDoc(uDocRef, {
-          id: usuarioRemoto.id,
-          email: usuarioRemoto.email,
-          username: usuarioRemoto.username,
-          nombreCompleto: usuarioRemoto.nombreCompleto,
-          rol: usuarioRemoto.role,
-          cargo: usuarioRemoto.cargo || null,
-          rbdAsignado: usuarioRemoto.rbdAsignado || null,
-          carteraRbds: usuarioRemoto.carteraRbds || [],
-          asesoresSupervisados: usuarioRemoto.asesoresSupervisados || [],
-          passwordHash: usuarioRemoto.passwordHash,
-          salt: usuarioRemoto.salt,
-          activo: true,
-          actualizadoEn: new Date().toISOString()
-        }, { merge: true }).catch(() => {});
-      } catch (fbErr: any) {
-        if (fbErr.message?.includes('deshabilitada')) {
-          throw fbErr;
-        }
-        // Si no existe la cuenta en Firebase Auth pero el usuario existe en el sistema, intentar aprovisionarla
-        if (fbErr?.code === 'auth/user-not-found' || fbErr?.code === 'auth/invalid-credential') {
-          if (emailToAuth === SUPER_USUARIO_EMAIL) {
-            try {
-              const newCred = await createUserWithEmailAndPassword(auth, emailToAuth, passwordPlain);
-              fbSuccess = true;
-              fbUser = newCred.user;
-            } catch {
-              // Ignorar si ya existe
-            }
-          }
-        }
-      }
-    }
-
     if (!encontrado) {
       throw new Error('Usuario no encontrado o cuenta deshabilitada.');
     }
@@ -529,26 +313,14 @@ export class AuthService {
       const nuevoSalt = generateSalt();
       encontrado.salt = nuevoSalt;
       encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
-      if (typeof window !== 'undefined' && firestore) {
-        setDoc(doc(firestore, 'usuarios', encontrado.id), {
-          passwordHash: encontrado.passwordHash,
-          salt: encontrado.salt,
-          actualizadoEn: new Date().toISOString()
-        }, { merge: true }).catch(() => {});
-      }
     }
 
     // Validación criptográfica con Salt (SHA-256)
     const testHash = encontrado.salt ? await hashPassword(passwordPlain, encontrado.salt) : '';
     const localPasswordOk = Boolean(encontrado.passwordHash && testHash === encontrado.passwordHash);
 
-    if (!localPasswordOk && !fbSuccess) {
+    if (!localPasswordOk) {
       throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
-    }
-
-    // Si validó por hash local/Firestore pero no estaba en Firebase Auth aún, intentar registrarlo silenciosamente
-    if (localPasswordOk && !fbSuccess && auth && typeof window !== 'undefined' && encontrado.email) {
-      createUserWithEmailAndPassword(auth, encontrado.email, passwordPlain).catch(() => {});
     }
 
     // Actualizar último acceso y refrescar cache
@@ -570,7 +342,7 @@ export class AuthService {
     const { passwordHash: _, salt: __, ...usuarioSeguro } = encontrado;
     const session: AuthSession = {
       usuario: usuarioSeguro,
-      token: (auth?.currentUser as any)?.accessToken || `token_${encontrado.id}_${Date.now()}`,
+      token: `token_${encontrado.id}_${Date.now()}`,
       iniciadoEn: new Date().toISOString()
     };
 
@@ -597,24 +369,11 @@ export class AuthService {
   }
 
   public static logout(): void {
-    if (auth && typeof window !== 'undefined') {
-      fbSignOut(auth).catch(() => {});
-    }
     localStorage.removeItem(STORAGE_SESSION_KEY);
   }
 
   public static async restablecerPasswordPorEmail(email: string, nuevaPasswordPlain?: string): Promise<string> {
     const cleanEmail = email.trim().toLowerCase();
-    
-    // Disparar correo oficial de recuperación vía Firebase Authentication
-    if (auth && typeof window !== 'undefined') {
-      try {
-        await sendPasswordResetEmail(auth, cleanEmail);
-      } catch (fbErr: any) {
-        console.warn('[AuthService] Firebase Auth password reset warning:', fbErr?.message);
-      }
-    }
-
     const usuarios = await this.getUsuarios();
     const idx = usuarios.findIndex(u => (u.email || '').toLowerCase() === cleanEmail);
     if (idx === -1) {
@@ -628,13 +387,6 @@ export class AuthService {
       usuarios[idx].passwordHash = passwordHash;
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
       guardarUsuarioDb(usuarios[idx]).catch(() => {});
-      if (typeof window !== 'undefined' && firestore) {
-        setDoc(doc(firestore, 'usuarios', usuarios[idx].id), {
-          passwordHash,
-          salt,
-          actualizadoEn: new Date().toISOString()
-        }, { merge: true }).catch(() => {});
-      }
     }
     return usuarios[idx].nombreCompleto;
   }
@@ -661,18 +413,6 @@ export class AuthService {
     usuarios[idx].passwordHash = passwordHash;
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuarioDb(usuarios[idx]);
-
-    if (typeof window !== 'undefined' && firestore) {
-      try {
-        await setDoc(doc(firestore, 'usuarios', userId), {
-          passwordHash,
-          salt,
-          actualizadoEn: new Date().toISOString()
-        }, { merge: true });
-      } catch (err) {
-        console.warn('[AuthService] Aviso sincronizando nueva contraseña en Firestore:', err);
-      }
-    }
   }
 
   public static async guardarUsuario(usuario: UsuarioSistema, passwordPlain?: string): Promise<UsuarioSistema> {
@@ -690,33 +430,7 @@ export class AuthService {
       usuario.passwordHash = await hashPassword(passwordPlain, salt);
     }
 
-    // 2. Si se proporciona contraseña y email, aprovisionar credencial oficial en Firebase Authentication
-    // Usamos una app secundaria para aprovisionar sin desloguear la sesión del Super Usuario activo
-    if (typeof window !== 'undefined' && firebaseConfig?.apiKey && passwordPlain && usuario.email) {
-      let secondaryApp: any = null;
-      try {
-        const tempName = `AdminUserProvisioner_${Date.now()}`;
-        secondaryApp = initializeApp(firebaseConfig, tempName);
-        const secondaryAuth = getAuth(secondaryApp);
-        const cred = await createUserWithEmailAndPassword(secondaryAuth, usuario.email.trim(), passwordPlain);
-        if (cred?.user?.uid) {
-          usuario.id = cred.user.uid;
-        }
-        await fbSignOut(secondaryAuth).catch(() => {});
-      } catch (authErr: any) {
-        if (authErr?.code === 'auth/email-already-in-use') {
-          // El usuario ya existe en Firebase Auth; su hash actualizado se persiste en Firestore
-        } else {
-          console.warn('[AuthService] Provisioning en Firebase Auth reportó:', authErr?.message || authErr);
-        }
-      } finally {
-        if (secondaryApp) {
-          await deleteApp(secondaryApp).catch(() => {});
-        }
-      }
-    }
-
-    // 3. Validar existencia de al menos un Super Usuario activo y evitar duplicados por email/username
+    // 2. Validar existencia de al menos un Super Usuario activo y evitar duplicados por email/username
     const idx = usuarios.findIndex(
       u =>
         u.id === usuario.id ||
@@ -747,30 +461,6 @@ export class AuthService {
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuarioDb(usuario);
 
-    // 4. Sincronizar documento completo (incluyendo passwordHash y salt) en Firestore /usuarios/{usuario.id}
-    if (typeof window !== 'undefined' && firestore) {
-      try {
-        const uDocRef = doc(firestore, 'usuarios', usuario.id);
-        await setDoc(uDocRef, {
-          id: usuario.id,
-          email: usuario.email || null,
-          username: usuario.username,
-          nombreCompleto: usuario.nombreCompleto,
-          rol: usuario.role,
-          cargo: usuario.cargo || null,
-          rbdAsignado: usuario.rbdAsignado || null,
-          carteraRbds: usuario.carteraRbds || [],
-          asesoresSupervisados: usuario.asesoresSupervisados || [],
-          passwordHash: usuario.passwordHash || null,
-          salt: usuario.salt || null,
-          activo: usuario.activo !== false,
-          actualizadoEn: new Date().toISOString()
-        }, { merge: true });
-      } catch (e) {
-        console.warn('[AuthService] Aviso sincronizando usuario con Firestore:', e);
-      }
-    }
-
     // 5. Si el usuario modificado es el de la sesión actual, refrescar inmediatamente la sesión activa
     const sesionActual = this.getSessionActual();
     if (sesionActual && (sesionActual.usuario.id === usuario.id || sesionActual.usuario.username === usuario.username)) {
@@ -800,18 +490,6 @@ export class AuthService {
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuarioDb(u);
 
-    if (typeof window !== 'undefined' && firestore) {
-      try {
-        const uDocRef = doc(firestore, 'usuarios', userId);
-        await setDoc(uDocRef, {
-          activo: nuevoEstado,
-          actualizadoEn: new Date().toISOString()
-        }, { merge: true });
-      } catch (err) {
-        console.warn('[AuthService] Aviso sincronizando estado activo en Firestore:', err);
-      }
-    }
-
     return u;
   }
 
@@ -832,14 +510,6 @@ export class AuthService {
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await eliminarUsuarioDb(userId);
     await guardarUsuariosBatchDb(usuarios);
-
-    if (typeof window !== 'undefined' && firestore) {
-      try {
-        await deleteDoc(doc(firestore, 'usuarios', userId));
-      } catch (err) {
-        console.warn('[AuthService] Aviso eliminando usuario de Firestore:', err);
-      }
-    }
   }
 
   /** Vista agregada (heredada) de permisos derivada de la matriz granular editable. */
@@ -1025,37 +695,6 @@ export class AuthService {
       }
     } catch (estErr) {
       console.warn('[AuthService] Aviso actualizando directores en establecimientos:', estErr);
-    }
-
-    // Sincronizar masivamente en Firestore solo si existe sesión activa de Firebase Auth
-    if (typeof window !== 'undefined' && firestore && auth?.currentUser) {
-      try {
-        const batch = writeBatch(firestore);
-        const nowIso = new Date().toISOString();
-        for (const d of directores) {
-          const emailLower = d.email.trim().toLowerCase();
-          const u = usuarios.find(usr => usr.email?.toLowerCase() === emailLower);
-          if (u) {
-            const uDocRef = doc(firestore, 'usuarios', u.id);
-            batch.set(uDocRef, {
-              id: u.id,
-              email: u.email,
-              username: u.username,
-              nombreCompleto: u.nombreCompleto,
-              rol: u.role,
-              cargo: u.cargo,
-              rbdAsignado: u.rbdAsignado,
-              passwordHash: u.passwordHash || null,
-              salt: u.salt || null,
-              activo: u.activo !== false,
-              actualizadoEn: nowIso
-            }, { merge: true });
-          }
-        }
-        await batch.commit();
-      } catch (syncErr) {
-        console.warn('[AuthService] Aviso sincronizando lote de directores en Firestore:', syncErr);
-      }
     }
 
     return {
