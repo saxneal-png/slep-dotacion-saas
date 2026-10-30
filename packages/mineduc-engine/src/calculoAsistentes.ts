@@ -280,22 +280,35 @@ export function calcularDiagnosticoAsistentes(
 
     // Métricas Dupla Psicosocial
     const cargoUpper = (a.cargoFuncion || '').toUpperCase();
-    if (/PSIC[OÓ]LOG/i.test(cargoUpper)) {
-      horasPsicologia += horasContrato;
+    const esPsicologo = /PSIC[OÓ]LOG/i.test(cargoUpper);
+    const esTrabajadorSocial = /ASISTENTE\s*SOCIAL|TRABAJADOR(A)?\s*SOCIAL/i.test(cargoUpper);
+
+    if (esPsicologo) {
+      // Si el contrato es compartido (SEP/General + PIE), se imputan a la dupla sus horas no-PIE (ej: 22h SEP).
+      // Si todo el contrato es financiado por PIE o General, se reconocen sus horas para la cobertura del colegio.
+      const hPsico = (horasSubvGral + horasSep) > 0 ? (horasSubvGral + horasSep) : horasContrato;
+      horasPsicologia += hPsico;
     }
-    if (/ASISTENTE\s*SOCIAL|TRABAJADOR(A)?\s*SOCIAL/i.test(cargoUpper)) {
-      horasTrabajoSocial += horasContrato;
+    if (esTrabajadorSocial) {
+      const hSocial = (horasSubvGral + horasSep) > 0 ? (horasSubvGral + horasSep) : horasContrato;
+      horasTrabajoSocial += hSocial;
     }
 
-    // Métricas Equipo PIE
+    // Métricas Equipo PIE / PAE: computa estrictamente las horas financiadas por Subvención PIE (Dto. 170)
     if (a.esEquipoPie || horasPie > 0) {
       cantidadProfesionalesPie += 1;
-      horasTotalesPie += horasContrato;
+      const horasEfectivasPie = horasPie > 0
+        ? horasPie
+        : (a.esEquipoPie && (horasSubvGral + horasSep) === 0 ? horasContrato : 0);
+      horasTotalesPie += horasEfectivasPie;
+
       if (/FONOAUD/i.test(cargoUpper)) especialidadesPieSet.add('Fonoaudiología');
       if (/TERAPEUTA/i.test(cargoUpper)) especialidadesPieSet.add('Terapia Ocupacional');
       if (/KINESI/i.test(cargoUpper)) especialidadesPieSet.add('Kinesiología');
       if (/DIFERENCIAL/i.test(cargoUpper)) especialidadesPieSet.add('Educación Diferencial');
       if (/PSICOPEDAG/i.test(cargoUpper)) especialidadesPieSet.add('Psicopedagogía');
+      if (/PSIC[OÓ]LOG/i.test(cargoUpper)) especialidadesPieSet.add('Psicología PIE');
+      if (/ASISTENTE\s*SOCIAL|TRABAJADOR(A)?\s*SOCIAL/i.test(cargoUpper)) especialidadesPieSet.add('Trabajo Social PIE');
     }
 
     // Métricas Auxiliares

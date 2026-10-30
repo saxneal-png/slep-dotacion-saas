@@ -173,6 +173,20 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
     setModalAbierto(true);
   };
 
+
+  const calcularHorasContratoDinamicas = (d?: Partial<AsistenteEducacion> | null): number => {
+    if (!d) return 0;
+    return (
+      (Number(d.horasSubvencionGeneralIndefinido) || 0) +
+      (Number(d.horasSubvencionGeneralPlazoFijo) || 0) +
+      (Number(d.horasSepIndefinido) || 0) +
+      (Number(d.horasSepPlazoFijo) || 0) +
+      (Number(d.horasPieIndefinido) || 0) +
+      (Number(d.horasPiePlazoFijo) || 0) +
+      (Number(d.horasProRetencion) || 0)
+    );
+  };
+
   const handleCargoChange = (cargo: string) => {
     if (!asistenteEdicion) return;
     const inferencia = inferirClasificacionAsistente(cargo);
@@ -203,9 +217,16 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
     const hSepPf = Number(asistenteEdicion.horasSepPlazoFijo) || 0;
     const hPieInd = Number(asistenteEdicion.horasPieIndefinido) || 0;
     const hPiePf = Number(asistenteEdicion.horasPiePlazoFijo) || 0;
+    const hProRet = Number(asistenteEdicion.horasProRetencion) || 0;
 
-    const totalHoras = hGralInd + hGralPf + hSepInd + hSepPf + hPieInd + hPiePf;
-    const horasContrato = Number(asistenteEdicion.horasContrato) > 0 ? Number(asistenteEdicion.horasContrato) : totalHoras;
+    const totalHoras = hGralInd + hGralPf + hSepInd + hSepPf + hPieInd + hPiePf + hProRet;
+    const horasContrato = totalHoras > 0 ? totalHoras : (Number(asistenteEdicion.horasContrato) || 0);
+    const esPie = Boolean(asistenteEdicion.esEquipoPie || (hPieInd + hPiePf) > 0);
+    const cargoLower = (asistenteEdicion.cargoFuncion || '').toLowerCase();
+    const esDupla = Boolean(
+      asistenteEdicion.esDuplaPsicosocial ||
+      ((hSepInd + hSepPf + hGralInd + hGralPf) > 0 && /psic|social/i.test(cargoLower))
+    );
 
     const payload: AsistenteEducacion = {
       id: asistenteEdicion.id || `asist_${colegio.rbd}_${Date.now()}`,
@@ -223,8 +244,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       horasSepPlazoFijo: hSepPf,
       horasPieIndefinido: hPieInd,
       horasPiePlazoFijo: hPiePf,
-      esDuplaPsicosocial: !!asistenteEdicion.esDuplaPsicosocial,
-      esEquipoPie: !!asistenteEdicion.esEquipoPie,
+      esDuplaPsicosocial: esDupla,
+      esEquipoPie: esPie,
       esTecnicoParvulo: !!asistenteEdicion.esTecnicoParvulo,
       esAuxiliarServicio: !!asistenteEdicion.esAuxiliarServicio,
       esInspectorPatio: !!asistenteEdicion.esInspectorPatio,
@@ -643,15 +664,13 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
               ) : (
                 asistentesFiltrados.map((a) => {
                   const estStyle = ESTAMENTO_LABELS[a.estamento] || ESTAMENTO_LABELS.PARADOCENTE_INSPECTORIA;
-                  const totalHorasCalculadas =
-                    (a.horasSubvencionGeneralIndefinido || 0) +
-                    (a.horasSubvencionGeneralPlazoFijo || 0) +
-                    (a.horasSepIndefinido || 0) +
-                    (a.horasSepPlazoFijo || 0) +
-                    (a.horasPieIndefinido || 0) +
-                    (a.horasPiePlazoFijo || 0);
+                  const hGral = (a.horasSubvencionGeneralIndefinido || 0) + (a.horasSubvencionGeneralPlazoFijo || 0);
+                  const hSep = (a.horasSepIndefinido || 0) + (a.horasSepPlazoFijo || 0);
+                  const hPie = (a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0);
+                  const hProRet = (a.horasProRetencion || 0);
+                  const totalHorasCalculadas = hGral + hSep + hPie + hProRet;
 
-                  const tieneDescuadre = Math.abs(totalHorasCalculadas - a.horasContrato) > 0.05;
+                  const tieneDescuadre = Math.abs(totalHorasCalculadas - a.horasContrato) > 0.05 && totalHorasCalculadas > 0;
 
                   return (
                     <tr
@@ -676,12 +695,12 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                           {a.esDuplaPsicosocial && (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-pink-100 text-pink-700 dark:bg-pink-950/60 dark:text-pink-300">
-                              Dupla Psicosocial
+                              Dupla {(hSep + hGral) > 0 && hPie > 0 ? `(${hSep + hGral}h)` : ''}
                             </span>
                           )}
-                          {a.esEquipoPie && (
+                          {(a.esEquipoPie || hPie > 0) && (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
-                              Equipo PIE
+                              PAE/PIE {hPie > 0 ? `(${hPie}h)` : ''}
                             </span>
                           )}
                           {a.esTecnicoParvulo && (
@@ -892,9 +911,15 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                     Carga Horaria Semanal (Máx. 44 hrs)
                   </span>
-                  <div className="text-xs font-bold text-orange-600">
-                    Horas Contrato: {asistenteEdicion.horasContrato || 0} hrs
-                  </div>
+                  {(() => {
+                    const hTotal = calcularHorasContratoDinamicas(asistenteEdicion);
+                    const excede = hTotal > 44;
+                    return (
+                      <div className={`text-xs font-bold ${excede ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        Horas Contrato: {hTotal} hrs {excede ? '(⚠️ Supera tope 44h)' : '(= Suma Subvenciones)'}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -910,7 +935,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       onChange={(e) =>
                         setAsistenteEdicion({
                           ...asistenteEdicion,
-                          horasSubvencionGeneralIndefinido: Number(e.target.value)
+                          horasSubvencionGeneralIndefinido: Number(e.target.value),
+                          horasContrato: calcularHorasContratoDinamicas({ ...asistenteEdicion, horasSubvencionGeneralIndefinido: Number(e.target.value) })
                         })
                       }
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
@@ -928,7 +954,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       onChange={(e) =>
                         setAsistenteEdicion({
                           ...asistenteEdicion,
-                          horasSubvencionGeneralPlazoFijo: Number(e.target.value)
+                          horasSubvencionGeneralPlazoFijo: Number(e.target.value),
+                          horasContrato: calcularHorasContratoDinamicas({ ...asistenteEdicion, horasSubvencionGeneralPlazoFijo: Number(e.target.value) })
                         })
                       }
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
@@ -946,7 +973,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       onChange={(e) =>
                         setAsistenteEdicion({
                           ...asistenteEdicion,
-                          horasSepIndefinido: Number(e.target.value)
+                          horasSepIndefinido: Number(e.target.value),
+                          horasContrato: calcularHorasContratoDinamicas({ ...asistenteEdicion, horasSepIndefinido: Number(e.target.value) })
                         })
                       }
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
@@ -964,7 +992,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       onChange={(e) =>
                         setAsistenteEdicion({
                           ...asistenteEdicion,
-                          horasSepPlazoFijo: Number(e.target.value)
+                          horasSepPlazoFijo: Number(e.target.value),
+                          horasContrato: calcularHorasContratoDinamicas({ ...asistenteEdicion, horasSepPlazoFijo: Number(e.target.value) })
                         })
                       }
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
@@ -982,7 +1011,9 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       onChange={(e) =>
                         setAsistenteEdicion({
                           ...asistenteEdicion,
-                          horasPieIndefinido: Number(e.target.value)
+                          horasPieIndefinido: Number(e.target.value),
+                          esEquipoPie: Number(e.target.value) > 0 || (Number(asistenteEdicion.horasPiePlazoFijo) || 0) > 0,
+                          horasContrato: calcularHorasContratoDinamicas({ ...asistenteEdicion, horasPieIndefinido: Number(e.target.value) })
                         })
                       }
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
@@ -1000,7 +1031,9 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       onChange={(e) =>
                         setAsistenteEdicion({
                           ...asistenteEdicion,
-                          horasPiePlazoFijo: Number(e.target.value)
+                          horasPiePlazoFijo: Number(e.target.value),
+                          esEquipoPie: Number(e.target.value) > 0 || (Number(asistenteEdicion.horasPieIndefinido) || 0) > 0,
+                          horasContrato: calcularHorasContratoDinamicas({ ...asistenteEdicion, horasPiePlazoFijo: Number(e.target.value) })
                         })
                       }
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
@@ -1031,7 +1064,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                     }
                     className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
                   />
-                  <span>Equipo PIE</span>
+                  <span>Profesional PAE (Equipo PIE Dto. 170)</span>
                 </label>
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
                   <input

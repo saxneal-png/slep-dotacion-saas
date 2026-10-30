@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sparkles, AlertCircle, CheckCircle, Users, Clock, ShieldCheck } from 'lucide-react';
-import { Establecimiento, CursoSae, Docente, AsignacionHoraria } from '../types';
+import { Establecimiento, CursoSae, Docente, AsignacionHoraria, AsistenteEducacion } from '../types';
 import {
   calcularDemandaNormativaPieCurso,
   autoAsignarHorasPieCursos
@@ -10,6 +10,7 @@ interface PieAuditorViewProps {
   colegio: Establecimiento | null;
   cursos: CursoSae[];
   docentes: Docente[];
+  asistentes?: AsistenteEducacion[];
   asignaciones?: AsignacionHoraria[];
   onGuardarCurso: (curso: CursoSae) => void;
   onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void;
@@ -20,6 +21,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   colegio,
   cursos,
   docentes,
+  asistentes = [],
   asignaciones = [],
   onGuardarCurso,
   onGuardarAsignacion,
@@ -56,10 +58,44 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
   // Docentes PIE disponibles en el establecimiento
   const docentesDiferenciales = docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL');
-  const profesionalesPae = docentes.filter(d => d.estamento === 'PROFESIONAL_PAE');
-
   const horasContratadasDiferencial = docentesDiferenciales.reduce((s, d) => s + d.horasContrato, 0);
-  const horasContratadasPae = profesionalesPae.reduce((s, d) => s + d.horasContrato, 0);
+
+  // Profesionales PAE (Consolidación Oficial Decreto 170: Docentes PROFESIONAL_PAE + Asistentes PAE)
+  // Imputa estrictamente las horas financiadas por Subvención PIE (no infla con horas SEP o Subv. General)
+  const docentesPae = docentes
+    .filter(d => d.estamento === 'PROFESIONAL_PAE')
+    .map(d => {
+      const hPie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
+      const horasPae = hPie > 0 ? hPie : d.horasContrato;
+      return {
+        id: d.id,
+        run: d.run,
+        nombre: `${d.nombres} ${d.apellidos}`,
+        cargo: d.titulo || 'Profesional Asistente PAE',
+        horasPae,
+        horasContratoTotal: d.horasContrato,
+        origen: 'Docentes'
+      };
+    });
+
+  const asistentesPae = asistentes
+    .filter(a => a.activo !== false && (a.esEquipoPie || (a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0) > 0))
+    .map(a => {
+      const hPie = (a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0);
+      const horasPae = hPie > 0 ? hPie : a.horasContrato;
+      return {
+        id: a.id,
+        run: a.run,
+        nombre: `${a.nombres} ${a.apellidos}`,
+        cargo: a.cargoFuncion || 'Profesional Asistente PAE',
+        horasPae,
+        horasContratoTotal: a.horasContrato,
+        origen: 'Asistentes'
+      };
+    });
+
+  const profesionalesPae = [...docentesPae, ...asistentesPae];
+  const horasContratadasPae = profesionalesPae.reduce((s, p) => s + p.horasPae, 0);
 
   const balanceDiferencial = horasContratadasDiferencial - totalDemandaEdDiferencial;
   const balancePae = horasContratadasPae - totalDemandaPae;
@@ -277,14 +313,17 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
             {profesionalesPae.length === 0 ? (
               <p className="text-slate-400 italic">No hay profesionales asistentes registrados.</p>
             ) : (
-              profesionalesPae.map(d => (
-                <div key={d.id} className="p-2.5 bg-slate-50 border rounded-lg flex justify-between items-center">
+              profesionalesPae.map(p => (
+                <div key={p.id} className="p-2.5 bg-slate-50 border rounded-lg flex justify-between items-center">
                   <div>
-                    <div className="font-bold text-slate-800">{d.nombres} {d.apellidos}</div>
-                    <div className="text-[10px] text-slate-500">RUN: {d.run} • {d.titulo || d.estamento}</div>
+                    <div className="font-bold text-slate-800">{p.nombre}</div>
+                    <div className="text-[10px] text-slate-500">
+                      RUN: {p.run} • {p.cargo} • <span className="font-medium text-slate-600">{p.origen}</span>
+                      {p.horasContratoTotal > p.horasPae ? ` (Contrato: ${p.horasContratoTotal}h)` : ''}
+                    </div>
                   </div>
-                  <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border">
-                    {d.horasContrato} hrs
+                  <span className="font-bold text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">
+                    {p.horasPae} hrs PIE
                   </span>
                 </div>
               ))
