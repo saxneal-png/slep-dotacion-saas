@@ -237,7 +237,10 @@ export async function ejecutarTraspasoPeriodoColegio(
           id: nuevoIdPk,
           periodo: periodoDestino,
           nivel: pk.nivel,
-          matriculaProyectada: opciones.ajusteMatriculaEntrante !== undefined ? opciones.ajusteMatriculaEntrante : pk.matriculaProyectada
+          matriculaProyectada: opciones.ajusteMatriculaEntrante !== undefined ? opciones.ajusteMatriculaEntrante : pk.matriculaProyectada,
+          // La nueva cohorte entrante no hereda sobrecupos/excedentes NEEP de la cohorte anterior ya promovida
+          alumnosNeet: Math.min(5, pk.alumnosNeet ?? 5),
+          alumnosNeep: Math.min(2, pk.alumnosNeep ?? 2)
         };
         await guardarCurso(nuevoPk);
         cursosCreados++;
@@ -251,7 +254,9 @@ export async function ejecutarTraspasoPeriodoColegio(
           id: nuevoIdK,
           periodo: periodoDestino,
           nivel: k.nivel,
-          matriculaProyectada: opciones.ajusteMatriculaEntrante !== undefined ? opciones.ajusteMatriculaEntrante : k.matriculaProyectada
+          matriculaProyectada: opciones.ajusteMatriculaEntrante !== undefined ? opciones.ajusteMatriculaEntrante : k.matriculaProyectada,
+          alumnosNeet: Math.min(5, k.alumnosNeet ?? 5),
+          alumnosNeep: Math.min(2, k.alumnosNeep ?? 2)
         };
         await guardarCurso(nuevoK);
         cursosCreados++;
@@ -265,7 +270,9 @@ export async function ejecutarTraspasoPeriodoColegio(
           id: nuevoIdB,
           periodo: periodoDestino,
           nivel: '1° Básico',
-          matriculaProyectada: opciones.ajusteMatriculaEntrante !== undefined ? opciones.ajusteMatriculaEntrante : b.matriculaProyectada
+          matriculaProyectada: opciones.ajusteMatriculaEntrante !== undefined ? opciones.ajusteMatriculaEntrante : b.matriculaProyectada,
+          alumnosNeet: Math.min(5, b.alumnosNeet ?? 5),
+          alumnosNeep: Math.min(2, b.alumnosNeep ?? 2)
         };
         await guardarCurso(nuevoB);
         cursosCreados++;

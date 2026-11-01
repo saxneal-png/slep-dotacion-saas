@@ -362,7 +362,10 @@ export async function proyectarPeriodoColegio(
           ...pk,
           id: nuevoIdPk,
           periodo: periodoDestino,
-          nivel: pk.nivel
+          nivel: pk.nivel,
+          // La nueva cohorte entrante no hereda sobrecupos/excedentes NEEP de la cohorte anterior
+          alumnosNeet: Math.min(5, pk.alumnosNeet ?? 5),
+          alumnosNeep: Math.min(2, pk.alumnosNeep ?? 2)
         };
         await guardarCurso(nuevoPk);
         cursosCreados++;
@@ -375,7 +378,9 @@ export async function proyectarPeriodoColegio(
           ...k,
           id: nuevoIdK,
           periodo: periodoDestino,
-          nivel: k.nivel
+          nivel: k.nivel,
+          alumnosNeet: Math.min(5, k.alumnosNeet ?? 5),
+          alumnosNeep: Math.min(2, k.alumnosNeep ?? 2)
         };
         await guardarCurso(nuevoK);
         cursosCreados++;
@@ -388,7 +393,9 @@ export async function proyectarPeriodoColegio(
           ...b,
           id: nuevoIdB,
           periodo: periodoDestino,
-          nivel: '1° Básico'
+          nivel: '1° Básico',
+          alumnosNeet: Math.min(5, b.alumnosNeet ?? 5),
+          alumnosNeep: Math.min(2, b.alumnosNeep ?? 2)
         };
         await guardarCurso(nuevoB);
         cursosCreados++;
@@ -464,6 +471,11 @@ export async function getComparativaPeriodos(
   const totalSepB = docentesB.reduce((s, d) => s + (d.horasSepTitular || 0) + (d.horasSepContrata || 0), 0);
   const totalPieB = docentesB.reduce((s, d) => s + (d.horasPieTitular || 0) + (d.horasPieContrata || 0), 0);
 
+  const neetA = cursosA.reduce((s, c) => s + (c.alumnosNeet || 0), 0);
+  const neepA = cursosA.reduce((s, c) => s + (c.alumnosNeep || 0), 0);
+  const neetB = cursosB.reduce((s, c) => s + (c.alumnosNeet || 0), 0);
+  const neepB = cursosB.reduce((s, c) => s + (c.alumnosNeep || 0), 0);
+
   const resumenA: ResumenPeriodo = {
     periodo: periodoA,
     totalCursos: cursosA.length,
@@ -476,7 +488,10 @@ export async function getComparativaPeriodos(
     balanceLectivo: diagA.balanzaGeneral.superavitDeficitLectivo,
     subvencionGeneralTotal: totalSubvGenA,
     sepTotal: totalSepA,
-    pieTotal: totalPieA
+    pieTotal: totalPieA,
+    alumnosNeetTotal: neetA,
+    alumnosNeepTotal: neepA,
+    horasPieDemandadas: diagA.balanzaGeneral.horasPieDemandadas
   };
 
   const resumenB: ResumenPeriodo = {
@@ -491,7 +506,10 @@ export async function getComparativaPeriodos(
     balanceLectivo: diagB.balanzaGeneral.superavitDeficitLectivo,
     subvencionGeneralTotal: totalSubvGenB,
     sepTotal: totalSepB,
-    pieTotal: totalPieB
+    pieTotal: totalPieB,
+    alumnosNeetTotal: neetB,
+    alumnosNeepTotal: neepB,
+    horasPieDemandadas: diagB.balanzaGeneral.horasPieDemandadas
   };
 
   const mapDocA = new Map<string, Docente>();
@@ -541,6 +559,9 @@ export async function getComparativaPeriodos(
     deltaHorasContrato: resumenB.horasContratoTotal - resumenA.horasContratoTotal,
     deltaHorasAulaDemandadas: resumenB.horasAulaDemandadas - resumenA.horasAulaDemandadas,
     deltaBalanceLectivo: resumenB.balanceLectivo - resumenA.balanceLectivo,
+    deltaAlumnosNeet: (resumenB.alumnosNeetTotal || 0) - (resumenA.alumnosNeetTotal || 0),
+    deltaAlumnosNeep: (resumenB.alumnosNeepTotal || 0) - (resumenA.alumnosNeepTotal || 0),
+    deltaHorasPieDemandadas: parseFloat(((resumenB.horasPieDemandadas || 0) - (resumenA.horasPieDemandadas || 0)).toFixed(1)),
     variacionesDocentes
   };
 }

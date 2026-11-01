@@ -472,6 +472,9 @@ export interface ResumenPeriodo {
   subvencionGeneralTotal: number;
   sepTotal: number;
   pieTotal: number;
+  alumnosNeetTotal?: number;
+  alumnosNeepTotal?: number;
+  horasPieDemandadas?: number;
 }
 
 export interface ComparativaPeriodosResult {
@@ -484,6 +487,9 @@ export interface ComparativaPeriodosResult {
   deltaHorasContrato: number;
   deltaHorasAulaDemandadas: number;
   deltaBalanceLectivo: number;
+  deltaAlumnosNeet?: number;
+  deltaAlumnosNeep?: number;
+  deltaHorasPieDemandadas?: number;
   variacionesDocentes: {
     run: string;
     nombre: string;

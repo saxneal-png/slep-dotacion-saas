@@ -306,12 +306,27 @@ export const ComparadorPeriodosModal: React.FC<ComparadorPeriodosModalProps> = (
                   </div>
 
                   <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800">
-                    <div className="text-slate-400 font-bold mb-1">Programa PIE</div>
+                    <div className="text-slate-400 font-bold mb-1 flex items-center justify-between">
+                      <span>Programa PIE (Contratos)</span>
+                      {comparativa.deltaHorasPieDemandadas !== undefined && (
+                        <span className="text-[10px] text-amber-400 font-normal">
+                          Demanda: {comparativa.deltaHorasPieDemandadas >= 0 ? `+${comparativa.deltaHorasPieDemandadas}` : comparativa.deltaHorasPieDemandadas}h
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center justify-between">
                       <span>2026: <strong className="text-white">{comparativa.periodoA.pieTotal} hrs</strong></span>
                       <ArrowRight className="w-3 h-3 text-slate-600" />
                       <span>2027: <strong className="text-indigo-300">{comparativa.periodoB.pieTotal} hrs</strong></span>
                     </div>
+                    {(comparativa.periodoA.alumnosNeepTotal !== undefined || comparativa.periodoB.alumnosNeepTotal !== undefined) && (
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 text-[10px] text-slate-400 flex justify-between">
+                        <span>Permanentes (NEEP): {comparativa.periodoA.alumnosNeepTotal || 0} → {comparativa.periodoB.alumnosNeepTotal || 0}</span>
+                        <span className={((comparativa.deltaAlumnosNeep || 0) > 0 ? 'text-amber-400' : 'text-slate-400')}>
+                          {(comparativa.deltaAlumnosNeep || 0) >= 0 ? `+${comparativa.deltaAlumnosNeep || 0}` : comparativa.deltaAlumnosNeep} NEEP
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

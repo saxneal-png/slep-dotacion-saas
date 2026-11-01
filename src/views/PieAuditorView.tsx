@@ -3,7 +3,8 @@ import { Sparkles, AlertCircle, CheckCircle, Users, Clock, ShieldCheck } from 'l
 import { Establecimiento, CursoSae, Docente, AsignacionHoraria, AsistenteEducacion } from '../types';
 import {
   calcularDemandaNormativaPieCurso,
-  autoAsignarHorasPieCursos
+  autoAsignarHorasPieCursos,
+  esModalidadAdultos
 } from '@slep/mineduc-engine';
 
 interface PieAuditorViewProps {
@@ -38,7 +39,23 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   // Demandas calculadas por curso
   const demandasCursos = cursos.map(c => {
     const isJec = c.regimen === 'JEC';
-    const dem = calcularDemandaNormativaPieCurso(c.alumnosNeet, c.alumnosNeep, isJec);
+    const esEpja = esModalidadAdultos(c.nombre) || (c.nivel ? esModalidadAdultos(c.nivel) : false);
+    const dem = esEpja
+      ? {
+          horasTotalCronologicas: 0,
+          horasDiferencialDecimal: 0,
+          horasDiferencialHHMM: "00:00",
+          horasPaeDecimal: 0,
+          horasPaeHHMM: "00:00",
+          horasTrabajoColaborativoCronologicas: 0,
+          neetCount: c.alumnosNeet,
+          neepCount: c.alumnosNeep,
+          isJec,
+          cumpleAforo: true,
+          observacionNormativa: "EPJA no elegible para Programa de Integración Escolar (PIE)."
+        }
+      : calcularDemandaNormativaPieCurso(c.alumnosNeet, c.alumnosNeep, isJec);
+
     const asigsCurso = asignaciones.filter(a => a.cursoId === c.id);
     const asigsPie = asigsCurso.filter(a => 
       Boolean(a.horasCronologicasPie) || 
@@ -47,7 +64,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
       (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura))
     );
     const horasPieAsignadasCurso = asigsPie.reduce((s, a) => s + (a.horasCronologicasPie || a.horasPedagogicasAula * 0.75), 0);
-    return { curso: c, demanda: dem, asigsPie, horasPieAsignadasCurso };
+    return { curso: c, demanda: dem, asigsPie, horasPieAsignadasCurso, esEpja };
   });
 
   const totalDemandaEdDiferencial = demandasCursos.reduce((sum, d) => sum + d.demanda.horasDiferencialDecimal, 0);
@@ -56,9 +73,26 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const totalHorasPieGeneral = totalDemandaEdDiferencial + totalDemandaPae;
   const totalHorasPieAsignadas = demandasCursos.reduce((sum, d) => sum + d.horasPieAsignadasCurso, 0);
 
-  // Docentes PIE disponibles en el establecimiento
-  const docentesDiferenciales = docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL');
-  const horasContratadasDiferencial = docentesDiferenciales.reduce((s, d) => s + d.horasContrato, 0);
+  // Docentes PIE disponibles en el establecimiento (Docentes Diferenciales)
+  // Descuenta horas de coordinación PIE si estuviesen comprometidas en gestión no-aula
+  const docentesDiferenciales = docentes
+    .filter(d => d.estamento === 'DOCENTE_DIFERENCIAL')
+    .map(d => {
+      const hPie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
+      const horasTotal = hPie > 0 ? hPie : d.horasContrato;
+      const horasCoord = d.horasCoordinacionPie || 0;
+      const horasDirectasDisponibles = Math.max(0, horasTotal - horasCoord);
+      return {
+        ...d,
+        horasTotal,
+        horasCoord,
+        horasDirectasDisponibles
+      };
+    });
+
+  const horasContratadasDiferencial = docentesDiferenciales.reduce((s, d) => s + d.horasDirectasDisponibles, 0);
+  const horasContratadasDiferencialBrutas = docentesDiferenciales.reduce((s, d) => s + d.horasTotal, 0);
+  const horasCoordinacionDiferencial = docentesDiferenciales.reduce((s, d) => s + d.horasCoord, 0);
 
   // Profesionales PAE (Consolidación Oficial Decreto 170: Docentes PROFESIONAL_PAE + Asistentes PAE)
   // Imputa estrictamente las horas financiadas por Subvención PIE (no infla con horas SEP o Subv. General)
@@ -206,7 +240,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                       <input
                         type="number"
                         min="0"
-                        max="5"
+                        max="15"
                         value={curso.alumnosNeep}
                         onChange={e => {
                           onGuardarCurso({ ...curso, alumnosNeep: parseInt(e.target.value) || 0 });
@@ -226,7 +260,11 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                     </td>
 
                     <td className="px-4 py-3 text-center font-semibold text-slate-700">
-                      3.0 hrs
+                      {demanda.horasTrabajoColaborativoCronologicas > 0 ? (
+                        `${demanda.horasTrabajoColaborativoCronologicas.toFixed(1)} hrs`
+                      ) : (
+                        <span className="text-slate-400 font-normal">0.0 hrs</span>
+                      )}
                     </td>
 
                     <td className="px-4 py-3 text-center font-black text-[#002B49]">
@@ -281,7 +319,9 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
           <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center justify-between">
             <span>Docentes Educación Diferencial ({docentesDiferenciales.length})</span>
-            <span className="text-xs text-orange-600 font-bold">{horasContratadasDiferencial} hrs contratadas</span>
+            <span className="text-xs text-orange-600 font-bold">
+              {horasContratadasDiferencial} hrs disp. aula {horasCoordinacionDiferencial > 0 ? `(${horasContratadasDiferencialBrutas}h total)` : ''}
+            </span>
           </h3>
 
           <div className="space-y-2 text-xs">
@@ -292,10 +332,13 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                 <div key={d.id} className="p-2.5 bg-slate-50 border rounded-lg flex justify-between items-center">
                   <div>
                     <div className="font-bold text-slate-800">{d.nombres} {d.apellidos}</div>
-                    <div className="text-[10px] text-slate-500">RUN: {d.run} • {d.calidadJuridica}</div>
+                    <div className="text-[10px] text-slate-500">
+                      RUN: {d.run} • {d.calidadJuridica}
+                      {d.horasCoord > 0 ? ` • ${d.horasCoord}h Coordinación PIE` : ''}
+                    </div>
                   </div>
                   <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border">
-                    {d.horasContrato} hrs
+                    {d.horasDirectasDisponibles} hrs aula {d.horasCoord > 0 ? `(${d.horasTotal}h total)` : ''}
                   </span>
                 </div>
               ))

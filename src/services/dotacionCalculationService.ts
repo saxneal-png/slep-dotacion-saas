@@ -5,7 +5,8 @@ import {
   buscarContratoMinimoPorTabla,
   calcularDemandaNormativaPieCurso,
   evaluarCapacidadSaeYInfraestructura,
-  obtenerPlanPorCurso
+  obtenerPlanPorCurso,
+  esModalidadAdultos
 } from '@slep/mineduc-engine';
 import {
   Establecimiento,
@@ -149,13 +150,29 @@ export function calcularDiagnosticoColegio(
 
   for (const curso of cursos) {
     const isJec = curso.regimen === 'JEC';
-    const demanda = calcularDemandaNormativaPieCurso(curso.alumnosNeet, curso.alumnosNeep, isJec);
+    const esEpja = esModalidadAdultos(curso.nivel) || (curso.nombre ? esModalidadAdultos(curso.nombre) : false);
+    const demanda = esEpja
+      ? {
+          horasTotalCronologicas: 0,
+          horasDiferencialDecimal: 0,
+          horasDiferencialHHMM: "00:00",
+          horasPaeDecimal: 0,
+          horasPaeHHMM: "00:00",
+          horasTrabajoColaborativoCronologicas: 0,
+          neetCount: curso.alumnosNeet,
+          neepCount: curso.alumnosNeep,
+          isJec,
+          cumpleAforo: true,
+          observacionNormativa: "EPJA no elegible para Programa de Integración Escolar (PIE)."
+        }
+      : calcularDemandaNormativaPieCurso(curso.alumnosNeet, curso.alumnosNeep, isJec);
+
     demandaPiePorCurso.push({ curso, demanda });
 
     horasPieDemandadas += demanda.horasTotalCronologicas;
     horasColaborativasDemandadas += demanda.horasTrabajoColaborativoCronologicas;
 
-    if (!demanda.cumpleAforo) {
+    if (!demanda.cumpleAforo && !esEpja) {
       alertasAforoPie.push(`${curso.nivel} ${curso.letra}: Aforo PIE excedido (${curso.alumnosNeet} NEET, ${curso.alumnosNeep} NEEP).`);
     }
   }

@@ -56,6 +56,8 @@ export function combinarCursosExistentes(
     letra?: string;
     regimen?: 'JEC' | 'No JEC';
     regimenProporcion?: '65_35' | '60_40';
+    alumnosNeet?: number;
+    alumnosNeep?: number;
   }
 ): CursoSae {
   if (!cursos || cursos.length === 0) {
@@ -80,8 +82,36 @@ export function combinarCursosExistentes(
   // Calcular sumatorias de capacidad y matrícula
   const matriculaProyectada = cursos.reduce((sum, c) => sum + (c.matriculaProyectada || 0), 0);
   const cupoSae = cursos.reduce((sum, c) => sum + (c.cupoSae || 0), 0);
-  const alumnosNeet = cursos.reduce((sum, c) => sum + (c.alumnosNeet || 0), 0);
-  const alumnosNeep = cursos.reduce((sum, c) => sum + (c.alumnosNeep || 0), 0);
+
+  // Manejo de NEET y NEEP:
+  // Si todos los cursos venían con el valor por defecto de plantilla fija (5 NEET y 2 NEEP),
+  // no multiplicamos el aforo por el número de niveles al formar una sola aula multigrado.
+  let alumnosNeet: number;
+  let alumnosNeep: number;
+
+  if (opciones?.alumnosNeet !== undefined) {
+    alumnosNeet = opciones.alumnosNeet;
+  } else {
+    const todosTenianDefaultFijo = cursos.length > 1 && cursos.every(c => c.alumnosNeet === 5 && c.alumnosNeep === 2);
+    if (todosTenianDefaultFijo) {
+      alumnosNeet = Math.min(5, matriculaProyectada > 0 ? matriculaProyectada : 5);
+    } else {
+      const sumaNeet = cursos.reduce((sum, c) => sum + (c.alumnosNeet || 0), 0);
+      alumnosNeet = matriculaProyectada > 0 ? Math.min(sumaNeet, matriculaProyectada) : sumaNeet;
+    }
+  }
+
+  if (opciones?.alumnosNeep !== undefined) {
+    alumnosNeep = opciones.alumnosNeep;
+  } else {
+    const todosTenianDefaultFijo = cursos.length > 1 && cursos.every(c => c.alumnosNeet === 5 && c.alumnosNeep === 2);
+    if (todosTenianDefaultFijo) {
+      alumnosNeep = Math.min(2, matriculaProyectada > 0 ? Math.max(0, matriculaProyectada - alumnosNeet) : 2);
+    } else {
+      const sumaNeep = cursos.reduce((sum, c) => sum + (c.alumnosNeep || 0), 0);
+      alumnosNeep = matriculaProyectada > 0 ? Math.min(sumaNeep, Math.max(0, matriculaProyectada - alumnosNeet)) : sumaNeep;
+    }
+  }
 
   // Régimen por defecto: JEC si alguno es JEC
   const regimenDefecto: 'JEC' | 'No JEC' = cursos.some(c => c.regimen === 'JEC') ? 'JEC' : 'No JEC';

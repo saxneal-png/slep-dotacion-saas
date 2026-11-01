@@ -49,6 +49,25 @@ describe('Motor Normativo PIE (Decreto 170 / Ord. 2398)', () => {
     expect(resSinJec.horasPaeHHMM).toBe('02:30');
   });
 
+  it('calcula la demanda para curso con solo NEEP y 0 NEET sin cobrar erróneamente la base transitoria', () => {
+    // 0 NEET y 1 NEEP: debe ser exactamente 3.0h (02:15 Diferencial + 00:45 PAE)
+    const res1Neep = calcularDemandaNormativaPieCurso(0, 1, true);
+    expect(res1Neep.horasTotalCronologicas).toBe(3);
+    expect(res1Neep.horasDiferencialDecimal).toBe(2.25);
+    expect(res1Neep.horasDiferencialHHMM).toBe('02:15');
+    expect(res1Neep.horasPaeDecimal).toBe(0.75);
+    expect(res1Neep.horasPaeHHMM).toBe('00:45');
+    expect(res1Neep.horasTrabajoColaborativoCronologicas).toBe(3.0);
+
+    // 0 NEET y 2 NEEP: debe ser exactamente 6.0h (04:30 Diferencial + 01:30 PAE)
+    const res2Neep = calcularDemandaNormativaPieCurso(0, 2, false);
+    expect(res2Neep.horasTotalCronologicas).toBe(6);
+    expect(res2Neep.horasDiferencialDecimal).toBe(4.5);
+    expect(res2Neep.horasDiferencialHHMM).toBe('04:30');
+    expect(res2Neep.horasPaeDecimal).toBe(1.5);
+    expect(res2Neep.horasPaeHHMM).toBe('01:30');
+  });
+
   it('detecta aforo excedido cuando hay más de 5 NEET o más de 2 NEEP', () => {
     const res = calcularDemandaNormativaPieCurso(6, 3, true);
     expect(res.cumpleAforo).toBe(false);

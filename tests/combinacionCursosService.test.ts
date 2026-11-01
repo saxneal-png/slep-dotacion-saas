@@ -131,6 +131,32 @@ describe('Servicio de Combinación y Descombinación de Cursos', () => {
       expect(combinado.nivel).toContain('1° Básico - 2° Básico');
     });
 
+    it('no infla artificialmente NEET y NEEP al combinar cursos rurales que tenían valores por defecto 5 y 2', () => {
+      // 4 cursos rurales de 1° a 4° Básico con valores default de plantilla (5 NEET, 2 NEEP) y matrícula rural de 3 alumnos c/u
+      const cursosRurales: CursoSae[] = [1, 2, 3, 4].map(g => ({
+        id: `c-r${g}`,
+        rbd: '5555',
+        periodo: 2026,
+        nivel: `${g}° Básico`,
+        letra: 'A',
+        regimen: 'JEC',
+        regimenProporcion: '60_40',
+        matriculaProyectada: 3,
+        cupoSae: 15,
+        alumnosNeet: 5,
+        alumnosNeep: 2
+      }));
+
+      const combinado = combinarCursosExistentes(cursosRurales);
+
+      // Matrícula total es 12
+      expect(combinado.matriculaProyectada).toBe(12);
+      // No debe sumar 4x5 = 20 NEET ni 4x2 = 8 NEEP; debe mantener el aforo reglamentario para 1 aula
+      expect(combinado.alumnosNeet).toBe(5);
+      expect(combinado.alumnosNeep).toBe(2);
+      expect(combinado.esMultigrado).toBe(true);
+    });
+
     it('permite personalizar el nombre, letra y proporción del curso combinado', () => {
       const curso1: CursoSae = {
         id: 'c1',

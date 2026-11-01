@@ -285,8 +285,14 @@ export function calcularDemandaNormativaPieCurso(
       reqPae = 2.50;   // 02:30
       reqTotal = 7.0;
     }
+  } else if (neetCount === 0 && neepCount > 0) {
+    // Caso 2: Solo NEEP (sin NEET) -> 3.0h cronológicas por NEEP (2h15m = 2.25h Dif + 0h45m = 0.75h PAE)
+    // No aplica la base de 10h/7h de NEET porque el curso no registra estudiantes transitorios
+    reqEdDif = neepCount * 2.25;
+    reqPae = neepCount * 0.75;
+    reqTotal = neepCount * 3.0;
   } else {
-    // Caso 2: Con NEEP
+    // Caso 3: Con NEET y NEEP combinados (aplica matriz oficial Ord. 2398 / Dto. 170)
     const match = table.find(item => item.neep.cantidad_estudiantes === neepCount);
     if (match) {
       reqEdDif = hhmmToDec(match.distribucion_profesionales.profesor_educacion_diferencial);

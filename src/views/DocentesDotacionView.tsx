@@ -857,12 +857,30 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               ) : (
                 docentesFiltrados.map(({ docente: d, pedAsignadas, pedAulaRegular, pedCoDocencia, pedTallerSep, pedTrabajoColab, ped65, ped60, pieCronologicas, sepExentas, calculo, valSobre, auditMulti, esExento, hDir, hInsp, hTec, hCoord, hTallerSepDoc, hColabDoc, docTerritorial, esImprocedenteFinanciamiento, deficitFinanciamiento }) => {
                 const esMultiEscuela = docTerritorial && docTerritorial.contratos.length > 1;
-                const hnlHoras = Math.floor(auditMulti.minutosHnlTotal / 60);
-                const hnlMins = auditMulti.minutosHnlTotal % 60;
-                const recHoras = Math.floor(auditMulti.minutosRecreoTotal / 60);
-                const recMins = auditMulti.minutosRecreoTotal % 60;
-                const planHoras = Math.floor(auditMulti.minutosHnlPlanificacion40 / 60);
-                const planMins = auditMulti.minutosHnlPlanificacion40 % 60;
+
+                // Para Educadoras Diferenciales (cuyo contrato PIE está exento en la homologación DEP de la proporción 65/35 regular):
+                // Calculamos su desglose de derechos Ley 20.903 y Decreto 170 sobre su carga neta de aula para visibilizar
+                // sus Horas No Lectivas reales (destinadas a trabajo colaborativo, FUDEI, PACI) y su tope máximo lectivo.
+                const esDiferencialPie = d.estamento === 'DOCENTE_DIFERENCIAL';
+                const calculoRefDiferencial = (esDiferencialPie && auditMulti.minutosHnlTotal === 0 && d.horasContrato > 0)
+                  ? calcularJornadaMinutos(
+                      Math.max(0, d.horasContrato - (d.horasCoordinacionPie || 0) - (d.horasDirectivas || 0) - (d.horasTecnicoPedagogicas || 0)),
+                      pedAsignadas,
+                      regimenTabla,
+                      Boolean(d.aplicaArticulo69)
+                    )
+                  : null;
+
+                const minutosHnlEfectivos = calculoRefDiferencial ? calculoRefDiferencial.minutosNoLectivosCalculados : auditMulti.minutosHnlTotal;
+                const minutosRecreoEfectivos = calculoRefDiferencial ? calculoRefDiferencial.minutosRecreoAsignados : auditMulti.minutosRecreoTotal;
+                const minutosPlanEfectivos = calculoRefDiferencial ? Math.round(calculoRefDiferencial.minutosNoLectivosCalculados * 0.40) : auditMulti.minutosHnlPlanificacion40;
+
+                const hnlHoras = Math.floor(minutosHnlEfectivos / 60);
+                const hnlMins = minutosHnlEfectivos % 60;
+                const recHoras = Math.floor(minutosRecreoEfectivos / 60);
+                const recMins = minutosRecreoEfectivos % 60;
+                const planHoras = Math.floor(minutosPlanEfectivos / 60);
+                const planMins = minutosPlanEfectivos % 60;
 
                 return (
                   <React.Fragment key={d.id}>
@@ -962,6 +980,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                             {auditMulti.porcentajeLectivoReal}% (&gt; {auditMulti.porcentajeLimitePonderado}%)
                           </span>
                         </div>
+                      ) : calculoRefDiferencial?.esSobreasignado ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200" title={`Supera el tope de aula de la Ley 20.903 (${calculoRefDiferencial.horasPedagogicasDisponiblesMax} HA) para su jornada contratada.`}>
+                            Exceso Aula PIE
+                          </span>
+                          <span className="text-[9px] text-rose-600 font-semibold">
+                            {pedAsignadas} / {calculoRefDiferencial.horasPedagogicasDisponiblesMax} HA
+                          </span>
+                        </div>
                       ) : auditMulti.saldoHoras > 0 ? (
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           +{auditMulti.saldoHoras} hrs (Libres)
@@ -993,6 +1020,9 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       </div>
                       <div className="text-[9px] text-slate-400">
                         Recreo: <strong>{recHoras}h {recMins}m</strong>
+                        {calculoRefDiferencial && (
+                          <span className="block text-[8px] text-orange-600 font-semibold">Norma PIE</span>
+                        )}
                       </div>
                     </td>
 
@@ -1001,6 +1031,9 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       <span className="text-xs font-bold text-emerald-600">
                         {planHoras}h {planMins}m
                       </span>
+                      {calculoRefDiferencial && (
+                        <div className="text-[8px] text-emerald-700 font-medium">Prep./Colab.</div>
+                      )}
                     </td>
 
                     <td className="px-4 py-3 text-center">
