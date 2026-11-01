@@ -1,18 +1,144 @@
 import { SigeDocenteRow, Docente, Establecimiento, EstamentoDocente, CalidadJuridicaDocente } from '../types';
 import { identifySchool } from '../data/slepSchoolsCatalog';
+import { validarRut, normalizarRut } from '../utils/rutUtils';
+import * as XLSX from 'xlsx';
+
+// Diccionario de rescate para reparar caracteres dañados o corruptos ('' / \ufffd)
+// La clave contiene [BAD] en la posición donde se corrompió la letra
+const DICCIONARIO_RESCATE: Record<string, string> = {
+  // Nombres y Apellidos comunes en Chile
+  'PE[BAD]A': 'PEÑA',
+  'MU[BAD]OZ': 'MUÑOZ',
+  'ACU[BAD]A': 'ACUÑA',
+  'CAMA[BAD]O': 'CAMAÑO',
+  'CASTA[BAD]EDA': 'CASTAÑEDA',
+  'BRICE[BAD]O': 'BRICEÑO',
+  'GUI[BAD]EZ': 'GUÍÑEZ',
+  'GU[BAD]EZ': 'GUÍÑEZ',
+  'NU[BAD]EZ': 'NÚÑEZ',
+  'ZU[BAD]IGA': 'ZÚÑIGA',
+  'D[BAD]AZ': 'DÍAZ',
+  'GONZ[BAD]LEZ': 'GONZÁLEZ',
+  'RODR[BAD]GUEZ': 'RODRÍGUEZ',
+  'HERN[BAD]NDEZ': 'HERNÁNDEZ',
+  'L[BAD]PEZ': 'LÓPEZ',
+  'P[BAD]REZ': 'PÉREZ',
+  'S[BAD]NCHEZ': 'SÁNCHEZ',
+  'RAM[BAD]REZ': 'RAMÍREZ',
+  'MART[BAD]NEZ': 'MARTÍNEZ',
+  'JIM[BAD]NEZ': 'JIMÉNEZ',
+  'MEL[BAD]NDEZ': 'MELÉNDEZ',
+  'ALARC[BAD]N': 'ALARCÓN',
+  'CORVAL[BAD]N': 'CORVALÁN',
+  'MAR[BAD]A': 'MARÍA',
+  'RUB[BAD]N': 'RUBÉN',
+  'JOS[BAD]': 'JOSÉ',
+  'TOM[BAD]S': 'TOMÁS',
+  'HERN[BAD]N': 'HERNÁN',
+  'AGUST[BAD]N': 'AGUSTÍN',
+  // Asignaturas y Sectores MINEDUC
+  'EDUCACI[BAD]N': 'EDUCACIÓN',
+  'F[BAD]SICA': 'FÍSICA',
+  'B[BAD]SICA': 'BÁSICA',
+  'COMUNICACI[BAD]N': 'COMUNICACIÓN',
+  'INGL[BAD]S': 'INGLÉS',
+  'MATEM[BAD]TICA': 'MATEMÁTICA',
+  'RELIGI[BAD]N': 'RELIGIÓN',
+  'T[BAD]CNICO': 'TÉCNICO',
+  'T[BAD]CNICA': 'TÉCNICA',
+  'T[BAD]CNICO-PEDAG[BAD]GICA': 'TÉCNICO-PEDAGÓGICA',
+  'PEDAG[BAD]GICA': 'PEDAGÓGICA',
+  'ALIMENTACI[BAD]N': 'ALIMENTACIÓN',
+};
+
+const MOJIBAKE_MAP: Record<string, string> = {
+  'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú',
+  'Ã': 'Á', 'Ã‰': 'É', 'Ã': 'Í', 'Ã“': 'Ó', 'Ãš': 'Ú',
+  'Ã±': 'ñ', 'Ã‘': 'Ñ', 'Â°': '°'
+};
 
 /**
- * Limpia caracteres dañados o mojibake provenientes de exportaciones SIGE (ISO-8859-1 / Windows-1252)
+ * Limpia y normaliza texto proveniente de exportaciones SIGE.
+ * Repara mojibake, tildes y eñes perdidas sin alterar nombres válidos como Marta.
  */
 export function limpiarTextoMineduc(texto: string): string {
   if (!texto) return '';
-  return texto.trim();
+  let res = texto.trim();
+
+  // 1. Corrección de mojibake UTF-8 decodificado erróneamente
+  for (const [bad, good] of Object.entries(MOJIBAKE_MAP)) {
+    if (res.includes(bad)) {
+      res = res.replaceAll(bad, good);
+    }
+  }
+
+  // 2. Rescate de caracteres '' (\ufffd) usando diccionario fonético oficial
+  if (res.includes('\ufffd') || res.includes('')) {
+    for (const [patron, reemplazo] of Object.entries(DICCIONARIO_RESCATE)) {
+      const regPattern = patron.replace('[BAD]', '[\ufffd]');
+      const reg = new RegExp(`\\b${regPattern}\\b`, 'gi');
+      res = res.replace(reg, reemplazo);
+    }
+    // Reemplazo genérico para cualquier carácter residual que quede
+    res = res.replaceAll('\ufffd', '').replaceAll('', '');
+  }
+
+  // Quitar dobles espacios
+  return res.replace(/\s+/g, ' ').trim();
 }
 
 /**
- * Parsea el contenido en texto plano de una exportación oficial SIGE MINEDUC (delimitada por punto y coma)
+ * Convierte un texto a Title Case respetando acentos y eñes
  */
-export function parsearPlanillaSige(contenidoTexto: string): {
+export function toTitleCase(str: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map(palabra => palabra.charAt(0).toUpperCase() + palabra.slice(1))
+    .join(' ');
+}
+
+/**
+ * Decodifica un ArrayBuffer a string protegiendo la codificación nativa de SIGE (Windows-1252)
+ * y soportando además libros Excel (.xlsx / .xls).
+ */
+export function decodificarArchivoSige(buffer: ArrayBuffer, nombreArchivo: string): string {
+  const ext = nombreArchivo.toLowerCase().split('.').pop() || '';
+
+  // Si es un archivo Excel (.xlsx, .xls)
+  if (['xlsx', 'xls', 'xlsm'].includes(ext)) {
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    // Convertir la hoja a CSV delimitado por punto y coma (formato canónico SIGE)
+    return XLSX.utils.sheet_to_csv(worksheet, { FS: ';' });
+  }
+
+  // Si es CSV o TXT crudo de SIGE:
+  // Intentar con windows-1252 primero (donde 0xD1 es Ñ y 0xC1 es Á)
+  try {
+    const winDecoder = new TextDecoder('windows-1252');
+    const textoWin = winDecoder.decode(buffer);
+    // Verificar si decodificó limpiamente
+    if (!textoWin.includes('')) {
+      return textoWin;
+    }
+    // Si contiene , probar con UTF-8 por si ya venía guardado en UTF-8
+    const utf8Decoder = new TextDecoder('utf-8');
+    const textoUtf8 = utf8Decoder.decode(buffer);
+    if (!textoUtf8.includes('')) {
+      return textoUtf8;
+    }
+    return textoWin;
+  } catch {
+    const fallbackDecoder = new TextDecoder('utf-8');
+    return fallbackDecoder.decode(buffer);
+  }
+}
+
+export interface ResultadoParseoSige {
   rbdDetectado: string;
   nombreColegioDetectado: string;
   filas: SigeDocenteRow[];
@@ -25,91 +151,174 @@ export function parsearPlanillaSige(contenidoTexto: string): {
     totalHorasTecnicas: number;
     totalHorasAula: number;
   };
-} {
+  advertencias: Array<{ linea: number; run: string; mensaje: string }>;
+}
+
+/**
+ * Parsea el contenido en texto plano de una exportación oficial SIGE MINEDUC
+ */
+export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string, periodo: number = 2027): ResultadoParseoSige {
   const lineas = contenidoTexto
     .split(/\r?\n/)
     .map(l => l.trim())
     .filter(l => l.length > 0);
 
   if (lineas.length === 0) {
-    throw new Error('El archivo SIGE está vacío.');
+    throw new Error('El archivo proporcionado está vacío.');
   }
 
-  // Verificar encabezado
-  const cabeceraLinea = lineas[0];
-  const cabeceras = cabeceraLinea.split(';').map(c => c.trim().toUpperCase());
+  // Detectar delimitador (punto y coma prioritario en SIGE, o coma si fue exportado por Excel)
+  const primeraLinea = lineas[0];
+  const separador = primeraLinea.includes(';') ? ';' : ',';
 
-  const idxRun = cabeceras.indexOf('DOC_RUN');
-  const idxDv = cabeceras.indexOf('DOC_DV');
-  const idxNombre = cabeceras.indexOf('DOC_NOMBRE');
-  const idxPaterno = cabeceras.indexOf('DOC_PATERNO');
-  const idxMaterno = cabeceras.indexOf('DOC_MATERNO');
-  const idxRbd = cabeceras.indexOf('RBD');
-  const idxNombreEsta = cabeceras.indexOf('NOMBRE_ESTA');
-  const idxFuncP = cabeceras.indexOf('FUNCION_PRINCIPAL');
-  const idxFuncS = cabeceras.indexOf('FUNCION_SECUNDARIA');
-  const idxHorasContrato = cabeceras.indexOf('HORAS_CONTRATO');
-  const idxHorasIngles = cabeceras.indexOf('HORAS_INGLES');
-  const idxHorasDirectivas = cabeceras.indexOf('HORAS_DIRECTIVAS');
-  const idxHorasTecnicas = cabeceras.indexOf('HORAS_TECNICO_PEDAGOGICA');
-  const idxHorasAula = cabeceras.indexOf('HORAS_AULA');
-  const idxPedF1 = cabeceras.indexOf('HORAS_PEDAGOGICAS_FUNCION_1');
-  const idxPedF2 = cabeceras.indexOf('HORAS_PEDAGOGICAS_FUNCION_2');
-  const idxSec1 = cabeceras.indexOf('SECTOR_FUNCION_1');
-  const idxSubSec1 = cabeceras.indexOf('SUB_SECTOR_FUNCION_1');
-  const idxSec2 = cabeceras.indexOf('SECTOR_FUNCION_2');
-  const idxSubSec2 = cabeceras.indexOf('SUB_SECTOR_FUNCION_2');
-  const idxIdoneidad = cabeceras.indexOf('ESTADO_IDONEIDAD');
+  const cabeceras = primeraLinea
+    .split(separador)
+    .map(c => limpiarTextoMineduc(c).toUpperCase());
 
-  if (idxRun === -1 || idxRbd === -1) {
-    throw new Error('Formato SIGE inválido: No se encontraron las columnas DOC_RUN o RBD.');
+  // Búsqueda flexible de columnas por nombres estándar de SIGE o reportes de personal
+  const getIndex = (...nombres: string[]) => {
+    for (const n of nombres) {
+      const idx = cabeceras.indexOf(n);
+      if (idx !== -1) return idx;
+    }
+    // Búsqueda parcial
+    for (const n of nombres) {
+      const idx = cabeceras.findIndex(c => c.includes(n));
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+
+  const idxRun = getIndex('DOC_RUN', 'RUN', 'RUT', 'R.U.N.', 'RUT / RUN');
+  const idxDv = getIndex('DOC_DV', 'DV');
+  const idxNombre = getIndex('DOC_NOMBRE', 'DOC_NOMBRES', 'NOMBRES', 'NOMBRE', 'FUNCIONARIO');
+  const idxPaterno = getIndex('DOC_PATERNO', 'APELLIDO_PATERNO', 'PATERNO');
+  const idxMaterno = getIndex('DOC_MATERNO', 'APELLIDO_MATERNO', 'MATERNO');
+  const idxRbd = getIndex('RBD', 'COLEGIO');
+  const idxNombreEsta = getIndex('NOMBRE_ESTA', 'NOMBRE_ESTAB', 'ESTABLECIMIENTO', 'ESCUELA');
+  const idxFuncP = getIndex('FUNCION_PRINCIPAL', 'CARGO / FUNCIÓN', 'CARGO', 'FUNCION');
+  const idxFuncS = getIndex('FUNCION_SECUNDARIA');
+  const idxHorasContrato = getIndex('HORAS_CONTRATO', 'HORAS CONTRATO', 'HRS_CONTRATO');
+  const idxHorasIngles = getIndex('HORAS_INGLES');
+  const idxHorasDirectivas = getIndex('HORAS_DIRECTIVAS', 'DIRECTIVAS');
+  const idxHorasTecnicas = getIndex('HORAS_TECNICO_PEDAGOGICA', 'HORAS_TECNICAS', 'TÉCNICAS');
+  const idxHorasAula = getIndex('HORAS_AULA', 'AULA');
+  const idxPedF1 = getIndex('HORAS_PEDAGOGICAS_FUNCION_1');
+  const idxPedF2 = getIndex('HORAS_PEDAGOGICAS_FUNCION_2');
+  const idxSec1 = getIndex('SECTOR_FUNCION_1');
+  const idxSubSec1 = getIndex('SUB_SECTOR_FUNCION_1');
+  const idxSec2 = getIndex('SECTOR_FUNCION_2');
+  const idxSubSec2 = getIndex('SUB_SECTOR_FUNCION_2');
+  const idxIdoneidad = getIndex('ESTADO_IDONEIDAD');
+
+  if (idxRun === -1) {
+    throw new Error('Formato no reconocido: No se encontró la columna de RUN / RUT en el archivo.');
   }
 
   const filas: SigeDocenteRow[] = [];
-  let rbdDetectado = '';
+  const advertencias: Array<{ linea: number; run: string; mensaje: string }> = [];
+  let rbdDetectado = rbdDestino || '';
   let nombreColegioDetectado = '';
 
   for (let i = 1; i < lineas.length; i++) {
-    const cols = lineas[i].split(';');
-    if (cols.length < 5) continue;
+    const cols = lineas[i].split(separador).map(c => c.trim());
+    if (cols.length < 3) continue;
 
-    const rawRun = cols[idxRun]?.trim() || '';
-    if (!rawRun || isNaN(Number(rawRun))) continue;
+    const rawRunStr = cols[idxRun] || '';
+    if (!rawRunStr || rawRunStr === '--') continue;
 
-    const dv = cols[idxDv]?.trim() || '';
-    const nombres = limpiarTextoMineduc(cols[idxNombre] || '');
-    const paterno = limpiarTextoMineduc(cols[idxPaterno] || '');
-    const materno = limpiarTextoMineduc(cols[idxMaterno] || '');
-    const rbd = cols[idxRbd]?.trim() || '';
-    const nombreEsta = limpiarTextoMineduc(cols[idxNombreEsta] || '');
+    // Obtener RUN y DV
+    let runNumStr = '';
+    let dv = '';
 
-    if (!rbdDetectado && rbd) rbdDetectado = rbd;
-    if (!nombreColegioDetectado && nombreEsta) nombreColegioDetectado = nombreEsta;
+    if (idxDv !== -1 && cols[idxDv]) {
+      runNumStr = rawRunStr.replace(/\D/g, '');
+      dv = cols[idxDv].trim().toUpperCase();
+    } else {
+      const norm = normalizarRut(rawRunStr);
+      if (norm.includes('-')) {
+        const parts = norm.split('-');
+        runNumStr = parts[0];
+        dv = parts[1].toUpperCase();
+      } else {
+        runNumStr = rawRunStr.replace(/\D/g, '');
+      }
+    }
 
-    const funcP = cols[idxFuncP]?.trim() || 'DOCENTE DE AULA';
-    const funcS = cols[idxFuncS]?.trim() || '--';
-    const hContrato = parseInt(cols[idxHorasContrato]) || 0;
-    const hIngles = parseInt(cols[idxHorasIngles]) || 0;
-    const hDirectivas = parseInt(cols[idxHorasDirectivas]) || 0;
-    const hTecnicas = parseInt(cols[idxHorasTecnicas]) || 0;
-    const hAula = parseInt(cols[idxHorasAula]) || 0;
-    const hPed1 = parseInt(cols[idxPedF1]) || 0;
-    const hPed2 = parseInt(cols[idxPedF2]) || 0;
-    const sec1 = cols[idxSec1]?.trim() || '';
-    const subSec1 = cols[idxSubSec1]?.trim() || '';
-    const sec2 = cols[idxSec2]?.trim() || '';
-    const subSec2 = cols[idxSubSec2]?.trim() || '';
-    const idoneidad = cols[idxIdoneidad]?.trim() || 'OK';
+    if (!runNumStr) continue;
+
+    const runCompleto = dv ? `${runNumStr}-${dv}` : runNumStr;
+    const esRutValido = validarRut(runCompleto);
+    if (!esRutValido && dv) {
+      advertencias.push({
+        linea: i + 1,
+        run: runCompleto,
+        mensaje: `El RUN ${runCompleto} presenta inconsistencia con el dígito verificador Módulo 11.`
+      });
+    }
+
+    // Nombres y Apellidos
+    let nombres = '';
+    let apellidos = '';
+
+    if (idxPaterno !== -1) {
+      const pat = limpiarTextoMineduc(cols[idxPaterno] || '');
+      const mat = idxMaterno !== -1 ? limpiarTextoMineduc(cols[idxMaterno] || '') : '';
+      apellidos = `${pat} ${mat}`.trim();
+      nombres = limpiarTextoMineduc(cols[idxNombre] || '');
+    } else if (idxNombre !== -1) {
+      // Si viene una columna combinada "Funcionario" o "Nombre Completo"
+      const fullName = limpiarTextoMineduc(cols[idxNombre] || '');
+      const parts = fullName.split(' ');
+      if (parts.length >= 3) {
+        nombres = parts.slice(0, parts.length - 2).join(' ');
+        apellidos = parts.slice(parts.length - 2).join(' ');
+      } else if (parts.length === 2) {
+        nombres = parts[0];
+        apellidos = parts[1];
+      } else {
+        nombres = fullName;
+        apellidos = 'Docente';
+      }
+    }
+
+    const rbdFila = idxRbd !== -1 ? cols[idxRbd]?.trim() : '';
+    const nombreEstaFila = idxNombreEsta !== -1 ? limpiarTextoMineduc(cols[idxNombreEsta] || '') : '';
+
+    if (!rbdDetectado && rbdFila) rbdDetectado = rbdFila;
+    if (!nombreColegioDetectado && nombreEstaFila) nombreColegioDetectado = nombreEstaFila;
+
+    const funcP = idxFuncP !== -1 ? limpiarTextoMineduc(cols[idxFuncP] || '') : 'DOCENTE DE AULA';
+    const funcS = idxFuncS !== -1 ? limpiarTextoMineduc(cols[idxFuncS] || '') : '--';
+    
+    const parseIntSafe = (idx: number) => {
+      if (idx === -1) return 0;
+      const v = cols[idx]?.replace(/\D/g, '');
+      return v ? parseInt(v, 10) : 0;
+    };
+
+    const hContrato = parseIntSafe(idxHorasContrato);
+    const hIngles = parseIntSafe(idxHorasIngles);
+    const hDirectivas = parseIntSafe(idxHorasDirectivas);
+    const hTecnicas = parseIntSafe(idxHorasTecnicas);
+    const hAula = parseIntSafe(idxHorasAula);
+    const hPed1 = parseIntSafe(idxPedF1);
+    const hPed2 = parseIntSafe(idxPedF2);
+    const sec1 = idxSec1 !== -1 ? limpiarTextoMineduc(cols[idxSec1] || '') : '';
+    const subSec1 = idxSubSec1 !== -1 ? limpiarTextoMineduc(cols[idxSubSec1] || '') : '';
+    const sec2 = idxSec2 !== -1 ? limpiarTextoMineduc(cols[idxSec2] || '') : '';
+    const subSec2 = idxSubSec2 !== -1 ? limpiarTextoMineduc(cols[idxSubSec2] || '') : '';
+    const idoneidad = idxIdoneidad !== -1 ? cols[idxIdoneidad]?.trim() || 'OK' : 'OK';
 
     filas.push({
-      runCompleto: `${rawRun}-${dv}`,
-      run: rawRun,
+      runCompleto,
+      run: runNumStr,
       dv,
-      nombres,
-      apellidos: `${paterno} ${materno}`.trim(),
-      rbd,
-      nombreEstablecimiento: nombreEsta,
-      funcionPrincipal: funcP,
+      nombres: toTitleCase(nombres),
+      apellidos: toTitleCase(apellidos),
+      rbd: rbdFila || rbdDetectado,
+      nombreEstablecimiento: nombreEstaFila || nombreColegioDetectado,
+      funcionPrincipal: funcP || 'DOCENTE DE AULA',
       funcionSecundaria: funcS,
       horasContrato: hContrato,
       horasIngles: hIngles,
@@ -126,6 +335,8 @@ export function parsearPlanillaSige(contenidoTexto: string): {
     });
   }
 
+  const rbdFinal = rbdDestino || rbdDetectado || '0';
+
   // Convertir a modelos Docente de la aplicación
   const docentesConvertidos: Docente[] = filas.map(f => {
     let estamento: EstamentoDocente = 'DOCENTE_AULA';
@@ -134,9 +345,18 @@ export function parsearPlanillaSige(contenidoTexto: string): {
 
     if (funcUpper.includes('DIRECTOR') || funcUpper.includes('INSPECTOR') || funcUpper.includes('ORIENTADOR')) {
       estamento = 'DIRECTIVO';
-    } else if (funcUpper.includes('TÉCNICO') || funcUpper.includes('TECNICO') || funcUpper.includes('PEDAGÓGICA') || funcUpper.includes('UTP')) {
+    } else if (
+      funcUpper.includes('TÉCNICO') ||
+      funcUpper.includes('TECNICO') ||
+      funcUpper.includes('PEDAGÓGICA') ||
+      funcUpper.includes('UTP')
+    ) {
       estamento = 'TECNICO_PEDAGOGICO';
-    } else if (funcUpper.includes('DIFERENCIAL') || sec1Upper.includes('ESPECIAL') || sec1Upper.includes('DIFERENCIAL')) {
+    } else if (
+      funcUpper.includes('DIFERENCIAL') ||
+      sec1Upper.includes('ESPECIAL') ||
+      sec1Upper.includes('DIFERENCIAL')
+    ) {
       estamento = 'DOCENTE_DIFERENCIAL';
     } else if (funcUpper.includes('CRA')) {
       estamento = 'COORDINADOR_CRA';
@@ -145,11 +365,12 @@ export function parsearPlanillaSige(contenidoTexto: string): {
     }
 
     let asignatura = f.subSectorFuncion1 !== '--' && f.subSectorFuncion1 ? f.subSectorFuncion1 : f.sectorFuncion1;
-    if (asignatura === '--') asignatura = f.funcionPrincipal;
+    if (!asignatura || asignatura === '--') asignatura = f.funcionPrincipal;
 
     return {
-      id: `doc-${f.rbd}-${f.run}`,
-      rbd: f.rbd,
+      id: `doc-${rbdFinal}-${f.run}`,
+      rbd: rbdFinal,
+      periodo: periodo,
       run: f.runCompleto,
       nombres: f.nombres,
       apellidos: f.apellidos,
@@ -157,13 +378,19 @@ export function parsearPlanillaSige(contenidoTexto: string): {
       calidadJuridica: 'TITULAR' as CalidadJuridicaDocente,
       estamento,
       horasContrato: f.horasContrato,
+      horasSubvencionGeneralTitular: f.horasContrato,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasPieTitular: 0,
+      horasPieContrata: 0,
       horasDirectivas: f.horasDirectivas,
       horasTecnicoPedagogicas: f.horasTecnicoPedagogica,
       horasAula: f.horasAula,
       horasIngles: f.horasIngles,
       funcionPrincipal: f.funcionPrincipal,
       funcionSecundaria: f.funcionSecundaria !== '--' ? f.funcionSecundaria : undefined,
-      asignaturaPrincipal: asignatura,
+      asignaturaPrincipal: toTitleCase(asignatura),
       aplicaArticulo69: false
     };
   });
@@ -196,6 +423,7 @@ export function parsearPlanillaSige(contenidoTexto: string): {
     filas,
     docentesConvertidos,
     establecimientoSugerido,
-    totales
+    totales,
+    advertencias
   };
 }

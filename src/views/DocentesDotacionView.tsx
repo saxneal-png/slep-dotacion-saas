@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ModalPegarDesdeExcel } from '../components/ModalPegarDesdeExcel';
+import { ModalImportarSige } from '../components/ModalImportarSige';
 import { 
   Establecimiento, 
   Docente, 
@@ -81,6 +82,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
   const [expandedDocenteId, setExpandedDocenteId] = useState<string | null>(null);
   const [modalPegarAbierto, setModalPegarAbierto] = useState(false);
+  const [modalSigeAbierto, setModalSigeAbierto] = useState(false);
 
   // Filtros de búsqueda de docentes
   const [busquedaDocente, setBusquedaDocente] = useState('');
@@ -452,6 +454,17 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               <span>Gestionar Planes</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => setModalSigeAbierto(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
+            title="Importar nómina docente oficial descargada desde SIGE (.csv o .xlsx)"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+            <span>Importar Nómina SIGE</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setModalPegarAbierto(true)}
@@ -1080,6 +1093,20 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         periodoActivo={periodoActivo}
         onGuardarBatch={async (items) => {
           for (const d of items) {
+            await onGuardarDocente(d);
+          }
+        }}
+      />
+
+      {/* Modal Importar Nómina SIGE */}
+      <ModalImportarSige
+        isOpen={modalSigeAbierto}
+        onClose={() => setModalSigeAbierto(false)}
+        colegio={colegio}
+        docentesActuales={docentes}
+        periodoActivo={periodoActivo}
+        onGuardarBatch={async (nuevosDocentes) => {
+          for (const d of nuevosDocentes) {
             await onGuardarDocente(d);
           }
         }}
