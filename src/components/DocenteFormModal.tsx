@@ -11,7 +11,8 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
-  FileSpreadsheet
+  FileSpreadsheet,
+  GraduationCap
 } from 'lucide-react';
 import type { 
   Docente, 
