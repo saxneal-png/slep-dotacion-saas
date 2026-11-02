@@ -334,6 +334,13 @@ export function parseAsistentesFromRows(
     ) {
       colMap['horasPieUnified'] = idx;
     }
+    // HONORARIOS
+    else if (
+      colMap['horasHonorarios'] === undefined &&
+      /HONORARIO/i.test(colText)
+    ) {
+      colMap['horasHonorarios'] = idx;
+    }
     // Observaciones / Notas
     else if (
       colMap['observaciones'] === undefined &&
@@ -380,6 +387,7 @@ export function parseAsistentesFromRows(
     let horasSepPlazo = parseNumber(colMap['horasSepPlazo'] !== undefined ? row[colMap['horasSepPlazo']] : 0);
     let horasPieInd = parseNumber(colMap['horasPieInd'] !== undefined ? row[colMap['horasPieInd']] : 0);
     let horasPiePlazo = parseNumber(colMap['horasPiePlazo'] !== undefined ? row[colMap['horasPiePlazo']] : 0);
+    let horasHonorarios = parseNumber(colMap['horasHonorarios'] !== undefined ? row[colMap['horasHonorarios']] : 0);
 
     // 2. Extraer columnas unificadas si las divididas están ausentes
     const hSubGralUni = parseNumber(colMap['horasSubvGralUnified'] !== undefined ? row[colMap['horasSubvGralUnified']] : 0);
@@ -418,7 +426,7 @@ export function parseAsistentesFromRows(
     const observacionesFinal = Array.from(new Set(obsArray)).join('; ');
 
     // 3. Fallback contextual si las columnas de subvención venían vacías pero hay horas de contrato
-    let sumFuentes = horasSubvGralInd + horasSubvGralPlazo + horasSepInd + horasSepPlazo + horasPieInd + horasPiePlazo;
+    let sumFuentes = horasSubvGralInd + horasSubvGralPlazo + horasSepInd + horasSepPlazo + horasPieInd + horasPiePlazo + horasHonorarios;
 
     if (sumFuentes === 0 && horasContratoRaw > 0) {
       const fullText = `${funcionRaw} ${observacionesFinal}`.toUpperCase();
@@ -458,6 +466,7 @@ export function parseAsistentesFromRows(
       horasSepPlazoFijo: horasSepPlazo,
       horasPieIndefinido: horasPieInd,
       horasPiePlazoFijo: horasPiePlazo,
+      horasHonorarios,
       esDuplaPsicosocial: norm.esDuplaPsicosocial || clasificacion.esDuplaPsicosocial,
       esEquipoPie: norm.esEquipoPie || clasificacion.esEquipoPie,
       esTecnicoParvulo: norm.esTecnicoParvulo || clasificacion.esTecnicoParvulo,

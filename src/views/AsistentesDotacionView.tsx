@@ -134,6 +134,9 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       } else if (filtroFuente === 'PIE') {
         const h = (a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0);
         if (h <= 0) return false;
+      } else if (filtroFuente === 'HONORARIOS') {
+        const h = (a.horasHonorarios || 0);
+        if (h <= 0) return false;
       }
 
       // Filtro Contrato
@@ -143,6 +146,9 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       } else if (filtroContrato === 'PLAZO_FIJO') {
         const hPf = (a.horasSubvencionGeneralPlazoFijo || 0) + (a.horasSepPlazoFijo || 0) + (a.horasPiePlazoFijo || 0);
         if (hPf <= 0) return false;
+      } else if (filtroContrato === 'HONORARIOS') {
+        const hHon = (a.horasHonorarios || 0);
+        if (hHon <= 0) return false;
       }
 
       return true;
@@ -166,6 +172,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       horasSepPlazoFijo: 0,
       horasPieIndefinido: 0,
       horasPiePlazoFijo: 0,
+      horasHonorarios: 0,
       esDuplaPsicosocial: false,
       esEquipoPie: false,
       esTecnicoParvulo: false,
@@ -191,6 +198,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       (Number(d.horasSepPlazoFijo) || 0) +
       (Number(d.horasPieIndefinido) || 0) +
       (Number(d.horasPiePlazoFijo) || 0) +
+      (Number(d.horasHonorarios) || 0) +
       (Number(d.horasProRetencion) || 0)
     );
   };
@@ -226,8 +234,9 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
     const hPieInd = Number(asistenteEdicion.horasPieIndefinido) || 0;
     const hPiePf = Number(asistenteEdicion.horasPiePlazoFijo) || 0;
     const hProRet = Number(asistenteEdicion.horasProRetencion) || 0;
+    const hHon = Number(asistenteEdicion.horasHonorarios) || 0;
 
-    const totalHoras = hGralInd + hGralPf + hSepInd + hSepPf + hPieInd + hPiePf + hProRet;
+    const totalHoras = hGralInd + hGralPf + hSepInd + hSepPf + hPieInd + hPiePf + hProRet + hHon;
     const horasContrato = totalHoras > 0 ? totalHoras : (Number(asistenteEdicion.horasContrato) || 0);
     const esPie = Boolean(asistenteEdicion.esEquipoPie || (hPieInd + hPiePf) > 0);
     const cargoLower = (asistenteEdicion.cargoFuncion || '').toLowerCase();
@@ -252,6 +261,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       horasSepPlazoFijo: hSepPf,
       horasPieIndefinido: hPieInd,
       horasPiePlazoFijo: hPiePf,
+      horasHonorarios: hHon,
       esDuplaPsicosocial: esDupla,
       esEquipoPie: esPie,
       esTecnicoParvulo: !!asistenteEdicion.esTecnicoParvulo,
@@ -291,6 +301,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       'Plazo Fijo SEP': a.horasSepPlazoFijo || 0,
       'Indefinidas PIE': a.horasPieIndefinido || 0,
       'Plazo Fijo PIE': a.horasPiePlazoFijo || 0,
+      'Honorarios': a.horasHonorarios || 0,
       'Dupla Psicosocial': a.esDuplaPsicosocial ? 'SÍ' : 'NO',
       'Equipo PIE': a.esEquipoPie ? 'SÍ' : 'NO',
       'Técnico Párvulo': a.esTecnicoParvulo ? 'SÍ' : 'NO',
@@ -451,7 +462,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
               <Clock className="w-4 h-4" />
             </span>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-1 text-center">
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-1 text-center">
             <div className="p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
               <div className="text-[10px] font-bold text-slate-500">Subv. Gral</div>
               <div className="text-sm font-black text-slate-900 dark:text-white">
@@ -468,6 +479,12 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
               <div className="text-[10px] font-bold text-purple-700 dark:text-purple-400">PIE</div>
               <div className="text-sm font-black text-purple-900 dark:text-purple-200">
                 {diagnostico.totalHorasPie}h
+              </div>
+            </div>
+            <div className="p-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/40">
+              <div className="text-[10px] font-bold text-teal-700 dark:text-teal-400">Honorarios</div>
+              <div className="text-sm font-black text-teal-900 dark:text-teal-200">
+                {diagnostico.totalHorasHonorarios || 0}h
               </div>
             </div>
           </div>
@@ -567,6 +584,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
             <option value="SUBV_GRAL">Subvención General</option>
             <option value="SEP">Ley SEP</option>
             <option value="PIE">Programa PIE</option>
+            <option value="HONORARIOS">Honorarios</option>
           </select>
 
           {/* Filtro Contrato */}
@@ -578,6 +596,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
             <option value="TODOS">Todos los Contratos</option>
             <option value="INDEFINIDO">Indefinido</option>
             <option value="PLAZO_FIJO">Plazo Fijo</option>
+            <option value="HONORARIOS">Honorarios</option>
           </select>
         </div>
 
@@ -628,6 +647,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                 'Plazo Fijo SEP': a.horasSepPlazoFijo || 0,
                 'Indefinidas PIE': a.horasPieIndefinido || 0,
                 'Plazo Fijo PIE': a.horasPiePlazoFijo || 0,
+                'Honorarios': a.horasHonorarios || 0,
                 'Dupla Psicosocial': a.esDuplaPsicosocial ? 'SÍ' : 'NO',
                 'Equipo PIE': a.esEquipoPie ? 'SÍ' : 'NO',
                 'Técnico Párvulo': a.esTecnicoParvulo ? 'SÍ' : 'NO',
@@ -669,13 +689,14 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                 <th className="py-3 px-4 text-center">Subv. Gral (Ind / PF)</th>
                 <th className="py-3 px-4 text-center">SEP (Ind / PF)</th>
                 <th className="py-3 px-4 text-center">PIE (Ind / PF)</th>
+                <th className="py-3 px-4 text-center">Honorarios</th>
                 <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {asistentesFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     <Users className="w-10 h-10 mx-auto mb-2 opacity-30" />
                     <p className="font-semibold">No se encontraron asistentes de la educación</p>
                     <p className="text-[11px] text-slate-500 mt-1">
@@ -689,8 +710,9 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                   const hGral = (a.horasSubvencionGeneralIndefinido || 0) + (a.horasSubvencionGeneralPlazoFijo || 0);
                   const hSep = (a.horasSepIndefinido || 0) + (a.horasSepPlazoFijo || 0);
                   const hPie = (a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0);
+                  const hHonor = (a.horasHonorarios || 0);
                   const hProRet = (a.horasProRetencion || 0);
-                  const totalHorasCalculadas = hGral + hSep + hPie + hProRet;
+                  const totalHorasCalculadas = hGral + hSep + hPie + hHonor + hProRet;
 
                   const tieneDescuadre = Math.abs(totalHorasCalculadas - a.horasContrato) > 0.05 && totalHorasCalculadas > 0;
 
@@ -798,6 +820,17 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                         <span className="text-purple-600 dark:text-purple-500">
                           {a.horasPiePlazoFijo || 0}h
                         </span>
+                      </td>
+
+                      {/* Honorarios */}
+                      <td className="py-3 px-4 text-center font-mono">
+                        {(a.horasHonorarios || 0) > 0 ? (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
+                            {a.horasHonorarios}h
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-600">0h</span>
+                        )}
                       </td>
 
                       {/* Acciones */}
@@ -946,7 +979,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                   })()}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                       Subv. Gral Indefinido
@@ -1061,6 +1094,25 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                         })
                       }
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-teal-600 dark:text-teal-400 mb-1">
+                      Honorarios
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={44}
+                      value={asistenteEdicion.horasHonorarios ?? 0}
+                      onChange={(e) =>
+                        setAsistenteEdicion({
+                          ...asistenteEdicion,
+                          horasHonorarios: Number(e.target.value),
+                          horasContrato: calcularHorasContratoDinamicas({ ...asistenteEdicion, horasHonorarios: Number(e.target.value) })
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-700 font-bold text-teal-800 dark:text-teal-300"
                     />
                   </div>
                 </div>

@@ -160,6 +160,7 @@ export function calcularDiagnosticoAsistentes(
   let totalHorasSubvencionGeneral = 0;
   let totalHorasSep = 0;
   let totalHorasPie = 0;
+  let totalHorasHonorarios = 0;
   let totalHorasIndefinidas = 0;
   let totalHorasPlazoFijo = 0;
 
@@ -244,8 +245,9 @@ export function calcularDiagnosticoAsistentes(
     const horasSepPlazo = a.horasSepPlazoFijo || 0;
     const horasPieInd = a.horasPieIndefinido || 0;
     const horasPiePlazo = a.horasPiePlazoFijo || 0;
+    const horasHonorarios = a.horasHonorarios || 0;
 
-    const sumFuentes = horasGralInd + horasGralPlazo + horasSepInd + horasSepPlazo + horasPieInd + horasPiePlazo;
+    const sumFuentes = horasGralInd + horasGralPlazo + horasSepInd + horasSepPlazo + horasPieInd + horasPiePlazo + horasHonorarios;
     const horasContrato = a.horasContrato || 0;
 
     // Validación de exceso legal Art. 22
@@ -268,6 +270,7 @@ export function calcularDiagnosticoAsistentes(
     totalHorasSubvencionGeneral += horasSubvGral;
     totalHorasSep += horasSep;
     totalHorasPie += horasPie;
+    totalHorasHonorarios += horasHonorarios;
     totalHorasIndefinidas += horasIndef;
     totalHorasPlazoFijo += horasPlazo;
 
@@ -369,6 +372,7 @@ export function calcularDiagnosticoAsistentes(
     totalHorasSubvencionGeneral,
     totalHorasSep,
     totalHorasPie,
+    totalHorasHonorarios,
     totalHorasIndefinidas,
     totalHorasPlazoFijo,
     porcentajeIndefinidos: pctIndefinidos,

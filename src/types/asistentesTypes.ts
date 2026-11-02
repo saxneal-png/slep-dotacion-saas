@@ -75,6 +75,7 @@ export interface DiagnosticoAsistentesColegio {
   totalHorasSubvencionGeneral: number;
   totalHorasSep: number;
   totalHorasPie: number;
+  totalHorasHonorarios?: number;
   totalHorasIndefinidas: number;
   totalHorasPlazoFijo: number;
   porcentajeIndefinidos: number;

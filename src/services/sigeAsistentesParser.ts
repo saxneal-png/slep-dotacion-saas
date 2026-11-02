@@ -422,6 +422,7 @@ export function parsearAsistentesSige(
       horasSepPlazoFijo: 0,
       horasPieIndefinido: horasPie,
       horasPiePlazoFijo: 0,
+      horasHonorarios: 0,
       esDuplaPsicosocial,
       esEquipoPie,
       esTecnicoParvulo,
