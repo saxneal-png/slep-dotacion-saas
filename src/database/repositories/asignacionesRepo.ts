@@ -2,8 +2,52 @@ import { AsignacionHoraria } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
+/**
+ * Purga automática: Elimina asignaciones residuales de "Plan Común Electivo"
+ * en cualquier curso que no corresponda a 3° o 4° Medio (ej. 3° y 4° Básico).
+ */
+export async function purgarAsignacionesPlanComunElectivoInvalidas(dbParam?: any): Promise<number> {
+  const db = dbParam || await getDb();
+  try {
+    const res = db.exec(`
+      SELECT a.id, a.asignatura, c.nivel
+      FROM asignaciones_horarias a
+      LEFT JOIN cursos_sae c ON a.curso_id = c.id
+      WHERE (
+        LOWER(a.asignatura) LIKE '%plan com%n electivo%' OR
+        LOWER(a.asignatura) LIKE '%plan comun electivo%'
+      )
+    `);
+    if (!res.length || !res[0].values.length) return 0;
+
+    const idsAEliminar: string[] = [];
+    for (const row of res[0].values) {
+      const id = String(row[0]);
+      const nivel = String(row[2] || '');
+      const es34Medio = !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(nivel) &&
+        /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(nivel);
+
+      if (!es34Medio) {
+        idsAEliminar.push(id);
+      }
+    }
+
+    if (idsAEliminar.length > 0) {
+      for (const id of idsAEliminar) {
+        db.run("DELETE FROM asignaciones_horarias WHERE id = ?", [id]);
+      }
+      persistDb();
+      return idsAEliminar.length;
+    }
+  } catch (err) {
+    console.warn('[purgarAsignacionesPlanComunElectivoInvalidas] Error:', err);
+  }
+  return 0;
+}
+
 export async function listarAsignaciones(rbd: string, periodo: number = 2026): Promise<AsignacionHoraria[]> {
   const db = await getDb();
+  await purgarAsignacionesPlanComunElectivoInvalidas(db);
   const res = db.exec("SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {

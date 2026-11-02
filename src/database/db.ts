@@ -51,7 +51,8 @@ export {
   guardarAsignacionesBatch,
   eliminarAsignacion,
   limpiarAsignacionesDeColegio,
-  reconciliarYLimpiarAsignacionesEnDb
+  reconciliarYLimpiarAsignacionesEnDb,
+  purgarAsignacionesPlanComunElectivoInvalidas
 } from './repositories/asignacionesRepo';
 
 export {

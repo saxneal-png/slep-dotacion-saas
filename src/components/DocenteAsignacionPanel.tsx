@@ -1738,9 +1738,46 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     return () => { cancel = true; };
   }, []);
 
-  const asignacionesDocente = asignaciones.filter(
-    a => a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente)
-  );
+  const asignacionesDocente = useMemo(() => {
+    return asignaciones.filter(a => {
+      const lePertenece = a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente);
+      if (!lePertenece) return false;
+      if (a.cursoId && a.cursoId !== 'TRANSVERSAL') {
+        const c = cursos.find(curso => curso.id === a.cursoId);
+        if (c) {
+          const es34Medio = !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(c.nivel) &&
+            /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(c.nivel);
+          if (!es34Medio && /plan com[uú]n electivo/i.test(a.asignatura)) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+  }, [asignaciones, docente.id, cursos]);
+
+  // Purga proactiva si el docente tiene asignada dicha asignatura en cursos de básica/parvularia
+  React.useEffect(() => {
+    if (!onEliminarAsignacion) return;
+    const invalidas = asignaciones.filter(a => {
+      const lePertenece = a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente);
+      if (!lePertenece) return false;
+      if (a.cursoId && a.cursoId !== 'TRANSVERSAL') {
+        const c = cursos.find(curso => curso.id === a.cursoId);
+        if (c) {
+          const es34Medio = !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(c.nivel) &&
+            /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(c.nivel);
+          return !es34Medio && /plan com[uú]n electivo/i.test(a.asignatura);
+        }
+      }
+      return false;
+    });
+    if (invalidas.length > 0) {
+      invalidas.forEach(inv => {
+        onEliminarAsignacion(inv.id);
+      });
+    }
+  }, [asignaciones, docente.id, cursos, onEliminarAsignacion]);
 
   // Estado para el selector de Curso del Resumen Rápido de Cumplimiento
   const [cursoInspeccionId, setCursoInspeccionId] = useState<string>(cursos[0]?.id || '');

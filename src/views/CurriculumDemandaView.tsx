@@ -268,14 +268,45 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   const totalHorasTransversales = asignacionesTransversales.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
+  const es34MedioCurso = Boolean(
+    cursoActivo &&
+    !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoActivo.nivel) &&
+    (
+      /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoActivo.nivel) ||
+      (((planActivo?.categoria as string) === 'MEDIA_HC' || (planActivo?.categoria as string) === 'MEDIA_TP') && /[34]/i.test(planActivo?.nivel || ''))
+    )
+  );
+
   // Asignaciones del curso activo (incluyendo asignaturas compartidas en paralelo con este curso)
   const asignacionesCurso = useMemo(() => {
     if (!cursoActivo) return [];
-    return asignaciones.filter(a => 
-      a.cursoId === cursoActivo.id || 
-      (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(cursoActivo.id))
-    );
-  }, [asignaciones, cursoActivo]);
+    return asignaciones.filter(a => {
+      const pertenece = a.cursoId === cursoActivo.id || 
+        Boolean(a.cursosCompartidosIds && a.cursosCompartidosIds.includes(cursoActivo.id));
+      if (!pertenece) return false;
+      // Si el curso no es 3° o 4° Medio, descartar inmediatamente cualquier asignación residual de Plan Común Electivo
+      if (!es34MedioCurso && /plan com[uú]n electivo/i.test(a.asignatura)) {
+        return false;
+      }
+      return true;
+    });
+  }, [asignaciones, cursoActivo, es34MedioCurso]);
+
+  // Purga automática proactiva: Si el curso de básica/parvularia ya tenía creada dicha asignatura, eliminarla permanentemente
+  React.useEffect(() => {
+    if (!cursoActivo || !onEliminarAsignacion) return;
+    if (!es34MedioCurso) {
+      const invalidas = asignaciones.filter(a => 
+        (a.cursoId === cursoActivo.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(cursoActivo.id))) &&
+        /plan com[uú]n electivo/i.test(a.asignatura)
+      );
+      if (invalidas.length > 0) {
+        invalidas.forEach(inv => {
+          onEliminarAsignacion(inv.id);
+        });
+      }
+    }
+  }, [cursoActivo, asignaciones, es34MedioCurso, onEliminarAsignacion]);
 
   // Solo las horas de Malla Regular y Talleres JEC oficiales del plan suman a la cobertura del plan de estudio (38h/30h)
   // Las horas SEP, Co-Docencia no PIE, Agrupaciones Flexibles, Trabajo Colaborativo y PIE NO suman al plan de estudio del curso

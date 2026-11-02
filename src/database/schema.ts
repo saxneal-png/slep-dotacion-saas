@@ -427,4 +427,34 @@ export function runMigrations(db: Database): void {
   for (const idxSql of indexes) {
     try { db.run(idxSql); } catch (e) { console.warn('Error idx:', e); }
   }
+
+  // Purga Automática Proactiva: Si existen asignaciones residuales de "Plan Común Electivo"
+  // en cursos de Básica, Multigrado o Parvularia generadas previamente por error, eliminarlas automáticamente.
+  try {
+    db.run(`
+      DELETE FROM asignaciones_horarias
+      WHERE id IN (
+        SELECT a.id
+        FROM asignaciones_horarias a
+        JOIN cursos_sae c ON a.curso_id = c.id
+        WHERE (
+          LOWER(a.asignatura) LIKE '%plan com%n electivo%' OR
+          LOWER(a.asignatura) LIKE '%plan comun electivo%'
+        )
+        AND (
+          LOWER(c.nivel) LIKE '%b_sic%' OR
+          LOWER(c.nivel) LIKE '%parvul%' OR
+          LOWER(c.nivel) LIKE '%k_nder%' OR
+          LOWER(c.nivel) LIKE '%transici%' OR
+          LOWER(c.nivel) LIKE '%nt1%' OR
+          LOWER(c.nivel) LIKE '%nt2%' OR
+          LOWER(c.nivel) LIKE '%multigrado%' OR
+          LOWER(c.nivel) LIKE '%1%medio%' OR
+          LOWER(c.nivel) LIKE '%2%medio%'
+        )
+      );
+    `);
+  } catch (e) {
+    console.warn('Aviso en purga automática de Plan Común Electivo básico:', e);
+  }
 }

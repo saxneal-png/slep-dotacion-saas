@@ -9,6 +9,8 @@ import {
   PLANES_MINEDUC
 } from '@slep/mineduc-engine';
 import { CursoSae } from '../src/types';
+import { purgarAsignacionesPlanComunElectivoInvalidas } from '../src/database/repositories/asignacionesRepo';
+import { getDb } from '../src/database/dbCore';
 
 describe('Auditoría y Corrección: División de Ciencias Naturales vs. Educación Física y Salud', () => {
   it('normalizarNombreAsignatura distingue estrictamente Educación Física y Salud de Ciencias Naturales', () => {
@@ -205,5 +207,49 @@ describe('Auditoría y Corrección: Exclusión de Plan Común Electivo en 3° y 
     expect(esNivel34MedioValido('3° Medio TP - Electricidad', 'MEDIA_TP')).toBe(true);
     expect(esNivel34MedioValido('4° Medio TP', 'MEDIA_TP')).toBe(true);
     expect(esNivel34MedioValido('3° Medio', 'MEDIA_HC')).toBe(true);
+  });
+
+  it('purgarAsignacionesPlanComunElectivoInvalidas elimina automáticamente asignaciones residuales de básica', async () => {
+    const db = await getDb();
+    
+    // Insertar establecimiento y docente para integridad referencial
+    db.run(`INSERT OR IGNORE INTO establecimientos (id, rbd, nombre, comuna, regimen, porcentaje_prioritarios)
+            VALUES ('est-test-99999', '99999', 'Escuela Test Purga', 'Chillán', 'JEC', 75.0)`);
+    
+    db.run(`INSERT OR REPLACE INTO docentes (id, rbd, run, nombres, apellidos, calidad_juridica, estamento, horas_contrato, periodo)
+            VALUES ('doc-test-purga', '99999', '11.111.111-1', 'Docente', 'Test', 'TITULAR', 'DOCENTE_AULA', 44, 2026)`);
+
+    // Insertar curso de 3° Básico y asignación errónea previa
+    db.run(`INSERT OR REPLACE INTO cursos_sae (id, rbd, nivel, letra, regimen, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, periodo)
+            VALUES ('test-curso-3bas', '99999', '3° Básico', 'A', 'JEC', 30, 28, 5, 2, 2026)`);
+
+    db.run(`INSERT OR REPLACE INTO asignaciones_horarias (id, rbd, curso_id, docente_id, asignatura, horas_pedagogicas_aula, periodo)
+            VALUES ('test-asig-error-3b', '99999', 'test-curso-3bas', 'doc-test-purga', 'Plan Común Electivo (Historia / Artes / Ed. Física / Religión)', 2, 2026)`);
+
+    // Insertar curso legítimo de 3° Medio TP y su asignación
+    db.run(`INSERT OR REPLACE INTO cursos_sae (id, rbd, nivel, letra, regimen, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, periodo)
+            VALUES ('test-curso-3med', '99999', '3° Medio TP', 'A', 'JEC', 30, 28, 5, 2, 2026)`);
+
+    db.run(`INSERT OR REPLACE INTO asignaciones_horarias (id, rbd, curso_id, docente_id, asignatura, horas_pedagogicas_aula, periodo)
+            VALUES ('test-asig-valida-3m', '99999', 'test-curso-3med', 'doc-test-purga', 'Plan Común Electivo (Historia / Artes / Ed. Física / Religión)', 2, 2026)`);
+
+    // Ejecutar purga automática
+    const eliminadas = await purgarAsignacionesPlanComunElectivoInvalidas(db);
+    expect(eliminadas).toBeGreaterThanOrEqual(1);
+
+    // Verificar que la de básica fue purgada
+    const resB = db.exec("SELECT id FROM asignaciones_horarias WHERE id = 'test-asig-error-3b'");
+    expect(resB.length === 0 || resB[0].values.length === 0).toBe(true);
+
+    // Verificar que la de 3° Medio se preserva intacta
+    const resM = db.exec("SELECT id FROM asignaciones_horarias WHERE id = 'test-asig-valida-3m'");
+    expect(resM.length).toBe(1);
+    expect(resM[0].values.length).toBe(1);
+
+    // Limpieza de fixture
+    db.run("DELETE FROM asignaciones_horarias WHERE id IN ('test-asig-valida-3m', 'test-asig-error-3b')");
+    db.run("DELETE FROM cursos_sae WHERE id IN ('test-curso-3bas', 'test-curso-3med')");
+    db.run("DELETE FROM docentes WHERE id = 'doc-test-purga'");
+    db.run("DELETE FROM establecimientos WHERE id = 'est-test-99999'");
   });
 });
