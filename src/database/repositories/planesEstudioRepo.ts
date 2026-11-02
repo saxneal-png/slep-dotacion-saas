@@ -14,6 +14,7 @@ import {
 import { PlanEstudioCurricular, AsignaturaPlanEstudio, AmbitoFormativoPlan, CursoSae } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { Database } from 'sql.js';
+import { supabase, isSupabaseEnabled } from '../../services/supabaseClient';
 
 export {
   CATALOGO_PROFUNDIZACION_HC_27,
@@ -860,12 +861,34 @@ export async function guardarPlanEstudio(plan: PlanEstudioCurricular): Promise<v
     ]
   );
   persistDb();
+
+  if (isSupabaseEnabled()) {
+    supabase.from('planes_estudio_mineduc').upsert({
+      id: plan.id,
+      nivel: plan.nivel,
+      regimen: plan.regimen,
+      categoria: plan.categoria || null,
+      referencia_fuente: plan.decretoSupremo || null,
+      horas_obligatorias: plan.totalHorasSemanalesObligatorias,
+      horas_libre_disposicion: plan.horasLibreDisposicion || 0,
+      total_horas_plan: plan.totalHorasPlan || plan.totalHorasSemanalesObligatorias,
+      asignaturas_json: payload
+    }, { onConflict: 'id' }).then(() => {}, (err: any) =>
+      console.warn('[planesEstudioRepo] Aviso sincronizando con Supabase:', err)
+    );
+  }
 }
 
 export async function eliminarPlanEstudio(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM planes_estudio_mineduc WHERE id = ?", [id]);
   persistDb();
+
+  if (isSupabaseEnabled()) {
+    supabase.from('planes_estudio_mineduc').delete().eq('id', id).then(() => {}, (err: any) =>
+      console.warn('[planesEstudioRepo] Aviso eliminando en Supabase:', err)
+    );
+  }
 }
 
 /**
@@ -891,6 +914,15 @@ export async function adjuntarPlanACursos(
   }
 
   persistDb();
+
+  if (isSupabaseEnabled()) {
+    for (const cId of cursoIds) {
+      supabase.from('cursos_sae').update({ plan_estudio_id: planId }).eq('id', cId).then(() => {}, (err: any) =>
+        console.warn('[planesEstudioRepo] Aviso actualizando plan en curso en Supabase:', err)
+      );
+    }
+  }
+
   return { cursosActualizados: actualizados, plan };
 }
 

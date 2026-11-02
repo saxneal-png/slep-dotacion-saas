@@ -75,7 +75,8 @@ import { checkAndSeedInitialData } from './database/seedData';
 import { SupabaseDotacionService } from './services/supabaseDotacionService';
 import { isSupabaseEnabled } from './services/supabaseClient';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
-import { cargarConfiguracionGeneral } from './services/configuracionGeneralService';
+import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota } from './services/configuracionGeneralService';
+import { RolesPermisosService } from './services/rolesPermisosService';
 import { AuthService } from './services/authService';
 import { AuthSession, UsuarioSistema } from './types/authTypes';
 import { useEvaluadorPermisos, PermisosProvider } from './security/PermisosContext';
@@ -211,6 +212,24 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSincronizarCarteraCompletaDesdeNube = async () => {
+    setSincronizandoNube(true);
+    mostrarMensaje(`☁️ Sincronizando toda la cartera territorial desde Supabase (${periodoActivo})...`);
+    try {
+      const res = await SupabaseDotacionService.descargarTodaLaCarteraDesdeSupabase(periodoActivo);
+      await cargarDatos(periodoActivo);
+      mostrarMensaje(
+        `✓ Sincronización territorial completada: ${res.establecimientosDescargados} colegios actualizados (${res.docentesDescargados} docentes, ${res.cursosDescargados} cursos, ${res.asistentesDescargados} asistentes).`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Error al sincronizar cartera territorial:', err);
+      mostrarMensaje(`Error al sincronizar cartera desde Supabase: ${err.message || err}`, 'error');
+    } finally {
+      setSincronizandoNube(false);
+    }
+  };
+
   // Atajos de teclado globales: Ctrl+K / Cmd+K (Navegador) y Ctrl+J / Cmd+J (Copilot IA)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -239,20 +258,43 @@ export const App: React.FC = () => {
       const listEst = await listarEstablecimientos();
       setColegios(listEst);
 
-      const allSalas = await listarTodasLasSalas();
+      let allSalas = await listarTodasLasSalas();
       setTodasLasSalas(allSalas);
 
-      const allCursos = await listarTodosLosCursos(p);
+      let allCursos = await listarTodosLosCursos(p);
       setTodosLosCursos(allCursos);
 
-      const allDocs = await listarTodosLosDocentesTerritorio(p);
+      let allDocs = await listarTodosLosDocentesTerritorio(p);
       setTodosLosDocentes(allDocs);
 
-      const allAsigs = await listarTodasLasAsignaciones(p);
+      let allAsigs = await listarTodasLasAsignaciones(p);
       setTodasLasAsignaciones(allAsigs);
 
-      const allAsist = await listarTodosLosAsistentesTerritorio(p);
+      let allAsist = await listarTodosLosAsistentesTerritorio(p);
       setTodosLosAsistentes(allAsist);
+
+      if (allDocs.length === 0 && isSupabaseEnabled()) {
+        try {
+          const resCartera = await SupabaseDotacionService.descargarTodaLaCarteraDesdeSupabase(p);
+          if (resCartera.docentesDescargados > 0 || resCartera.cursosDescargados > 0) {
+            allSalas = await listarTodasLasSalas();
+            allCursos = await listarTodosLosCursos(p);
+            allDocs = await listarTodosLosDocentesTerritorio(p);
+            allAsigs = await listarTodasLasAsignaciones(p);
+            allAsist = await listarTodosLosAsistentesTerritorio(p);
+            setTodasLasSalas(allSalas);
+            setTodosLosCursos(allCursos);
+            setTodosLosDocentes(allDocs);
+            setTodasLasAsignaciones(allAsigs);
+            setTodosLosAsistentes(allAsist);
+          }
+        } catch (errSync) {
+          console.warn('[cargarDatos] Aviso descargando cartera inicial desde Supabase:', errSync);
+        }
+      }
+
+      RolesPermisosService.sincronizarDesdeSupabase().catch(() => {});
+      cargarConfiguracionGeneralRemota().catch(() => {});
 
       if (listEst.length > 0) {
         const defaultEst = colegioActivo || listEst[0];
@@ -675,6 +717,13 @@ export const App: React.FC = () => {
   const handleBorrarDotacionPeriodo = async (periodo: number, rbd?: string) => {
     try {
       const res = await borrarDotacionPeriodo(periodo, rbd);
+      if (isSupabaseEnabled()) {
+        try {
+          await SupabaseDotacionService.borrarDotacionPeriodo(periodo, rbd);
+        } catch (cloudErr) {
+          console.warn('[handleBorrarDotacionPeriodo] Aviso eliminando en Supabase:', cloudErr);
+        }
+      }
       await cargarDatos(periodo);
       if (colegioActivo) {
         await cargarDatosColegio(colegioActivo.rbd, periodo);
@@ -694,6 +743,14 @@ export const App: React.FC = () => {
   const handleReiniciarBaseDatos = async () => {
     try {
       await reiniciarTodaLaBaseDatos();
+      if (isSupabaseEnabled()) {
+        try {
+          await SupabaseDotacionService.borrarDotacionPeriodo(2026);
+          await SupabaseDotacionService.borrarDotacionPeriodo(2027);
+        } catch (cloudErr) {
+          console.warn('[handleReiniciarBaseDatos] Aviso eliminando en Supabase:', cloudErr);
+        }
+      }
       await checkAndSeedInitialData();
       await cargarDatos(2026);
       const list = await listarEstablecimientos();
@@ -1164,6 +1221,7 @@ export const App: React.FC = () => {
           onImportarCarteraSlep={handleImportarCarteraSlep}
           onBorrarDotacionPeriodo={handleBorrarDotacionPeriodo}
           onReiniciarBaseDatos={handleReiniciarBaseDatos}
+          onSincronizarNubeCartera={handleSincronizarCarteraCompletaDesdeNube}
         />
       )}
 

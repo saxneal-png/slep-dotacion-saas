@@ -174,6 +174,46 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
       }
       db.run("COMMIT;");
       await persistDb();
+
+      if (isSupabaseEnabled()) {
+        const seenEmails = new Set<string>();
+        const usersDb = usuarios.map(u => {
+          let emailVal = u.email ? u.email.trim().toLowerCase() : null;
+          if (emailVal && seenEmails.has(emailVal)) {
+            emailVal = null;
+          } else if (emailVal) {
+            seenEmails.add(emailVal);
+          }
+          const carteraJson = u.carteraRbds && u.carteraRbds.length ? JSON.stringify(u.carteraRbds) : null;
+          const asesoresJson = u.asesoresSupervisados && u.asesoresSupervisados.length ? JSON.stringify(u.asesoresSupervisados) : null;
+          const comunasJson = u.comunasPermitidas && u.comunasPermitidas.length ? JSON.stringify(u.comunasPermitidas) : null;
+
+          return {
+            id: u.id,
+            username: u.username || u.email || u.id,
+            email: emailVal,
+            nombre_completo: u.nombreCompleto,
+            role: u.role,
+            cargo: u.cargo || null,
+            rbd_asignado: u.rbdAsignado || null,
+            cartera_rbds_json: carteraJson || '[]',
+            asesores_supervisados_json: asesoresJson || '[]',
+            comunas_permitidas_json: comunasJson || '[]',
+            password_hash: u.passwordHash || null,
+            salt: u.salt || null,
+            gemini_api_key: u.geminiApiKey || null,
+            activo: u.activo !== false
+          };
+        });
+
+        // Subir en chunks de 50
+        (async () => {
+          for (let i = 0; i < usersDb.length; i += 50) {
+            const chunk = usersDb.slice(i, i + 50);
+            await supabase.from('usuarios_sistema').upsert(chunk, { onConflict: 'id' });
+          }
+        })().catch(err => console.warn('[usuariosRepo] Aviso sincronizando lote en Supabase:', err));
+      }
     } catch (txErr) {
       db.run("ROLLBACK;");
       throw txErr;

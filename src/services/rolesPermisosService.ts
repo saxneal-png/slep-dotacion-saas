@@ -5,6 +5,7 @@ import {
   PERMISOS_POR_DEFECTO, TODAS_LAS_CLAVES, normalizarPermisos, PERMISOS_CONFIGURACIONES
 } from '../security/permissionCatalog';
 import { ROL_IDS, getDefinicionRol, normalizarRol } from '../security/rolesDefinitions';
+import { supabase, isSupabaseEnabled } from './supabaseClient';
 
 export const STORAGE_MATRIZ_KEY = 'slep_roles_permisos_v1';
 export const STORAGE_BITACORA_KEY = 'slep_roles_permisos_bitacora_v1';
@@ -64,9 +65,36 @@ function registrarBitacora(entry: Omit<CambioPermisosBitacora, 'id' | 'fecha'>) 
   lista.unshift(full);
   storage()?.setItem(STORAGE_BITACORA_KEY, JSON.stringify(lista.slice(0, MAX_BITACORA)));
 
+  if (isSupabaseEnabled()) {
+    supabase
+      .from('roles_permisos_bitacora')
+      .insert({
+        id: full.id,
+        rol_id: full.rolId,
+        agregados_json: full.agregados,
+        removidos_json: full.removidos,
+        usuario: full.usuario,
+        motivo: full.motivo || null,
+        fecha: full.fecha
+      })
+      .then(() => {}, () => {});
+  }
+
 }
 
-function publicarRemoto(rol: RolId, data: MatrizRol) {}
+function publicarRemoto(rol: RolId, data: MatrizRol) {
+  if (!isSupabaseEnabled()) return;
+  supabase
+    .from('roles_permisos')
+    .upsert({
+      rol_id: rol,
+      permisos_json: data.permisos,
+      version: data.version,
+      actualizado_por: data.actualizadoPor,
+      actualizado_en: data.actualizadoEn
+    }, { onConflict: 'rol_id' })
+    .then(() => {}, (err: any) => console.warn('[RolesPermisos] Error publicando en Supabase:', err));
+}
 
 export interface DiffPermisos {
   agregados: PermisoKey[];
@@ -196,6 +224,36 @@ export class RolesPermisosService {
 
   /** Descarga la matriz publicada en Firestore (si hay sesión remota) y la aplica localmente. */
   static async sincronizarDesdeFirestore(): Promise<boolean> { return false; }
+
+  /** Descarga la matriz de roles y permisos publicada en Supabase y la aplica localmente. */
+  static async sincronizarDesdeSupabase(): Promise<boolean> {
+    if (!isSupabaseEnabled()) return false;
+    try {
+      const { data, error } = await supabase.from('roles_permisos').select('*');
+      if (!error && data && data.length > 0) {
+        const actual = this.cargarMatriz();
+        let huboCambios = false;
+        for (const row of data) {
+          const rol = row.rol_id as RolId;
+          if (ROL_IDS.includes(rol)) {
+            const permisosArr = Array.isArray(row.permisos_json) ? row.permisos_json : [];
+            actual[rol] = {
+              permisos: normalizarPermisos(rol, permisosArr),
+              version: row.version || 1,
+              actualizadoEn: row.actualizado_en || ahora(),
+              actualizadoPor: row.actualizado_por || 'remoto'
+            };
+            huboCambios = true;
+          }
+        }
+        if (huboCambios) {
+          persistir(actual);
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
 
   /** Vista agregada heredada (`PermisosRol`) derivada de la matriz granular. */
   static derivarPermisosLegados(rol: unknown): PermisosRol {

@@ -1,16 +1,30 @@
 import React, { useState } from 'react';
-import { FileUp, Building2, Users, Clock, Award, CheckCircle2, AlertCircle, ShieldAlert, Sparkles, UserCheck } from 'lucide-react';
-import { Establecimiento, ComunaValleDiguillin, RegimenJornada, AsistenteEducacion } from '../types';
-import { parsearPlanillaSige, decodificarArchivoSige } from '../services/sigeParserService';
+import {
+  FileUp,
+  Building2,
+  Users,
+  Clock,
+  Award,
+  CheckCircle2,
+  AlertCircle,
+  AlertTriangle,
+  UserCheck,
+  Layers,
+  MapPin,
+  Check
+} from 'lucide-react';
+import { Establecimiento, ComunaValleDiguillin, RegimenJornada, AsistenteEducacion, Docente } from '../types';
+import { parsearPlanillaSige, decodificarArchivoSige, ResultadoParseoSige } from '../services/sigeParserService';
 import { parsearAsistentesSige, esEncabezadoAsistentesSige, ResultadoParseoAsistentesSige } from '../services/sigeAsistentesParser';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
+import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarEstablecimiento } from '../database/repositories/establecimientosRepo';
 import { getDb, persistDb } from '../database/dbCore';
 
 interface SigeIngestaViewProps {
   onIngestarSigeCompleto: (
     establecimiento: Establecimiento,
-    docentes: ReturnType<typeof parsearPlanillaSige>['docentesConvertidos']
+    docentes: Docente[]
   ) => Promise<void>;
   onIngestarAsistentesSigeCompleto?: (
     establecimiento: Establecimiento,
@@ -37,7 +51,7 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
 }) => {
   const [tipoNomina, setTipoNomina] = useState<TipoNomina>('DOCENTES');
   const [textoPegado, setTextoPegado] = useState('');
-  const [resultadoDocentes, setResultadoDocentes] = useState<ReturnType<typeof parsearPlanillaSige> | null>(null);
+  const [resultadoDocentes, setResultadoDocentes] = useState<ResultadoParseoSige | null>(null);
   const [resultadoAsistentes, setResultadoAsistentes] = useState<ResultadoParseoAsistentesSige | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -84,7 +98,6 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
     if (!file) return;
     try {
       const buffer = await file.arrayBuffer();
-      // Decodificación inteligente protegiendo Windows-1252 nativo y Excel
       const text = decodificarArchivoSige(buffer, file.name);
       setTextoPegado(text);
       procesarTexto(text);
@@ -97,18 +110,31 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
     if (!resultadoDocentes) return;
     setCargando(true);
     try {
-      const estFinal: Establecimiento = {
-        id: `est-${resultadoDocentes.rbdDetectado}`,
-        rbd: resultadoDocentes.rbdDetectado,
-        nombre: resultadoDocentes.nombreColegioDetectado || `Colegio RBD ${resultadoDocentes.rbdDetectado}`,
-        comuna: comunaSeleccionada,
-        regimen: regimenSeleccionado,
-        porcentajePrioritarios: prioritarios,
-        asesorUatp: 'UATP SLEP Valle Diguillín'
-      };
+      // 1. Guardar todos los establecimientos detectados en el archivo (asociados por columna RBD)
+      const establecimientosAGuardar = resultadoDocentes.establecimientosDetectados.length
+        ? resultadoDocentes.establecimientosDetectados
+        : [resultadoDocentes.establecimientoSugerido];
 
-      await onIngestarSigeCompleto(estFinal, resultadoDocentes.docentesConvertidos);
-      setExitoMsg(`✓ Ingesta Docente completada con éxito: Colegio ${estFinal.nombre} y ${resultadoDocentes.docentesConvertidos.length} funcionarios ingresados.`);
+      for (const est of establecimientosAGuardar) {
+        await guardarEstablecimiento({
+          ...est,
+          comuna: est.comuna || comunaSeleccionada,
+          regimen: est.regimen || regimenSeleccionado,
+          porcentajePrioritarios: prioritarios,
+          asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
+        });
+      }
+
+      // 2. Guardar docentes en batch preservando su propio RBD
+      await guardarDocentesBatch(resultadoDocentes.docentesConvertidos);
+      await persistDb(true);
+
+      const primerEst = establecimientosAGuardar[0];
+      await onIngestarSigeCompleto(primerEst, resultadoDocentes.docentesConvertidos);
+
+      setExitoMsg(
+        `✓ Ingesta Docente completada: ${establecimientosAGuardar.length} establecimiento(s) y ${resultadoDocentes.docentesConvertidos.length} contratos docentes asociados por RBD a SQLite.`
+      );
     } catch (err: any) {
       setErrorMsg(`Error al guardar en base de datos: ${err.message}`);
     } finally {
@@ -120,26 +146,34 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
     if (!resultadoAsistentes) return;
     setCargando(true);
     try {
-      const estFinal: Establecimiento = {
-        id: `est-${resultadoAsistentes.rbdDetectado}`,
-        rbd: resultadoAsistentes.rbdDetectado,
-        nombre: resultadoAsistentes.nombreColegioDetectado || `Colegio RBD ${resultadoAsistentes.rbdDetectado}`,
-        comuna: comunaSeleccionada,
-        regimen: regimenSeleccionado,
-        porcentajePrioritarios: prioritarios,
-        asesorUatp: 'UATP SLEP Valle Diguillín'
-      };
+      // 1. Guardar todos los establecimientos detectados en el archivo
+      const establecimientosAGuardar = resultadoAsistentes.establecimientosDetectados.length
+        ? resultadoAsistentes.establecimientosDetectados
+        : [resultadoAsistentes.establecimientoSugerido];
 
-      if (onIngestarAsistentesSigeCompleto) {
-        await onIngestarAsistentesSigeCompleto(estFinal, resultadoAsistentes.asistentesConvertidos);
-      } else {
-        await guardarEstablecimiento(estFinal);
-        const db = await getDb();
-        await guardarAsistentesBatch(db, resultadoAsistentes.asistentesConvertidos, estFinal.rbd, 2026, true);
-        await persistDb(true);
+      for (const est of establecimientosAGuardar) {
+        await guardarEstablecimiento({
+          ...est,
+          comuna: est.comuna || comunaSeleccionada,
+          regimen: est.regimen || regimenSeleccionado,
+          porcentajePrioritarios: prioritarios,
+          asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
+        });
       }
 
-      setExitoMsg(`✓ Ingesta Asistentes completada: Colegio ${estFinal.nombre} y ${resultadoAsistentes.asistentesConvertidos.length} asistentes de la educación ingresados.`);
+      // 2. Guardar asistentes en batch preservando su propio RBD
+      const db = await getDb();
+      await guardarAsistentesBatch(db, resultadoAsistentes.asistentesConvertidos, undefined, 2026, true);
+      await persistDb(true);
+
+      const primerEst = establecimientosAGuardar[0];
+      if (onIngestarAsistentesSigeCompleto) {
+        await onIngestarAsistentesSigeCompleto(primerEst, resultadoAsistentes.asistentesConvertidos);
+      }
+
+      setExitoMsg(
+        `✓ Ingesta Asistentes completada: ${establecimientosAGuardar.length} establecimiento(s) y ${resultadoAsistentes.asistentesConvertidos.length} contratos de asistentes asociados por RBD a SQLite.`
+      );
     } catch (err: any) {
       setErrorMsg(`Error al guardar asistentes en base de datos: ${err.message}`);
     } finally {
@@ -159,9 +193,8 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
           Importador Automatizado de Nóminas Oficiales (Docentes y Asistentes)
         </h2>
         <p className="text-xs text-slate-300 mt-1 max-w-3xl">
-          Carga directamente las nóminas descargadas desde SIGE en formato CSV, TXT o Excel.
-          El motor repara automáticamente la codificación de tildes, caracteres dañados y la letra "ñ",
-          extrayendo la dotación completa con identificación precisa de cargos, estamentos y horas normativas.
+          Carga nóminas descargadas desde SIGE en formato CSV, TXT o Excel.
+          Los funcionarios se asocian rigurosamente según su <strong>columna RBD</strong> (admitiendo funcionarios con desempeño simultáneo en más de un establecimiento, verificando el límite normativo de <strong>44 horas semanales</strong>).
         </p>
 
         {/* Selector de Pestañas de Nómina */}
@@ -257,54 +290,48 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
       {/* Previsualización Nómina Asistentes */}
       {resultadoAsistentes && tipoNomina === 'ASISTENTES' && (
         <div className="space-y-6">
+          {/* Panel de Establecimientos Detectados por Columna RBD */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-orange-600" />
-              Establecimiento Detectado en la Planilla SIGE (Asistentes)
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-orange-600" />
+                Establecimientos Detectados por Columna RBD ({resultadoAsistentes.establecimientosDetectados.length})
+              </h3>
+              {resultadoAsistentes.establecimientosDetectados.length > 1 && (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 flex items-center gap-1">
+                  <Layers className="w-3 h-3" /> Nómina Multi-Establecimiento
+                </span>
+              )}
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-              <div>
-                <span className="text-slate-400 text-[10px] uppercase font-bold block">RBD Oficial</span>
-                <span className="text-base font-black text-slate-800">{resultadoAsistentes.rbdDetectado}</span>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {resultadoAsistentes.establecimientosDetectados.map(est => {
+                const countEnColegio = resultadoAsistentes.asistentesConvertidos.filter(a => a.rbd === est.rbd).length;
+                const horasEnColegio = resultadoAsistentes.asistentesConvertidos
+                  .filter(a => a.rbd === est.rbd)
+                  .reduce((sum, a) => sum + a.horasContrato, 0);
 
-              <div>
-                <span className="text-slate-400 text-[10px] uppercase font-bold block">Nombre Colegio</span>
-                <span className="font-bold text-slate-800">{resultadoAsistentes.nombreColegioDetectado}</span>
-              </div>
-
-              <div>
-                <label className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Comuna Territorio *</label>
-                <select
-                  value={comunaSeleccionada}
-                  onChange={e => setComunaSeleccionada(e.target.value as ComunaValleDiguillin)}
-                  className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-800"
-                >
-                  {COMUNAS.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Régimen Jornada *</label>
-                <select
-                  value={regimenSeleccionado}
-                  onChange={e => setRegimenSeleccionado(e.target.value as RegimenJornada)}
-                  className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-800"
-                >
-                  <option value="JEC">JEC (Completa)</option>
-                  <option value="No JEC">No JEC (Media)</option>
-                  <option value="Mixto">Mixto</option>
-                </select>
-              </div>
+                return (
+                  <div key={est.rbd} className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between">
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-400">RBD {est.rbd} • {est.comuna}</div>
+                      <div className="text-xs font-bold text-slate-800 truncate max-w-[200px]" title={est.nombre}>
+                        {est.nombre}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-black text-orange-600">{countEnColegio} func.</div>
+                      <div className="text-[10px] font-semibold text-slate-500">{horasEnColegio} hrs</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Métricas Agregadas Asistentes */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
               <div className="p-3 bg-white border rounded-xl text-center">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Total Asistentes</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Total Contratos</div>
                 <div className="text-xl font-black text-slate-800">{resultadoAsistentes.totales.totalAsistentes}</div>
               </div>
 
@@ -330,6 +357,50 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Control Normativo: Funcionarios Multi-Establecimiento y Tope 44h */}
+            {resultadoAsistentes.funcionariosMultiEstablecimiento.length > 0 && (
+              <div className="pt-2">
+                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                      <Users className="w-4 h-4 text-amber-600" />
+                      <span>Funcionarios con contratos en más de un establecimiento ({resultadoAsistentes.funcionariosMultiEstablecimiento.length})</span>
+                    </div>
+                    <span className="text-[10px] font-semibold text-amber-800">Límite legal permitido: máx. 44 horas semanales</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {resultadoAsistentes.funcionariosMultiEstablecimiento.map(f => (
+                      <div
+                        key={f.run}
+                        className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                          f.excede44h
+                            ? 'bg-rose-50 border-rose-200 text-rose-900'
+                            : 'bg-white border-amber-200 text-slate-800'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold">{f.nombre}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            RUN: {f.run} • RBDs: {f.rbds.join(', ')}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-black block ${
+                              f.excede44h ? 'bg-rose-600 text-white animate-pulse' : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {f.totalHoras}h {f.excede44h ? '⚠️ >44h' : '✓ OK'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Botón de Confirmación */}
             <div className="pt-2 flex justify-end">
@@ -357,24 +428,29 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
               <table className="w-full text-left text-xs text-slate-600">
                 <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b sticky top-0">
                   <tr>
-                    <th className="px-4 py-2.5">RUN</th>
-                    <th className="px-4 py-2.5">Funcionario</th>
-                    <th className="px-4 py-2.5">Cargo / Función (Doble Función)</th>
-                    <th className="px-4 py-2.5">Título / Institución</th>
-                    <th className="px-4 py-2.5 text-center">Horas</th>
-                    <th className="px-4 py-2.5 text-center">Estamento</th>
-                    <th className="px-4 py-2.5 text-center">Estado</th>
+                    <th className="px-3 py-2.5">RBD / Colegio</th>
+                    <th className="px-3 py-2.5">RUN</th>
+                    <th className="px-3 py-2.5">Funcionario</th>
+                    <th className="px-3 py-2.5">Cargo / Función</th>
+                    <th className="px-3 py-2.5">Título</th>
+                    <th className="px-3 py-2.5 text-center">Horas</th>
+                    <th className="px-3 py-2.5 text-center">Estamento</th>
+                    <th className="px-3 py-2.5 text-center">Estado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {resultadoAsistentes.filas.map((f, idx) => (
                     <tr key={idx} className="hover:bg-slate-50">
-                      <td className="px-4 py-2 font-mono font-medium">{f.runCompleto}</td>
-                      <td className="px-4 py-2 font-bold text-slate-800">{f.apellidos}, {f.nombres}</td>
-                      <td className="px-4 py-2 font-semibold text-slate-700">{f.cargoCompuesto}</td>
-                      <td className="px-4 py-2 text-slate-500 text-[11px]">{f.titulo !== 'SIN TÍTULO' ? `${f.titulo} (${f.institucion})` : 'Sin título'}</td>
-                      <td className="px-4 py-2 text-center font-bold text-orange-600">{f.horasContrato}h</td>
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-3 py-2 font-mono text-[11px] font-bold text-slate-800">
+                        {f.rbd}
+                        <span className="block text-[9px] font-normal text-slate-400 truncate max-w-[120px]">{f.nombreEstablecimiento}</span>
+                      </td>
+                      <td className="px-3 py-2 font-mono font-medium">{f.runCompleto}</td>
+                      <td className="px-3 py-2 font-bold text-slate-800">{f.apellidos}, {f.nombres}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-700">{f.cargoCompuesto}</td>
+                      <td className="px-3 py-2 text-slate-500 text-[11px]">{f.titulo !== 'SIN TÍTULO' ? `${f.titulo}` : 'Sin título'}</td>
+                      <td className="px-3 py-2 text-center font-bold text-orange-600">{f.horasContrato}h</td>
+                      <td className="px-3 py-2 text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           f.estamentoDetectado === 'PROFESIONAL' ? 'bg-emerald-100 text-emerald-800' :
                           f.estamentoDetectado === 'AUXILIAR' ? 'bg-blue-100 text-blue-800' :
@@ -384,7 +460,7 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
                           {f.estamentoDetectado}
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-3 py-2 text-center">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
                           {f.estadoAsistente}
                         </span>
@@ -401,54 +477,48 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
       {/* Previsualización Nómina Docente */}
       {resultadoDocentes && tipoNomina === 'DOCENTES' && (
         <div className="space-y-6">
+          {/* Panel de Establecimientos Detectados por Columna RBD */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-orange-600" />
-              Establecimiento Detectado en la Planilla SIGE (Docentes)
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-orange-600" />
+                Establecimientos Detectados por Columna RBD ({resultadoDocentes.establecimientosDetectados.length})
+              </h3>
+              {resultadoDocentes.establecimientosDetectados.length > 1 && (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 flex items-center gap-1">
+                  <Layers className="w-3 h-3" /> Nómina Multi-Establecimiento
+                </span>
+              )}
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-              <div>
-                <span className="text-slate-400 text-[10px] uppercase font-bold block">RBD Oficial</span>
-                <span className="text-base font-black text-slate-800">{resultadoDocentes.rbdDetectado}</span>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {resultadoDocentes.establecimientosDetectados.map(est => {
+                const countEnColegio = resultadoDocentes.docentesConvertidos.filter(d => d.rbd === est.rbd).length;
+                const horasEnColegio = resultadoDocentes.docentesConvertidos
+                  .filter(d => d.rbd === est.rbd)
+                  .reduce((sum, d) => sum + d.horasContrato, 0);
 
-              <div>
-                <span className="text-slate-400 text-[10px] uppercase font-bold block">Nombre Colegio</span>
-                <span className="font-bold text-slate-800">{resultadoDocentes.nombreColegioDetectado}</span>
-              </div>
-
-              <div>
-                <label className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Comuna Territorio *</label>
-                <select
-                  value={comunaSeleccionada}
-                  onChange={e => setComunaSeleccionada(e.target.value as ComunaValleDiguillin)}
-                  className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-800"
-                >
-                  {COMUNAS.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Régimen Jornada *</label>
-                <select
-                  value={regimenSeleccionado}
-                  onChange={e => setRegimenSeleccionado(e.target.value as RegimenJornada)}
-                  className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-800"
-                >
-                  <option value="JEC">JEC (Completa)</option>
-                  <option value="No JEC">No JEC (Media)</option>
-                  <option value="Mixto">Mixto</option>
-                </select>
-              </div>
+                return (
+                  <div key={est.rbd} className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between">
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-400">RBD {est.rbd} • {est.comuna}</div>
+                      <div className="text-xs font-bold text-slate-800 truncate max-w-[200px]" title={est.nombre}>
+                        {est.nombre}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-black text-orange-600">{countEnColegio} doc.</div>
+                      <div className="text-[10px] font-semibold text-slate-500">{horasEnColegio} hrs</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Métricas Agregadas SIGE Docentes */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
               <div className="p-3 bg-white border rounded-xl text-center">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Total Funcionarios</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Total Contratos</div>
                 <div className="text-xl font-black text-slate-800">{resultadoDocentes.totales.totalDocentes}</div>
               </div>
 
@@ -463,15 +533,59 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
               </div>
 
               <div className="p-3 bg-white border rounded-xl text-center">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Horas Técnico-Pedagógicas</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Horas Técnicas</div>
                 <div className="text-xl font-black text-blue-600">{resultadoDocentes.totales.totalHorasTecnicas}h</div>
               </div>
 
               <div className="p-3 bg-white border rounded-xl text-center">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Horas Aula Declaradas</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Horas Aula</div>
                 <div className="text-xl font-black text-emerald-600">{resultadoDocentes.totales.totalHorasAula}h</div>
               </div>
             </div>
+
+            {/* Control Normativo: Docentes Multi-Establecimiento y Tope 44h */}
+            {resultadoDocentes.funcionariosMultiEstablecimiento.length > 0 && (
+              <div className="pt-2">
+                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                      <Users className="w-4 h-4 text-amber-600" />
+                      <span>Docentes con contratos en más de un establecimiento ({resultadoDocentes.funcionariosMultiEstablecimiento.length})</span>
+                    </div>
+                    <span className="text-[10px] font-semibold text-amber-800">Límite legal permitido: máx. 44 horas semanales</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {resultadoDocentes.funcionariosMultiEstablecimiento.map(f => (
+                      <div
+                        key={f.run}
+                        className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                          f.excede44h
+                            ? 'bg-rose-50 border-rose-200 text-rose-900'
+                            : 'bg-white border-amber-200 text-slate-800'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold">{f.nombre}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            RUN: {f.run} • RBDs: {f.rbds.join(', ')}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-black block ${
+                              f.excede44h ? 'bg-rose-600 text-white animate-pulse' : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {f.totalHoras}h {f.excede44h ? '⚠️ >44h' : '✓ OK'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Botón de Confirmación */}
             <div className="pt-2 flex justify-end">
@@ -499,29 +613,34 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
               <table className="w-full text-left text-xs text-slate-600">
                 <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b sticky top-0">
                   <tr>
-                    <th className="px-4 py-2.5">RUN</th>
-                    <th className="px-4 py-2.5">Docente</th>
-                    <th className="px-4 py-2.5">Función Principal</th>
-                    <th className="px-4 py-2.5">Sector / Subsector</th>
-                    <th className="px-4 py-2.5 text-center">Contrato</th>
-                    <th className="px-4 py-2.5 text-center">H. Directivas</th>
-                    <th className="px-4 py-2.5 text-center">H. Técnicas</th>
-                    <th className="px-4 py-2.5 text-center">H. Aula</th>
-                    <th className="px-4 py-2.5 text-center">Idoneidad</th>
+                    <th className="px-3 py-2.5">RBD / Colegio</th>
+                    <th className="px-3 py-2.5">RUN</th>
+                    <th className="px-3 py-2.5">Docente</th>
+                    <th className="px-3 py-2.5">Función Principal</th>
+                    <th className="px-3 py-2.5">Sector / Subsector</th>
+                    <th className="px-3 py-2.5 text-center">Contrato</th>
+                    <th className="px-3 py-2.5 text-center">H. Directivas</th>
+                    <th className="px-3 py-2.5 text-center">H. Técnicas</th>
+                    <th className="px-3 py-2.5 text-center">H. Aula</th>
+                    <th className="px-3 py-2.5 text-center">Idoneidad</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {resultadoDocentes.filas.map((f, idx) => (
                     <tr key={idx} className="hover:bg-slate-50">
-                      <td className="px-4 py-2 font-mono font-medium">{f.runCompleto}</td>
-                      <td className="px-4 py-2 font-bold text-slate-800">{f.apellidos}, {f.nombres}</td>
-                      <td className="px-4 py-2 font-semibold text-purple-800">{f.funcionPrincipal}</td>
-                      <td className="px-4 py-2 text-slate-600">{f.subSectorFuncion1 !== '--' ? f.subSectorFuncion1 : f.sectorFuncion1}</td>
-                      <td className="px-4 py-2 text-center font-bold text-slate-800">{f.horasContrato}h</td>
-                      <td className="px-4 py-2 text-center font-semibold text-purple-700">{f.horasDirectivas}h</td>
-                      <td className="px-4 py-2 text-center font-semibold text-blue-700">{f.horasTecnicoPedagogica}h</td>
-                      <td className="px-4 py-2 text-center font-bold text-emerald-700">{f.horasAula}h</td>
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-3 py-2 font-mono text-[11px] font-bold text-slate-800">
+                        {f.rbd}
+                        <span className="block text-[9px] font-normal text-slate-400 truncate max-w-[120px]">{f.nombreEstablecimiento}</span>
+                      </td>
+                      <td className="px-3 py-2 font-mono font-medium">{f.runCompleto}</td>
+                      <td className="px-3 py-2 font-bold text-slate-800">{f.apellidos}, {f.nombres}</td>
+                      <td className="px-3 py-2 font-semibold text-purple-800">{f.funcionPrincipal}</td>
+                      <td className="px-3 py-2 text-slate-600">{f.subSectorFuncion1 !== '--' ? f.subSectorFuncion1 : f.sectorFuncion1}</td>
+                      <td className="px-3 py-2 text-center font-bold text-slate-800">{f.horasContrato}h</td>
+                      <td className="px-3 py-2 text-center font-semibold text-purple-700">{f.horasDirectivas}h</td>
+                      <td className="px-3 py-2 text-center font-semibold text-blue-700">{f.horasTecnicoPedagogica}h</td>
+                      <td className="px-3 py-2 text-center font-bold text-emerald-700">{f.horasAula}h</td>
+                      <td className="px-3 py-2 text-center">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
                           {f.estadoIdoneidad}
                         </span>

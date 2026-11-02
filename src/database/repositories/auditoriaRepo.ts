@@ -1,4 +1,5 @@
 import { getDb, persistDb } from '../dbCore';
+import { supabase, isSupabaseEnabled } from '../../services/supabaseClient';
 
 export interface EventoAuditoria {
   id: string;
@@ -45,6 +46,20 @@ export async function registrarEventoAuditoria(params: {
     );
 
     persistDb();
+
+    if (isSupabaseEnabled()) {
+      supabase.from('auditoria_cambios').insert({
+        id,
+        rbd: params.rbd,
+        periodo,
+        tipo_evento: params.tipoEvento,
+        entidad: params.entidad,
+        entidad_id: params.entidadId || null,
+        descripcion: params.descripcion,
+        detalles_json: params.detalles || null,
+        fecha_hora: fechaHora
+      }).then(() => {}, (err: any) => console.warn('[auditoriaRepo] Aviso guardando auditoría en Supabase:', err));
+    }
   } catch (e) {
     console.warn('Error al registrar evento de auditoría:', e);
   }
@@ -55,6 +70,30 @@ export async function listarEventosAuditoria(
   periodo: number = 2026,
   limit: number = 100
 ): Promise<EventoAuditoria[]> {
+  if (isSupabaseEnabled()) {
+    try {
+      let query = supabase.from('auditoria_cambios').select('*');
+      if (rbd) {
+        query = query.eq('rbd', rbd);
+      }
+      query = query.eq('periodo', periodo).order('fecha_hora', { ascending: false }).limit(limit);
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        return data.map((row: any) => ({
+          id: row.id,
+          rbd: row.rbd,
+          periodo: Number(row.periodo || periodo),
+          tipoEvento: row.tipo_evento,
+          entidad: row.entidad,
+          entidadId: row.entidad_id || undefined,
+          descripcion: row.descripcion,
+          detallesJson: typeof row.detalles_json === 'string' ? row.detalles_json : JSON.stringify(row.detalles_json),
+          fechaHora: row.fecha_hora
+        }));
+      }
+    } catch (_) {}
+  }
+
   try {
     const db = await getDb();
     let query = `

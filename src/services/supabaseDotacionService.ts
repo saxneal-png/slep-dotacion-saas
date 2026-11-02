@@ -171,6 +171,7 @@ export function mapDocenteToDb(docente: Docente) {
     funcion_secundaria: docente.funcionSecundaria || null,
     asignatura_principal: docente.asignaturaPrincipal || null,
     aplica_articulo_69: Boolean(docente.aplicaArticulo69),
+    requiere_autorizacion_docente: Boolean(docente.requiereAutorizacionDocente),
     funciones_no_aula_json: docente.funcionesNoAula ? JSON.stringify(docente.funcionesNoAula) : '[]',
     horas_vigentes_anterior: docente.horasVigentesAnterior || 0,
     propuesta_gdp: docente.propuestaGdp || 'Continuidad',
@@ -230,6 +231,7 @@ export function mapDocenteFromDb(row: any): Docente {
     funcionSecundaria: row.funcion_secundaria || undefined,
     asignaturaPrincipal: row.asignatura_principal || undefined,
     aplicaArticulo69: Boolean(row.aplica_articulo_69),
+    requiereAutorizacionDocente: Boolean(row.requiere_autorizacion_docente),
     funcionesNoAula,
     horasVigentesAnterior: Number(row.horas_vigentes_anterior || 0),
     propuestaGdp: row.propuesta_gdp || undefined,
@@ -519,6 +521,47 @@ export class SupabaseDotacionService {
     await supabase.from('asistentes_educacion').delete().eq('id', id);
   }
 
+  static async limpiarAsignacionesDeColegio(rbd: string, periodo: number = 2026): Promise<void> {
+    if (!isSupabaseEnabled()) return;
+    const cleanRbd = rbd.trim();
+    await supabase
+      .from('asignaciones_horarias')
+      .delete()
+      .eq('rbd', cleanRbd)
+      .eq('periodo', periodo);
+  }
+
+  static async eliminarAsistentesColegioPeriodo(rbd: string, periodo: number = 2026): Promise<void> {
+    if (!isSupabaseEnabled()) return;
+    const cleanRbd = rbd.trim();
+    await supabase
+      .from('asistentes_educacion')
+      .delete()
+      .eq('rbd', cleanRbd)
+      .eq('periodo', periodo);
+  }
+
+  static async borrarDotacionPeriodo(periodo: number, rbd?: string): Promise<void> {
+    if (!isSupabaseEnabled()) return;
+    let qAsig = supabase.from('asignaciones_horarias').delete().eq('periodo', periodo);
+    let qCur = supabase.from('cursos_sae').delete().eq('periodo', periodo);
+    let qDoc = supabase.from('docentes').delete().eq('periodo', periodo);
+    let qAst = supabase.from('asistentes_educacion').delete().eq('periodo', periodo);
+
+    if (rbd) {
+      const cleanRbd = rbd.trim();
+      qAsig = qAsig.eq('rbd', cleanRbd);
+      qCur = qCur.eq('rbd', cleanRbd);
+      qDoc = qDoc.eq('rbd', cleanRbd);
+      qAst = qAst.eq('rbd', cleanRbd);
+    }
+
+    await qAsig;
+    await qCur;
+    await qDoc;
+    await qAst;
+  }
+
   /**
    * Obtiene la dotación completa de un RBD y Periodo desde Supabase
    */
@@ -756,6 +799,125 @@ export class SupabaseDotacionService {
     return {
       hayDatosRemotos: true,
       establecimientoActualizado: estActualizado,
+      salasDescargadas: salasCount,
+      cursosDescargados: cursosCount,
+      docentesDescargados: docCount,
+      asignacionesDescargadas: asigCount,
+      asistentesDescargados: astCount
+    };
+  }
+
+  /**
+   * Descarga la cartera territorial completa (todos los establecimientos y dotación del periodo)
+   * desde Supabase PostgreSQL e hidrata la base de datos local SQLite.
+   * Crucial para que el Consolidador Master, Estadísticas y Cartera muestren la realidad centralizada.
+   */
+  static async descargarTodaLaCarteraDesdeSupabase(periodo: number = 2027): Promise<{
+    hayDatosRemotos: boolean;
+    establecimientosDescargados: number;
+    salasDescargadas: number;
+    cursosDescargados: number;
+    docentesDescargados: number;
+    asignacionesDescargadas: number;
+    asistentesDescargados: number;
+  }> {
+    if (!isSupabaseEnabled()) {
+      return {
+        hayDatosRemotos: false,
+        establecimientosDescargados: 0,
+        salasDescargadas: 0,
+        cursosDescargados: 0,
+        docentesDescargados: 0,
+        asignacionesDescargadas: 0,
+        asistentesDescargados: 0
+      };
+    }
+
+    const [estRes, salasRes, cursosRes, docRes, asigRes, astRes] = await Promise.all([
+      supabase.from('establecimientos').select('*'),
+      supabase.from('salas_infraestructura').select('*'),
+      supabase.from('cursos_sae').select('*').eq('periodo', periodo),
+      supabase.from('docentes').select('*').eq('periodo', periodo),
+      supabase.from('asignaciones_horarias').select('*').eq('periodo', periodo),
+      supabase.from('asistentes_educacion').select('*').eq('periodo', periodo)
+    ]);
+
+    const hayDatos = Boolean(
+      (estRes.data && estRes.data.length > 0) ||
+      (cursosRes.data && cursosRes.data.length > 0) ||
+      (docRes.data && docRes.data.length > 0)
+    );
+
+    if (!hayDatos) {
+      return {
+        hayDatosRemotos: false,
+        establecimientosDescargados: 0,
+        salasDescargadas: 0,
+        cursosDescargados: 0,
+        docentesDescargados: 0,
+        asignacionesDescargadas: 0,
+        asistentesDescargados: 0
+      };
+    }
+
+    const { guardarEstablecimiento } = await import('../database/repositories/establecimientosRepo');
+    const { guardarSala } = await import('../database/repositories/salasRepo');
+    const { guardarCurso } = await import('../database/repositories/cursosRepo');
+    const { guardarDocentesBatch } = await import('../database/repositories/docentesRepo');
+    const { guardarAsignacionesBatch } = await import('../database/repositories/asignacionesRepo');
+    const { guardarAsistentesBatch } = await import('../database/repositories/asistentesRepo');
+    const { persistDb } = await import('../database/dbCore');
+
+    let estCount = 0;
+    if (estRes.data && estRes.data.length > 0) {
+      for (const row of estRes.data) {
+        await guardarEstablecimiento(mapEstablecimientoFromDb(row), true);
+        estCount++;
+      }
+    }
+
+    let salasCount = 0;
+    if (salasRes.data && salasRes.data.length > 0) {
+      for (const row of salasRes.data) {
+        await guardarSala(mapSalaFromDb(row), true);
+        salasCount++;
+      }
+    }
+
+    let cursosCount = 0;
+    if (cursosRes.data && cursosRes.data.length > 0) {
+      for (const row of cursosRes.data) {
+        await guardarCurso(mapCursoFromDb(row), true);
+        cursosCount++;
+      }
+    }
+
+    let docCount = 0;
+    if (docRes.data && docRes.data.length > 0) {
+      const docentes = docRes.data.map(mapDocenteFromDb);
+      await guardarDocentesBatch(docentes);
+      docCount = docentes.length;
+    }
+
+    let asigCount = 0;
+    if (asigRes.data && asigRes.data.length > 0) {
+      const asignaciones = asigRes.data.map(mapAsignacionFromDb);
+      await guardarAsignacionesBatch(asignaciones);
+      asigCount = asignaciones.length;
+    }
+
+    let astCount = 0;
+    if (astRes.data && astRes.data.length > 0) {
+      const asistentes = astRes.data.map(mapAsistenteFromDb);
+      await guardarAsistentesBatch(asistentes, undefined, periodo, false);
+      astCount = asistentes.length;
+    }
+
+    await persistDb(true);
+
+    return {
+      hayDatosRemotos: true,
+      establecimientosDescargados: estCount,
       salasDescargadas: salasCount,
       cursosDescargados: cursosCount,
       docentesDescargados: docCount,

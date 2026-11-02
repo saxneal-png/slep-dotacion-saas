@@ -12,10 +12,12 @@ import {
   FileCode,
   Trash2,
   ShieldAlert,
-  RotateCcw
+  RotateCcw,
+  CloudDownload
 } from 'lucide-react';
 import type { Establecimiento, CursoSae, SalaInfraestructura, Docente, AsignacionHoraria } from '../types';
 import { subscribePersist, getUltimaHoraGuardado } from '../database/db';
+import { isSupabaseEnabled } from '../services/supabaseClient';
 
 export interface SaveBackupModalProps {
   isOpen: boolean;
@@ -36,6 +38,7 @@ export interface SaveBackupModalProps {
   onImportarCarteraSlep: (file: File) => Promise<void>;
   onBorrarDotacionPeriodo?: (periodo: number, rbd?: string) => Promise<void>;
   onReiniciarBaseDatos?: () => Promise<void>;
+  onSincronizarNubeCartera?: () => Promise<void>;
 }
 
 export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
@@ -56,9 +59,11 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
   onExportarCarteraSlep,
   onImportarCarteraSlep,
   onBorrarDotacionPeriodo,
-  onReiniciarBaseDatos
+  onReiniciarBaseDatos,
+  onSincronizarNubeCartera
 }) => {
   const [isImporting, setIsImporting] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [localEstado, setLocalEstado] = useState<'saved' | 'error'>(propEstado || 'saved');
   const [localHora, setLocalHora] = useState<string>(propUltimaHora || getUltimaHoraGuardado());
   const [localError, setLocalError] = useState<string | undefined>(propError);
@@ -285,6 +290,42 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
                 />
               </label>
             </div>
+
+            {/* Sincronización Remota con Supabase */}
+            {isSupabaseEnabled() && onSincronizarNubeCartera && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSyncingCloud(true);
+                    try {
+                      await onSincronizarNubeCartera();
+                    } finally {
+                      setIsSyncingCloud(false);
+                    }
+                  }}
+                  disabled={isSyncingCloud}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 text-left transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-600 text-white rounded-lg shadow-sm">
+                      <CloudDownload className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-emerald-950">
+                        {isSyncingCloud ? 'Sincronizando desde Supabase...' : 'Sincronizar Toda la Cartera desde Supabase'}
+                      </div>
+                      <div className="text-[11px] text-emerald-700">
+                        Descarga e integra en tu base local los datos de todos los colegios del periodo {periodoActivo}.
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold text-emerald-700 px-2.5 py-1 bg-white border border-emerald-200 rounded-lg shadow-2xs">
+                    {isSyncingCloud ? 'Descargando...' : 'Sincronizar Nube'}
+                  </span>
+                </button>
+              </div>
+            )}
 
             {/* Zona de Peligro: Borrado Masivo */}
             <div className="space-y-3 pt-3 border-t border-red-100">

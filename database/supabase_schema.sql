@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS public.establecimientos (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+DROP TRIGGER IF EXISTS trg_establecimientos_updated_at ON public.establecimientos;
 CREATE TRIGGER trg_establecimientos_updated_at
 BEFORE UPDATE ON public.establecimientos
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -82,6 +83,7 @@ CREATE TABLE IF NOT EXISTS public.cursos_sae (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+DROP TRIGGER IF EXISTS trg_cursos_sae_updated_at ON public.cursos_sae;
 CREATE TRIGGER trg_cursos_sae_updated_at
 BEFORE UPDATE ON public.cursos_sae
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -121,6 +123,7 @@ CREATE TABLE IF NOT EXISTS public.docentes (
   funcion_secundaria TEXT,
   asignatura_principal TEXT,
   aplica_articulo_69 BOOLEAN DEFAULT FALSE,
+  requiere_autorizacion_docente BOOLEAN DEFAULT FALSE,
   funciones_no_aula_json JSONB DEFAULT '[]'::jsonb,
   horas_vigentes_anterior NUMERIC(5,2) DEFAULT 0.00,
   propuesta_gdp TEXT DEFAULT 'Continuidad',
@@ -139,6 +142,7 @@ CREATE TABLE IF NOT EXISTS public.docentes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+DROP TRIGGER IF EXISTS trg_docentes_updated_at ON public.docentes;
 CREATE TRIGGER trg_docentes_updated_at
 BEFORE UPDATE ON public.docentes
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -209,6 +213,7 @@ CREATE TABLE IF NOT EXISTS public.asistentes_educacion (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+DROP TRIGGER IF EXISTS trg_asistentes_educacion_updated_at ON public.asistentes_educacion;
 CREATE TRIGGER trg_asistentes_educacion_updated_at
 BEFORE UPDATE ON public.asistentes_educacion
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -233,7 +238,7 @@ CREATE TABLE IF NOT EXISTS public.usuarios_sistema (
   username TEXT NOT NULL UNIQUE,
   email TEXT UNIQUE,
   nombre_completo TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('super_usuario', 'admin', 'asesor_uatp', 'director', 'auditor', 'visualizador')) DEFAULT 'director',
+  role TEXT NOT NULL CHECK (role IN ('super_usuario', 'subdirector_uatp', 'coordinador_uatp', 'asesor_uatp', 'director_establecimiento', 'jefe_utp_establecimiento', 'admin', 'director', 'auditor', 'visualizador')) DEFAULT 'director_establecimiento',
   cargo TEXT,
   rbd_asignado VARCHAR(10) REFERENCES public.establecimientos(rbd) ON DELETE SET NULL,
   cartera_rbds_json JSONB DEFAULT '[]'::jsonb,
@@ -248,6 +253,7 @@ CREATE TABLE IF NOT EXISTS public.usuarios_sistema (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+DROP TRIGGER IF EXISTS trg_usuarios_sistema_updated_at ON public.usuarios_sistema;
 CREATE TRIGGER trg_usuarios_sistema_updated_at
 BEFORE UPDATE ON public.usuarios_sistema
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -284,6 +290,36 @@ CREATE TABLE IF NOT EXISTS public.auditoria_cambios (
   usuario_id TEXT,
   usuario_nombre TEXT,
   fecha_hora TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 12. TABLA: MATRIZ DE ROLES Y PERMISOS GRANULAR
+CREATE TABLE IF NOT EXISTS public.roles_permisos (
+  rol_id TEXT PRIMARY KEY,
+  permisos_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  version INTEGER NOT NULL DEFAULT 1,
+  actualizado_por TEXT,
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 13. TABLA: BITÁCORA DE CAMBIOS EN PERMISOS
+CREATE TABLE IF NOT EXISTS public.roles_permisos_bitacora (
+  id TEXT PRIMARY KEY,
+  rol_id TEXT NOT NULL,
+  agregados_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  removidos_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  usuario TEXT NOT NULL,
+  motivo TEXT,
+  fecha TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 14. TABLA: CONFIGURACIÓN GENERAL Y PARÁMETROS MINEDUC TERRITORIALES
+CREATE TABLE IF NOT EXISTS public.configuracion_general (
+  id TEXT PRIMARY KEY DEFAULT 'global',
+  parametros_mineduc_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ui_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  asesores_registrados_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  actualizado_por TEXT,
+  ultima_modificacion TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
 -- ==============================================================================
@@ -343,6 +379,9 @@ ALTER TABLE public.usuarios_sistema ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asesor_cartera ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bloqueos_edicion ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auditoria_cambios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.roles_permisos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.roles_permisos_bitacora ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.configuracion_general ENABLE ROW LEVEL SECURITY;
 
 -- Políticas de lectura y escritura para el rol 'anon' y 'authenticated'
 DO $$

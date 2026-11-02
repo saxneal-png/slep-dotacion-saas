@@ -282,12 +282,22 @@ export function decodificarArchivoSige(buffer: ArrayBuffer, nombreArchivo: strin
   }
 }
 
+export interface FuncionarioMultiEstablecimientoInfo {
+  run: string;
+  nombre: string;
+  totalHoras: number;
+  rbds: string[];
+  excede44h: boolean;
+}
+
 export interface ResultadoParseoSige {
   rbdDetectado: string;
   nombreColegioDetectado: string;
   filas: SigeDocenteRow[];
   docentesConvertidos: Docente[];
   establecimientoSugerido: Establecimiento;
+  establecimientosDetectados: Establecimiento[];
+  funcionariosMultiEstablecimiento: FuncionarioMultiEstablecimientoInfo[];
   totales: {
     totalDocentes: number;
     totalHorasContrato: number;
@@ -479,10 +489,9 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
     });
   }
 
-  const rbdFinal = rbdDestino || rbdDetectado || '0';
-
-  // Convertir a modelos Docente de la aplicación
+  // Convertir a modelos Docente de la aplicación respetando el RBD propio de cada fila
   const docentesConvertidos: Docente[] = filas.map(f => {
+    const rbdDocente = f.rbd || rbdDestino || rbdDetectado || '0';
     let estamento: EstamentoDocente = 'DOCENTE_AULA';
     const funcUpper = f.funcionPrincipal.toUpperCase();
     const sec1Upper = f.sectorFuncion1.toUpperCase();
@@ -512,8 +521,8 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
     if (!asignatura || asignatura === '--') asignatura = f.funcionPrincipal;
 
     return {
-      id: `doc-${rbdFinal}-${f.run}`,
-      rbd: rbdFinal,
+      id: `doc-${rbdDocente}-${f.run}`,
+      rbd: rbdDocente,
       periodo: periodo,
       run: f.runCompleto,
       nombres: f.nombres,
@@ -561,12 +570,86 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
     totalHorasAula: filas.reduce((s, f) => s + f.horasAula, 0)
   };
 
+  // Control de funcionarios multi-establecimiento y validación estricta de tope 44 horas
+  const horasPorRunMap = new Map<string, {
+    run: string;
+    nombre: string;
+    contratos: Array<{ rbd: string; nombreColegio: string; horas: number }>;
+    totalHoras: number;
+  }>();
+
+  for (const f of filas) {
+    const r = f.runCompleto;
+    const rbdFila = f.rbd || rbdDestino || rbdDetectado || '0';
+    const actual = horasPorRunMap.get(r) || {
+      run: r,
+      nombre: `${f.apellidos}, ${f.nombres}`,
+      contratos: [],
+      totalHoras: 0
+    };
+    actual.contratos.push({
+      rbd: rbdFila,
+      nombreColegio: f.nombreEstablecimiento || nombreColegioDetectado,
+      horas: f.horasContrato
+    });
+    actual.totalHoras += f.horasContrato;
+    horasPorRunMap.set(r, actual);
+  }
+
+  const funcionariosMultiEstablecimiento: FuncionarioMultiEstablecimientoInfo[] = [];
+
+  for (const [run, data] of horasPorRunMap.entries()) {
+    const rbdsDistintos = Array.from(new Set(data.contratos.map(c => c.rbd)));
+    const esMulti = rbdsDistintos.length > 1;
+    const excede44h = data.totalHoras > 44;
+
+    if (esMulti) {
+      funcionariosMultiEstablecimiento.push({
+        run,
+        nombre: data.nombre,
+        totalHoras: data.totalHoras,
+        rbds: rbdsDistintos,
+        excede44h
+      });
+    }
+
+    if (excede44h) {
+      advertencias.push({
+        linea: 0,
+        run,
+        mensaje: `Docente ${data.nombre} (RUN ${run}) excede el tope legal de 44 horas semanales: acumula ${data.totalHoras} hrs contratadas entre ${rbdsDistintos.length} establecimientos (RBDs: ${rbdsDistintos.join(', ')}).`
+      });
+    }
+  }
+
+  // Identificar todos los establecimientos detectados en el archivo
+  const rbdsEncontrados = Array.from(new Set(filas.map(f => f.rbd).filter(Boolean)));
+  if (!rbdsEncontrados.includes(rbdDetectado) && rbdDetectado) {
+    rbdsEncontrados.unshift(rbdDetectado);
+  }
+
+  const establecimientosDetectados: Establecimiento[] = rbdsEncontrados.map(rbd => {
+    const filaMatch = filas.find(f => f.rbd === rbd);
+    const catalogMatch = identifySchool(rbd) || (filaMatch?.nombreEstablecimiento ? identifySchool(filaMatch.nombreEstablecimiento) : null);
+    return {
+      id: `est-${rbd}`,
+      rbd,
+      nombre: catalogMatch?.nombre || filaMatch?.nombreEstablecimiento || `Colegio RBD ${rbd}`,
+      comuna: catalogMatch?.comuna || 'Chillán',
+      regimen: catalogMatch?.tipo === 'JARDIN' || catalogMatch?.tipo === 'SALA_CUNA' ? 'No JEC' : 'JEC',
+      porcentajePrioritarios: 80,
+      asesorUatp: 'UATP SLEP Valle Diguillín'
+    };
+  });
+
   return {
     rbdDetectado,
     nombreColegioDetectado,
     filas,
     docentesConvertidos,
     establecimientoSugerido,
+    establecimientosDetectados: establecimientosDetectados.length ? establecimientosDetectados : [establecimientoSugerido],
+    funcionariosMultiEstablecimiento,
     totales,
     advertencias
   };

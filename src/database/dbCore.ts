@@ -4,10 +4,19 @@ import { INIT_SCHEMA_SQL, runMigrations } from './schema';
 import { getIdbBytes, setIdbBytes, deleteIdbBytes } from './idbStorage';
 
 let dbInstance: Database | null = null;
-const STORAGE_KEY = 'slep_valle_diguillin_sqlite_db';
+const STORAGE_KEY = 'slep_valle_diguillin_sqlite_db_2027';
+const LEGACY_STORAGE_KEY = 'slep_valle_diguillin_sqlite_db';
 
 export async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
+
+  // Limpieza proactiva de caché previa pre-2027 en el navegador
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  }
+  try {
+    await deleteIdbBytes(LEGACY_STORAGE_KEY);
+  } catch (_) {}
 
   let SQL: any;
   try {
@@ -64,6 +73,22 @@ export async function getDb(): Promise<Database> {
     console.warn('Advertencia al habilitar PRAGMA foreign_keys:', e);
   }
   runMigrations(dbInstance);
+
+  // Asegurar purga definitiva de nóminas de docentes, asistentes, cursos y asignaciones en el cliente
+  if (typeof localStorage !== 'undefined' && !localStorage.getItem('slep_dotacion_2027_clean_v1')) {
+    try {
+      dbInstance.run("DELETE FROM asignaciones_horarias;");
+      dbInstance.run("DELETE FROM cursos_sae;");
+      dbInstance.run("DELETE FROM docentes;");
+      dbInstance.run("DELETE FROM asistentes_educacion;");
+      dbInstance.run("DELETE FROM salas_infraestructura;");
+      localStorage.setItem('slep_dotacion_2027_clean_v1', 'true');
+      console.log('[SQLite] Purga definitiva de dotación ejecutada para inicio limpio 2027.');
+    } catch (e) {
+      console.warn('[SQLite] Aviso durante purga 2027:', e);
+    }
+  }
+
   persistDb();
   return dbInstance;
 }
@@ -228,6 +253,12 @@ export async function borrarDotacionPeriodo(periodo: number, rbd?: string): Prom
 
     db.run("COMMIT;");
     await persistDb(true);
+
+    import('../services/supabaseDotacionService').then(({ SupabaseDotacionService }) => {
+      SupabaseDotacionService.borrarDotacionPeriodo(periodo, rbd).catch(err =>
+        console.warn('[dbCore] Aviso borrando dotación en Supabase:', err)
+      );
+    }).catch(() => {});
 
     return {
       cursosBorrados,

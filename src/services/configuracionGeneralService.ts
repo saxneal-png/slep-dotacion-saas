@@ -1,5 +1,6 @@
 import { ConfiguracionGeneral, PerfilAsesor, ParametrosMineducConfig, GeminiConfig, PreferenciasUiConfig, Establecimiento } from '../types';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/db';
+import { supabase, isSupabaseEnabled } from './supabaseClient';
 
 const STORAGE_KEY_CONFIG = 'slep_configuracion_general_v1';
 
@@ -179,9 +180,54 @@ export function guardarConfiguracionGeneral(config: ConfiguracionGeneral): void 
     safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
     safeSetItem('gemini_model', config.gemini.model || 'gemini-2.5-flash');
     safeSetItem('gemini_export_analizar_todos', String(config.gemini.analizarTodosAlExportar));
+
+    if (isSupabaseEnabled()) {
+      supabase
+        .from('configuracion_general')
+        .upsert({
+          id: 'global',
+          parametros_mineduc_json: config.parametrosMineduc,
+          ui_config_json: config.ui,
+          asesores_registrados_json: config.asesoresRegistrados,
+          ultima_modificacion: config.ultimaModificacion
+        }, { onConflict: 'id' })
+        .then(() => {}, (err: any) => console.warn('[configuracionGeneral] Error sincronizando con Supabase:', err));
+    }
   } catch (e) {
     console.error('Error al guardar configuración general:', e);
   }
+}
+
+/**
+ * Consulta y sincroniza la configuración general desde Supabase en la nube
+ */
+export async function cargarConfiguracionGeneralRemota(): Promise<ConfiguracionGeneral | null> {
+  if (!isSupabaseEnabled()) return null;
+  try {
+    const { data, error } = await supabase
+      .from('configuracion_general')
+      .select('*')
+      .eq('id', 'global')
+      .maybeSingle();
+
+    if (!error && data) {
+      const local = cargarConfiguracionGeneral();
+      const updated: ConfiguracionGeneral = {
+        ...local,
+        parametrosMineduc: data.parametros_mineduc_json || local.parametrosMineduc,
+        ui: data.ui_config_json || local.ui,
+        asesoresRegistrados: Array.isArray(data.asesores_registrados_json) && data.asesores_registrados_json.length > 0
+          ? data.asesores_registrados_json
+          : local.asesoresRegistrados,
+        ultimaModificacion: data.ultima_modificacion || local.ultimaModificacion
+      };
+      safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(updated));
+      return updated;
+    }
+  } catch (err) {
+    console.warn('[configuracionGeneral] Error leyendo configuración de Supabase:', err);
+  }
+  return null;
 }
 
 /**

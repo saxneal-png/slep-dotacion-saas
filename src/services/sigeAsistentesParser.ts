@@ -45,12 +45,22 @@ export interface SigeAsistenteFilaRaw {
   esInspectorPatio: boolean;
 }
 
+export interface FuncionarioMultiEstablecimientoInfo {
+  run: string;
+  nombre: string;
+  totalHoras: number;
+  rbds: string[];
+  excede44h: boolean;
+}
+
 export interface ResultadoParseoAsistentesSige {
   rbdDetectado: string;
   nombreColegioDetectado: string;
   filas: SigeAsistenteFilaRaw[];
   asistentesConvertidos: AsistenteEducacion[];
   establecimientoSugerido: Establecimiento;
+  establecimientosDetectados: Establecimiento[];
+  funcionariosMultiEstablecimiento: FuncionarioMultiEstablecimientoInfo[];
   totales: {
     totalAsistentes: number;
     totalHorasContrato: number;
@@ -371,14 +381,15 @@ export function parsearAsistentesSige(
     const cleanRunId = runStr.replace(/\D/g, '');
     const id = `asist_${rbdRegistro}_${cleanRunId}_${periodo}`;
 
-    if (runsVistos.has(runValidado)) {
+    const rbdKey = `${rbdRegistro}_${runValidado}`;
+    if (runsVistos.has(rbdKey)) {
       advertencias.push({
         linea: r + 1,
         run: runValidado,
-        mensaje: `RUT duplicado en la nómina SIGE: ${runValidado} (${nombreCompleto})`
+        mensaje: `RUT duplicado en el mismo establecimiento (RBD ${rbdRegistro}): ${runValidado} (${nombreCompleto})`
       });
     }
-    runsVistos.add(runValidado);
+    runsVistos.add(rbdKey);
 
     // En SIGE no se desglosa el origen financiero; se imputa a Subvención General como línea base inicial
     let horasSubvGral = finalHorasContrato;
@@ -450,12 +461,85 @@ export function parsearAsistentesSige(
   const totalDuplas = asistentesConvertidos.filter(a => a.esDuplaPsicosocial).length;
   const totalPie = asistentesConvertidos.filter(a => a.esEquipoPie).length;
 
+  // Control de asistentes multi-establecimiento y validación estricta de tope 44 horas
+  const horasPorRunMap = new Map<string, {
+    run: string;
+    nombre: string;
+    contratos: Array<{ rbd: string; nombreColegio: string; horas: number }>;
+    totalHoras: number;
+  }>();
+
+  for (const a of filasRaw) {
+    const r = a.runCompleto;
+    const actual = horasPorRunMap.get(r) || {
+      run: r,
+      nombre: a.nombreCompleto,
+      contratos: [],
+      totalHoras: 0
+    };
+    actual.contratos.push({
+      rbd: a.rbd,
+      nombreColegio: a.nombreEstablecimiento || nombreColegioDetectado,
+      horas: a.horasContrato
+    });
+    actual.totalHoras += a.horasContrato;
+    horasPorRunMap.set(r, actual);
+  }
+
+  const funcionariosMultiEstablecimiento: FuncionarioMultiEstablecimientoInfo[] = [];
+
+  for (const [run, data] of horasPorRunMap.entries()) {
+    const rbdsDistintos = Array.from(new Set(data.contratos.map(c => c.rbd)));
+    const esMulti = rbdsDistintos.length > 1;
+    const excede44h = data.totalHoras > 44;
+
+    if (esMulti) {
+      funcionariosMultiEstablecimiento.push({
+        run,
+        nombre: data.nombre,
+        totalHoras: data.totalHoras,
+        rbds: rbdsDistintos,
+        excede44h
+      });
+    }
+
+    if (excede44h) {
+      advertencias.push({
+        linea: 0,
+        run,
+        mensaje: `Asistente ${data.nombre} (RUN ${run}) excede el tope legal de 44 horas semanales: acumula ${data.totalHoras} hrs contratadas entre ${rbdsDistintos.length} establecimientos (RBDs: ${rbdsDistintos.join(', ')}).`
+      });
+    }
+  }
+
+  // Identificar todos los establecimientos detectados en el archivo
+  const rbdsEncontrados = Array.from(new Set(filasRaw.map(f => f.rbd).filter(Boolean)));
+  if (!rbdsEncontrados.includes(rbdDetectado) && rbdDetectado) {
+    rbdsEncontrados.unshift(rbdDetectado);
+  }
+
+  const establecimientosDetectados: Establecimiento[] = rbdsEncontrados.map(rbd => {
+    const filaMatch = filasRaw.find(f => f.rbd === rbd);
+    const catalogMatch = identifySchool(rbd) || (filaMatch?.nombreEstablecimiento ? identifySchool(filaMatch.nombreEstablecimiento) : null);
+    return {
+      id: `est-${rbd}`,
+      rbd,
+      nombre: catalogMatch?.nombre || filaMatch?.nombreEstablecimiento || `Colegio RBD ${rbd}`,
+      comuna: catalogMatch?.comuna || 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 80,
+      asesorUatp: 'UATP SLEP Valle Diguillín'
+    };
+  });
+
   return {
     rbdDetectado,
     nombreColegioDetectado: establecimientoSugerido.nombre,
     filas: filasRaw,
     asistentesConvertidos,
     establecimientoSugerido,
+    establecimientosDetectados: establecimientosDetectados.length ? establecimientosDetectados : [establecimientoSugerido],
+    funcionariosMultiEstablecimiento,
     totales: {
       totalAsistentes: asistentesConvertidos.length,
       totalHorasContrato,

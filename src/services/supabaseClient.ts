@@ -22,6 +22,7 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON
 
 export function isSupabaseEnabled(): boolean {
   if (typeof window === 'undefined') return false;
-  if (typeof process !== 'undefined' && (process.env as any)?.VITEST) return false;
+  if (typeof process !== 'undefined' && ((process.env as any)?.VITEST || (process.env as any)?.NODE_ENV === 'test')) return false;
+  if (typeof (globalThis as any).__vitest_environment__ !== 'undefined' || typeof (globalThis as any).vi !== 'undefined') return false;
   return Boolean(SUPABASE_URL && (SUPABASE_ANON_KEY || SUPABASE_PUBLISHABLE_KEY));
 }

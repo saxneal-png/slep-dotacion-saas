@@ -234,6 +234,9 @@ export async function limpiarAsignacionesDeColegio(rbd: string, periodo: number 
   
   db.run("DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
   persistDb();
+  SupabaseDotacionService.limpiarAsignacionesDeColegio(rbd, periodo).catch(err =>
+    console.warn('[asignacionesRepo] Aviso limpiando asignaciones en Supabase:', err)
+  );
   return countBefore;
 }
 

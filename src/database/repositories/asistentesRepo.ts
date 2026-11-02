@@ -236,10 +236,13 @@ export function guardarAsistentesBatchSync(
 ): void {
   db.exec('BEGIN TRANSACTION;');
   try {
-    if (reemplazarColegio && rbd) {
-      const delStmt = db.prepare('DELETE FROM asistentes_educacion WHERE rbd = ? AND periodo = ?');
-      delStmt.run([rbd, periodo]);
-      delStmt.free();
+    if (reemplazarColegio) {
+      const rbdsParaLimpiar = rbd ? [rbd] : Array.from(new Set(asistentes.map(a => a.rbd).filter(Boolean)));
+      for (const r of rbdsParaLimpiar) {
+        const delStmt = db.prepare('DELETE FROM asistentes_educacion WHERE rbd = ? AND periodo = ?');
+        delStmt.run([r, periodo]);
+        delStmt.free();
+      }
     }
 
     const stmt = db.prepare(`
@@ -383,4 +386,7 @@ export async function eliminarAsistentesColegioPeriodo(
   const db = await getDb();
   eliminarAsistentesColegioPeriodoSync(db, rbd, periodo);
   await persistDb();
+  SupabaseDotacionService.eliminarAsistentesColegioPeriodo(rbd, periodo).catch(err =>
+    console.warn('[asistentesRepo] Aviso eliminando asistentes en Supabase:', err)
+  );
 }

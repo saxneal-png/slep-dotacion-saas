@@ -94,4 +94,54 @@ describe('Parser Oficial SIGE Asistentes de la Educación', () => {
     expect(claudia?.estamento).toBe('AUXILIAR');
     expect(claudia?.esAuxiliarServicio).toBe(true);
   });
+
+  it('asocia asistentes según la columna RBD y valida contratos en más de un establecimiento (tope legal 44h)', () => {
+    // Nómina con múltiples establecimientos:
+    // - Funcionario 1 (18111222-3): 20h en RBD 3645 + 24h en RBD 3543 = 44h (PERMITIDO)
+    // - Funcionario 2 (19333444-5): 30h en RBD 3645 + 20h en RBD 3543 = 50h (SOBRECONTRATACIÓN > 44h)
+    // - Funcionario 3 (15777888-9): 44h solo en RBD 3543 (REGULAR)
+    const nominaMultiRbd = `ASISTENTE_RUN;ASISTENTE_DV;ASISTENTE_NOMBRE;ASISTENTE_PATERNO;ASISTENTE_MATERNO;ASISTENTE_GENERO;FECHA_NACIMIENTO;RBD;NOMBRE_ESTA;ASISTENTE_TITULO;INSTITUCION;DURACION_CARRERA;HORAS_CONTRATO;FUNCION_UNO;ANIOS_FUNCION_UNO;HORAS_FUNCION_UNO;FUNCION_DOS;ANIOS_FUNCION_DOS;HORAS_FUNCION_DOS;ESTADO_ASISTENTE;
+18111222;3;CARLOS ALBERTO;MENDOZA;RIVAS;M;10/05/1990;3645;LICEO VIDA NUEVA;TÉCNICO EN INFORMÁTICA;INACAP;4;20;SOPORTE TÉCNICO;2;20;SIN DATO / AGREGAR;0;0;HABILITADO;
+18111222;3;CARLOS ALBERTO;MENDOZA;RIVAS;M;10/05/1990;3543;ESCUELA PUEBLO SECO;TÉCNICO EN INFORMÁTICA;INACAP;4;24;SOPORTE TÉCNICO;1;24;SIN DATO / AGREGAR;0;0;HABILITADO;
+19333444;5;GLORIA MARCELA;PARRA;SILVA;F;12/08/1992;3645;LICEO VIDA NUEVA;PSICÓLOGA;UNIVERSIDAD DE CONCEPCIÓN;10;30;PSICÓLOGO/A;3;30;SIN DATO / AGREGAR;0;0;HABILITADO;
+19333444;5;GLORIA MARCELA;PARRA;SILVA;F;12/08/1992;3543;ESCUELA PUEBLO SECO;PSICÓLOGA;UNIVERSIDAD DE CONCEPCIÓN;10;20;PSICÓLOGO/A;1;20;SIN DATO / AGREGAR;0;0;HABILITADO;
+15777888;9;PABLO ANDRÉS;SOTO;VERA;M;01/02/1985;3543;ESCUELA PUEBLO SECO;SIN TÍTULO;NINGUNA;0;44;AUXILIAR DE ASEO;5;44;SIN DATO / AGREGAR;0;0;HABILITADO;`;
+
+    const res = parsearAsistentesSige(nominaMultiRbd, undefined, 2026);
+
+    // 1. Debe haber detectado ambos colegios a través de la columna RBD
+    expect(res.establecimientosDetectados.length).toBe(2);
+    const rbdsDetectados = res.establecimientosDetectados.map(e => e.rbd);
+    expect(rbdsDetectados).toContain('3645');
+    expect(rbdsDetectados).toContain('3543');
+
+    // 2. Cada contrato debe estar asociado al RBD de su propia fila
+    expect(res.asistentesConvertidos.length).toBe(5);
+    const contratoCarlos3645 = res.asistentesConvertidos.find(a => a.run === '18111222-3' && a.rbd === '3645');
+    const contratoCarlos3543 = res.asistentesConvertidos.find(a => a.run === '18111222-3' && a.rbd === '3543');
+    expect(contratoCarlos3645).toBeDefined();
+    expect(contratoCarlos3645?.horasContrato).toBe(20);
+    expect(contratoCarlos3543).toBeDefined();
+    expect(contratoCarlos3543?.horasContrato).toBe(24);
+
+    // 3. Control de funcionarios multi-establecimiento
+    expect(res.funcionariosMultiEstablecimiento.length).toBe(2);
+
+    // Carlos Mendoza: 20 + 24 = 44h -> VÁLIDO (no excede)
+    const multiCarlos = res.funcionariosMultiEstablecimiento.find(f => f.run === '18111222-3');
+    expect(multiCarlos).toBeDefined();
+    expect(multiCarlos?.totalHoras).toBe(44);
+    expect(multiCarlos?.excede44h).toBe(false);
+    expect(multiCarlos?.rbds).toEqual(['3645', '3543']);
+
+    // Gloria Parra: 30 + 20 = 50h -> EXCEDE TOPE 44h (alerta normativa)
+    const multiGloria = res.funcionariosMultiEstablecimiento.find(f => f.run === '19333444-5');
+    expect(multiGloria).toBeDefined();
+    expect(multiGloria?.totalHoras).toBe(50);
+    expect(multiGloria?.excede44h).toBe(true);
+
+    // Debe existir advertencia de sobrecontratación en advertencias
+    const advSobrecontratacion = res.advertencias.find(a => a.run === '19333444-5' && a.mensaje.includes('excede el tope legal'));
+    expect(advSobrecontratacion).toBeDefined();
+  });
 });
