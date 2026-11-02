@@ -152,10 +152,19 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
 
       const suma = subTit + subCon + sepTit + sepCon + pieTit + pieCon;
       if (suma === 0 && editingDoc.horasContrato > 0) {
-        if (editingDoc.calidadJuridica === 'TITULAR') {
-          subTit = editingDoc.horasContrato;
+        const esPieEstamento = editingDoc.estamento === 'DOCENTE_DIFERENCIAL' || editingDoc.estamento === 'PROFESIONAL_PAE' || editingDoc.estamento === 'TECNICO_ESPECIAL';
+        if (esPieEstamento) {
+          if (editingDoc.calidadJuridica === 'TITULAR') {
+            pieTit = editingDoc.horasContrato;
+          } else {
+            pieCon = editingDoc.horasContrato;
+          }
         } else {
-          subCon = editingDoc.horasContrato;
+          if (editingDoc.calidadJuridica === 'TITULAR') {
+            subTit = editingDoc.horasContrato;
+          } else {
+            subCon = editingDoc.horasContrato;
+          }
         }
       }
 
@@ -407,11 +416,31 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                   value={horasContrato}
                   onChange={e => {
                     const val = parseInt(e.target.value) || 0;
-                    const prevVal = horasContrato;
                     setHorasContrato(val);
-                    // Sincronizar automáticamente Subvención General si la dotación está financiada íntegramente por ella
                     const soloSubv = (horasSepTitular + horasSepContrata + horasPieTitular + horasPieContrata) === 0;
-                    if (soloSubv || !editingDoc) {
+                    const soloPie = (horasSubvGeneralTitular + horasSubvGeneralContrata + horasSepTitular + horasSepContrata) === 0 && (horasPieTitular + horasPieContrata > 0 || estamento === 'DOCENTE_DIFERENCIAL' || estamento === 'PROFESIONAL_PAE' || estamento === 'TECNICO_ESPECIAL');
+                    const soloSep = (horasSubvGeneralTitular + horasSubvGeneralContrata + horasPieTitular + horasPieContrata) === 0 && (horasSepTitular + horasSepContrata > 0);
+                    if (soloPie) {
+                      setHorasSubvGeneralTitular(0);
+                      setHorasSubvGeneralContrata(0);
+                      if (calidadJuridica === 'TITULAR') {
+                        setHorasPieTitular(val);
+                        setHorasPieContrata(0);
+                      } else {
+                        setHorasPieContrata(val);
+                        setHorasPieTitular(0);
+                      }
+                    } else if (soloSep) {
+                      setHorasSubvGeneralTitular(0);
+                      setHorasSubvGeneralContrata(0);
+                      if (calidadJuridica === 'TITULAR') {
+                        setHorasSepTitular(val);
+                        setHorasSepContrata(0);
+                      } else {
+                        setHorasSepContrata(val);
+                        setHorasSepTitular(0);
+                      }
+                    } else if (soloSubv || !editingDoc) {
                       if (calidadJuridica === 'TITULAR') {
                         setHorasSubvGeneralTitular(val);
                         setHorasSubvGeneralContrata(0);
@@ -466,7 +495,42 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                 <label className="block font-semibold text-slate-700 mb-1">Estamento *</label>
                 <select
                   value={estamento}
-                  onChange={e => setEstamento(e.target.value as EstamentoDocente)}
+                  onChange={e => {
+                    const nuevoEstamento = e.target.value as EstamentoDocente;
+                    setEstamento(nuevoEstamento);
+                    const esNuevoEstamentoPie = nuevoEstamento === 'DOCENTE_DIFERENCIAL' || nuevoEstamento === 'PROFESIONAL_PAE' || nuevoEstamento === 'TECNICO_ESPECIAL';
+                    const soloSubv = (horasSepTitular + horasSepContrata + horasPieTitular + horasPieContrata) === 0;
+                    const soloPie = (horasSubvGeneralTitular + horasSubvGeneralContrata + horasSepTitular + horasSepContrata) === 0 && (horasPieTitular + horasPieContrata > 0);
+                    if (esNuevoEstamentoPie && (soloSubv || !editingDoc)) {
+                      setHorasSubvGeneralTitular(0);
+                      setHorasSubvGeneralContrata(0);
+                      setHorasSepTitular(0);
+                      setHorasSepContrata(0);
+                      if (calidadJuridica === 'TITULAR') {
+                        setHorasPieTitular(horasContrato);
+                        setHorasPieContrata(0);
+                      } else {
+                        setHorasPieContrata(horasContrato);
+                        setHorasPieTitular(0);
+                      }
+                      if (nuevoEstamento === 'DOCENTE_DIFERENCIAL' && (!asignaturaPrincipal || asignaturaPrincipal === 'Lenguaje y Comunicación')) {
+                        setAsignaturaPrincipal('Educación Diferencial (PIE)');
+                      }
+                    } else if (!esNuevoEstamentoPie && soloPie && !editingDoc) {
+                      setHorasPieTitular(0);
+                      setHorasPieContrata(0);
+                      if (calidadJuridica === 'TITULAR') {
+                        setHorasSubvGeneralTitular(horasContrato);
+                        setHorasSubvGeneralContrata(0);
+                      } else {
+                        setHorasSubvGeneralContrata(horasContrato);
+                        setHorasSubvGeneralTitular(0);
+                      }
+                      if (asignaturaPrincipal === 'Educación Diferencial (PIE)') {
+                        setAsignaturaPrincipal('Lenguaje y Comunicación');
+                      }
+                    }
+                  }}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium"
                 >
                   {ESTAMENTOS.map(est => (
@@ -483,7 +547,29 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                     const nuevaCalidad = e.target.value as CalidadJuridicaDocente;
                     setCalidadJuridica(nuevaCalidad);
                     const soloSubv = (horasSepTitular + horasSepContrata + horasPieTitular + horasPieContrata) === 0;
-                    if (soloSubv || !editingDoc) {
+                    const soloPie = (horasSubvGeneralTitular + horasSubvGeneralContrata + horasSepTitular + horasSepContrata) === 0 && (horasPieTitular + horasPieContrata > 0 || estamento === 'DOCENTE_DIFERENCIAL' || estamento === 'PROFESIONAL_PAE' || estamento === 'TECNICO_ESPECIAL');
+                    const soloSep = (horasSubvGeneralTitular + horasSubvGeneralContrata + horasPieTitular + horasPieContrata) === 0 && (horasSepTitular + horasSepContrata > 0);
+                    if (soloPie) {
+                      setHorasSubvGeneralTitular(0);
+                      setHorasSubvGeneralContrata(0);
+                      if (nuevaCalidad === 'TITULAR') {
+                        setHorasPieTitular(horasContrato);
+                        setHorasPieContrata(0);
+                      } else {
+                        setHorasPieContrata(horasContrato);
+                        setHorasPieTitular(0);
+                      }
+                    } else if (soloSep) {
+                      setHorasSubvGeneralTitular(0);
+                      setHorasSubvGeneralContrata(0);
+                      if (nuevaCalidad === 'TITULAR') {
+                        setHorasSepTitular(horasContrato);
+                        setHorasSepContrata(0);
+                      } else {
+                        setHorasSepContrata(horasContrato);
+                        setHorasSepTitular(0);
+                      }
+                    } else if (soloSubv || !editingDoc) {
                       if (nuevaCalidad === 'TITULAR') {
                         setHorasSubvGeneralTitular(horasContrato);
                         setHorasSubvGeneralContrata(0);

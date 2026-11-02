@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 // Diccionario de rescate para reparar caracteres dañados o corruptos ('' / \ufffd)
 // La clave contiene [BAD] en la posición donde se corrompió la letra
 const DICCIONARIO_RESCATE: Record<string, string> = {
-  // Nombres y Apellidos comunes en Chile
+  // Nombres y Apellidos comunes en Chile con carácter corrupto [BAD] (\ufffd, \uFFFD, ?)
   'PE[BAD]A': 'PEÑA',
   'MU[BAD]OZ': 'MUÑOZ',
   'ACU[BAD]A': 'ACUÑA',
@@ -17,6 +17,9 @@ const DICCIONARIO_RESCATE: Record<string, string> = {
   'GU[BAD]EZ': 'GUÍÑEZ',
   'NU[BAD]EZ': 'NÚÑEZ',
   'ZU[BAD]IGA': 'ZÚÑIGA',
+  'A[BAD]EZ': 'AÑEZ',
+  'I[BAD]IGO': 'IÑIGO',
+  'AVENDA[BAD]O': 'AVENDAÑO',
   'D[BAD]AZ': 'DÍAZ',
   'GONZ[BAD]LEZ': 'GONZÁLEZ',
   'RODR[BAD]GUEZ': 'RODRÍGUEZ',
@@ -36,7 +39,40 @@ const DICCIONARIO_RESCATE: Record<string, string> = {
   'TOM[BAD]S': 'TOMÁS',
   'HERN[BAD]N': 'HERNÁN',
   'AGUST[BAD]N': 'AGUSTÍN',
-  // Asignaturas y Sectores MINEDUC
+  'VER[BAD]NICA': 'VERÓNICA',
+  'M[BAD]NICA': 'MÓNICA',
+  'SEP[BAD]LVEDA': 'SEPÚLVEDA',
+  'C[BAD]CERES': 'CÁCERES',
+  'C[BAD]RDENAS': 'CÁRDENAS',
+  'B[BAD]RBARA': 'BÁRBARA',
+  'RA[BAD]L': 'RAÚL',
+  'SA[BAD]L': 'SAÚL',
+  'ANDR[BAD]S': 'ANDRÉS',
+  'MAT[BAD]AS': 'MATÍAS',
+  'SEBASTI[BAD]N': 'SEBASTIÁN',
+  'CRISTI[BAD]N': 'CRISTIÁN',
+  'JOAQU[BAD]N': 'JOAQUÍN',
+  'BENJAM[BAD]N': 'BENJAMÍN',
+  'BEL[BAD]N': 'BELÉN',
+  'IN[BAD]S': 'INÉS',
+  'PIL[BAD]N': 'PILÁN',
+  'B[BAD]O-B[BAD]O': 'BÍO-BÍO',
+  'BIO-B[BAD]O': 'BIO-BÍO',
+
+  // Asignaturas, Cargos y Términos MINEDUC / SIGE con carácter corrupto [BAD]
+  'SIN T[BAD]TULO': 'SIN TÍTULO',
+  'T[BAD]TULO': 'TÍTULO',
+  'PSIC[BAD]LOGO': 'PSICÓLOGO',
+  'PSIC[BAD]LOGA': 'PSICÓLOGA',
+  'PSIC[BAD]LOGO/A': 'PSICÓLOGO/A',
+  'FONOAUDI[BAD]LOGO': 'FONOAUDIÓLOGO',
+  'FONOAUDI[BAD]LOGA': 'FONOAUDIÓLOGA',
+  'FONOAUDI[BAD]LOGO/A': 'FONOAUDIÓLOGO/A',
+  'KINESI[BAD]LOGO': 'KINESIÓLOGO',
+  'KINESI[BAD]LOGA': 'KINESIÓLOGA',
+  'KINESI[BAD]LOGO/A': 'KINESIÓLOGO/A',
+  'MANTENCI[BAD]N': 'MANTENCIÓN',
+  'ENCARGADO/A DE MANTENCI[BAD]N': 'ENCARGADO/A DE MANTENCIÓN',
   'EDUCACI[BAD]N': 'EDUCACIÓN',
   'F[BAD]SICA': 'FÍSICA',
   'B[BAD]SICA': 'BÁSICA',
@@ -48,7 +84,109 @@ const DICCIONARIO_RESCATE: Record<string, string> = {
   'T[BAD]CNICA': 'TÉCNICA',
   'T[BAD]CNICO-PEDAG[BAD]GICA': 'TÉCNICO-PEDAGÓGICA',
   'PEDAG[BAD]GICA': 'PEDAGÓGICA',
+  'PEDAG[BAD]GICO': 'PEDAGÓGICO',
   'ALIMENTACI[BAD]N': 'ALIMENTACIÓN',
+  'P[BAD]RVULO': 'PÁRVULO',
+  'P[BAD]RVULOS': 'PÁRVULOS',
+  'PARVULARIA': 'PARVULARIA',
+  'INSPECCI[BAD]N': 'INSPECCIÓN',
+  'ADMINISTRACI[BAD]N': 'ADMINISTRACIÓN',
+  'COORDINACI[BAD]N': 'COORDINACIÓN',
+  'DIRECCI[BAD]N': 'DIRECCIÓN',
+  'ORIENTACI[BAD]N': 'ORIENTACIÓN',
+  'INTEGRACI[BAD]N': 'INTEGRACIÓN',
+  'HABILITACI[BAD]N': 'HABILITACIÓN',
+  'EVALUACI[BAD]N': 'EVALUACIÓN',
+  'DURACI[BAD]N': 'DURACIÓN',
+  'FUNCI[BAD]N': 'FUNCIÓN',
+  'A[BAD]OS': 'AÑOS'
+};
+
+// Diccionario para cuando el exportador o sanitizador omitió completamente el caracter corrupto
+const DICCIONARIO_OMISIONES: Record<string, string> = {
+  'SIN TTULO': 'SIN TÍTULO',
+  'TTULO': 'TÍTULO',
+  'VERNICA': 'VERÓNICA',
+  'MARA': 'MARÍA',
+  'AEZ': 'AÑEZ',
+  'MUOZ': 'MUÑOZ',
+  'JOS': 'JOSÉ',
+  'MANTENCIN': 'MANTENCIÓN',
+  'PSICLOGO': 'PSICÓLOGO',
+  'PSICLOGA': 'PSICÓLOGA',
+  'PSICLOGO/A': 'PSICÓLOGO/A',
+  'FONOAUDILOGO': 'FONOAUDIÓLOGO',
+  'FONOAUDILOGA': 'FONOAUDIÓLOGA',
+  'FONOAUDILOGO/A': 'FONOAUDIÓLOGO/A',
+  'KINESILOGO': 'KINESIÓLOGO',
+  'KINESILOGA': 'KINESIÓLOGA',
+  'SEPLVEDA': 'SEPÚLVEDA',
+  'CCERES': 'CÁCERES',
+  'PEA': 'PEÑA',
+  'ACUA': 'ACUÑA',
+  'CAMAO': 'CAMAÑO',
+  'CASTAEDA': 'CASTAÑEDA',
+  'BRICEO': 'BRICEÑO',
+  'GUIEZ': 'GUÍÑEZ',
+  'NUEZ': 'NÚÑEZ',
+  'ZUIGA': 'ZÚÑIGA',
+  'DAZ': 'DÍAZ',
+  'GONZLEZ': 'GONZÁLEZ',
+  'RODRGUEZ': 'RODRÍGUEZ',
+  'HERNNDEZ': 'HERNÁNDEZ',
+  'LPEZ': 'LÓPEZ',
+  'PREZ': 'PÉREZ',
+  'SNCHEZ': 'SÁNCHEZ',
+  'RAMREZ': 'RAMÍREZ',
+  'MARTNEZ': 'MARTÍNEZ',
+  'JIMNEZ': 'JIMÉNEZ',
+  'MELNDEZ': 'MELÉNDEZ',
+  'ALARCN': 'ALARCÓN',
+  'CORVALN': 'CORVALÁN',
+  'RUBN': 'RUBÉN',
+  'TOMS': 'TOMÁS',
+  'HERNN': 'HERNÁN',
+  'AGUSTN': 'AGUSTÍN',
+  'MNICA': 'MÓNICA',
+  'CRDENAS': 'CÁRDENAS',
+  'BRBARA': 'BÁRBARA',
+  'RAL': 'RAÚL',
+  'SAL': 'SAÚL',
+  'ANDRS': 'ANDRÉS',
+  'MATAS': 'MATÍAS',
+  'SEBASTIN': 'SEBASTIÁN',
+  'CRISTIN': 'CRISTIÁN',
+  'JOAQUN': 'JOAQUÍN',
+  'BENJAMN': 'BENJAMÍN',
+  'BELN': 'BELÉN',
+  'INS': 'INÉS',
+  'PILN': 'PILÁN',
+  'EDUCACIN': 'EDUCACIÓN',
+  'FSICA': 'FÍSICA',
+  'BSICA': 'BÁSICA',
+  'COMUNICACIN': 'COMUNICACIÓN',
+  'INGLS': 'INGLÉS',
+  'MATEMTICA': 'MATEMÁTICA',
+  'RELIGIN': 'RELIGIÓN',
+  'TCNICO': 'TÉCNICO',
+  'TCNICA': 'TÉCNICA',
+  'TCNICO-PEDAGGICA': 'TÉCNICO-PEDAGÓGICA',
+  'PEDAGGICA': 'PEDAGÓGICA',
+  'PEDAGGICO': 'PEDAGÓGICO',
+  'ALIMENTACIN': 'ALIMENTACIÓN',
+  'PRVULO': 'PÁRVULO',
+  'PRVULOS': 'PÁRVULOS',
+  'INSPECCIN': 'INSPECCIÓN',
+  'ADMINISTRACIN': 'ADMINISTRACIÓN',
+  'COORDINACIN': 'COORDINACIÓN',
+  'DIRECCIN': 'DIRECCIÓN',
+  'ORIENTACIN': 'ORIENTACIÓN',
+  'INTEGRACIN': 'INTEGRACIÓN',
+  'HABILITACIN': 'HABILITACIÓN',
+  'EVALUACIN': 'EVALUACIÓN',
+  'DURACIN': 'DURACIÓN',
+  'FUNCIN': 'FUNCIÓN',
+  'AOS': 'AÑOS'
 };
 
 const MOJIBAKE_MAP: Record<string, string> = {
@@ -72,15 +210,21 @@ export function limpiarTextoMineduc(texto: string): string {
     }
   }
 
-  // 2. Rescate de caracteres '' (\ufffd) usando diccionario fonético oficial
-  if (res.includes('\ufffd') || res.includes('')) {
+  // 2. Rescate de caracteres corruptos usando diccionario fonético oficial (\ufffd, \uFFFD, ?)
+  if (res.includes('\ufffd') || res.includes('\uFFFD') || res.includes('�') || res.includes('')) {
     for (const [patron, reemplazo] of Object.entries(DICCIONARIO_RESCATE)) {
-      const regPattern = patron.replace('[BAD]', '[\ufffd]');
-      const reg = new RegExp(`\\b${regPattern}\\b`, 'gi');
-      res = res.replace(reg, reemplazo);
+      const regPattern = patron.replace(/\[BAD\]/g, '[\ufffd\uFFFD]');
+      const reg = new RegExp(`(^|[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ])${regPattern}(?=[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]|$)`, 'gi');
+      res = res.replace(reg, (match, prefix) => prefix + reemplazo);
     }
     // Reemplazo genérico para cualquier carácter residual que quede
-    res = res.replaceAll('\ufffd', '').replaceAll('', '');
+    res = res.replaceAll('\ufffd', '').replaceAll('\uFFFD', '').replaceAll('�', '').replaceAll('', '');
+  }
+
+  // 3. Rescate de caracteres que fueron omitidos por exportadores o recortes de codificación
+  for (const [mal, bien] of Object.entries(DICCIONARIO_OMISIONES)) {
+    const reg = new RegExp(`(^|[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ])${mal}(?=[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]|$)`, 'gi');
+    res = res.replace(reg, (match, prefix) => prefix + bien);
   }
 
   // Quitar dobles espacios

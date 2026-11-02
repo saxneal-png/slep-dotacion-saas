@@ -617,6 +617,30 @@ export const App: React.FC = () => {
     }
   };
 
+  // Ingesta Completa de Asistentes SIGE
+  const handleIngestarAsistentesSigeCompleto = async (
+    est: Establecimiento,
+    asistentesImportados: any[]
+  ) => {
+    try {
+      await guardarEstablecimiento(est);
+      const db = await getDb();
+      const { guardarAsistentesBatch } = await import('./database/repositories/asistentesRepo');
+      await guardarAsistentesBatch(db, asistentesImportados, est.rbd, periodoActivo, true);
+      await persistDb(true);
+      await cargarDatos();
+      const listEst = await listarEstablecimientos();
+      const estActivo = listEst.find(c => c.rbd === est.rbd) || est;
+      setColegioActivo(estActivo);
+      await cargarDatosColegio(estActivo.rbd);
+
+      mostrarMensaje(`✓ Ingesta SIGE exitosa: ${est.nombre} con ${asistentesImportados.length} asistentes de la educación ingresados.`);
+      setVistaActiva('asistentes');
+    } catch (e: any) {
+      mostrarMensaje(`Error en la ingesta de asistentes SIGE: ${e.message || e}`, 'error');
+    }
+  };
+
   // Exportar Base de Datos SQLite (.sqlite)
   const handleExportarSqlite = async () => {
     try {
@@ -954,6 +978,7 @@ export const App: React.FC = () => {
         {vistaActiva === 'sige' && (
           <SigeIngestaView
             onIngestarSigeCompleto={handleIngestarSigeCompleto}
+            onIngestarAsistentesSigeCompleto={handleIngestarAsistentesSigeCompleto}
           />
         )}
 

@@ -238,11 +238,16 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         : asigsCandidatasAula;
 
       const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
-        ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+        ? (cronSepTotal > 0 || hTallerSepDoc > 0 || sumFuncionesNoAulaSep > 0
+            ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+            : 0)
         : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
+      const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
       const pieCronologicas = isPieDoc
-        ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
+        ? (cronApoyoPie > 0
+            ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+            : hNoAulaPieEfectivas)
         : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
@@ -861,10 +866,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                 // Para Educadoras Diferenciales (cuyo contrato PIE está exento en la homologación DEP de la proporción 65/35 regular):
                 // Calculamos su desglose de derechos Ley 20.903 y Decreto 170 sobre su carga neta de aula para visibilizar
                 // sus Horas No Lectivas reales (destinadas a trabajo colaborativo, FUDEI, PACI) y su tope máximo lectivo.
-                const esDiferencialPie = d.estamento === 'DOCENTE_DIFERENCIAL';
-                const calculoRefDiferencial = (esDiferencialPie && auditMulti.minutosHnlTotal === 0 && d.horasContrato > 0)
+                const esDiferencialPie = d.estamento === 'DOCENTE_DIFERENCIAL' || ((d.horasPieTitular || 0) + (d.horasPieContrata || 0) > 0 && (d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0) === 0);
+                const hNoAulaDiff = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
+                  ? d.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+                  : ((d.horasCoordinacionPie || 0) + (d.horasDirectivas || 0) + (d.horasTecnicoPedagogicas || 0) + (d.horasInspectorGeneral || 0) + (d.horasCoordinacion || 0));
+                const jornadaAulaDiff = Math.max(0, d.horasContrato - hNoAulaDiff);
+                const calculoRefDiferencial = (esDiferencialPie && auditMulti.minutosHnlTotal === 0 && jornadaAulaDiff > 0)
                   ? calcularJornadaMinutos(
-                      Math.max(0, d.horasContrato - (d.horasCoordinacionPie || 0) - (d.horasDirectivas || 0) - (d.horasTecnicoPedagogicas || 0)),
+                      jornadaAulaDiff,
                       pedAsignadas,
                       regimenTabla,
                       Boolean(d.aplicaArticulo69)
@@ -872,7 +881,9 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                   : null;
 
                 const minutosHnlEfectivos = calculoRefDiferencial ? calculoRefDiferencial.minutosNoLectivosCalculados : auditMulti.minutosHnlTotal;
-                const minutosRecreoEfectivos = calculoRefDiferencial ? calculoRefDiferencial.minutosRecreoAsignados : auditMulti.minutosRecreoTotal;
+                const minutosRecreoEfectivos = calculoRefDiferencial
+                  ? Math.max(0, calculoRefDiferencial.minutosContratoTotales - calculoRefDiferencial.minutosLectivosDisponiblesMax - calculoRefDiferencial.minutosNoLectivosCalculados)
+                  : auditMulti.minutosRecreoTotal;
                 const minutosPlanEfectivos = calculoRefDiferencial ? Math.round(calculoRefDiferencial.minutosNoLectivosCalculados * 0.40) : auditMulti.minutosHnlPlanificacion40;
 
                 const hnlHoras = Math.floor(minutosHnlEfectivos / 60);

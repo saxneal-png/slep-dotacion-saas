@@ -17,6 +17,8 @@ import {
   inferirClasificacionAsistente
 } from '../../packages/mineduc-engine/src/calculoAsistentes';
 import { parseAsistentesFromWorkbook } from '../services/analizador/asistentesParser';
+import { decodificarArchivoSige } from '../services/sigeParserService';
+import { parsearAsistentesSige } from '../services/sigeAsistentesParser';
 import { exportarLevantamientoIndividualExcel } from '../services/analizador/asistentesLevantamientoExporter';
 
 export interface AsistentesDotacionViewProps {
@@ -326,8 +328,23 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
     if (!archivoExcel) return;
     try {
       const buffer = await archivoExcel.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const parseRes = parseAsistentesFromWorkbook(wb, colegio.rbd, periodoActivo);
+      const ext = archivoExcel.name.toLowerCase().split('.').pop() || '';
+      let parseRes: ReturnType<typeof parseAsistentesFromWorkbook>;
+
+      if (['csv', 'txt'].includes(ext)) {
+        const text = decodificarArchivoSige(buffer, archivoExcel.name);
+        const sigeRes = parsearAsistentesSige(text, colegio.rbd, periodoActivo);
+        parseRes = {
+          asistentes: sigeRes.asistentesConvertidos,
+          totalFuncionarios: sigeRes.totales.totalAsistentes,
+          totalHoras: sigeRes.totales.totalHorasContrato,
+          sheetNameFound: 'Nómina SIGE CSV',
+          advertencias: sigeRes.advertencias.map(a => a.mensaje)
+        };
+      } else {
+        const wb = XLSX.read(buffer, { type: 'array' });
+        parseRes = parseAsistentesFromWorkbook(wb, colegio.rbd, periodoActivo);
+      }
 
       if (parseRes.asistentes.length === 0) {
         setNotificacion({
@@ -1282,13 +1299,13 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
             </div>
 
             <p className="text-xs text-slate-500">
-              Sube la planilla Excel de dotación. El sistema buscará automáticamente la hoja "Asistentes" e importará los funcionarios para el colegio <strong>{colegio.nombre}</strong>.
+              Sube la nómina oficial descargada desde SIGE (.csv o .txt) o la planilla Excel de dotación (.xlsx). El sistema restaurará automáticamente tildes, eñes y dobles funciones para <strong>{colegio.nombre}</strong>.
             </p>
 
             <div className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-6 text-center hover:border-orange-500 transition-colors">
               <input
                 type="file"
-                accept=".xlsx, .xls"
+                accept=".xlsx, .xls, .csv, .txt"
                 onChange={(e) => setArchivoExcel(e.target.files?.[0] || null)}
                 className="hidden"
                 id="file-asistentes-input"
@@ -1298,7 +1315,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                 <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
                   {archivoExcel ? archivoExcel.name : 'Haz clic para seleccionar archivo Excel'}
                 </div>
-                <div className="text-[10px] text-slate-400">Archivos .xlsx o .xls</div>
+                <div className="text-[10px] text-slate-400">Archivos oficiales SIGE (.csv, .txt) o planillas Excel (.xlsx, .xls)</div>
               </label>
             </div>
 

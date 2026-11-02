@@ -641,4 +641,95 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     expect(contrato.esImprocedenteFinanciamientoSepPie).toBe(false);
     expect(contrato.deficitSubvencionGeneral).toBe(0);
   });
+
+  it('Educadora Diferencial recién agregada con 0 cursos asignados: calcula proporción Ley 20.903 y marca HOLGURA (+44 hrs libres), NO Exacto', () => {
+    const docNuevaPie: Docente = {
+      id: 'doc-nueva-diferencial',
+      rbd: '9999',
+      run: '19.123.456-7',
+      nombres: 'Javiera',
+      apellidos: 'Pino Fuentes',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasPieTitular: 0,
+      horasPieContrata: 44
+    };
+
+    // Sin asignaciones horarias (0 cursos)
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docNuevaPie], []);
+    const estDoc = diag.estadoDocentes[0];
+
+    expect(estDoc.horasPedagogicasAsignadas).toBe(0);
+    expect(estDoc.horasExentas).toBe(0);
+    expect(estDoc.horasVacantes).toBe(44);
+    expect(estDoc.horasPieSinAsignar).toBe(44);
+    expect(estDoc.estaSobreasignado).toBe(false);
+
+    // En consolidado territorial y Ficha 360°
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docNuevaPie], [], cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.contratoCalculadoTotal).toBe(0);
+    expect(contrato.saldoHoras).toBe(44);
+    expect(contrato.estadoSaldo).toBe('HOLGURA');
+    // Proporciones Ley 20.903 calculadas para 44 hrs en régimen 65/35:
+    expect(contrato.maxHorasPedagogicasMineduc).toBe(38); // 28h 30m lectivas
+    expect(contrato.minutosLectivosMineduc).toBe(38 * 45);
+    expect(contrato.minutosRecreoMineduc).toBeGreaterThan(0);
+    expect(contrato.minutosNoLectivosMineduc).toBeGreaterThan(0);
+    expect(contrato.minutosHnlPlanificacion40).toBeGreaterThan(0);
+  });
+
+  it('Educadora Diferencial con asignación parcial (1 curso PIE = 10h apoyo / 14 HA en contrato de 44h): calcula HOLGURA real de horas libres', () => {
+    const docParcialPie: Docente = {
+      id: 'doc-parcial-diferencial',
+      rbd: '9999',
+      run: '20.456.789-0',
+      nombres: 'Camila',
+      apellidos: 'Rojas Soto',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasPieTitular: 44,
+      horasPieContrata: 0
+    };
+
+    const asigUnCurso: AsignacionHoraria[] = [
+      {
+        id: 'asig-pie-1-curso',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-parcial-diferencial',
+        asignatura: 'Apoyo Especializado PIE',
+        horasPedagogicasAula: 14,
+        horasCronologicasPie: 10.5,
+        esCoDocencia: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      }
+    ];
+
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docParcialPie], asigUnCurso);
+    const estDoc = diag.estadoDocentes[0];
+
+    // 14 HA en régimen 65/35 equivale a 16 hrs de contrato (lectivas + recreo + HNL proporcional)
+    expect(estDoc.horasVacantes).toBe(28); // 44 - 16 = 28 hrs libres
+    expect(estDoc.horasPieSinAsignar).toBe(28);
+    expect(estDoc.estaSobreasignado).toBe(false);
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docParcialPie], asigUnCurso, cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.contratoCalculadoTotal).toBe(16);
+    expect(contrato.saldoHoras).toBe(28);
+    expect(contrato.estadoSaldo).toBe('HOLGURA');
+  });
 });

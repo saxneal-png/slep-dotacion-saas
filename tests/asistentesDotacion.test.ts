@@ -141,4 +141,31 @@ describe('Módulo de Dotación de Asistentes de la Educación', () => {
     const todosTerritorio = await listarTodosLosAsistentesTerritorio(db, 2026);
     expect(todosTerritorio.length).toBe(22);
   });
+
+  it('debe admitir polimórficamente nóminas oficiales SIGE con caracteres especiales en parseAsistentesFromRows', async () => {
+    const filasSige = [
+      ['ASISTENTE_RUN','ASISTENTE_DV','ASISTENTE_NOMBRE','ASISTENTE_PATERNO','ASISTENTE_MATERNO','ASISTENTE_GENERO','FECHA_NACIMIENTO','RBD','NOMBRE_ESTA','ASISTENTE_TITULO','INSTITUCION','DURACION_CARRERA','HORAS_CONTRATO','FUNCION_UNO','ANIOS_FUNCION_UNO','HORAS_FUNCION_UNO','FUNCION_DOS','ANIOS_FUNCION_DOS','HORAS_FUNCION_DOS','ESTADO_ASISTENTE'],
+      ['10177332','9','VERNICA JEANNETTE','PINO','URRUTIA','F','19/10/1963','3645','LICEO VIDA NUEVA','SIN TTULO','NINGUNA','0','44','INSPECTOR/A','37','44','SIN DATO / AGREGAR','0','0','HABILITADO'],
+      ['27083099','4','JAVIER ALEJANDRO','ARIAS','AEZ','M','27/06/1984','3645','LICEO VIDA NUEVA','SIN TTULO','NINGUNA','0','44','AUXILIAR DE ASEO','0','22','ENCARGADO/A DE MANTENCIN','0','22','HABILITADO'],
+      ['17062989','2','ALEXANDRA DE LAS MERCEDES','CASTRO','MEDINA','F','21/06/1989','3645','LICEO VIDA NUEVA','PSICLOGO','UNIVERSIDAD DEL BIO-BIO','10','10','PSICLOGO/A','2','10','SIN DATO / AGREGAR','0','0','HABILITADO'],
+      ['12549570','2','JOS MANUEL','AGUILERA','MUOZ','M','14/01/1974','3645','LICEO VIDA NUEVA','SIN TTULO','NINGUNA','0','44','INSPECTOR/A','25','40','ASISTENTE ADMINISTRATIVO','25','4','HABILITADO']
+    ];
+
+    const { parseAsistentesFromRows } = await import('../src/services/analizador/asistentesParser');
+    const result = parseAsistentesFromRows(filasSige, '3645', 2026);
+
+    expect(result.totalFuncionarios).toBe(4);
+    expect(result.totalHoras).toBe(142); // 44 + 44 + 10 + 44 = 142
+
+    const javier = result.asistentes.find(a => a.run === '27083099-4');
+    expect(javier).toBeDefined();
+    expect(javier?.apellidos).toBe('Arias Añez');
+    expect(javier?.cargoFuncion).toContain('AUXILIAR DE ASEO (22h)');
+    expect(javier?.cargoFuncion).toContain('ENCARGADO/A DE MANTENCIÓN (22h)');
+
+    const jose = result.asistentes.find(a => a.run === '12549570-2');
+    expect(jose).toBeDefined();
+    expect(jose?.nombres).toBe('José Manuel');
+    expect(jose?.apellidos).toBe('Aguilera Muñoz');
+  });
 });

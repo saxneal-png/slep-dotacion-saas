@@ -1,5 +1,6 @@
 import {
   calcularJornadaMinutos,
+  obtenerTramoMineduc,
   validarSobreasignacionDocente,
   calcularAuditoriaDocenteMultitramo,
   buscarContratoMinimoPorTabla,
@@ -338,11 +339,16 @@ export function calcularDiagnosticoColegio(
       : asigsCandidatasAula;
 
     const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
-      ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+      ? (cronSepTotal > 0 || hTallerSepDoc > 0 || sumFuncionesNoAulaSep > 0
+          ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+          : 0)
       : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
+    const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
     const pieCronologicas = isPieDoc
-      ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
+      ? (cronApoyoPie > 0
+          ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+          : hNoAulaPieEfectivas)
       : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
     const hInstNoAula = sumFuncionesNoAulaSubvGen;
@@ -435,14 +441,14 @@ export function calcularDiagnosticoColegio(
 
     const reqSepDoc = (pedSep65 > 0 || pedSep60 > 0)
       ? (buscarContratoMinimoPorTabla(pedSep65, '65_35') + buscarContratoMinimoPorTabla(pedSep60, '60_40') + sumFuncionesNoAulaSep)
-      : (isSepDoc ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep) : (sumFuncionesNoAulaSep + hTallerSepDoc));
+      : (isSepDoc ? (cronSepTotal > 0 || hTallerSepDoc > 0 || sumFuncionesNoAulaSep > 0 ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep) : 0) : (sumFuncionesNoAulaSep + hTallerSepDoc));
 
     // Carga total de trabajo calculada por auditoría oficial
     const cargaTotalTrabajo = auditDoc.contratoCalculadoTotal;
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
 
     const horasSepSinAsignarDoc = Math.max(0, contratoSepDoc - reqSepDoc);
-    const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - (isPieDoc ? Math.max(contratoPieDoc, cronApoyoPie + sumFuncionesNoAulaPie) : (cronTrabajoColab + sumFuncionesNoAulaPie + hColabDoc + hCoordPie)));
+    const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - pieCronologicas);
     const horasSubvGenSinAsignarDoc = Math.max(0, subTotalDoc - reqSubvDoc);
 
     return {
@@ -881,20 +887,27 @@ export function obtenerDocentesConsolidadosTerritorio(
         : asigsCandidatasAula;
 
       const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
-        ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+        ? (cronSepTotal > 0 || hTallerSepDoc > 0 || sumFuncionesNoAulaSep > 0
+            ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+            : 0)
         : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
+      const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
       const pieCronologicas = isPieDoc
-        ? Math.max(contratoPieDoc, hColabDoc + hCoordPie, cronApoyoPie + sumFuncionesNoAulaPie)
+        ? (cronApoyoPie > 0
+            ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+            : hNoAulaPieEfectivas)
         : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;
-      const horasDocenciaNeta = Math.max(0, doc.horasContrato - hExentas);
+      const horasDocenciaNeta = isPieDoc
+        ? Math.max(0, doc.horasContrato - hInstNoAula - hNoAulaPieEfectivas - sumFuncionesNoAulaSep)
+        : Math.max(0, doc.horasContrato - hExentas);
 
-      // Proporción evaluada sobre horas de aula regular
+      // Proporción evaluada sobre horas de aula (para Educadora Diferencial se calcula sobre su jornada neta de aula PIE)
       const calculo = horasDocenciaNeta > 0
-        ? calcularJornadaMinutos(horasDocenciaNeta, pedAulaRegular, regimenTabla, Boolean(doc.aplicaArticulo69))
+        ? calcularJornadaMinutos(horasDocenciaNeta, isPieDoc ? pedTotalAsignadas : pedAulaRegular, regimenTabla, Boolean(doc.aplicaArticulo69))
         : {
             horasContrato: 0,
             minutosContratoTotales: 0,
@@ -995,7 +1008,21 @@ export function obtenerDocentesConsolidadosTerritorio(
         alertaFinanciamientoSepPie = `Improcedencia Financiera: El docente imparte ${horasAulaPlanEstudioYJec} HA de Plan de Estudio / JEC que exigen ${contratoReqSubvencionGeneral}h de Subvención General, pero su contrato solo dispone de ${subvencionGeneralContratoTotal}h de Subv. General (Déficit: ${deficitSubvencionGeneral}h cubiertas improcedentemente con fondos SEP o PIE).`;
       }
 
-      const maxPermitidasDoc = Math.floor(auditMulti.minutosLimitePermitido / 45);
+      const maxPermitidasDoc = (isPieDoc && auditMulti.minutosLimitePermitido === 0 && horasDocenciaNeta > 0)
+        ? calculo.horasPedagogicasDisponiblesMax
+        : Math.floor(auditMulti.minutosLimitePermitido / 45);
+      const minsLectivosDoc = (isPieDoc && auditMulti.minutosLectivosTablaTotal === 0 && horasDocenciaNeta > 0)
+        ? calculo.minutosLectivosDisponiblesMax
+        : auditMulti.minutosLectivosTablaTotal;
+      const minsRecreoDoc = (isPieDoc && auditMulti.minutosRecreoTotal === 0 && horasDocenciaNeta > 0)
+        ? Math.max(0, calculo.minutosContratoTotales - calculo.minutosLectivosDisponiblesMax - calculo.minutosNoLectivosCalculados)
+        : auditMulti.minutosRecreoTotal;
+      const minsHnlDoc = (isPieDoc && auditMulti.minutosHnlTotal === 0 && horasDocenciaNeta > 0)
+        ? calculo.minutosNoLectivosCalculados
+        : auditMulti.minutosHnlTotal;
+      const minsPlan40Doc = (isPieDoc && auditMulti.minutosHnlPlanificacion40 === 0 && horasDocenciaNeta > 0)
+        ? Math.round(calculo.minutosNoLectivosCalculados * 0.40)
+        : auditMulti.minutosHnlPlanificacion40;
 
       contratos.push({
         colegio,
@@ -1014,12 +1041,12 @@ export function obtenerDocentesConsolidadosTerritorio(
         horasPedagogicasAsignadas: pedTotalAsignadas,
         regimen,
         maxHorasPedagogicasMineduc: doc.aplicaArticulo69 ? Math.min(maxPermitidasDoc, 32) : maxPermitidasDoc,
-        minutosLectivosMineduc: doc.aplicaArticulo69 ? Math.min(auditMulti.minutosLectivosTablaTotal, 1440) : auditMulti.minutosLectivosTablaTotal,
-        minutosRecreoMineduc: auditMulti.minutosRecreoTotal,
-        minutosNoLectivosMineduc: auditMulti.minutosHnlTotal,
+        minutosLectivosMineduc: doc.aplicaArticulo69 ? Math.min(minsLectivosDoc, 1440) : minsLectivosDoc,
+        minutosRecreoMineduc: minsRecreoDoc,
+        minutosNoLectivosMineduc: minsHnlDoc,
         minutosTotalesContrato: Math.round(doc.horasContrato * 60),
-        estaSobreasignado: auditMulti.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditMulti.saldoHoras < 0),
-        excesoHorasAula: Math.max(0, pedAulaRegular - (doc.aplicaArticulo69 ? Math.min(maxPermitidasDoc, 32) : maxPermitidasDoc)),
+        estaSobreasignado: auditMulti.esInfractorExcesoLectivo || (isPieDoc && calculo.esSobreasignado) || (doc.horasContrato > 0 && auditMulti.saldoHoras < 0),
+        excesoHorasAula: Math.max(0, (isPieDoc ? pedTotalAsignadas : pedAulaRegular) - (doc.aplicaArticulo69 ? Math.min(maxPermitidasDoc, 32) : maxPermitidasDoc)),
         fuentesFinanciamiento: {
           subvencionGeneralTitular: subTit,
           subvencionGeneralContrata: subCon,
@@ -1039,7 +1066,7 @@ export function obtenerDocentesConsolidadosTerritorio(
         contratoReq60_40: auditMulti.req60_40,
         contratoPonderado65_35: auditMulti.contratoPonderado65_35,
         contratoPonderado60_40: auditMulti.contratoPonderado60_40,
-        minutosHnlPlanificacion40: auditMulti.minutosHnlPlanificacion40,
+        minutosHnlPlanificacion40: minsPlan40Doc,
         porcentajeLectivoReal: auditMulti.porcentajeLectivoReal,
         porcentajeLimitePonderado: auditMulti.porcentajeLimitePonderado,
         esInfractorExcesoLectivo: auditMulti.esInfractorExcesoLectivo,

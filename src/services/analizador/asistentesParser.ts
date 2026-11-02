@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { AsistenteEducacion, EstamentoAsistente } from '../../types';
 import { inferirClasificacionAsistente } from '../../../packages/mineduc-engine/src/calculoAsistentes';
 import { normalizarCargoAsistenteInteligente } from './intelligentCargoNormalizer';
+import { parsearAsistentesSige, esEncabezadoAsistentesSige } from '../sigeAsistentesParser';
 
 export interface ParseAsistentesResult {
   asistentes: AsistenteEducacion[];
@@ -79,6 +80,7 @@ function separarNombresApellidos(nombreCompleto: string): { nombres: string; ape
 
 /**
  * Analiza un Workbook de Excel y extrae la dotación de Asistentes de la Educación.
+ * Soporta polimórficamente tanto el formato oficial SIGE como la planilla de levantamiento territorial.
  */
 export function parseAsistentesFromWorkbook(
   workbook: XLSX.WorkBook,
@@ -86,9 +88,27 @@ export function parseAsistentesFromWorkbook(
   periodo: number = 2026
 ): ParseAsistentesResult {
   const advertencias: string[] = [];
+
+  // 1. Detección prioritaria: Verificar si alguna hoja contiene la exportación oficial de SIGE
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) continue;
+    const csvContent = XLSX.utils.sheet_to_csv(sheet, { FS: ';' });
+    if (esEncabezadoAsistentesSige(csvContent)) {
+      const sigeRes = parsearAsistentesSige(csvContent, rbd, periodo);
+      return {
+        asistentes: sigeRes.asistentesConvertidos,
+        totalFuncionarios: sigeRes.totales.totalAsistentes,
+        totalHoras: sigeRes.totales.totalHorasContrato,
+        sheetNameFound: name,
+        advertencias: sigeRes.advertencias.map(a => a.mensaje)
+      };
+    }
+  }
+
   let targetSheetName = '';
 
-  // 1. Buscar la hoja de asistentes
+  // 2. Buscar la hoja de asistentes tradicional de levantamiento territorial
   for (const name of workbook.SheetNames) {
     const n = name.toLowerCase().trim();
     if (n.includes('asistent') || n.includes('no docente') || n.includes('codocencia')) {
@@ -98,12 +118,17 @@ export function parseAsistentesFromWorkbook(
   }
 
   if (!targetSheetName) {
-    return {
-      asistentes: [],
-      totalFuncionarios: 0,
-      totalHoras: 0,
-      advertencias: ['No se encontró una hoja de "Asistentes" en el archivo Excel.']
-    };
+    // Si hay una sola hoja en el archivo, intentar leerla
+    if (workbook.SheetNames.length === 1) {
+      targetSheetName = workbook.SheetNames[0];
+    } else {
+      return {
+        asistentes: [],
+        totalFuncionarios: 0,
+        totalHoras: 0,
+        advertencias: ['No se encontró una hoja de "Asistentes" en el archivo Excel.']
+      };
+    }
   }
 
   const sheet = workbook.Sheets[targetSheetName];
@@ -199,6 +224,21 @@ export function parseAsistentesFromRows(
       totalHoras: 0,
       sheetNameFound,
       advertencias: ['La hoja de asistentes no contiene suficientes filas de datos.']
+    };
+  }
+
+  // 0. Comprobar si las filas corresponden a formato oficial SIGE
+  const firstRowStr = (rows[0] || []).map(c => cleanString(c).toUpperCase()).join(';');
+  const secondRowStr = (rows[1] || []).map(c => cleanString(c).toUpperCase()).join(';');
+  if (esEncabezadoAsistentesSige(firstRowStr) || esEncabezadoAsistentesSige(secondRowStr)) {
+    const csvLines = rows.map(r => (r || []).map(c => cleanString(c)).join(';')).join('\n');
+    const sigeRes = parsearAsistentesSige(csvLines, rbd, periodo);
+    return {
+      asistentes: sigeRes.asistentesConvertidos,
+      totalFuncionarios: sigeRes.totales.totalAsistentes,
+      totalHoras: sigeRes.totales.totalHorasContrato,
+      sheetNameFound,
+      advertencias: sigeRes.advertencias.map(a => a.mensaje)
     };
   }
 
