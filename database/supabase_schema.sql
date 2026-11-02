@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS public.salas_infraestructura (
 CREATE TABLE IF NOT EXISTS public.cursos_sae (
   id TEXT PRIMARY KEY,
   rbd VARCHAR(10) NOT NULL REFERENCES public.establecimientos(rbd) ON DELETE CASCADE,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   nivel TEXT NOT NULL,
   letra VARCHAR(5) NOT NULL DEFAULT 'A',
   regimen TEXT NOT NULL CHECK (regimen IN ('JEC', 'No JEC')) DEFAULT 'JEC',
@@ -92,7 +92,7 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TABLE IF NOT EXISTS public.docentes (
   id TEXT PRIMARY KEY,
   rbd VARCHAR(10) NOT NULL REFERENCES public.establecimientos(rbd) ON DELETE CASCADE,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   run VARCHAR(12) NOT NULL,
   nombres TEXT NOT NULL,
   apellidos TEXT NOT NULL,
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS public.asignaciones_horarias (
   horas_cronologicas_pie NUMERIC(5,2) DEFAULT 0.00,
   horas_colaborativas NUMERIC(5,2) DEFAULT 0.00,
   tipo_apoyo TEXT,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   es_taller_sep BOOLEAN DEFAULT FALSE,
   es_trabajo_colaborativo BOOLEAN DEFAULT FALSE,
   es_proporcion_docente BOOLEAN DEFAULT FALSE,
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS public.asignaciones_horarias (
 CREATE TABLE IF NOT EXISTS public.asistentes_educacion (
   id TEXT PRIMARY KEY,
   rbd VARCHAR(10) NOT NULL REFERENCES public.establecimientos(rbd) ON DELETE CASCADE,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   run VARCHAR(12) NOT NULL,
   nombres TEXT NOT NULL,
   apellidos TEXT NOT NULL,
@@ -283,7 +283,7 @@ CREATE TABLE IF NOT EXISTS public.bloqueos_edicion (
 CREATE TABLE IF NOT EXISTS public.auditoria_cambios (
   id TEXT PRIMARY KEY,
   rbd VARCHAR(10) NOT NULL,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   tipo_evento TEXT NOT NULL,
   entidad TEXT NOT NULL,
   entidad_id TEXT,

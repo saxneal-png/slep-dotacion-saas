@@ -162,19 +162,17 @@ export const App: React.FC = () => {
   const [modalGestionEstablecimientosAbierto, setModalGestionEstablecimientosAbierto] = useState(false);
   const [periodoActivo, setPeriodoActivoState] = useState<number>(() => {
     try {
-      const g = typeof window !== 'undefined' ? localStorage.getItem('slep_dotacion_periodo_activo') : null;
-      if (g) {
-        const val = parseInt(g, 10);
-        if (!isNaN(val) && (val === 2026 || val === 2027)) return val;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('slep_dotacion_periodo_activo', '2027');
       }
     } catch {}
     return 2027;
   });
 
-  const setPeriodoActivo = (p: number) => {
-    setPeriodoActivoState(p);
+  const setPeriodoActivo = (_p: number) => {
+    setPeriodoActivoState(2027);
     try {
-      localStorage.setItem('slep_dotacion_periodo_activo', String(p));
+      localStorage.setItem('slep_dotacion_periodo_activo', '2027');
     } catch {}
   };
   const [workspaceInitialTab, setWorkspaceInitialTab] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
@@ -759,11 +757,11 @@ export const App: React.FC = () => {
         }
       }
       await checkAndSeedInitialData();
-      await cargarDatos(2026);
+      await cargarDatos(2027);
       const list = await listarEstablecimientos();
       if (list.length > 0) {
         setColegioActivo(list[0]);
-        await cargarDatosColegio(list[0].rbd, 2026);
+        await cargarDatosColegio(list[0].rbd, 2027);
       }
       mostrarMensaje('Base de datos reiniciada a valores iniciales.');
     } catch (e: any) {
@@ -1183,7 +1181,8 @@ export const App: React.FC = () => {
             onSyncWithDatabase={async () => {
               await cargarDatos(periodoActivo);
             }}
-            onNavigateToColegio={async (rbd: string, tabDestino: string = 'workflow', pDestino: number = 2026) => {
+            onNavigateToColegio={async (rbd: string, tabDestino: string = 'workflow', _pDestino: number = 2027) => {
+              const pDestino = 2027;
               await cargarDatos(pDestino);
               const list = await listarEstablecimientos();
               const est = list.find((c) => c.rbd === rbd) || colegios.find((c) => c.rbd === rbd);

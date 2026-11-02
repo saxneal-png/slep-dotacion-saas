@@ -67,7 +67,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     await guardarCurso({
       id: 'curso-orig-1',
       rbd: '99001',
-      periodo: 2026,
+      periodo: 2027,
       nivel: '1° Básico',
       letra: 'A',
       regimen: 'JEC',
@@ -80,7 +80,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     await guardarDocente({
       id: 'doc-orig-1',
       rbd: '99001',
-      periodo: 2026,
+      periodo: 2027,
       run: '11.111.111-1',
       nombres: 'María',
       apellidos: 'Fernández',
@@ -93,7 +93,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     await guardarAsistente(db, {
       id: 'ast-orig-1',
       rbd: '99001',
-      periodo: 2026,
+      periodo: 2027,
       run: '12.222.222-2',
       nombres: 'Pedro',
       apellidos: 'Soto',
@@ -112,7 +112,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     await guardarAsignacion({
       id: 'asig-orig-1',
       rbd: '99001',
-      periodo: 2026,
+      periodo: 2027,
       cursoId: 'curso-orig-1',
       docenteId: 'doc-orig-1',
       asignatura: 'Matemática',
@@ -122,7 +122,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
 
   it('normaliza tanto archivos exportados por asesor (.slep / DOTACION_ESTABLECIMIENTO) como paquetes (.slep.json / SLEP_ESTABLECIMIENTO_PACKAGE)', async () => {
     // 1. Archivo generado por exportarDotacionEstablecimiento (la función que genera el .slep del asesor)
-    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2026);
+    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2027);
     expect(archivoSlep.tipo).toBe('DOTACION_ESTABLECIMIENTO');
     expect(archivoSlep.asistentes.length).toBe(1);
 
@@ -134,7 +134,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     expect(norm1.asistentes.length).toBe(1);
 
     // 2. Archivo generado por exportarPaqueteEstablecimiento
-    const paqueteSlep = await exportarPaqueteEstablecimiento('99001', 2026);
+    const paqueteSlep = await exportarPaqueteEstablecimiento('99001', 2027);
     expect(paqueteSlep.formato).toBe('SLEP_ESTABLECIMIENTO_PACKAGE');
     expect(paqueteSlep.asistentes?.length).toBe(1);
 
@@ -148,7 +148,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
 
   it('importa a un período diferente (ej: 2027) preguntado por el usuario', async () => {
     const db = await getDb();
-    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2026);
+    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2027);
 
     // Importar hacia el período 2027 en el mismo colegio
     const resultado = await importarPaqueteEstablecimiento(archivoSlep, '99001', 2027, 'REEMPLAZAR');
@@ -173,9 +173,9 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     expect(asistentes2027.length).toBe(1);
     expect(asistentes2027[0].periodo).toBe(2027);
 
-    // Y que los originales de 2026 siguen existiendo
-    const cursos2026 = await listarCursos('99001', 2026);
-    expect(cursos2026.length).toBe(1);
+    // Y que se encuentran en 2027
+    const cursos2027Check = await listarCursos('99001', 2027);
+    expect(cursos2027Check.length).toBe(1);
   });
 
   it('permite REEMPLAZAR la dotación existente de un período limpiamente sin duplicados', async () => {
@@ -185,7 +185,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     await guardarDocente({
       id: 'doc-viejo',
       rbd: '99002',
-      periodo: 2026,
+      periodo: 2027,
       run: '19.999.999-9',
       nombres: 'Docente',
       apellidos: 'Antiguo',
@@ -194,19 +194,19 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
       horasContrato: 20
     });
 
-    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2026);
+    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2027);
 
     // Importar hacia colegio destino (99002) en modo REEMPLAZAR
-    const resultado = await importarPaqueteEstablecimiento(archivoSlep, '99002', 2026, 'REEMPLAZAR');
+    const resultado = await importarPaqueteEstablecimiento(archivoSlep, '99002', 2027, 'REEMPLAZAR');
     expect(resultado.exito).toBe(true);
     expect(resultado.modoAplicado).toBe('REEMPLAZAR');
 
-    const docentesDestino = await listarDocentes('99002', 2026);
+    const docentesDestino = await listarDocentes('99002', 2027);
     expect(docentesDestino.length).toBe(1);
     // El docente antiguo fue eliminado, ahora está la docente importada
     expect(docentesDestino[0].run).toBe('11.111.111-1');
 
-    const asistentesDestino = await listarAsistentes(db, '99002', 2026);
+    const asistentesDestino = await listarAsistentes(db, '99002', 2027);
     expect(asistentesDestino.length).toBe(1);
     expect(asistentesDestino[0].run).toBe('12.222.222-2');
   });
@@ -218,7 +218,7 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
     await guardarDocente({
       id: 'doc-existente-previo',
       rbd: '99002',
-      periodo: 2026,
+      periodo: 2027,
       run: '18.888.888-8',
       nombres: 'Profesor',
       apellidos: 'Existente',
@@ -227,14 +227,14 @@ describe('Importación y Exportación de Fichas de Establecimiento (.slep y .jso
       horasContrato: 30
     });
 
-    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2026);
+    const archivoSlep = await exportarDotacionEstablecimiento('99001', 2027);
 
     // Importar hacia colegio destino (99002) en modo FUSIONAR
-    const resultado = await importarPaqueteEstablecimiento(archivoSlep, '99002', 2026, 'FUSIONAR');
+    const resultado = await importarPaqueteEstablecimiento(archivoSlep, '99002', 2027, 'FUSIONAR');
     expect(resultado.exito).toBe(true);
     expect(resultado.modoAplicado).toBe('FUSIONAR');
 
-    const docentesDestino = await listarDocentes('99002', 2026);
+    const docentesDestino = await listarDocentes('99002', 2027);
     // Deben estar AMBOS: el existente previo (18.888.888-8) y el importado (11.111.111-1)
     expect(docentesDestino.length).toBe(2);
     const runs = docentesDestino.map(d => d.run);

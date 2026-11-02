@@ -2,9 +2,9 @@ import { CursoSae } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
-export async function listarCursos(rbd: string, periodo: number = 2026): Promise<CursoSae[]> {
+export async function listarCursos(rbd: string, periodo: number = 2027): Promise<CursoSae[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY nivel, letra", [rbd, periodo, periodo]);
+  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY nivel, letra", [rbd, periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
     let talleresJec = undefined;
@@ -30,7 +30,7 @@ export async function listarCursos(rbd: string, periodo: number = 2026): Promise
       alumnosNeet: Number(row[8]),
       alumnosNeep: Number(row[9]),
       talleresJec,
-      periodo: row[11] ? Number(row[11]) : 2026,
+      periodo: row[11] ? Number(row[11]) : 2027,
       regimenProporcion: (row[12] as any) || '65_35',
       esMultigrado: esMulti,
       esComb,
@@ -42,9 +42,9 @@ export async function listarCursos(rbd: string, periodo: number = 2026): Promise
   });
 }
 
-export async function listarTodosLosCursos(periodo: number = 2026): Promise<CursoSae[]> {
+export async function listarTodosLosCursos(periodo: number = 2027): Promise<CursoSae[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id FROM cursos_sae WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY rbd, nivel, letra", [periodo, periodo]);
+  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id FROM cursos_sae WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY rbd, nivel, letra", [periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
     let talleresJec = undefined;
@@ -70,7 +70,7 @@ export async function listarTodosLosCursos(periodo: number = 2026): Promise<Curs
       alumnosNeet: Number(row[8]),
       alumnosNeep: Number(row[9]),
       talleresJec,
-      periodo: row[11] ? Number(row[11]) : 2026,
+      periodo: row[11] ? Number(row[11]) : 2027,
       regimenProporcion: (row[12] as any) || '65_35',
       esMultigrado: esMulti,
       esCombinado: esComb,
@@ -86,7 +86,7 @@ export async function guardarCurso(c: CursoSae, skipCloudSync: boolean = false):
   const db = await getDb();
   const talleresJson = c.talleresJec && c.talleresJec.length ? JSON.stringify(c.talleresJec) : null;
   const gradosJson = c.gradosCombinados && c.gradosCombinados.length ? JSON.stringify(c.gradosCombinados) : null;
-  const cursoPeriodo = c.periodo || 2026;
+  const cursoPeriodo = c.periodo || 2027;
   const regProp = c.regimenProporcion || '65_35';
   const esMulti = c.esMultigrado ? 1 : 0;
   const esComb = c.esCombinado ? 1 : 0;

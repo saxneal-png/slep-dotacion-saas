@@ -45,7 +45,7 @@ describe('Sistema Compatible de Exportación e Importación de Dotaciones (Aseso
     const cursoA: CursoSae = {
       id: 'c-a1',
       rbd: '11111',
-      periodo: 2026,
+      periodo: 2027,
       nivel: '1° Básico',
       letra: 'A',
       regimen: 'JEC',
@@ -59,7 +59,7 @@ describe('Sistema Compatible de Exportación e Importación de Dotaciones (Aseso
     const docA: Docente = {
       id: 'd-a1',
       rbd: '11111',
-      periodo: 2026,
+      periodo: 2027,
       run: '10.000.001-1',
       nombres: 'Roberto',
       apellidos: 'Muñoz',
@@ -72,7 +72,7 @@ describe('Sistema Compatible de Exportación e Importación de Dotaciones (Aseso
     const asigA: AsignacionHoraria = {
       id: 'as-a1',
       rbd: '11111',
-      periodo: 2026,
+      periodo: 2027,
       cursoId: 'c-a1',
       docenteId: 'd-a1',
       asignatura: 'Lenguaje',
@@ -82,11 +82,11 @@ describe('Sistema Compatible de Exportación e Importación de Dotaciones (Aseso
   });
 
   it('exporta la dotación exclusiva del colegio del asesor con metadatos compatibles', async () => {
-    const exported = await exportarDotacionEstablecimiento('11111', 2026, 'Asesor Carlos', 'carlos@slep.cl');
+    const exported = await exportarDotacionEstablecimiento('11111', 2027, 'Asesor Carlos', 'carlos@slep.cl');
 
     expect(exported.tipo).toBe('DOTACION_ESTABLECIMIENTO');
     expect(exported.version).toBe('1.2.0');
-    expect(exported.periodo).toBe(2026);
+    expect(exported.periodo).toBe(2027);
     expect(exported.rbd).toBe('11111');
     expect(exported.establecimiento.nombre).toBe('Escuela Los Robles');
     expect(exported.cursos.length).toBe(1);
@@ -97,11 +97,11 @@ describe('Sistema Compatible de Exportación e Importación de Dotaciones (Aseso
 
   it('el consolidador ingesta la dotación individual del asesor sin pisar los otros colegios', async () => {
     // 1. Modificar los datos exportados simulando trabajo del asesor
-    const dotacionAsesor = await exportarDotacionEstablecimiento('11111', 2026);
+    const dotacionAsesor = await exportarDotacionEstablecimiento('11111', 2027);
     dotacionAsesor.cursos.push({
       id: 'c-a2',
       rbd: '11111',
-      periodo: 2026,
+      periodo: 2027,
       nivel: '2° Básico',
       letra: 'A',
       regimen: 'JEC',
@@ -118,7 +118,7 @@ describe('Sistema Compatible de Exportación e Importación de Dotaciones (Aseso
     expect(resImport.colegiosNombres).toContain('Escuela Los Robles');
 
     // 3. Verificar que colegio A tiene sus 2 cursos
-    const cursosA = await listarCursos('11111', 2026);
+    const cursosA = await listarCursos('11111', 2027);
     expect(cursosA.length).toBe(2);
 
     // 4. Verificar que colegio B sigue intacto

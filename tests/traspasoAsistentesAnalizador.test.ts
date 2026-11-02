@@ -12,7 +12,7 @@ describe('Traspaso de Asistentes de la Educación desde el Analizador', () => {
 
   it('debe transferir asistentes de la educación a SQLite correctamente durante el traspaso del analizador', async () => {
     const config: TraspasoConfig = {
-      periodo: 2026,
+      periodo: 2027,
       modo: 'REEMPLAZAR',
       homologaciones: {},
       colegiosRbd: ['12345'],
@@ -100,7 +100,7 @@ describe('Traspaso de Asistentes de la Educación desde el Analizador', () => {
 
     expect(result.asistentesGuardados).toBe(2);
 
-    const guardados = await listarAsistentes('12345', 2026);
+    const guardados = await listarAsistentes('12345', 2027);
     expect(guardados.length).toBe(2);
 
     const psicologa = guardados.find(a => a.cargoFuncion === 'Psicólogo/a');
@@ -118,7 +118,7 @@ describe('Traspaso de Asistentes de la Educación desde el Analizador', () => {
 
   it('debe respetar targetRbdOverride al traspasar asistentes a un RBD destino específico', async () => {
     const config: TraspasoConfig = {
-      periodo: 2026,
+      periodo: 2027,
       modo: 'REEMPLAZAR',
       homologaciones: {},
       colegiosRbd: ['99999'],
@@ -180,20 +180,20 @@ describe('Traspaso de Asistentes de la Educación desde el Analizador', () => {
     expect(result.asistentesGuardados).toBe(1);
 
     // Debe estar en el RBD destino 77777
-    const enDestino = await listarAsistentes('77777', 2026);
+    const enDestino = await listarAsistentes('77777', 2027);
     expect(enDestino.length).toBe(1);
     expect(enDestino[0].rbd).toBe('77777');
     expect(enDestino[0].cargoFuncion).toBe('Fonoaudiólogo/a');
     expect(enDestino[0].esEquipoPie).toBe(true);
 
     // En el origen no debe haber quedado
-    const enOrigen = await listarAsistentes('99999', 2026);
+    const enOrigen = await listarAsistentes('99999', 2027);
     expect(enOrigen.length).toBe(0);
   });
 
   it('debe respetar el alcance SOLO_ASISTENTES sin alterar los docentes ni cursos', async () => {
     const config: TraspasoConfig = {
-      periodo: 2026,
+      periodo: 2027,
       modo: 'REEMPLAZAR',
       alcance: 'SOLO_ASISTENTES',
       homologaciones: {},
@@ -256,7 +256,7 @@ describe('Traspaso de Asistentes de la Educación desde el Analizador', () => {
     expect(result.cursosCreados).toBe(0);
     expect(result.docentesGuardados).toBe(0);
 
-    const guardados = await listarAsistentes('12345', 2026);
+    const guardados = await listarAsistentes('12345', 2027);
     expect(guardados.length).toBe(1);
     expect(guardados[0].cargoFuncion).toBe('Inspector/a de Patio');
   });

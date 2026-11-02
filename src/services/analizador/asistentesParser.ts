@@ -85,7 +85,7 @@ function separarNombresApellidos(nombreCompleto: string): { nombres: string; ape
 export function parseAsistentesFromWorkbook(
   workbook: XLSX.WorkBook,
   rbd: string,
-  periodo: number = 2026
+  periodo: number = 2027
 ): ParseAsistentesResult {
   const advertencias: string[] = [];
 
@@ -213,7 +213,7 @@ function resolverCabecerasMultinivel(rows: any[][]): { headerRowIndex: number; e
 export function parseAsistentesFromRows(
   rows: any[][],
   rbd: string,
-  periodo: number = 2026,
+  periodo: number = 2027,
   sheetNameFound: string = 'Asistentes'
 ): ParseAsistentesResult {
   const advertencias: string[] = [];

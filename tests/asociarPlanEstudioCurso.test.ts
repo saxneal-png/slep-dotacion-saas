@@ -70,7 +70,7 @@ describe('Asociación de Planes de Estudio a Cursos Detectados', () => {
 
     const result = await ejecutarTraspasoDotacionAnalizador(
       {
-        periodo: 2026,
+        periodo: 2027,
         modo: 'REEMPLAZAR',
         alcance: 'COMPLETO',
         homologaciones: {},
@@ -87,7 +87,7 @@ describe('Asociación de Planes de Estudio a Cursos Detectados', () => {
 
     expect(result.cursosCreados).toBe(2);
 
-    const cursosDb = await listarCursos('3543', 2026);
+    const cursosDb = await listarCursos('3543', 2027);
     expect(cursosDb.length).toBe(2);
 
     const cursoBasica = cursosDb.find((c) => c.nivel === '1° Básico');

@@ -47,7 +47,7 @@ const COMUNAS: ComunaValleDiguillin[] = [
 type TipoNomina = 'DOCENTES' | 'ASISTENTES';
 
 export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   onIngestarSigeCompleto,
   onIngestarAsistentesSigeCompleto
 }) => {

@@ -333,32 +333,16 @@ export const TraspasoDotacionModal: React.FC<TraspasoDotacionModalProps> = ({
               <div>
                 <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2">
                   <Clock className="w-4 h-4 text-orange-600" />
-                  <span>¿A qué período deseas llevar la dotación analizada?</span>
+                  <span>Período de destino de la dotación analizada:</span>
                 </label>
-                <div className="grid grid-cols-2 gap-3 max-w-md">
+                <div className="grid grid-cols-1 gap-3 max-w-md">
                   <button
                     type="button"
                     onClick={() => setPeriodoDestino(2027)}
-                    className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${
-                      periodoDestino === 2027
-                        ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-600/25 ring-2 ring-orange-500/20'
-                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
-                    }`}
-                  >
-                    <span>2026 (Año Actual)</span>
-                    {periodoDestino === 2027 && <CheckCircle2 className="w-4 h-4 text-white" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPeriodoDestino(2027)}
-                    className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-between ${
-                      periodoDestino === 2027
-                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/20'
-                        : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
-                    }`}
+                    className="py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-between bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/20"
                   >
                     <span>2027 (Proyección PAL / SAE)</span>
-                    {periodoDestino === 2027 && <CheckCircle2 className="w-4 h-4 text-white" />}
+                    <CheckCircle2 className="w-4 h-4 text-white" />
                   </button>
                 </div>
               </div>

@@ -95,7 +95,7 @@ export function normalizarPaqueteEstablecimiento(
       valido: false,
       error: 'El archivo está vacío o no contiene una estructura JSON válida.',
       establecimiento: {} as Establecimiento,
-      periodo: 2026,
+      periodo: 2027,
       salas: [],
       cursos: [],
       docentes: [],
@@ -109,7 +109,7 @@ export function normalizarPaqueteEstablecimiento(
     const targetRbd = colegioDestinoDefault?.rbd;
     const est = data.establecimientos.find((e: any) => String(e.rbd) === String(targetRbd)) || data.establecimientos[0];
     const rbdStr = String(est.rbd);
-    const periodo = Number(data.periodo) || 2026;
+    const periodo = 2027;
 
     const salas = Array.isArray(data.salas) ? data.salas.filter((s: any) => String(s.rbd) === rbdStr) : [];
     const cursos = Array.isArray(data.cursos) ? data.cursos.filter((c: any) => String(c.rbd) === rbdStr) : [];
@@ -150,7 +150,7 @@ export function normalizarPaqueteEstablecimiento(
       valido: false,
       error: 'El archivo no contiene un establecimiento educacional reconocible (falta RBD o ficha de establecimiento).',
       establecimiento: {} as Establecimiento,
-      periodo: 2026,
+      periodo: 2027,
       salas: [],
       cursos: [],
       docentes: [],
@@ -159,7 +159,7 @@ export function normalizarPaqueteEstablecimiento(
     };
   }
 
-  const periodo = Number(data.periodo) || 2026;
+  const periodo = 2027;
   const salas = Array.isArray(data.salas) ? data.salas : [];
   const cursos = Array.isArray(data.cursos) ? data.cursos : [];
   const docentes = Array.isArray(data.docentes) ? data.docentes : [];
@@ -191,7 +191,7 @@ export function normalizarPaqueteEstablecimiento(
  */
 export async function exportarPaqueteEstablecimiento(
   rbd: string,
-  periodo: number = 2026,
+  periodo: number = 2027,
   exportadoPor: string = 'UATP SLEP Valle Diguillín'
 ): Promise<EstablecimientoExportPackage> {
   const est = await obtenerEstablecimientoPorRbd(rbd);
@@ -266,7 +266,7 @@ export async function importarPaqueteEstablecimiento(
 
   const db = await getDb();
   const rbdFinal = (targetRbd || paqueteNorm.establecimiento.rbd).trim();
-  const periodoFinal = Number(targetPeriodo) || paqueteNorm.periodo || 2026;
+  const periodoFinal = 2027;
   const alertas: string[] = [];
 
   const estOriginal = paqueteNorm.establecimiento;
@@ -288,19 +288,19 @@ export async function importarPaqueteEstablecimiento(
     // 1. Limpieza si el modo es REEMPLAZAR
     if (modo === 'REEMPLAZAR') {
       db.run(
-        "DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))",
+        "DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))",
         [rbdFinal, periodoFinal, periodoFinal]
       );
       db.run(
-        "DELETE FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))",
+        "DELETE FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))",
         [rbdFinal, periodoFinal, periodoFinal]
       );
       db.run(
-        "DELETE FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))",
+        "DELETE FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))",
         [rbdFinal, periodoFinal, periodoFinal]
       );
       db.run(
-        "DELETE FROM asistentes_educacion WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))",
+        "DELETE FROM asistentes_educacion WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))",
         [rbdFinal, periodoFinal, periodoFinal]
       );
       if (esOtroRbd) {

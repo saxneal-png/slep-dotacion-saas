@@ -603,7 +603,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         isOpen={modalExportarEstablecimientoAbierto}
         onClose={() => setModalExportarEstablecimientoAbierto(false)}
         establecimiento={colegio}
-        periodo={periodoActivo || 2026}
+        periodo={2027}
         cursos={cursos}
         docentes={docentes}
         asistentes={asistentes}
@@ -616,7 +616,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         onClose={() => setModalImportarEstablecimientoAbierto(false)}
         todosLosColegios={todosLosColegios}
         colegioActivo={colegio}
-        periodoActivo={periodoActivo || 2026}
+        periodoActivo={2027}
         onImportSuccess={() => {
           if (onRefreshData) onRefreshData();
         }}
@@ -627,7 +627,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         onClose={() => setModalMatrizAbierto(false)}
         colegioActivo={colegio}
         colegios={todosLosColegios}
-        periodoPorDefecto={periodoActivo || 2026}
+        periodoPorDefecto={2027}
         onImportComplete={() => {
           if (onRefreshData) onRefreshData();
         }}

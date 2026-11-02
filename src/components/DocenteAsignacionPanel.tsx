@@ -1053,7 +1053,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     const newAsig: AsignacionHoraria = {
       id: `asig-${Date.now()}`,
       rbd: colegio.rbd,
-      periodo: docente.periodo || 2026,
+      periodo: 2027,
       cursoId: regCursoId,
       docenteId: docente.id,
       asignatura: nombreFinal,
@@ -1424,7 +1424,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
     const newAsig: AsignacionHoraria = {
       id: `asig-codoc-${Date.now()}`,
       rbd: colegio.rbd,
-      periodo: docente.periodo || 2026,
+      periodo: 2027,
       cursoId: coDocCursoId,
       docenteId: docente.id,
       asignatura: nombreFinal,
@@ -1604,7 +1604,7 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
     const newAsig: AsignacionHoraria = {
       id: `asig-pie-${Date.now()}`,
       rbd: colegio.rbd,
-      periodo: docente.periodo || 2026,
+      periodo: 2027,
       cursoId: pieCursoId,
       docenteId: docente.id,
       asignatura: pieAsignatura.trim() || `Apoyo Especializado PIE (${pieTipo})`,
@@ -1925,7 +1925,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                               asignatura: `Co-Docencia SEP`,
                               cursoId: cursoInspeccion.id,
                               horasPedagogicasAula: h,
-                              periodo: cursoInspeccion.periodo || 2026,
+                              periodo: 2027,
                               esCoDocencia: true,
                               esTallerSep: true,
                               tipoApoyo: 'CO_DOCENCIA'
@@ -1957,7 +1957,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                                 asignatura: nombreTaller.trim(),
                                 cursoId: cursoInspeccion.id,
                                 horasPedagogicasAula: h,
-                                periodo: cursoInspeccion.periodo || 2026,
+                                periodo: 2027,
                                 esTallerSep: true,
                                 tipoApoyo: 'TALLER_SEP'
                               };
@@ -1992,7 +1992,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             cursoId: cursoInspeccion.id,
                             horasCronologicasPie: h,
                             horasPedagogicasAula: Math.round(h * 1.333),
-                            periodo: cursoInspeccion.periodo || 2026,
+                            periodo: 2027,
                             esCoDocencia: true,
                             tipoApoyo: 'Co-Docencia en Aula Regular'
                           };
@@ -2022,7 +2022,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                           asignatura: asig.nombre,
                           cursoId: cursoInspeccion.id,
                           horasPedagogicasAula: asig.horasDisponibles,
-                          periodo: cursoInspeccion.periodo || 2026,
+                          periodo: 2027,
                           esTallerJec: false
                         };
                         await onGuardarAsignacion(nuevaAsig);
@@ -2055,7 +2055,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             asignatura: nombreTaller.trim(),
                             cursoId: cursoInspeccion.id,
                             horasPedagogicasAula: h,
-                            periodo: cursoInspeccion.periodo || 2026,
+                            periodo: 2027,
                             esTallerJec: true
                           };
                           await onGuardarAsignacion(nuevaAsig);

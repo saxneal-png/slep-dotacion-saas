@@ -25,7 +25,7 @@ export async function registrarEventoAuditoria(params: {
   try {
     const db = await getDb();
     const id = `aud_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const periodo = params.periodo ?? 2026;
+    const periodo = 2027;
     const fechaHora = new Date().toISOString();
     const detallesJson = params.detalles ? JSON.stringify(params.detalles) : null;
 
@@ -67,7 +67,7 @@ export async function registrarEventoAuditoria(params: {
 
 export async function listarEventosAuditoria(
   rbd?: string,
-  periodo: number = 2026,
+  periodo: number = 2027,
   limit: number = 1000
 ): Promise<EventoAuditoria[]> {
   if (isSupabaseEnabled()) {

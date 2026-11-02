@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS cursos_sae (
   alumnos_neet INTEGER NOT NULL DEFAULT 0,
   alumnos_neep INTEGER NOT NULL DEFAULT 0,
   talleres_jec_json TEXT,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   regimen_proporcion TEXT DEFAULT '65_35',
   es_multigrado INTEGER DEFAULT 0,
   es_combinado INTEGER DEFAULT 0,
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS docentes (
   situacion_final_gdp TEXT DEFAULT 'Vigente',
   observaciones_director TEXT,
   observaciones_slep TEXT,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
 
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS asignaciones_horarias (
   horas_cronologicas_pie REAL DEFAULT 0,
   horas_colaborativas REAL DEFAULT 0,
   tipo_apoyo TEXT,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   es_taller_sep INTEGER DEFAULT 0,
   es_trabajo_colaborativo INTEGER DEFAULT 0,
   es_proporcion_docente INTEGER DEFAULT 0,
@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS planes_estudio_mineduc (
 CREATE TABLE IF NOT EXISTS auditoria_cambios (
   id TEXT PRIMARY KEY,
   rbd TEXT NOT NULL,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   tipo_evento TEXT NOT NULL,
   entidad TEXT NOT NULL,
   entidad_id TEXT,
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS auditoria_cambios (
 CREATE TABLE IF NOT EXISTS asistentes_educacion (
   id TEXT PRIMARY KEY,
   rbd TEXT NOT NULL,
-  periodo INTEGER NOT NULL DEFAULT 2026,
+  periodo INTEGER NOT NULL DEFAULT 2027,
   run TEXT NOT NULL,
   nombres TEXT NOT NULL,
   apellidos TEXT NOT NULL,
@@ -284,13 +284,13 @@ export function runMigrations(db: Database): void {
     db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_taller_jec INTEGER DEFAULT 0;");
   } catch (_) {}
   try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2026;");
+    db.run("ALTER TABLE cursos_sae ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2027;");
   } catch (_) {}
   try {
-    db.run("ALTER TABLE docentes ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2026;");
+    db.run("ALTER TABLE docentes ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2027;");
   } catch (_) {}
   try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2026;");
+    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2027;");
   } catch (_) {}
   try {
     db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_taller_sep INTEGER DEFAULT 0;");
@@ -461,5 +461,47 @@ export function runMigrations(db: Database): void {
     `);
   } catch (e) {
     console.warn('Aviso en purga automática de Plan Común Electivo básico:', e);
+  }
+
+  // Migración Automática de Período 2026 -> 2027:
+  // Garantiza que cualquier registro local residual en período 2026 pase a 2027 sin duplicados.
+  try {
+    db.run(`
+      DELETE FROM cursos_sae
+      WHERE periodo != 2027
+        AND EXISTS (
+          SELECT 1 FROM cursos_sae c27
+          WHERE c27.rbd = cursos_sae.rbd
+            AND c27.periodo = 2027
+            AND c27.nivel = cursos_sae.nivel
+            AND c27.letra = cursos_sae.letra
+        );
+      UPDATE cursos_sae SET periodo = 2027 WHERE periodo != 2027 OR periodo IS NULL;
+
+      DELETE FROM docentes
+      WHERE periodo != 2027
+        AND EXISTS (
+          SELECT 1 FROM docentes d27
+          WHERE d27.rbd = docentes.rbd
+            AND d27.periodo = 2027
+            AND d27.run = docentes.run
+        );
+      UPDATE docentes SET periodo = 2027 WHERE periodo != 2027 OR periodo IS NULL;
+
+      DELETE FROM asistentes_educacion
+      WHERE periodo != 2027
+        AND EXISTS (
+          SELECT 1 FROM asistentes_educacion a27
+          WHERE a27.rbd = asistentes_educacion.rbd
+            AND a27.periodo = 2027
+            AND a27.run = asistentes_educacion.run
+        );
+      UPDATE asistentes_educacion SET periodo = 2027 WHERE periodo != 2027 OR periodo IS NULL;
+
+      UPDATE asignaciones_horarias SET periodo = 2027 WHERE periodo != 2027 OR periodo IS NULL;
+      UPDATE auditoria_cambios SET periodo = 2027 WHERE periodo != 2027 OR periodo IS NULL;
+    `);
+  } catch (e) {
+    console.warn('Aviso en migración automática de período 2026 -> 2027:', e);
   }
 }

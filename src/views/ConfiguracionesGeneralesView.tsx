@@ -1022,12 +1022,11 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
                 Periodo Escolar Inicial
               </label>
               <select
-                value={config.ui.periodoPredeterminado}
-                onChange={(e) => handleUiChange('periodoPredeterminado', Number(e.target.value) as any)}
+                value={2027}
+                onChange={() => handleUiChange('periodoPredeterminado', 2027)}
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
               >
-                <option value={2026}>Dotación 2026 (Actual)</option>
-                <option value={2027}>Proyección 2027</option>
+                <option value={2027}>Dotación 2027 (Oficial PAL / GDP)</option>
               </select>
             </div>
 

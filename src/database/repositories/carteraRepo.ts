@@ -22,7 +22,7 @@ import { normalizarRut } from '../../utils/rutUtils';
 
 export async function exportarDotacionEstablecimiento(
   rbd: string,
-  periodo: number = 2026,
+  periodo: number = 2027,
   asesorNombre: string = 'Asesor UATP',
   asesorEmail: string = 'uatp@slepvallediguillin.cl'
 ): Promise<any> {
@@ -111,7 +111,7 @@ export async function importarCartera(data: any): Promise<{
       throw new Error('El archivo no contiene un establecimiento válido.');
     }
 
-    const periodo = Number(data.periodo) || 2026;
+    const periodo = 2027;
 
     // 1. Guardar o actualizar la ficha del establecimiento
     try {

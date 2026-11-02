@@ -21,7 +21,7 @@ export function generarHtmlFichaDocente(
   const primerContrato = doc.contratos[0];
   const rbdPrincipal = primerContrato?.colegio?.rbd || colegioPrincipal?.rbd || '—';
   const nombreColegioPrincipal = primerContrato?.colegio?.nombre || colegioPrincipal?.nombre || 'Establecimiento SLEP';
-  const periodoDocente = primerContrato?.docente?.periodo || 2026;
+  const periodoDocente = primerContrato?.docente?.periodo || 2027;
 
   const fechaImpresion = new Date().toLocaleDateString('es-CL', {
     day: '2-digit',

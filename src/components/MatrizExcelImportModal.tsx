@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   FileSpreadsheet, Upload, CheckCircle2, AlertTriangle, Users,
   BookOpen, Clock, Layers, ArrowRight, X, Sparkles, Building2, Calendar
@@ -57,10 +57,8 @@ export const MatrizExcelImportModal: React.FC<MatrizExcelImportModalProps> = ({
         }
       }
 
-      // Si se detectó un año (2026 o 2027) en el archivo, sugerirlo
-      if (result.periodoDetectado === 2026 || result.periodoDetectado === 2027) {
-        setPeriodoDestino(result.periodoDetectado);
-      }
+      // Forzar periodo destino exclusivamente a 2027
+      setPeriodoDestino(2027);
     } catch (err: any) {
       console.error('Error al parsear Excel:', err);
       setErrorMsg(err.message || 'Error al procesar el archivo Excel. Asegúrese de que tenga formato .xlsx válido.');
@@ -167,30 +165,15 @@ export const MatrizExcelImportModal: React.FC<MatrizExcelImportModalProps> = ({
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-blue-400" />
-                Periodo / Año de Dotación
+                Periodo / Año de Dotación (Exclusivo 2027)
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPeriodoDestino(2026)}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${
-                    periodoDestino === 2026
-                      ? 'bg-blue-600 border-blue-500 text-white shadow-sm'
-                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  2026 (Actual)
-                </button>
+              <div className="grid grid-cols-1 gap-2">
                 <button
                   type="button"
                   onClick={() => setPeriodoDestino(2027)}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${
-                    periodoDestino === 2027
-                      ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm'
-                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                  }`}
+                  className="py-2 px-3 rounded-lg text-xs font-bold border transition-all bg-indigo-600 border-indigo-500 text-white shadow-sm"
                 >
-                  2027 (Proyección)
+                  2027 (Dotación Oficial PAL / GDP)
                 </button>
               </div>
             </div>

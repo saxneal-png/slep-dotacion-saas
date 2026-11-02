@@ -2,7 +2,7 @@ import { Docente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
-export async function listarDocentes(rbd: string, periodo: number = 2026): Promise<Docente[]> {
+export async function listarDocentes(rbd: string, periodo: number = 2027): Promise<Docente[]> {
   const db = await getDb();
   const res = db.exec(`
     SELECT id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
@@ -15,7 +15,7 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
            horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
            accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
            situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
-    FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY apellidos, nombres
+    FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY apellidos, nombres
   `, [rbd, periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
@@ -72,7 +72,7 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
       funcionSecundaria: row[23] ? String(row[23]) : undefined,
       asignaturaPrincipal: row[24] ? String(row[24]) : undefined,
       aplicaArticulo69: Boolean(row[25]),
-      periodo: row[26] ? Number(row[26]) : 2026,
+      periodo: row[26] ? Number(row[26]) : 2027,
       horasCoordinacionPie: Number(row[27] || 0),
       horasConvivenciaEscolar: Number(row[28] || 0),
       horasExtraescolar: Number(row[29] || 0),
@@ -101,7 +101,7 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
   });
 }
 
-export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): Promise<Docente[]> {
+export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): Promise<Docente[]> {
   const db = await getDb();
   const res = db.exec(`
     SELECT id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
@@ -115,7 +115,7 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
            accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
            situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
     FROM docentes
-    WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))
+    WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
   `, [periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
@@ -171,7 +171,7 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
       funcionSecundaria: row[23] ? String(row[23]) : undefined,
       asignaturaPrincipal: row[24] ? String(row[24]) : undefined,
       aplicaArticulo69: Boolean(row[25]),
-      periodo: row[26] ? Number(row[26]) : 2026,
+      periodo: row[26] ? Number(row[26]) : 2027,
       horasCoordinacionPie: Number(row[27] || 0),
       horasConvivenciaEscolar: Number(row[28] || 0),
       horasExtraescolar: Number(row[29] || 0),
@@ -202,7 +202,7 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
 
 export async function guardarDocente(d: Docente, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
-  const docPeriodo = d.periodo || 2026;
+  const docPeriodo = d.periodo || 2027;
   
   // Aislamiento estricto por periodo:
   // 1. Si d.id ya existe en este rbd y periodo, respetar estrictamente ese id para mantener FKs
@@ -363,7 +363,7 @@ export async function guardarDocentesBatch(
   db.run("BEGIN TRANSACTION;");
   try {
     for (const d of docentes) {
-      const docPeriodo = d.periodo || 2026;
+      const docPeriodo = d.periodo || 2027;
       const existing = db.exec(
         "SELECT id FROM docentes WHERE rbd = ? AND run = ? AND periodo = ?", 
         [d.rbd, d.run, docPeriodo]

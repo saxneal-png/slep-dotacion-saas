@@ -10,7 +10,7 @@ describe('Repositorio de Auditoría y Trazabilidad SQLite', () => {
     const rbdPrueba = '99999';
     await registrarEventoAuditoria({
       rbd: rbdPrueba,
-      periodo: 2026,
+      periodo: 2027,
       tipoEvento: 'CREACION',
       entidad: 'DOCENTE',
       entidadId: 'doc_123',
@@ -20,7 +20,7 @@ describe('Repositorio de Auditoría y Trazabilidad SQLite', () => {
 
     await registrarEventoAuditoria({
       rbd: rbdPrueba,
-      periodo: 2026,
+      periodo: 2027,
       tipoEvento: 'ACTUALIZACION',
       entidad: 'ASIGNACION',
       entidadId: 'asig_456',
@@ -28,7 +28,7 @@ describe('Repositorio de Auditoría y Trazabilidad SQLite', () => {
       detalles: { horas: 6, asignatura: 'Matemática' }
     });
 
-    const eventos = await listarEventosAuditoria(rbdPrueba, 2026);
+    const eventos = await listarEventosAuditoria(rbdPrueba, 2027);
     expect(eventos.length).toBeGreaterThanOrEqual(2);
     expect(eventos[0].descripcion).toContain('Asignación');
     expect(eventos[1].descripcion).toContain('Alta de docente');

@@ -43,7 +43,7 @@ async function obtenerPlantillaPalBuffer(): Promise<ArrayBuffer> {
  */
 export async function importarPlanillaPalDEP(
   fileBuffer: ArrayBuffer | Uint8Array,
-  periodo: number = 2026
+  periodo: number = 2027
 ): Promise<{
   docentesImportados: number;
   asistentesImportados: number;

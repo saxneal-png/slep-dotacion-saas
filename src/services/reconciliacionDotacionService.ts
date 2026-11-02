@@ -56,7 +56,7 @@ export function analizarSincronizacionDotacion(
   asignaciones: AsignacionHoraria[]
 ): DiagnosticoSincronizacion {
   const rbd = colegio.rbd;
-  const periodo = docentes[0]?.periodo || cursos[0]?.periodo || 2026;
+  const periodo = docentes[0]?.periodo || cursos[0]?.periodo || 2027;
   const docMap = new Map(docentes.map(d => [d.id, d]));
   const cursoMap = new Map(cursos.map(c => [c.id, c]));
 
@@ -161,7 +161,7 @@ export function analizarSincronizacionDotacion(
  */
 export async function ejecutarReconciliacionLimpia(
   rbd: string,
-  periodo: number = 2026
+  periodo: number = 2027
 ): Promise<ResultadoReconciliacion> {
   const { huerfanasEliminadas, duplicadasEliminadas } = await reconciliarYLimpiarAsignacionesEnDb(rbd, periodo);
   const total = huerfanasEliminadas + duplicadasEliminadas;
@@ -223,7 +223,7 @@ function calcularAfinidadDocenteAsignatura(docente: Docente, nombreAsignatura: s
  */
 export async function ejecutarAutoAsignacionMallaDesdeNomina(
   rbd: string,
-  periodo: number = 2026,
+  periodo: number = 2027,
   colegio: Establecimiento,
   cursos: CursoSae[],
   docentes: Docente[]

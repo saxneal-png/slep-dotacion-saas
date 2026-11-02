@@ -104,7 +104,7 @@ export function esEncabezadoAsistentesSige(lineaOTexto: string): boolean {
 export function parsearAsistentesSige(
   contenidoTexto: string,
   rbdDestino?: string,
-  periodo: number = 2026
+  periodo: number = 2027
 ): ResultadoParseoAsistentesSige {
   const advertencias: Array<{ linea: number; run: string; mensaje: string }> = [];
   const lineas = contenidoTexto

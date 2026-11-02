@@ -66,7 +66,7 @@ export function combinarCursosExistentes(
 
   const primerCurso = cursos[0];
   const rbd = primerCurso.rbd;
-  const periodo = primerCurso.periodo || 2026;
+  const periodo = primerCurso.periodo || 2027;
 
   // Extraer todos los grados individuales sin duplicados
   const todosLosGrados: string[] = [];

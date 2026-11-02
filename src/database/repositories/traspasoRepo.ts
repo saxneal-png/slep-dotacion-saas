@@ -28,7 +28,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
   }
 ): Promise<TraspasoResult> {
   const db = await getDb();
-  const periodo = config.periodo || 2026;
+  const periodo = 2027;
   const alertas: string[] = [];
   const targetRbds = new Set(config.colegiosRbd);
   const targetOverride = config.targetRbdOverride?.trim();
@@ -51,12 +51,12 @@ export async function ejecutarTraspasoDotacionAnalizador(
     const rbdsToClean = targetOverride ? new Set([targetOverride, ...targetRbds]) : targetRbds;
     for (const rbd of rbdsToClean) {
       if (procesarDocentesYCursos) {
-        db.run("DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
-        db.run("DELETE FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
-        db.run("DELETE FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+        db.run("DELETE FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))", [rbd, periodo, periodo]);
+        db.run("DELETE FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))", [rbd, periodo, periodo]);
+        db.run("DELETE FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))", [rbd, periodo, periodo]);
       }
       if (procesarAsistentes) {
-        db.run("DELETE FROM asistentes_educacion WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))", [rbd, periodo, periodo]);
+        db.run("DELETE FROM asistentes_educacion WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))", [rbd, periodo, periodo]);
       }
     }
   }

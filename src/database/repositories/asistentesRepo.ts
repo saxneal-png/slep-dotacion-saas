@@ -8,7 +8,7 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
   return {
     id: String(row[0]),
     rbd: String(row[1]),
-    periodo: Number(row[2]) || 2026,
+    periodo: Number(row[2]) || 2027,
     run: String(row[3] || ''),
     nombres: String(row[4] || ''),
     apellidos: String(row[5] || ''),
@@ -45,7 +45,7 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
   };
 }
 
-export function listarAsistentesSync(db: Database, rbd: string, periodo: number = 2026): AsistenteEducacion[] {
+export function listarAsistentesSync(db: Database, rbd: string, periodo: number = 2027): AsistenteEducacion[] {
   const stmt = db.prepare(`
     SELECT 
       id, rbd, periodo, run, nombres, apellidos, cargo_funcion, estamento,
@@ -57,7 +57,7 @@ export function listarAsistentesSync(db: Database, rbd: string, periodo: number 
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
       situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios
     FROM asistentes_educacion
-    WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
+    WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))
     ORDER BY apellidos ASC, nombres ASC
   `);
   stmt.bind([rbd, periodo, periodo]);
@@ -76,16 +76,16 @@ export async function listarAsistentes(
 ): Promise<AsistenteEducacion[]> {
   if (typeof rbdOrDb !== 'string') {
     const rbd = String(rbdOrPeriodo || '');
-    const periodo = typeof maybePeriodo === 'number' ? maybePeriodo : 2026;
+    const periodo = typeof maybePeriodo === 'number' ? maybePeriodo : 2027;
     return listarAsistentesSync(rbdOrDb, rbd, periodo);
   }
   const rbd = rbdOrDb;
-  const periodo = typeof rbdOrPeriodo === 'number' ? rbdOrPeriodo : 2026;
+  const periodo = typeof rbdOrPeriodo === 'number' ? rbdOrPeriodo : 2027;
   const db = await getDb();
   return listarAsistentesSync(db, rbd, periodo);
 }
 
-export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: number = 2026): AsistenteEducacion[] {
+export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: number = 2027): AsistenteEducacion[] {
   const stmt = db.prepare(`
     SELECT 
       id, rbd, periodo, run, nombres, apellidos, cargo_funcion, estamento,
@@ -97,7 +97,7 @@ export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: nu
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
       situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios
     FROM asistentes_educacion
-    WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))
+    WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
     ORDER BY rbd ASC, apellidos ASC, nombres ASC
   `);
   stmt.bind([periodo, periodo]);
@@ -114,10 +114,10 @@ export async function listarTodosLosAsistentesTerritorio(
   maybePeriodo?: number
 ): Promise<AsistenteEducacion[]> {
   if (dbOrPeriodo && typeof dbOrPeriodo !== 'number') {
-    const periodo = typeof maybePeriodo === 'number' ? maybePeriodo : 2026;
+    const periodo = typeof maybePeriodo === 'number' ? maybePeriodo : 2027;
     return listarTodosLosAsistentesTerritorioSync(dbOrPeriodo, periodo);
   }
-  const periodo = typeof dbOrPeriodo === 'number' ? dbOrPeriodo : 2026;
+  const periodo = typeof dbOrPeriodo === 'number' ? dbOrPeriodo : 2027;
   const db = await getDb();
   return listarTodosLosAsistentesTerritorioSync(db, periodo);
 }
@@ -172,7 +172,7 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
   stmt.run([
     a.id,
     a.rbd,
-    a.periodo || 2026,
+    a.periodo || 2027,
     a.run.trim(),
     a.nombres.trim(),
     a.apellidos.trim(),
@@ -236,7 +236,7 @@ export function guardarAsistentesBatchSync(
   db: Database,
   asistentes: AsistenteEducacion[],
   rbd?: string,
-  periodo: number = 2026,
+  periodo: number = 2027,
   reemplazarColegio: boolean = false
 ): void {
   db.exec('BEGIN TRANSACTION;');
@@ -322,7 +322,7 @@ export async function guardarAsistentesBatch(
     const db = dbOrAsistentes as Database;
     const asistentes = asistentesOrRbd as AsistenteEducacion[];
     const rbd = typeof rbdOrPeriodo === 'string' ? rbdOrPeriodo : undefined;
-    const periodo = typeof periodoOrReemplazar === 'number' ? periodoOrReemplazar : 2026;
+    const periodo = typeof periodoOrReemplazar === 'number' ? periodoOrReemplazar : 2027;
     const reemplazar = Boolean(maybeReemplazar);
     guardarAsistentesBatchSync(db, asistentes, rbd, periodo, reemplazar);
     SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
@@ -333,7 +333,7 @@ export async function guardarAsistentesBatch(
 
   const asistentes = dbOrAsistentes as AsistenteEducacion[];
   const rbd = typeof asistentesOrRbd === 'string' ? asistentesOrRbd : undefined;
-  const periodo = typeof rbdOrPeriodo === 'number' ? rbdOrPeriodo : 2026;
+  const periodo = typeof rbdOrPeriodo === 'number' ? rbdOrPeriodo : 2027;
   const reemplazar = Boolean(periodoOrReemplazar);
 
   const db = await getDb();
@@ -370,7 +370,7 @@ export async function eliminarAsistente(
   );
 }
 
-export function eliminarAsistentesColegioPeriodoSync(db: Database, rbd: string, periodo: number = 2026): void {
+export function eliminarAsistentesColegioPeriodoSync(db: Database, rbd: string, periodo: number = 2027): void {
   const stmt = db.prepare('DELETE FROM asistentes_educacion WHERE rbd = ? AND periodo = ?');
   stmt.run([rbd, periodo]);
   stmt.free();
@@ -383,12 +383,12 @@ export async function eliminarAsistentesColegioPeriodo(
 ): Promise<void> {
   if (typeof rbdOrDb !== 'string') {
     const rbd = String(rbdOrPeriodo || '');
-    const periodo = typeof maybePeriodo === 'number' ? maybePeriodo : 2026;
+    const periodo = typeof maybePeriodo === 'number' ? maybePeriodo : 2027;
     eliminarAsistentesColegioPeriodoSync(rbdOrDb, rbd, periodo);
     return;
   }
   const rbd = rbdOrDb;
-  const periodo = typeof rbdOrPeriodo === 'number' ? rbdOrPeriodo : 2026;
+  const periodo = typeof rbdOrPeriodo === 'number' ? rbdOrPeriodo : 2027;
   const db = await getDb();
   eliminarAsistentesColegioPeriodoSync(db, rbd, periodo);
   await persistDb();

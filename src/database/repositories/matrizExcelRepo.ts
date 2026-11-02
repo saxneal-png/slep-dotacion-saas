@@ -8,7 +8,7 @@ import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
 export async function guardarMatrizExcelEnDb(
   result: MatrizExcelParseResult,
   rbdDestino: string,
-  periodoDestino: number = 2026
+  periodoDestino: number = 2027
 ): Promise<{ cursosNuevos: number; docentesGuardados: number; asignacionesGuardadas: number }> {
   const cursosExistentes = await listarCursos(rbdDestino, periodoDestino);
   let cursosNuevos = 0;

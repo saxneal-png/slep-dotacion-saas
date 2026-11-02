@@ -44,7 +44,7 @@ export const ImportarEstablecimientoModal: React.FC<ImportarEstablecimientoModal
   const [paquete, setPaquete] = useState<PaqueteEstablecimientoNormalizado | null>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string>('');
   const [targetRbd, setTargetRbd] = useState<string>(colegioActivo.rbd);
-  const [targetPeriodo, setTargetPeriodo] = useState<number>(periodoActivo || 2026);
+  const [targetPeriodo, setTargetPeriodo] = useState<number>(2027);
   const [modo, setModo] = useState<'REEMPLAZAR' | 'FUSIONAR'>('REEMPLAZAR');
   const [cargando, setCargando] = useState(false);
   const [resultado, setResultado] = useState<ImportEstablecimientoResult | null>(null);
@@ -75,7 +75,7 @@ export const ImportarEstablecimientoModal: React.FC<ImportarEstablecimientoModal
 
       setPaquete(paqueteNorm);
       setTargetRbd(colegioActivo.rbd || paqueteNorm.establecimiento.rbd);
-      setTargetPeriodo(periodoActivo || paqueteNorm.periodo || 2026);
+      setTargetPeriodo(2027);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Error al leer el archivo de dotación.');
       setPaquete(null);
@@ -259,49 +259,20 @@ export const ImportarEstablecimientoModal: React.FC<ImportarEstablecimientoModal
                 <div>
                   <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1 text-[11px] flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-orange-600" />
-                    <span>2. ¿A qué Período Escolar desea importar la información? *</span>
+                    <span>2. Período Escolar Destino (Exclusivo 2027) *</span>
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTargetPeriodo(2026)}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center ${
-                        targetPeriodo === 2026
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-blue-400'
-                      }`}
-                    >
-                      <span className="text-sm">2026</span>
-                      <span className="text-[9px] font-normal opacity-90">Año Escolar 2026</span>
-                    </button>
-
+                  <div className="grid grid-cols-1 gap-2">
                     <button
                       type="button"
                       onClick={() => setTargetPeriodo(2027)}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center ${
-                        targetPeriodo === 2027
-                          ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-purple-400'
-                      }`}
+                      className="py-2 px-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center bg-purple-600 text-white border-purple-600 shadow-sm"
                     >
                       <span className="text-sm">2027</span>
-                      <span className="text-[9px] font-normal opacity-90">Proyección PAL 2027</span>
+                      <span className="text-[9px] font-normal opacity-90">Dotación Oficial 2027 (PAL / GDP)</span>
                     </button>
-
-                    <div className="flex items-center">
-                      <input
-                        type="number"
-                        min={2020}
-                        max={2035}
-                        value={targetPeriodo}
-                        onChange={e => setTargetPeriodo(Number(e.target.value))}
-                        className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-center text-xs font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-orange-500 focus:outline-none"
-                        placeholder="Otro año..."
-                      />
-                    </div>
                   </div>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
-                    La dotación se registrará bajo el año escolar <strong>{targetPeriodo}</strong>.
+                    Toda la información importada se registrará exclusivamente en el año escolar <strong>2027</strong>.
                   </span>
                 </div>
 

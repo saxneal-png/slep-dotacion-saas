@@ -39,7 +39,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
       // Parsear asistentes si existe hoja correspondiente
       let asistentes: any[] = [];
       try {
-        const asistResult = parseAsistentesFromWorkbook(workbook, '', 2026);
+        const asistResult = parseAsistentesFromWorkbook(workbook, '', 2027);
         asistentes = asistResult.asistentes || [];
       } catch (_) {}
 

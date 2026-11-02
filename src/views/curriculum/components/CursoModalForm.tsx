@@ -116,7 +116,7 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
     const nuevo: CursoSae = {
       id: `curso-${Date.now()}`,
       rbd,
-      periodo: periodoActivo,
+      periodo: 2027,
       nivel: nivelFinal,
       letra: letra.trim().toUpperCase() || 'U',
       regimen,

@@ -64,7 +64,7 @@ async function parseFileIngest(
   const wb = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
   const rawAsistentes: RawAsistenteInput[] = [];
   try {
-    const asistResult = parseAsistentesFromWorkbook(wb, '', 2026);
+    const asistResult = parseAsistentesFromWorkbook(wb, '', 2027);
     if (asistResult.asistentes.length > 0) {
       asistResult.asistentes.forEach((ast) => {
         rawAsistentes.push({

@@ -49,7 +49,7 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
   errorGuardado: propError,
   colegios,
   colegioActivo,
-  periodoActivo = 2026,
+  periodoActivo = 2027,
   docentes,
   cursos,
   salas,

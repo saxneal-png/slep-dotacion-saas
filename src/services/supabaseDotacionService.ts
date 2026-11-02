@@ -111,7 +111,7 @@ export function mapCursoToDb(curso: CursoSae) {
   return {
     id: curso.id,
     rbd: curso.rbd.trim(),
-    periodo: curso.periodo || 2026,
+    periodo: 2027,
     nivel: curso.nivel,
     letra: curso.letra || 'A',
     regimen: curso.regimen || 'JEC',
@@ -145,7 +145,7 @@ export function mapCursoFromDb(row: any): CursoSae {
   return {
     id: row.id,
     rbd: row.rbd,
-    periodo: Number(row.periodo || 2026),
+    periodo: 2027,
     nivel: row.nivel,
     letra: row.letra,
     regimen: row.regimen,
@@ -206,7 +206,7 @@ export function mapDocenteToDb(docente: Docente, incluirColumnaRequiere: boolean
   const base: any = {
     id: docente.id,
     rbd: docente.rbd.trim(),
-    periodo: docente.periodo || 2026,
+    periodo: 2027,
     run: docente.run,
     nombres: docente.nombres,
     apellidos: docente.apellidos,
@@ -286,7 +286,7 @@ export function mapDocenteFromDb(row: any): Docente {
   return {
     id: row.id,
     rbd: row.rbd,
-    periodo: Number(row.periodo || 2026),
+    periodo: 2027,
     run: row.run,
     nombres: row.nombres,
     apellidos: row.apellidos,
@@ -349,7 +349,7 @@ export function mapAsignacionToDb(asig: AsignacionHoraria) {
     horas_cronologicas_pie: asig.horasCronologicasPie || 0,
     horas_colaborativas: asig.horasColaborativas || 0,
     tipo_apoyo: asig.tipoApoyo || null,
-    periodo: asig.periodo || 2026,
+    periodo: 2027,
     es_taller_sep: Boolean(asig.esTallerSep),
     es_trabajo_colaborativo: Boolean(asig.esTrabajoColaborativo),
     es_proporcion_docente: Boolean(asig.esProporcionDocente),
@@ -381,7 +381,7 @@ export function mapAsignacionFromDb(row: any): AsignacionHoraria {
     horasCronologicasPie: Number(row.horas_cronologicas_pie || 0),
     horasColaborativas: Number(row.horas_colaborativas || 0),
     tipoApoyo: row.tipo_apoyo || undefined,
-    periodo: Number(row.periodo || 2026),
+    periodo: 2027,
     esTallerSep: Boolean(row.es_taller_sep),
     esTrabajoColaborativo: Boolean(row.es_trabajo_colaborativo),
     esProporcionDocente: Boolean(row.es_proporcion_docente),
@@ -396,7 +396,7 @@ export function mapAsistenteToDb(ast: AsistenteEducacion) {
   return {
     id: ast.id,
     rbd: ast.rbd.trim(),
-    periodo: ast.periodo || 2026,
+    periodo: 2027,
     run: ast.run,
     nombres: ast.nombres,
     apellidos: ast.apellidos,
@@ -437,7 +437,7 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
   return {
     id: row.id,
     rbd: row.rbd,
-    periodo: Number(row.periodo || 2026),
+    periodo: 2027,
     run: row.run,
     nombres: row.nombres,
     apellidos: row.apellidos,
@@ -793,7 +793,7 @@ export class SupabaseDotacionService {
     if (error) console.error('Error Supabase eliminarAsistente:', error);
   }
 
-  static async limpiarAsignacionesDeColegio(rbd: string, periodo: number = 2026): Promise<void> {
+  static async limpiarAsignacionesDeColegio(rbd: string, periodo: number = 2027): Promise<void> {
     if (!isSupabaseEnabled()) return;
     const cleanRbd = rbd.trim();
     await supabase
@@ -803,7 +803,7 @@ export class SupabaseDotacionService {
       .eq('periodo', periodo);
   }
 
-  static async eliminarAsistentesColegioPeriodo(rbd: string, periodo: number = 2026): Promise<void> {
+  static async eliminarAsistentesColegioPeriodo(rbd: string, periodo: number = 2027): Promise<void> {
     if (!isSupabaseEnabled()) return;
     const cleanRbd = rbd.trim();
     await supabase
@@ -1225,22 +1225,12 @@ export class SupabaseDotacionService {
 
     const establecimientos = await listarEstablecimientos();
     const salas = await listarTodasLasSalas();
-    const cursos2026 = await listarTodosLosCursos(2026);
-    const cursos2027 = await listarTodosLosCursos(2027);
-    const todosCursos = [...cursos2026, ...cursos2027.filter(c27 => !cursos2026.some(c26 => c26.id === c27.id))];
-
-    const docentes2026 = await listarTodosLosDocentesTerritorio(2026);
-    const docentes2027 = await listarTodosLosDocentesTerritorio(2027);
-    const todosDocentes = [...docentes2026, ...docentes2027.filter(d27 => !docentes2026.some(d26 => d26.id === d27.id))];
-
-    const asigs2026 = await listarTodasLasAsignaciones(2026);
-    const asigs2027 = await listarTodasLasAsignaciones(2027);
-    const todasAsigs = [...asigs2026, ...asigs2027.filter(a27 => !asigs2026.some(a26 => a26.id === a27.id))];
+    const todosCursos = await listarTodosLosCursos(2027);
+    const todosDocentes = await listarTodosLosDocentesTerritorio(2027);
+    const todasAsigs = await listarTodasLasAsignaciones(2027);
 
     const db = await getDb();
-    const ast2026 = await listarTodosLosAsistentesTerritorio(db, 2026);
-    const ast2027 = await listarTodosLosAsistentesTerritorio(db, 2027);
-    const todosAst = [...ast2026, ...ast2027.filter(a27 => !ast2026.some(a26 => a26.id === a27.id))];
+    const todosAst = await listarTodosLosAsistentesTerritorio(db, 2027);
 
     const usuarios = await listarUsuariosDb();
 

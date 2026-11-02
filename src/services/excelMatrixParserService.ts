@@ -246,7 +246,7 @@ export async function parseMatrizExcel(
 
   let rbdDetectado: string | undefined = undefined;
   let nombreEstablecimientoDetectado: string | undefined = undefined;
-  let periodoDetectado = 2026;
+  let periodoDetectado = 2027;
 
   const filePeriodoMatch = fileName.match(/\b(202[5-9])\b/);
   if (filePeriodoMatch) {
