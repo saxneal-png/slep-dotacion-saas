@@ -60,18 +60,19 @@ export function inferirClasificacionAsistente(cargo: string): ClasificacionInfer
   const esAuxiliar = /AUXILIAR(ES)?|ASEO|SERVICIOS\s*MENORES|CHOFER(ES)?|CONDUCTOR(ES|AS)?|SERENO(S)?|NOCHERO(S|AS|\/A|\/A)?|ROND[IÍ]N(ES)?|CUIDADOR(ES|AS)?|MANTENCI[OÓ]N|MAESTRO(S)?/i.test(c);
   const esInspector = /INSPECTOR(ES|AS|\/A|\/A)?|PARADOCENTE(S)?|PATIO|PASILLO/i.test(c);
 
-  let estamento: EstamentoAsistente = 'PARADOCENTE_INSPECTORIA';
+  let estamento: EstamentoAsistente = 'ADMINISTRATIVO';
 
   if (esPsicologo || esTrabajadorSocial || esFono || esTerapeuta || esKine || /ENFERMER[OA]\s*UNIV|INGENIERO|ASISTENTE\s*SOCIAL/i.test(c)) {
     estamento = 'PROFESIONAL';
   } else if (/T[EÉ]CNICO|TENS|ENFERMER[IÍ]A|SOPORTE\s*T[EÉ]CNICO|BIBLIOTEC/i.test(c) || esParvulo) {
     estamento = 'TECNICO';
-  } else if (/SECRETARI|ADMINISTRATIV|ENCARGAD[OA]\s*(DE\s*)?(INFORMATICA|SIGE|ADQUISICIONES|BODEGA)|CONTADOR/i.test(c)) {
-    estamento = 'ADMINISTRATIVO';
   } else if (esAuxiliar) {
     estamento = 'AUXILIAR';
   } else {
-    estamento = 'PARADOCENTE_INSPECTORIA';
+    // Conforme al Art. 5° de la Ley N° 21.109 y Ley N° 19.464:
+    // Las funciones administrativas, de secretaría, soporte, paradocencia e inspectoría escolar
+    // pertenecen formalmente al estamento ADMINISTRATIVO.
+    estamento = 'ADMINISTRATIVO';
   }
 
   return {
@@ -268,8 +269,11 @@ export function calcularDiagnosticoAsistentes(
     totalHorasIndefinidas += horasIndef;
     totalHorasPlazoFijo += horasPlazo;
 
-    const estamento = estamentosMap[a.estamento] ? a.estamento : 'PARADOCENTE_INSPECTORIA';
-    const estObj = estamentosMap[estamento];
+    // Fusión normativa (Ley 21.109 / 19.464): 'PARADOCENTE_INSPECTORIA' pertenece al estamento 'ADMINISTRATIVO'
+    const estamentoClave = (a.estamento === 'PARADOCENTE_INSPECTORIA' || a.estamento === 'ADMINISTRATIVO')
+      ? 'ADMINISTRATIVO'
+      : (estamentosMap[a.estamento] ? a.estamento : 'ADMINISTRATIVO');
+    const estObj = estamentosMap[estamentoClave];
     estObj.cantidadFuncionarios += 1;
     estObj.totalHoras += horasContrato;
     estObj.horasSubvencionGeneral += horasSubvGral;
@@ -324,8 +328,14 @@ export function calcularDiagnosticoAsistentes(
     }
   }
 
-  // Calcular porcentajes por estamento
-  const desgloseEstamentos = Object.values(estamentosMap).map((e) => ({
+  // Calcular porcentajes por estamento unificado conforme a Ley 21.109 (Profesional, Técnico, Administrativo, Auxiliar)
+  // Se excluye la clave redundante PARADOCENTE_INSPECTORIA ya fusionada en ADMINISTRATIVO
+  const desgloseEstamentos = [
+    estamentosMap.PROFESIONAL,
+    estamentosMap.TECNICO,
+    estamentosMap.ADMINISTRATIVO,
+    estamentosMap.AUXILIAR
+  ].map((e) => ({
     ...e,
     porcentajeHoras: totalHoras > 0 ? Math.round((e.totalHoras / totalHoras) * 1000) / 10 : 0
   }));

@@ -76,6 +76,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
   const [horasContrato, setHorasContrato] = useState(44);
   const [asignaturaPrincipal, setAsignaturaPrincipal] = useState('Lenguaje y Comunicación');
   const [aplicaArticulo69, setAplicaArticulo69] = useState(false);
+  const [requiereAutorizacionDocente, setRequiereAutorizacionDocente] = useState(false);
 
   // Funciones no aula / administrativas
   const [funcionesNoAula, setFuncionesNoAula] = useState<FuncionNoAulaDocente[]>([]);
@@ -122,6 +123,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       setHorasContrato(editingDoc.horasContrato || 44);
       setAsignaturaPrincipal(editingDoc.asignaturaPrincipal || 'Lenguaje y Comunicación');
       setAplicaArticulo69(Boolean(editingDoc.aplicaArticulo69));
+      setRequiereAutorizacionDocente(Boolean(editingDoc.requiereAutorizacionDocente));
 
       if (editingDoc.funcionesNoAula && editingDoc.funcionesNoAula.length > 0) {
         setFuncionesNoAula([...editingDoc.funcionesNoAula]);
@@ -193,6 +195,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       setHorasContrato(44);
       setAsignaturaPrincipal('Lenguaje y Comunicación');
       setAplicaArticulo69(false);
+      setRequiereAutorizacionDocente(false);
       setFuncionesNoAula([]);
       setHorasTallerSep(0);
       setHorasTrabajoColaborativo(0);
@@ -314,6 +317,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
       asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,
       aplicaArticulo69,
+      requiereAutorizacionDocente,
       fechaInicioContrato: fechaInicioContrato || undefined,
       fechaTerminoContrato: fechaTerminoContrato || undefined,
       propuestaGdp: propuestaGdp as any,
@@ -509,8 +513,8 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
               </div>
             </div>
 
-            {/* Switch Artículo 69 */}
-            <div className="pt-2 border-t border-slate-200/80">
+            {/* Switch Artículo 69 y Switch Autorización Docente */}
+            <div className="pt-2 border-t border-slate-200/80 space-y-2">
               <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-100/80 transition-colors">
                 <input
                   type="checkbox"
@@ -525,6 +529,24 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                   </div>
                   <p className="text-[11px] text-slate-500">
                     Tope legal máximo de 24 horas cronológicas de aula (32 HA). El remanente pasa automáticamente a tiempo no lectivo.
+                  </p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-100/80 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={requiereAutorizacionDocente}
+                  onChange={e => setRequiereAutorizacionDocente(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                />
+                <div>
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                    <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                    Requiere Solicitud de Autorización Docente (Decreto N° 352 / SEREMI de Educación)
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Marcar si el profesional/técnico no cuenta con título regular de pedagogía e imparte docencia mediante solicitud anual de autorización docente ante la SEREMI.
                   </p>
                 </div>
               </label>

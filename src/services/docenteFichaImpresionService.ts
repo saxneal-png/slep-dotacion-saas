@@ -206,6 +206,10 @@ export function generarHtmlFichaDocente(
       <th>Artículo 69</th>
       <td>${doc.contratos.some(c => c.aplicaArticulo69) ? 'SÍ (Rebaja de aula por antigüedad)' : 'NO'}</td>
     </tr>
+    <tr>
+      <th>Autorización Docente</th>
+      <td colspan="3">${doc.contratos.some(c => c.docente?.requiereAutorizacionDocente) ? '<strong style="color: #4338ca;">REQUIERE SOLICITUD ANUAL ANTE SEREMI DE EDUCACIÓN (Dto. N° 352 / Estatuto Docente)</strong>' : 'No requiere (Cuenta con idoneidad/título regular)'}</td>
+    </tr>
   </table>
 
   <div class="section-title">2. Distribución Normativa de la Jornada (Ley N° 20.903)</div>

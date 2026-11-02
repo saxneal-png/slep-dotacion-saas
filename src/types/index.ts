@@ -184,6 +184,7 @@ export interface Docente {
   funcionSecundaria?: string;
   asignaturaPrincipal?: string;
   aplicaArticulo69?: boolean; // Reducción a máx 24 hrs por >= 30 años servicio
+  requiereAutorizacionDocente?: boolean; // Requiere autorización docente anual SEREMI (Dto. 352 / Estatuto Docente)
   // Metadatos Oficiales DEP y Planilla GDP
   horasVigentesAnterior?: number;
   propuestaGdp?: string;

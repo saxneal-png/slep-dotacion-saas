@@ -14,7 +14,7 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
            horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json,
            horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
            accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-           situacion_final_gdp, observaciones_director, observaciones_slep
+           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
     FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026)) ORDER BY apellidos, nombres
   `, [rbd, periodo, periodo]);
   if (!res.length) return [];
@@ -95,7 +95,8 @@ export async function listarDocentes(rbd: string, periodo: number = 2026): Promi
       situacionFinalGdp: row[44] ? String(row[44]) : 'Vigente',
       observacionesDirector: row[45] ? String(row[45]) : undefined,
       observacionesPal: row[45] ? String(row[45]) : undefined,
-      observacionesSlep: row[46] ? String(row[46]) : undefined
+      observacionesSlep: row[46] ? String(row[46]) : undefined,
+      requiereAutorizacionDocente: Boolean(row[47])
     };
   });
 }
@@ -112,7 +113,7 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
            horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json,
            horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
            accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-           situacion_final_gdp, observaciones_director, observaciones_slep
+           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
     FROM docentes
     WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))
   `, [periodo, periodo]);
@@ -193,7 +194,8 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2026): 
       situacionFinalGdp: row[44] ? String(row[44]) : 'Vigente',
       observacionesDirector: row[45] ? String(row[45]) : undefined,
       observacionesPal: row[45] ? String(row[45]) : undefined,
-      observacionesSlep: row[46] ? String(row[46]) : undefined
+      observacionesSlep: row[46] ? String(row[46]) : undefined,
+      requiereAutorizacionDocente: Boolean(row[47])
     };
   });
 }
@@ -270,9 +272,9 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
       funciones_no_aula_json, periodo,
       horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-      situacion_final_gdp, observaciones_director, observaciones_slep
+      situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
       titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -310,7 +312,8 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
       horas_aprobadas_gdp=excluded.horas_aprobadas_gdp,
       situacion_final_gdp=excluded.situacion_final_gdp,
       observaciones_director=excluded.observaciones_director,
-      observaciones_slep=excluded.observaciones_slep;
+      observaciones_slep=excluded.observaciones_slep,
+      requiere_autorizacion_docente=excluded.requiere_autorizacion_docente;
   `, [
     docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
     subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
@@ -332,7 +335,8 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
     d.horasAprobadasGdp || 0,
     d.situacionFinalGdp || 'Vigente',
     obsDirector,
-    d.observacionesSlep || null
+    d.observacionesSlep || null,
+    d.requiereAutorizacionDocente ? 1 : 0
   ]);
   await persistDb(true);
   if (!skipCloudSync) {
@@ -401,9 +405,9 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
           funciones_no_aula_json, periodo,
           horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
           accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-          situacion_final_gdp, observaciones_director, observaciones_slep
+          situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
           titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -441,7 +445,8 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
           horas_aprobadas_gdp=excluded.horas_aprobadas_gdp,
           situacion_final_gdp=excluded.situacion_final_gdp,
           observaciones_director=excluded.observaciones_director,
-          observaciones_slep=excluded.observaciones_slep;
+          observaciones_slep=excluded.observaciones_slep,
+          requiere_autorizacion_docente=excluded.requiere_autorizacion_docente;
       `, [
         docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
         subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
@@ -463,7 +468,8 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
         d.horasAprobadasGdp || 0,
         d.situacionFinalGdp || 'Vigente',
         obsDirector,
-        d.observacionesSlep || null
+        d.observacionesSlep || null,
+        d.requiereAutorizacionDocente ? 1 : 0
       ]);
     }
     db.run("COMMIT;");

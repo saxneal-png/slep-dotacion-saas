@@ -66,10 +66,10 @@ const ESTAMENTO_COLORS: Record<EstamentoAsistente, { label: string; bg: string; 
     border: 'border-amber-200 dark:border-amber-800'
   },
   PARADOCENTE_INSPECTORIA: {
-    label: 'Paradocente / Inspectoría',
-    bg: 'bg-emerald-50 dark:bg-emerald-950/40',
-    text: 'text-emerald-700 dark:text-emerald-300',
-    border: 'border-emerald-200 dark:border-emerald-800'
+    label: 'Administrativo (Paradocente)',
+    bg: 'bg-slate-100 dark:bg-slate-800',
+    text: 'text-slate-700 dark:text-slate-300',
+    border: 'border-slate-200 dark:border-slate-700'
   }
 };
 
@@ -112,7 +112,13 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
         const str = `${a.run} ${a.nombres} ${a.apellidos} ${a.cargo_original} ${a.cargo_estandar} ${a.observaciones_ia || ''} ${a.establishment}`.toLowerCase();
         if (!str.includes(q)) return false;
       }
-      if (filtroEstamento !== 'TODOS' && a.estamento !== filtroEstamento) return false;
+      if (filtroEstamento !== 'TODOS') {
+        if (filtroEstamento === 'ADMINISTRATIVO') {
+          if (a.estamento !== 'ADMINISTRATIVO' && a.estamento !== 'PARADOCENTE_INSPECTORIA') return false;
+        } else if (a.estamento !== filtroEstamento) {
+          return false;
+        }
+      }
       if (filtroCuadratura !== 'TODOS' && a.estado_cuadratura !== filtroCuadratura) return false;
       if (filtroColegio !== 'TODOS' && a.rbd !== filtroColegio) return false;
       return true;
@@ -465,7 +471,7 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
             </select>
           )}
 
-          {/* Filtro Estamento */}
+          {/* Filtro Estamento (4 Estamentos Oficiales Ley N° 21.109 / 19.464) */}
           <select
             value={filtroEstamento}
             onChange={(e) => setFiltroEstamento(e.target.value)}
@@ -474,9 +480,8 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
             <option value="TODOS">Todos los Estamentos</option>
             <option value="PROFESIONAL">Profesionales</option>
             <option value="TECNICO">Técnicos</option>
-            <option value="ADMINISTRATIVO">Administrativos</option>
+            <option value="ADMINISTRATIVO">Administrativos (incluye Paradocente / Inspectoría)</option>
             <option value="AUXILIAR">Auxiliares de Servicio</option>
-            <option value="PARADOCENTE_INSPECTORIA">Paradocentes / Inspectoría</option>
           </select>
 
           {/* Filtro Cuadratura */}
@@ -805,7 +810,7 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
                   Estamento Legal (Ley 21.109)
                 </label>
                 <select
-                  value={asistenteEdicion.estamento}
+                  value={asistenteEdicion.estamento === 'PARADOCENTE_INSPECTORIA' ? 'ADMINISTRATIVO' : (asistenteEdicion.estamento || 'ADMINISTRATIVO')}
                   onChange={(e) =>
                     setAsistenteEdicion({
                       ...asistenteEdicion,
@@ -816,9 +821,8 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
                 >
                   <option value="PROFESIONAL">Profesional</option>
                   <option value="TECNICO">Técnico</option>
-                  <option value="ADMINISTRATIVO">Administrativo</option>
+                  <option value="ADMINISTRATIVO">Administrativo (incluye Paradocentes / Inspectoría)</option>
                   <option value="AUXILIAR">Auxiliar de Servicios</option>
-                  <option value="PARADOCENTE_INSPECTORIA">Paradocente / Inspectoría</option>
                 </select>
               </div>
 

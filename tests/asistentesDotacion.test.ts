@@ -77,7 +77,8 @@ describe('Módulo de Dotación de Asistentes de la Educación', () => {
     expect(aux.esAuxiliarServicio).toBe(true);
 
     const insp = inferirClasificacionAsistente('INSPECTOR/A');
-    expect(insp.estamento).toBe('PARADOCENTE_INSPECTORIA');
+    // Conforme a la Ley 21.109, paradocente/inspectoría forma parte del estamento ADMINISTRATIVO
+    expect(insp.estamento).toBe('ADMINISTRATIVO');
     expect(insp.esInspectorPatio).toBe(true);
 
     const sec = inferirClasificacionAsistente('SECRETARIA ADMINISTRATIVA');

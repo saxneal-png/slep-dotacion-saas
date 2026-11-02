@@ -904,6 +904,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                             ⚖️ Art. 69 (Máx 24h)
                           </span>
                         )}
+                        {d.requiereAutorizacionDocente && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200" title="Requiere Solicitud de Autorización Docente ante la SEREMI (Decreto N° 352)">
+                            📜 Aut. Docente
+                          </span>
+                        )}
                         {Boolean(d.funcionesNoAula && d.funcionesNoAula.length > 0) && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-800 border border-purple-200" title={d.funcionesNoAula?.map(f => `${f.nombre}: ${f.horas}h (${f.financiamiento || 'Subv. Gen'})`).join(', ')}>
                             🏢 {d.funcionesNoAula?.length} func. no aula ({d.funcionesNoAula?.reduce((s, f) => s + (Number(f.horas) || 0), 0)}h)

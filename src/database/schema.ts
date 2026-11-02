@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS docentes (
   funcion_secundaria TEXT,
   asignatura_principal TEXT,
   aplica_articulo_69 INTEGER DEFAULT 0,
+  requiere_autorizacion_docente INTEGER DEFAULT 0,
   funciones_no_aula_json TEXT,
   horas_vigentes_anterior REAL DEFAULT 0,
   propuesta_gdp TEXT DEFAULT 'Continuidad',
@@ -351,6 +352,9 @@ export function runMigrations(db: Database): void {
   } catch (_) {}
   try {
     db.run("ALTER TABLE docentes ADD COLUMN funciones_no_aula_json TEXT;");
+  } catch (_) {}
+  try {
+    db.run("ALTER TABLE docentes ADD COLUMN requiere_autorizacion_docente INTEGER DEFAULT 0;");
   } catch (_) {}
 
   // Migraciones Oficiales DEP / GDP

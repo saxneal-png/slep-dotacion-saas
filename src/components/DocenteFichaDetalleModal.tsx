@@ -103,6 +103,11 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                       <GraduationCap className="w-3.5 h-3.5 text-blue-400" /> {doc.titulo}
                     </span>
                   )}
+                  {doc.contratos.some(c => c.docente?.requiereAutorizacionDocente) && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/50">
+                      📜 Requiere Autorización Docente (SEREMI)
+                    </span>
+                  )}
                   <span>•</span>
                   <span>{doc.estamentoPrincipal.replace('_', ' ')}</span>
                   <span>•</span>
@@ -234,6 +239,13 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                         {(c.aplicaArticulo69 || c.docente?.aplicaArticulo69) && (
                           <span className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 bg-amber-100 text-amber-800 border-amber-200">
                             ⚖️ Art. 69 (Máx 24h)
+                          </span>
+                        )}
+
+                        {/* Badge Autorización Docente */}
+                        {c.docente?.requiereAutorizacionDocente && (
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 bg-indigo-100 text-indigo-800 border-indigo-200" title="Requiere Autorización Docente SEREMI (Dto. 352)">
+                            📜 Aut. Docente
                           </span>
                         )}
 

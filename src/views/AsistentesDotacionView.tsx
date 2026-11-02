@@ -56,10 +56,10 @@ const ESTAMENTO_LABELS: Record<EstamentoAsistente, { label: string; bg: string; 
     border: 'border-amber-200 dark:border-amber-800'
   },
   PARADOCENTE_INSPECTORIA: {
-    label: 'Paradocente / Inspectoría',
-    bg: 'bg-emerald-50 dark:bg-emerald-950/40',
-    text: 'text-emerald-700 dark:text-emerald-300',
-    border: 'border-emerald-200 dark:border-emerald-800'
+    label: 'Administrativo (Paradocente)',
+    bg: 'bg-slate-100 dark:bg-slate-800',
+    text: 'text-slate-700 dark:text-slate-300',
+    border: 'border-slate-200 dark:border-slate-700'
   }
 };
 
@@ -111,9 +111,15 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
         }
       }
 
-      // Filtro Estamento
-      if (filtroEstamento !== 'TODOS' && a.estamento !== filtroEstamento) {
-        return false;
+      // Filtro Estamento (Fusión Ley 21.109: Administrativo incluye Paradocentes/Inspectoría)
+      if (filtroEstamento !== 'TODOS') {
+        if (filtroEstamento === 'ADMINISTRATIVO') {
+          if (a.estamento !== 'ADMINISTRATIVO' && a.estamento !== 'PARADOCENTE_INSPECTORIA') {
+            return false;
+          }
+        } else if (a.estamento !== filtroEstamento) {
+          return false;
+        }
       }
 
       // Filtro Fuente
@@ -150,7 +156,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       nombres: '',
       apellidos: '',
       cargoFuncion: '',
-      estamento: 'PARADOCENTE_INSPECTORIA',
+      estamento: 'ADMINISTRATIVO',
       horasContrato: 44,
       horasSubvencionGeneralIndefinido: 44,
       horasSubvencionGeneralPlazoFijo: 0,
@@ -236,7 +242,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       nombres: asistenteEdicion.nombres.trim(),
       apellidos: asistenteEdicion.apellidos?.trim() || '',
       cargoFuncion: asistenteEdicion.cargoFuncion.trim(),
-      estamento: (asistenteEdicion.estamento as EstamentoAsistente) || 'PARADOCENTE_INSPECTORIA',
+      estamento: (asistenteEdicion.estamento as EstamentoAsistente) || 'ADMINISTRATIVO',
       horasContrato,
       horasSubvencionGeneralIndefinido: hGralInd,
       horasSubvencionGeneralPlazoFijo: hGralPf,
@@ -521,7 +527,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
             />
           </div>
 
-          {/* Filtro Estamento */}
+          {/* Filtro Estamento (4 Estamentos Oficiales Ley N° 21.109 / 19.464) */}
           <select
             value={filtroEstamento}
             onChange={(e) => setFiltroEstamento(e.target.value)}
@@ -530,9 +536,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
             <option value="TODOS">Todos los Estamentos</option>
             <option value="PROFESIONAL">Profesionales</option>
             <option value="TECNICO">Técnicos</option>
-            <option value="ADMINISTRATIVO">Administrativos</option>
+            <option value="ADMINISTRATIVO">Administrativos (incluye Paradocente / Inspectoría)</option>
             <option value="AUXILIAR">Auxiliares de Servicio</option>
-            <option value="PARADOCENTE_INSPECTORIA">Paradocentes / Inspectoría</option>
           </select>
 
           {/* Filtro Fuente */}
@@ -719,9 +724,12 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       {/* Estamento */}
                       <td className="py-3 px-4">
                         <span
-                          className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-bold border ${estStyle.bg} ${estStyle.text} ${estStyle.border}`}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${estStyle.bg} ${estStyle.text} ${estStyle.border}`}
                         >
-                          {estStyle.label}
+                          {a.estamento === 'PARADOCENTE_INSPECTORIA' ? 'Administrativo' : estStyle.label}
+                          {a.esInspectorPatio && (
+                            <span className="text-[9px] font-normal opacity-80">(Inspectoría)</span>
+                          )}
                         </span>
                       </td>
 
@@ -890,7 +898,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                     Estamento Funcional (Ley 21.109)
                   </label>
                   <select
-                    value={asistenteEdicion.estamento || 'PARADOCENTE_INSPECTORIA'}
+                    value={asistenteEdicion.estamento === 'PARADOCENTE_INSPECTORIA' ? 'ADMINISTRATIVO' : (asistenteEdicion.estamento || 'ADMINISTRATIVO')}
                     onChange={(e) =>
                       setAsistenteEdicion({ ...asistenteEdicion, estamento: e.target.value as EstamentoAsistente })
                     }
@@ -898,9 +906,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                   >
                     <option value="PROFESIONAL">Profesional</option>
                     <option value="TECNICO">Técnico</option>
-                    <option value="ADMINISTRATIVO">Administrativo</option>
+                    <option value="ADMINISTRATIVO">Administrativo (incluye Paradocentes / Inspectoría)</option>
                     <option value="AUXILIAR">Auxiliar de Servicios Menores</option>
-                    <option value="PARADOCENTE_INSPECTORIA">Paradocente / Inspectoría</option>
                   </select>
                 </div>
               </div>
