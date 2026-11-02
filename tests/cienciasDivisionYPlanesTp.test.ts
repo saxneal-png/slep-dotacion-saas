@@ -110,3 +110,52 @@ describe('Auditoría y Validación: Catálogo de Electivos de Formación Diferen
     expect(sonAsignaturasEquivalentes('Plan Común Electivo', 'Religión (Electivo)')).toBe(true);
   });
 });
+
+describe('Auditoría y Validación: Educación Parvularia en Aula Combinada y Multigrado (Decreto Supremo 306/2007)', () => {
+  it('un curso combinado de párvulos en JEC carga 38 horas totales oficiales (32h obligatorias + 6h libre disposición)', () => {
+    const planCombJec = obtenerPlanPorCurso('Nivel Heterogéneo NT1-NT2 Combinado', 'JEC');
+    expect(planCombJec).toBeDefined();
+    expect(planCombJec?.totalHorasPlan).toBe(38);
+    expect(planCombJec?.horasObligatorias).toBe(32);
+    expect(planCombJec?.horasLibreDisposicion).toBe(6);
+    expect(planCombJec?.categoria).toBe('PARVULARIA');
+    expect(planCombJec?.referenciaFuente).toContain('306/2007');
+
+    // Debe contener los 3 ámbitos fundamentales de las Bases Curriculares más experiencias integradas
+    const sumHoras = planCombJec?.asignaturasBase.reduce((s, a) => s + a.horasSugeridas, 0);
+    expect(sumHoras).toBe(32);
+  });
+
+  it('un curso combinado de párvulos en No JEC carga 30 horas totales oficiales de régimen escolar regular', () => {
+    const planCombNoJec = obtenerPlanPorCurso('Nivel Heterogéneo NT1-NT2 Combinado', 'No JEC');
+    expect(planCombNoJec).toBeDefined();
+    expect(planCombNoJec?.totalHorasPlan).toBe(30);
+    expect(planCombNoJec?.horasObligatorias).toBe(30);
+    expect(planCombNoJec?.horasLibreDisposicion).toBe(0);
+
+    const sumHoras = planCombNoJec?.asignaturasBase.reduce((s, a) => s + a.horasSugeridas, 0);
+    expect(sumHoras).toBe(30);
+  });
+
+  it('cursos multigrado parvularia y niveles regulares (Prekínder y Kínder) cargan 38h con JEC y 30h sin JEC', () => {
+    const planMultiJec = obtenerPlanPorCurso('Multigrado Parvularia (NT1-NT2)', 'JEC');
+    expect(planMultiJec?.totalHorasPlan).toBe(38);
+    expect(planMultiJec?.horasLibreDisposicion).toBe(6);
+
+    const planMultiNoJec = obtenerPlanPorCurso('Multigrado Parvularia (NT1-NT2)', 'No JEC');
+    expect(planMultiNoJec?.totalHorasPlan).toBe(30);
+
+    const planKinderJec = obtenerPlanPorCurso('Kínder B', 'JEC');
+    expect(planKinderJec?.totalHorasPlan).toBe(38);
+
+    const planPrekinderNoJec = obtenerPlanPorCurso('Pre-Kínder A', 'No JEC');
+    expect(planPrekinderNoJec?.totalHorasPlan).toBe(30);
+  });
+
+  it('normalizarNombreAsignatura reconoce adecuadamente los ámbitos de Educación Parvularia', () => {
+    expect(normalizarNombreAsignatura('Ámbito Desarrollo Personal y Social')).toBe('ambito desarrollo personal y social');
+    expect(normalizarNombreAsignatura('Comunicación Integral')).toBe('ambito comunicacion integral');
+    expect(normalizarNombreAsignatura('Interacción y Comprensión del Entorno')).toBe('ambito interaccion y comprension del entorno');
+    expect(normalizarNombreAsignatura('Experiencias de Aprendizaje Integradas')).toBe('experiencias de aprendizaje integradas');
+  });
+});

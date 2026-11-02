@@ -127,7 +127,11 @@ describe('Planes y Programas MINEDUC', () => {
     // Educación Parvularia real
     const planParvulariaReal = obtenerPlanPorCurso('Kínder A', 'No JEC');
     expect(planParvulariaReal?.categoria).toBe('PARVULARIA');
-    expect(planParvulariaReal?.totalHorasPlan).toBe(22);
+    expect(planParvulariaReal?.totalHorasPlan).toBe(30);
+
+    const planParvulariaJec = obtenerPlanPorCurso('Kínder A', 'JEC');
+    expect(planParvulariaJec?.totalHorasPlan).toBe(38);
+    expect(planParvulariaJec?.horasLibreDisposicion).toBe(6);
   });
 
   it('resuelve correctamente cursos de Educación Especial y Niveles Laborales (Ord. 1470 & Dec. 83/87)', () => {

@@ -575,28 +575,30 @@ export function validarEleccionEstudianteHc(nombresAsignaturas: string[]): {
 export const DATA_PLANES_ESTUDIO_MINEDUC = {
   "parvularia": {
     nombre: "Educación Parvularia (NT1 y NT2)",
+    referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
     regimen: {
-      JEC: { total: 28, libre: 4 },
-      No_JEC: { total: 22, libre: 0 }
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 8, No_JEC: 6 },
-      { nombre: "Ámbito Comunicación Integral", JEC: 10, No_JEC: 8 },
-      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 6, No_JEC: 6 },
-      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 8 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 10 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 8 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 4 }
     ]
   },
   "multigrado_parvularia": {
     nombre: "Multigrado Parvularia (NT1-NT2)",
+    referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
     regimen: {
-      JEC: { total: 28, libre: 4 },
-      No_JEC: { total: 22, libre: 0 }
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 8, No_JEC: 6 },
-      { nombre: "Ámbito Comunicación Integral", JEC: 10, No_JEC: 8 },
-      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 6, No_JEC: 6 },
-      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 8 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 10 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 8 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 4 }
     ]
   },
   "1_4_basico": {
@@ -760,16 +762,16 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "combinado_parvularia": {
     nombre: "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)",
-    referenciaFuente: "Decreto Supremo N° 315/2010 y Bases Curriculares Dto. 28/2019",
+    referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
     regimen: {
-      JEC: { total: 28, libre: 4 },
-      No_JEC: { total: 22, libre: 0 }
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 8, No_JEC: 6 },
-      { nombre: "Ámbito Comunicación Integral", JEC: 10, No_JEC: 8 },
-      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 6, No_JEC: 6 },
-      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 8 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 10 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 8 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 4 }
     ]
   },
   "multigrado_basica": {
@@ -1694,6 +1696,7 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   // 0. Parvularia
   addSimplePlan("parvularia", "Educación Parvularia (NT1 y NT2)", "PARVULARIA");
   addSimplePlan("multigrado_parvularia", "Multigrado Parvularia (NT1-NT2)", "PARVULARIA");
+  addSimplePlan("combinado_parvularia", "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)", "PARVULARIA");
 
   // 1. Básica Regular
   addSimplePlan("1_4_basico", "1° a 4° Básico", "BASICA");

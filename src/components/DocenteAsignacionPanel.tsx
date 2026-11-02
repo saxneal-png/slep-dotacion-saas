@@ -185,6 +185,20 @@ export function normalizarNombreAsignatura(nombre: string): string {
     return 'educacion fisica y salud';
   }
 
+  // 1.1 Ámbitos de Educación Parvularia (Bases Curriculares Dto. 28/2019)
+  if (n.includes('desarrollo personal') || n.includes('personal y social')) {
+    return 'ambito desarrollo personal y social';
+  }
+  if (n.includes('comunicacion integral')) {
+    return 'ambito comunicacion integral';
+  }
+  if (n.includes('interaccion y comprension') || n.includes('comprension del entorno') || n.includes('interaccion con el entorno')) {
+    return 'ambito interaccion y comprension del entorno';
+  }
+  if (n.includes('experiencias de aprendizaje') || n.includes('aprendizaje integrad') || n.includes('experiencias integradas')) {
+    return 'experiencias de aprendizaje integradas';
+  }
+
   // 2. Plan Común Electivo (3° y 4° Medio)
   if (esAsignaturaPlanComunElectivo(n)) {
     return 'plan comun electivo';

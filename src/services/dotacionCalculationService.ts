@@ -150,7 +150,7 @@ export function calcularDiagnosticoColegio(
 
   for (const curso of cursos) {
     const isJec = curso.regimen === 'JEC';
-    const esEpja = esModalidadAdultos(curso.nivel) || (curso.nombre ? esModalidadAdultos(curso.nombre) : false);
+    const esEpja = esModalidadAdultos(curso.nivel) || ((curso as any).nombre ? esModalidadAdultos((curso as any).nombre) : false);
     const demanda = esEpja
       ? {
           horasTotalCronologicas: 0,

@@ -39,7 +39,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   // Demandas calculadas por curso
   const demandasCursos = cursos.map(c => {
     const isJec = c.regimen === 'JEC';
-    const esEpja = esModalidadAdultos(c.nombre) || (c.nivel ? esModalidadAdultos(c.nivel) : false);
+    const esEpja = esModalidadAdultos(c.nivel) || ((c as any).nombre ? esModalidadAdultos((c as any).nombre) : false);
     const dem = esEpja
       ? {
           horasTotalCronologicas: 0,
