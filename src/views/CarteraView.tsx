@@ -2,11 +2,12 @@ import React, { useState, useMemo } from 'react';
 import {
   Building2, Plus, FileUp, FileDown, MapPin, Users, School, Trash2, Edit, Database,
   FileSpreadsheet, Eraser, Search, RotateCcw, X, UserCheck, ChevronRight, MoreVertical,
-  CheckCircle2, ArrowUpDown, Filter, Download
+  CheckCircle2, ArrowUpDown, Filter, Download, ShieldAlert, AlertOctagon, RefreshCw
 } from 'lucide-react';
 import { Establecimiento, ComunaValleDiguillin, RegimenJornada } from '../types';
 import { ConfirmarVaciarDotacionModal } from '../components/ConfirmarVaciarDotacionModal';
 import { cargarConfiguracionGeneral } from '../services/configuracionGeneralService';
+import { usePermisos } from '../security/PermisosContext';
 
 interface CarteraViewProps {
   colegios: Establecimiento[];
@@ -25,6 +26,7 @@ interface CarteraViewProps {
   onExportarDotacionColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
   onExportarMatrizExcelColegio?: (est: Establecimiento, periodo: number) => Promise<void> | void;
   onAbrirColegiosAsesorados?: () => void;
+  onAbrirGestionEstablecimientos?: () => void;
 }
 
 const COMUNAS: ComunaValleDiguillin[] = [
@@ -53,12 +55,17 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
   onLimpiarDotacionColegio,
   onExportarDotacionColegio,
   onExportarMatrizExcelColegio,
-  onAbrirColegiosAsesorados
+  onAbrirColegiosAsesorados,
+  onAbrirGestionEstablecimientos
 }) => {
+  const { esSuperUsuario } = usePermisos();
   const [config] = useState(() => cargarConfiguracionGeneral());
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEst, setEditingEst] = useState<Establecimiento | null>(null);
   const [colegioParaVaciar, setColegioParaVaciar] = useState<Establecimiento | null>(null);
+  const [colegioAEliminar, setColegioAEliminar] = useState<Establecimiento | null>(null);
+  const [confirmacionRbd, setConfirmacionRbd] = useState('');
+  const [eliminandoColegio, setEliminandoColegio] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedComunaFilter, setSelectedComunaFilter] = useState<string>('ALL');
@@ -239,6 +246,17 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
               }}
             />
           </label>
+
+          {esSuperUsuario && onAbrirGestionEstablecimientos && (
+            <button
+              onClick={onAbrirGestionEstablecimientos}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-md transition-all active:scale-[0.98]"
+              title="Panel del Super Usuario para agregar y eliminar establecimientos"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Gestionar Colegios (Super)</span>
+            </button>
+          )}
 
           <button
             onClick={abrirModalNuevo}
@@ -465,10 +483,23 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
                   {onLimpiarDotacionColegio && (
                     <button
                       onClick={() => setColegioParaVaciar(est)}
-                      className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors"
                       title="Vaciar dotación escolar"
                     >
                       <Eraser className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {esSuperUsuario && (
+                    <button
+                      onClick={() => {
+                        setColegioAEliminar(est);
+                        setConfirmacionRbd('');
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
+                      title="Eliminar establecimiento (Super Usuario)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                     </button>
                   )}
                 </div>
@@ -651,6 +682,93 @@ export const CarteraView: React.FC<CarteraViewProps> = ({
           }}
           onExportarRespaldoPrevio={onExportarDotacionColegio ? () => onExportarDotacionColegio(colegioParaVaciar, periodoActivo) : undefined}
         />
+      )}
+
+      {/* Modal Confirmación Eliminación Definitiva de Colegio */}
+      {colegioAEliminar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-rose-300 dark:border-rose-900 p-6 space-y-4 animate-scale-in">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 rounded-xl bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800">
+                <AlertOctagon className="w-6 h-6 text-rose-600 dark:text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Eliminar Establecimiento
+                </h3>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-bold">
+                  Operación irreversible de Super Usuario
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-slate-700 dark:text-slate-300 space-y-2">
+              <p>
+                ¿Está seguro de eliminar definitivamente este colegio de la cartera oficial?
+              </p>
+              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900 font-bold text-slate-900 dark:text-white">
+                {colegioAEliminar.nombre} <span className="font-mono text-rose-600">(RBD: {colegioAEliminar.rbd})</span>
+              </div>
+              <p className="text-[11px] text-rose-700 dark:text-rose-300 font-semibold leading-relaxed">
+                ⚠️ Se eliminarán de forma permanente todos sus cursos, salas de infraestructura, nómina docente, asistentes y asignaciones vinculadas tanto en SQLite local como en Supabase.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                Escriba el RBD (<strong className="font-mono">{colegioAEliminar.rbd}</strong>) para confirmar:
+              </label>
+              <input
+                type="text"
+                value={confirmacionRbd}
+                onChange={(e) => setConfirmacionRbd(e.target.value.trim())}
+                placeholder={`Escriba ${colegioAEliminar.rbd}`}
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={eliminandoColegio}
+                onClick={() => { setColegioAEliminar(null); setConfirmacionRbd(''); }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={eliminandoColegio || confirmacionRbd !== colegioAEliminar.rbd}
+                onClick={async () => {
+                  setEliminandoColegio(true);
+                  try {
+                    await onEliminarColegio(colegioAEliminar.id);
+                    setColegioAEliminar(null);
+                    setConfirmacionRbd('');
+                  } catch (err: any) {
+                    alert(`Error al eliminar: ${err.message || err}`);
+                  } finally {
+                    setEliminandoColegio(false);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white shadow-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {eliminandoColegio ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Eliminar Colegio</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

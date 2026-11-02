@@ -483,7 +483,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
       </div>
 
       {/* ── 2. DASHBOARD KPI (Bento Grid) ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         
         {/* 1. Colegios */}
         <div className="card-elevated p-4 flex flex-col justify-between group hover:border-blue-400 transition-all">
@@ -710,7 +710,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
         </div>
       ) : vistaModo === 'grid' ? (
         /* VISTA GRID */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3.5">
           {colegiosFiltrados.map((est) => {
             const diag = diagnosticosMap.get(est.rbd);
             const bal = diag?.balanzaGeneral.superavitDeficitLectivo || 0;

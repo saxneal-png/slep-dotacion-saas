@@ -346,9 +346,20 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
   }
 }
 
-export async function guardarDocentesBatch(docentes: Docente[]): Promise<number> {
+/**
+ * Guarda un lote de docentes en SQLite y los sincroniza con Supabase.
+ * @param skipCloudSync  No sincronizar con la nube (p. ej. al hidratar desde Supabase).
+ * @param esperarSyncNube Esperar la sincronización remota y propagar su error al llamador
+ *                        (usado en la ingesta SIGE para que un fallo remoto no quede silencioso).
+ */
+export async function guardarDocentesBatch(
+  docentes: Docente[],
+  skipCloudSync: boolean = false,
+  esperarSyncNube: boolean = false
+): Promise<number> {
   if (!docentes.length) return 0;
   const db = await getDb();
+  const docentesPersistidos: Docente[] = [];
   db.run("BEGIN TRANSACTION;");
   try {
     for (const d of docentes) {
@@ -471,6 +482,12 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
         d.observacionesSlep || null,
         d.requiereAutorizacionDocente ? 1 : 0
       ]);
+
+      docentesPersistidos.push({
+        ...d,
+        id: docId,
+        periodo: docPeriodo
+      });
     }
     db.run("COMMIT;");
   } catch (err) {
@@ -478,10 +495,16 @@ export async function guardarDocentesBatch(docentes: Docente[]): Promise<number>
     throw err;
   }
   await persistDb(true);
-  SupabaseDotacionService.guardarDocentesBatch(docentes).catch(err =>
-    console.warn('[docentesRepo] Aviso sincronizando lote con Supabase:', err)
-  );
-  return docentes.length;
+  if (!skipCloudSync) {
+    if (esperarSyncNube) {
+      await SupabaseDotacionService.guardarDocentesBatch(docentesPersistidos);
+    } else {
+      SupabaseDotacionService.guardarDocentesBatch(docentesPersistidos).catch(err =>
+        console.warn('[docentesRepo] Aviso sincronizando lote con Supabase:', err)
+      );
+    }
+  }
+  return docentesPersistidos.length;
 }
 
 export async function eliminarDocente(id: string): Promise<void> {

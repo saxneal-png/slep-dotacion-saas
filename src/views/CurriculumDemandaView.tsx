@@ -572,31 +572,30 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Resumen Superior */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      {/* Resumen Superior Compacto */}
+      <div className="card-elevated p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-bold">
-            <School className="w-3.5 h-3.5" />
-            Bases Curriculares Oficiales MINEDUC, Multigrado, EPJA & Decreto 170
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+              <School className="w-4 h-4 text-orange-600" />
+              <span>Planes de Estudio & Asignación Curricular</span>
+            </h2>
+            <span className="px-2 py-0.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-bold">
+              MINEDUC / Multigrado / EPJA / PIE
+            </span>
           </div>
-          <h2 className="text-xl font-bold text-slate-800 mt-1">
-            Planes de Estudio & Asignación Docente / PIE - {colegio.nombre}
-          </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Asigna asignaturas de la malla obligatoria, multigrado, EPJA y co-docencia de inclusión a cada curso con control normativo de horas en tiempo real.
+            Selecciona un curso a la izquierda para gestionar su plan de estudio obligatorio, co-docencia de inclusión y talleres SEP.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="bg-slate-50 p-2.5 px-4 rounded-lg border border-slate-200 text-right">
-            <div className="text-[10px] uppercase font-bold text-slate-500">Demanda Total Malla</div>
-            <div className="text-lg font-black text-[#002B49] flex items-center gap-1 justify-end">
-              <Clock className="w-4 h-4 text-orange-600" />
-              <span>{totalHorasDemandaColegio}</span>
-              <span className="text-[10px] font-bold text-slate-400">HA/sem</span>
-            </div>
-            <div className="text-[10px] text-slate-500 font-semibold">
-              Cubierto: {totalHorasAsignadasDocenciaColegio} HA ({totalHorasDemandaColegio > 0 ? Math.round((totalHorasAsignadasDocenciaColegio / totalHorasDemandaColegio) * 100) : 0}%)
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-2.5">
+            <div>
+              <div className="text-[10px] uppercase font-bold text-slate-500">Demanda Malla</div>
+              <div className="text-sm font-black text-[#002B49] font-mono">
+                {totalHorasAsignadasDocenciaColegio} / {totalHorasDemandaColegio} HA ({totalHorasDemandaColegio > 0 ? Math.round((totalHorasAsignadasDocenciaColegio / totalHorasDemandaColegio) * 100) : 0}%)
+              </div>
             </div>
           </div>
 
@@ -604,15 +603,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
           <button
             type="button"
             onClick={() => setModalReconciliarOpen(true)}
-            className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer border ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer border ${
               diagSincronizacion && !diagSincronizacion.estaSincronizado
                 ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 animate-pulse'
                 : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
             }`}
             title="Sincronizar la Malla Curricular con la última Nómina Ley de docentes"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Sincronizar con Nómina Ley</span>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Sincronizar Nómina</span>
             {diagSincronizacion && (diagSincronizacion.huerfanasCount > 0 || diagSincronizacion.duplicadasCount > 0) && (
               <span className="px-1.5 py-0.2 bg-white text-amber-900 rounded-full text-[10px] font-black">
                 {diagSincronizacion.huerfanasCount + diagSincronizacion.duplicadasCount}
@@ -623,19 +622,19 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
           <button
             type="button"
             onClick={() => setModalCombinarOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-all cursor-pointer"
             title="Combinar dos o más cursos del establecimiento en un aula multigrado/combinada"
           >
-            <Layers className="w-4 h-4 text-indigo-600" />
+            <Layers className="w-3.5 h-3.5 text-indigo-600" />
             <span>Combinar Cursos</span>
           </button>
 
           <button
             type="button"
             onClick={() => setModalCursoOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Agregar Curso</span>
           </button>
         </div>
@@ -662,9 +661,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Columna Izquierda: Lista de Cursos del Colegio con Badges de Docencia y PIE */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div className="lg:col-span-4 xl:col-span-3 card-elevated p-3.5 space-y-2.5 lg:sticky lg:top-28">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 truncate">
               <Layers className="w-4 h-4 text-slate-600 shrink-0" />
@@ -971,7 +970,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         </div>
 
         {/* Columna Derecha: Panel Principal del Curso con Subpestañas o Panel de Talleres Transversales */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+        <div className="lg:col-span-8 xl:col-span-9 card-elevated p-4 sm:p-5 space-y-4">
           {cursoSeleccionadoPlan === 'TRANSVERSAL' ? (
             <div className="space-y-6">
               {/* Cabecera de Talleres Transversales */}

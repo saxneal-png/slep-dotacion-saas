@@ -33,6 +33,7 @@ interface HeaderProps {
   onAbrirImportadorMatriz?: () => void;
   onAbrirCopilot?: () => void;
   onAbrirConfiguraciones?: () => void;
+  onAbrirGestionEstablecimientos?: () => void;
   onGuardarCambiosEnNube?: () => Promise<void>;
   guardandoEnNube?: boolean;
   onRefrescarNube?: () => Promise<void>;
@@ -59,6 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
   onAbrirImportadorMatriz,
   onAbrirCopilot,
   onAbrirConfiguraciones,
+  onAbrirGestionEstablecimientos,
   onGuardarCambiosEnNube,
   guardandoEnNube = false,
   onRefrescarNube,
@@ -71,6 +73,14 @@ export const Header: React.FC<HeaderProps> = ({
   const [currentTheme, setCurrentTheme] = useState<string>(() => {
     return localStorage.getItem('slep_ui_theme') || 'slep-republicano';
   });
+  const [densityMode, setDensityMode] = useState<'comfortable' | 'compact'>(() => {
+    const saved = localStorage.getItem('slep_ui_density');
+    if (saved === 'compact' || saved === 'comfortable') return saved;
+    if (typeof window !== 'undefined' && (window.innerWidth <= 1540 || window.innerHeight <= 864)) {
+      return 'compact';
+    }
+    return 'comfortable';
+  });
   const [internalEstadoGuardado, setInternalEstadoGuardado] = useState<'saved' | 'error'>('saved');
   const [internalUltimaHora, setInternalUltimaHora] = useState<string>(getUltimaHoraGuardado());
 
@@ -82,6 +92,12 @@ export const Header: React.FC<HeaderProps> = ({
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('slep_ui_theme', currentTheme);
   }, [currentTheme]);
+
+  // Aplica el modo de densidad al <html> y persiste en localStorage
+  useEffect(() => {
+    document.documentElement.setAttribute('data-density', densityMode);
+    localStorage.setItem('slep_ui_density', densityMode);
+  }, [densityMode]);
 
   useEffect(() => {
     const unsub = subscribePersist((status, time) => {
@@ -121,9 +137,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const esModuloSecundario = modulosDetallados.some(m => m.id === vistaActiva);
 
-  // Clases con alto contraste para navegación
+  // Clases con alto contraste para navegación (adaptativas para laptops y pantallas grandes)
   const navPillClass = (id: string) =>
-    `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+    `flex items-center gap-1.5 px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
       vistaActiva === id
         ? 'bg-brand-primary text-white shadow-md'
         : 'text-slate-100 hover:bg-white/10 hover:text-white'
@@ -134,40 +150,41 @@ export const Header: React.FC<HeaderProps> = ({
       className="text-white border-b shadow-md sticky top-0 z-40 backdrop-blur-md transition-colors duration-200"
       style={{ backgroundColor: 'var(--header-bg, #0F172A)', borderColor: 'var(--header-border, #334155)' }}
     >
-      <div className="max-w-[1720px] mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-2 sm:gap-3">
+      <div className="max-w-[1920px] mx-auto px-3 sm:px-5 lg:px-6">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-2.5">
 
           {/* ── 1. Logo / Branding ── */}
           <div
-            className="flex items-center space-x-3 cursor-pointer select-none group flex-shrink-0"
+            className="flex items-center space-x-2.5 cursor-pointer select-none group flex-shrink-0"
             onClick={() => onSelectVista('colegios_asesorados')}
             title="Ir a Colegios Asesorados"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center font-black text-sm shadow-md group-hover:scale-105 transition-transform text-white">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center font-black text-xs sm:text-sm shadow-md group-hover:scale-105 transition-transform text-white">
               VD
             </div>
-            <div className="hidden sm:block">
-              <div className="text-[10px] uppercase tracking-wider text-amber-400 font-extrabold leading-tight">
+            <div className="hidden xl:block">
+              <div className="text-[9px] uppercase tracking-wider text-amber-400 font-extrabold leading-tight">
                 SLEP Valle Diguillín
               </div>
-              <h1 className="text-sm font-black text-white tracking-tight leading-none">
+              <h1 className="text-xs sm:text-sm font-black text-white tracking-tight leading-none">
                 Dotación Docente
               </h1>
             </div>
           </div>
 
           {/* ── 2. Navegación Principal ── */}
-          <nav className="hidden lg:flex items-center bg-black/40 p-1 rounded-xl border border-white/15 shadow-inner space-x-0.5">
+          <nav className="hidden lg:flex items-center bg-black/40 p-1 rounded-xl border border-white/15 shadow-inner space-x-0.5 overflow-x-auto no-scrollbar">
             {(!permisos || permisos.puedeAccederTodasEscuelas) && (
               <button onClick={() => onSelectVista('colegios_asesorados')} className={navPillClass('colegios_asesorados')} title="Colegios Asesorados">
-                <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-                <span>Colegios Asesorados</span>
+                <UserCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="hidden xl:inline">Colegios</span>
+                <span>Asesorados</span>
               </button>
             )}
 
             {(!permisos || permisos.puedeVerCarteraTerritorial) && (
               <button onClick={() => onSelectVista('cartera')} className={navPillClass('cartera')}>
-                <Building2 className="w-3.5 h-3.5 text-sky-400" />
+                <Building2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                 <span>Cartera</span>
               </button>
             )}
@@ -175,14 +192,14 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Espacio Escolar solo para quien tiene permisos territoriales o es director en contexto */}
             {(!permisos || permisos.puedeAccederTodasEscuelas) && (
               <button onClick={() => onSelectVista('workflow')} className={navPillClass('workflow')}>
-                <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span>Espacio Escolar</span>
               </button>
             )}
 
             {(!permisos || permisos.puedeVerConsolidadorMaster) && (
               <button onClick={() => onSelectVista('consolidador')} className={`${navPillClass('consolidador')} relative`}>
-                <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                 <span>Consolidado</span>
                 {inconsistenciasCount > 0 && (
                   <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-black ml-0.5 animate-pulse">
@@ -194,7 +211,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {(!permisos || permisos.puedeAccederTodasEscuelas) && (
               <button onClick={() => onSelectVista('estadisticas')} className={navPillClass('estadisticas')}>
-                <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
+                <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>Estadísticas</span>
               </button>
             )}
@@ -202,13 +219,13 @@ export const Header: React.FC<HeaderProps> = ({
             {(!permisos || permisos.puedeVerAnalizadorSige) && (
               <button
                 onClick={() => onSelectVista('analizador')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                   vistaActiva === 'analizador'
                     ? 'bg-amber-500 text-white shadow-sm'
                     : 'text-amber-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
                 <span>Analizador</span>
               </button>
             )}
@@ -223,49 +240,48 @@ export const Header: React.FC<HeaderProps> = ({
           </nav>
 
           {/* ── 3. Controles Derecha ── */}
-          <div className="flex items-center space-x-1.5 flex-shrink-0">
+          <div className="flex items-center space-x-1 sm:space-x-1.5 flex-shrink-0">
 
             {/* Buscador de Colegios (Deshabilitado o restringido para rol director de escuela) */}
             {(!permisos || permisos.puedeAccederTodasEscuelas) ? (
               <button
                 onClick={onAbrirNavegadorColegios}
-                className="flex items-center space-x-2 bg-black/40 hover:bg-black/60 px-3 py-1.5 rounded-xl border border-white/20 text-xs font-bold text-white transition-all shadow-sm group max-w-[170px] sm:max-w-[220px]"
+                className="flex items-center space-x-1.5 bg-black/40 hover:bg-black/60 px-2.5 py-1.5 rounded-xl border border-white/20 text-xs font-bold text-white transition-all shadow-sm group max-w-[150px] sm:max-w-[190px] 2xl:max-w-[230px]"
                 title="Buscar escuela (⌘K / Ctrl+K)"
               >
                 <Search className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 group-hover:scale-110 transition-transform" />
                 <span className="truncate text-xs font-semibold text-white">
                   {colegioActivo ? colegioActivo.nombre : 'Seleccionar escuela'}
                 </span>
-                <kbd className="hidden xl:inline text-[9px] bg-white/10 px-1 py-0.5 rounded text-white font-mono border border-white/20">
+                <span className="hidden md:inline text-[9px] font-black text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-400/30 shrink-0">
+                  {periodoActivo}
+                </span>
+                <kbd className="hidden 2xl:inline text-[9px] bg-white/10 px-1 py-0.5 rounded text-white font-mono border border-white/20 shrink-0">
                   ⌘K
                 </kbd>
               </button>
             ) : (
-              <div className="flex items-center space-x-2 bg-blue-950/60 px-3 py-1.5 rounded-xl border border-blue-500/40 text-xs font-bold text-blue-200 shadow-sm max-w-[170px] sm:max-w-[240px]">
+              <div className="flex items-center space-x-2 bg-blue-950/60 px-2.5 py-1.5 rounded-xl border border-blue-500/40 text-xs font-bold text-blue-200 shadow-sm max-w-[160px] sm:max-w-[220px]">
                 <Building2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                 <span className="truncate text-xs font-bold text-white">
                   {colegioActivo ? colegioActivo.nombre : 'Colegio Asignado'}
                 </span>
+                <span className="text-[9px] font-black text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded shrink-0">
+                  {periodoActivo}
+                </span>
               </div>
             )}
-
-            {/* Selector Periodo Fijo en 2027 */}
-            <div className="flex items-center bg-black/40 px-3 py-1 rounded-xl border border-white/20 shadow-inner">
-              <span className="text-xs font-black text-amber-400 tracking-wider">
-                Periodo 2027
-              </span>
-            </div>
 
             {/* Botón Refrescar/Sincronizar desde Supabase hacia local */}
             {onRefrescarNube && (
               <button
                 onClick={onRefrescarNube}
                 disabled={sincronizandoNube || guardandoEnNube}
-                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800/80 hover:bg-slate-700/80 disabled:opacity-50 text-sky-200 border border-sky-400/30 transition-all shadow-sm group"
+                className="flex items-center space-x-1 px-2 py-1.5 rounded-xl text-xs font-bold bg-slate-800/80 hover:bg-slate-700/80 disabled:opacity-50 text-sky-200 border border-sky-400/30 transition-all shadow-sm group"
                 title={colegioActivo ? `Traer y sincronizar la última versión de ${colegioActivo.nombre} desde la nube` : 'Sincronizar establecimiento desde Supabase'}
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-sky-300 group-hover:rotate-180 transition-transform ${sincronizandoNube ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refrescar Nube</span>
+                <span className="hidden 2xl:inline">Sincronizar</span>
               </button>
             )}
 
@@ -274,7 +290,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 onClick={onGuardarCambiosEnNube}
                 disabled={guardandoEnNube}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/30 transition-all group"
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/30 transition-all group"
                 title={colegioActivo ? `Guardar cambios de ${colegioActivo.nombre} en Supabase PostgreSQL (sin afectar otros colegios)` : 'Guardar cambios del establecimiento en Supabase'}
               >
                 {guardandoEnNube ? (
@@ -282,23 +298,51 @@ export const Header: React.FC<HeaderProps> = ({
                 ) : (
                   <CloudUpload className="w-3.5 h-3.5 text-emerald-200 group-hover:scale-110 transition-transform" />
                 )}
-                <span>Guardar Cambios</span>
+                <span className="hidden sm:inline">Guardar</span>
               </button>
             )}
 
-            {/* Theme Switcher */}
+            {/* Theme & Density Switcher */}
             <div className="relative" ref={themeRef}>
               <button
                 onClick={() => setThemeMenuOpen(!themeMenuOpen)}
                 className="p-2 rounded-xl bg-black/40 hover:bg-black/60 border border-white/20 text-white transition-all shadow-sm"
-                title="Cambiar tema visual"
+                title="Personalizar tema visual y densidad de pantalla"
               >
                 <Palette className="w-4 h-4 text-amber-400" />
               </button>
 
               {themeMenuOpen && (
-                <div className="absolute right-0 mt-2 w-60 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl py-2 z-50 animate-fade-in backdrop-blur-md">
+                <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl py-2 z-50 animate-fade-in backdrop-blur-md">
                   <div className="px-3 py-1.5 text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                    Densidad de Interfaz
+                  </div>
+                  <div className="px-2 pb-2 grid grid-cols-2 gap-1.5 border-b border-slate-800">
+                    <button
+                      onClick={() => setDensityMode('compact')}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl text-[11px] font-bold transition-all border ${
+                        densityMode === 'compact'
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-sm'
+                          : 'bg-slate-800/60 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>⚡ Compacta</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Notebooks 13&quot;-15&quot;</span>
+                    </button>
+                    <button
+                      onClick={() => setDensityMode('comfortable')}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl text-[11px] font-bold transition-all border ${
+                        densityMode === 'comfortable'
+                          ? 'bg-blue-600/30 border-blue-400 text-blue-200 shadow-sm'
+                          : 'bg-slate-800/60 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>🖥️ Cómoda</span>
+                      <span className="text-[9px] text-slate-400 font-normal">Monitor Externo</span>
+                    </button>
+                  </div>
+
+                  <div className="px-3 pt-2 pb-1 text-[10px] uppercase font-black text-slate-400 tracking-wider">
                     Temas de Personalización
                   </div>
                   <div className="p-1 space-y-1">
@@ -333,12 +377,26 @@ export const Header: React.FC<HeaderProps> = ({
             {onAbrirCopilot && (!permisos || permisos.puedeUsarCopilotIa) && (
               <button
                 onClick={onAbrirCopilot}
-                className="hidden sm:flex items-center space-x-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-xl text-xs font-black transition-all shadow-md border border-blue-400/40 group"
-                title="Abrir asistente IA (⌘J / Ctrl+J)"
+                className="hidden sm:flex items-center space-x-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white px-2.5 py-1.5 rounded-xl text-xs font-black transition-all shadow-md border border-blue-400/40 group"
+                title="Abrir asistente IA ¡Qué no va a saber! (⌘J / Ctrl+J)"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
-                <span className="tracking-tight">¡Qué no va a saber! IA</span>
-                <kbd className="hidden md:inline text-[9px] bg-black/40 px-1 py-0.2 rounded text-blue-200 font-mono">⌘J</kbd>
+                <span className="hidden 2xl:inline tracking-tight">¡Qué no va a saber! IA</span>
+                <span className="2xl:hidden tracking-tight">IA</span>
+                <kbd className="hidden xl:inline text-[9px] bg-black/40 px-1 py-0.2 rounded text-blue-200 font-mono">⌘J</kbd>
+              </button>
+            )}
+
+            {/* Botón Gestión Establecimientos (Exclusivo Super Usuario) */}
+            {onAbrirGestionEstablecimientos && session?.usuario.role === 'super_usuario' && (
+              <button
+                onClick={onAbrirGestionEstablecimientos}
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 hover:text-white text-xs font-black transition-all shadow-sm group"
+                title="Gestión de Establecimientos: Agregar y Eliminar (Super Usuario)"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform" />
+                <span className="hidden xl:inline">Gestión Establecimientos</span>
+                <span className="xl:hidden">Colegios</span>
               </button>
             )}
 
@@ -359,8 +417,8 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Perfil de Usuario, Cambio de Contraseña y Logout */}
             {session && (
-              <div className="flex items-center gap-1.5 pl-1 border-l border-white/15">
-                <div className="hidden xl:flex flex-col text-right leading-tight max-w-[120px]">
+              <div className="flex items-center gap-1 pl-1 border-l border-white/15">
+                <div className="hidden 2xl:flex flex-col text-right leading-tight max-w-[110px]">
                   <span className="text-[11px] font-bold text-white truncate">
                     {session.usuario.nombreCompleto}
                   </span>
@@ -373,7 +431,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     onClick={onAbrirCambiarPassword}
                     className="p-2 rounded-xl bg-black/40 hover:bg-black/60 border border-white/20 text-amber-400 hover:text-amber-300 transition-all shadow-sm"
-                    title="Cambiar mi contraseña"
+                    title={`Cambiar contraseña (${session.usuario.nombreCompleto})`}
                   >
                     <KeyRound className="w-4 h-4" />
                   </button>
@@ -410,6 +468,16 @@ export const Header: React.FC<HeaderProps> = ({
               {toolsOpen && (
                 <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl py-2 z-50 divide-y divide-slate-800 animate-fade-in backdrop-blur-md">
                   <div className="p-2 space-y-1">
+                    {onAbrirGestionEstablecimientos && session?.usuario.role === 'super_usuario' && (
+                      <button
+                        onClick={() => { onAbrirGestionEstablecimientos(); setToolsOpen(false); }}
+                        className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-300 hover:bg-rose-950/60 transition-colors"
+                      >
+                        <ShieldAlert className="w-4 h-4 text-rose-400" />
+                        <span>Gestión de Establecimientos (Super Usuario)</span>
+                      </button>
+                    )}
+
                     {(!permisos || permisos.puedeConfigurarSistema) && (
                       <button
                         onClick={() => { onAbrirCentroRespaldos(); setToolsOpen(false); }}
@@ -512,6 +580,16 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 );
               })}
+
+              {onAbrirGestionEstablecimientos && session?.usuario.role === 'super_usuario' && (
+                <button
+                  onClick={() => { onAbrirGestionEstablecimientos(); setMobileMenuOpen(false); }}
+                  className="col-span-2 flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs font-black bg-rose-950/70 border border-rose-500/50 text-rose-200 hover:bg-rose-900 transition-colors shadow-sm"
+                >
+                  <ShieldAlert className="w-4 h-4 text-rose-400" />
+                  <span>Gestionar Establecimientos (Super Usuario)</span>
+                </button>
+              )}
             </div>
           </div>
         )}

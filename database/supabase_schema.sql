@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS public.asistentes_educacion (
   horas_sep_plazo_fijo NUMERIC(5,2) DEFAULT 0.00,
   horas_pie_indefinido NUMERIC(5,2) DEFAULT 0.00,
   horas_pie_plazo_fijo NUMERIC(5,2) DEFAULT 0.00,
+  horas_honorarios NUMERIC(5,2) DEFAULT 0.00,
   es_dupla_psicosocial BOOLEAN DEFAULT FALSE,
   es_equipo_pie BOOLEAN DEFAULT FALSE,
   es_tecnico_parvulo BOOLEAN DEFAULT FALSE,

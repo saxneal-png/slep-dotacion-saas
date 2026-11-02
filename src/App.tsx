@@ -5,6 +5,7 @@ const SaveBackupModal = React.lazy(() => import('./components/SaveBackupModal').
 const DotacionCopilotDrawer = React.lazy(() => import('./components/DotacionCopilotDrawer').then(m => ({ default: m.DotacionCopilotDrawer })));
 const ModalTraspasoDotacion = React.lazy(() => import('./components/ModalTraspasoDotacion').then(m => ({ default: m.ModalTraspasoDotacion })));
 const ComparadorPeriodosModal = React.lazy(() => import('./components/ComparadorPeriodosModal').then(m => ({ default: m.ComparadorPeriodosModal })));
+const GestionEstablecimientosModal = React.lazy(() => import('./components/GestionEstablecimientosModal').then(m => ({ default: m.GestionEstablecimientosModal })));
 import { Sparkles } from 'lucide-react';
 
 const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
@@ -157,6 +158,7 @@ export const App: React.FC = () => {
   const [modalCopilotAbierto, setModalCopilotAbierto] = useState(false);
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
+  const [modalGestionEstablecimientosAbierto, setModalGestionEstablecimientosAbierto] = useState(false);
   const [periodoActivo, setPeriodoActivoState] = useState<number>(() => {
     try {
       const g = typeof window !== 'undefined' ? localStorage.getItem('slep_dotacion_periodo_activo') : null;
@@ -316,8 +318,8 @@ export const App: React.FC = () => {
     let a = await listarAsignaciones(rbd, p);
     let ast = await listarAsistentes(rbd, p);
 
-    // Si localmente está en blanco o se solicita autoSyncCloud, intentar hidratar desde Supabase
-    if (autoSyncCloud || (c.length === 0 && d.length === 0 && ast.length === 0)) {
+    // Si localmente está en blanco o falta el estamento docente o se solicita autoSyncCloud, intentar hidratar desde Supabase
+    if (autoSyncCloud || (c.length === 0 && d.length === 0 && ast.length === 0) || (d.length === 0 && (c.length > 0 || ast.length > 0))) {
       try {
         const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(rbd, p);
         if (res.hayDatosRemotos) {
@@ -432,12 +434,15 @@ export const App: React.FC = () => {
     await eliminarEstablecimiento(id);
     const list = await listarEstablecimientos();
     setColegios(list);
-    if (list.length > 0) {
-      handleSelectColegio(list[0]);
-    } else {
-      setColegioActivo(null);
+    if (!colegioActivo || colegioActivo.id === id || colegioActivo.rbd === id || !list.some(c => c.id === colegioActivo.id)) {
+      if (list.length > 0) {
+        handleSelectColegio(list[0]);
+      } else {
+        setColegioActivo(null);
+      }
     }
-    mostrarMensaje('Establecimiento eliminado de la cartera.');
+    await cargarDatos(periodoActivo);
+    mostrarMensaje('Establecimiento y su dotación asociada eliminados exitosamente.');
   };
 
   const handleGuardarSala = async (s: SalaInfraestructura) => {
@@ -644,13 +649,14 @@ export const App: React.FC = () => {
   ) => {
     try {
       await guardarEstablecimiento(est);
-      await guardarDocentesBatch(docentesImportados);
+      // La sincronización remota ya fue realizada (y verificada) por SigeIngestaView
+      await guardarDocentesBatch(docentesImportados, true);
       await persistDb(true);
-      await cargarDatos();
+      await cargarDatos(periodoActivo);
       const listEst = await listarEstablecimientos();
       const estActivo = listEst.find(c => c.rbd === est.rbd) || est;
       setColegioActivo(estActivo);
-      await cargarDatosColegio(estActivo.rbd);
+      await cargarDatosColegio(estActivo.rbd, periodoActivo);
 
       mostrarMensaje(`✓ Ingesta exitosa: ${est.nombre} con ${docentesImportados.length} funcionarios ingresados a la base.`);
       setVistaActiva('workflow');
@@ -836,7 +842,7 @@ export const App: React.FC = () => {
 
   return (
     <PermisosProvider value={evaluadorPermisos}>
-      <div className="min-h-screen bg-[#F4F7F9] flex flex-col">
+      <div className="min-h-screen bg-canvas text-content-primary flex flex-col">
       {!session && (
         <>
           <LoginModal
@@ -889,6 +895,7 @@ export const App: React.FC = () => {
         onAbrirTraspasoPeriodos={() => setModalTraspasoAbierto(true)}
         onAbrirCopilot={() => setModalCopilotAbierto(true)}
         onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
+        onAbrirGestionEstablecimientos={() => setModalGestionEstablecimientosAbierto(true)}
         onGuardarCambiosEnNube={handleGuardarCambiosEnNube}
         guardandoEnNube={guardandoEnNube}
         sincronizandoNube={sincronizandoNube}
@@ -905,7 +912,7 @@ export const App: React.FC = () => {
       )}
 
       {/* Contenedor Principal de Vistas */}
-      <main className="flex-1 max-w-[1720px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+      <main className="flex-1 max-w-[1920px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-3 sm:py-5">
         <React.Suspense
           fallback={
             <div className="flex flex-col items-center justify-center min-h-[400px] py-16 space-y-4 animate-in fade-in">
@@ -971,6 +978,7 @@ export const App: React.FC = () => {
             onExportarDotacionColegio={handleExportarDotacionColegio}
             onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
             onAbrirColegiosAsesorados={() => setVistaActiva('colegios_asesorados')}
+            onAbrirGestionEstablecimientos={() => setModalGestionEstablecimientosAbierto(true)}
           />
         )}
 
@@ -1034,6 +1042,7 @@ export const App: React.FC = () => {
 
         {vistaActiva === 'sige' && (
           <SigeIngestaView
+            periodoActivo={periodoActivo}
             onIngestarSigeCompleto={handleIngestarSigeCompleto}
             onIngestarAsistentesSigeCompleto={handleIngestarAsistentesSigeCompleto}
           />
@@ -1200,6 +1209,7 @@ export const App: React.FC = () => {
           onCrearNuevoColegio={() => {
             setVistaActiva('cartera');
           }}
+          onAbrirGestionEstablecimientos={evaluadorPermisos.esSuperUsuario ? () => setModalGestionEstablecimientosAbierto(true) : undefined}
         />
       )}
 
@@ -1276,24 +1286,32 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Botón Flotante Permanente Estilo Steve Jobs: ¡Qué no va a saber! IA */}
-      <aside aria-label="Asistente de Dotación Flotante" className="fixed bottom-6 right-6 z-40">
-        <button
-          onClick={() => setModalCopilotAbierto(true)}
-          className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 hover:bg-slate-900 text-white rounded-2xl shadow-2xl border border-blue-500/40 hover:border-blue-400 hover:scale-105 active:scale-95 transition-all group backdrop-blur-md"
-          title="Abrir asistente inteligente ¡Qué no va a saber! IA (Ctrl+J / ⌘J)"
-        >
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/30">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
-          </div>
-          <span className="text-xs font-black tracking-tight text-white">
-            ¡Qué no va a saber! IA
-          </span>
-          <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-blue-200 font-mono border border-white/10">
-            ⌘J
-          </span>
-        </button>
-      </aside>
+      {/* Modal Exclusivo Super Usuario: Gestión de Establecimientos (Agregar y Eliminar) */}
+      <GestionEstablecimientosModal
+        isOpen={modalGestionEstablecimientosAbierto}
+        onClose={() => setModalGestionEstablecimientosAbierto(false)}
+        colegios={colegios}
+        colegioActivo={colegioActivo}
+        onSelectColegio={handleSelectColegio}
+        onGuardarColegio={handleGuardarColegio}
+        onEliminarColegio={handleEliminarColegio}
+      />
+
+      {/* Botón Flotante Solo en Pantallas Móviles (en Desktop/Notebooks vive en la barra superior) */}
+      {(!permisos || permisos.puedeUsarCopilotIa) && (
+        <aside aria-label="Asistente de Dotación Flotante" className="sm:hidden fixed bottom-4 right-4 z-40">
+          <button
+            onClick={() => setModalCopilotAbierto(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-slate-900/95 hover:bg-slate-900 text-white rounded-2xl shadow-xl border border-blue-500/40 transition-all backdrop-blur-md"
+            title="Abrir asistente inteligente ¡Qué no va a saber! IA"
+          >
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+            </div>
+            <span className="text-xs font-black tracking-tight text-white">IA</span>
+          </button>
+        </aside>
+      )}
     </div>
     </PermisosProvider>
   );

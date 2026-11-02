@@ -58,6 +58,20 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
     ]);
   }
   persistDb();
+
+  // Si había sido eliminado previamente, removerlo del registro de eliminados
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
+      if (eliminadosRaw) {
+        const set = new Set<string>(JSON.parse(eliminadosRaw));
+        if (set.delete(rbdNorm)) {
+          localStorage.setItem('slep_rbds_eliminados', JSON.stringify(Array.from(set)));
+        }
+      }
+    }
+  } catch {}
+
   if (!skipCloudSync) {
     SupabaseDotacionService.guardarEstablecimiento(e).catch(err =>
       console.warn('[establecimientosRepo] Aviso sincronizando con Supabase:', err)
@@ -88,11 +102,40 @@ export async function obtenerEstablecimientoPorRbd(rbd: string): Promise<Estable
   };
 }
 
-export async function eliminarEstablecimiento(id: string): Promise<void> {
+export async function eliminarEstablecimiento(idOrRbd: string): Promise<void> {
   const db = await getDb();
-  db.run("DELETE FROM establecimientos WHERE id = ?", [id]);
+  
+  // Buscar id y rbd exactos para garantizar cascada completa
+  const res = db.exec("SELECT id, rbd FROM establecimientos WHERE id = ? OR rbd = ?", [idOrRbd, idOrRbd]);
+  let id = idOrRbd;
+  let rbd = idOrRbd.replace(/^est-/, '').trim();
+  if (res.length && res[0].values.length) {
+    id = String(res[0].values[0][0]);
+    rbd = String(res[0].values[0][1]);
+  }
+
+  // Eliminar en cascada en SQLite
+  try { db.run("DELETE FROM asignaciones_horarias WHERE rbd = ?", [rbd]); } catch {}
+  try { db.run("DELETE FROM asistentes_educacion WHERE rbd = ?", [rbd]); } catch {}
+  try { db.run("DELETE FROM docentes WHERE rbd = ?", [rbd]); } catch {}
+  try { db.run("DELETE FROM cursos_sae WHERE rbd = ?", [rbd]); } catch {}
+  try { db.run("DELETE FROM salas_infraestructura WHERE rbd = ?", [rbd]); } catch {}
+  try { db.run("DELETE FROM cartera_asesorias WHERE rbd = ?", [rbd]); } catch {}
+  db.run("DELETE FROM establecimientos WHERE id = ? OR rbd = ?", [id, rbd]);
+  
   persistDb();
-  SupabaseDotacionService.eliminarEstablecimiento(id).catch(err =>
+
+  // Registrar RBD eliminado para evitar que el seeder lo resucite
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
+      const set = new Set<string>(eliminadosRaw ? JSON.parse(eliminadosRaw) : []);
+      set.add(rbd);
+      localStorage.setItem('slep_rbds_eliminados', JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+
+  SupabaseDotacionService.eliminarEstablecimiento(rbd).catch(err =>
     console.warn('[establecimientosRepo] Aviso eliminando en Supabase:', err)
   );
 }

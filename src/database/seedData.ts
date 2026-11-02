@@ -10,13 +10,24 @@ import { DIRECTORES_TERRITORIO } from '../data/directoresTerritorio';
  * Sincroniza los 121 establecimientos del catálogo oficial en la tabla SQLite,
  * incluyendo los directores oficiales, correos y teléfonos del territorio.
  */
-export async function sincronizarCatalogoEstablecimientos(): Promise<void> {
+export async function sincronizarCatalogoEstablecimientos(forzarIgnorarEliminados: boolean = false): Promise<void> {
   const existing = await listarEstablecimientos();
   const existingMap = new Map(existing.map(e => [e.rbd.trim(), e]));
   const directoresPorRbd = new Map(DIRECTORES_TERRITORIO.map(d => [d.rbd.trim(), d]));
 
+  let rbdsEliminados = new Set<string>();
+  if (!forzarIgnorarEliminados && typeof localStorage !== 'undefined') {
+    try {
+      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
+      if (eliminadosRaw) {
+        rbdsEliminados = new Set<string>(JSON.parse(eliminadosRaw));
+      }
+    } catch {}
+  }
+
   for (const school of SLEP_VALLE_DIGUILLIN_SCHOOLS) {
     const rbd = school.rbd.trim();
+    if (rbdsEliminados.has(rbd)) continue; // Respetar eliminación hecha por el super usuario
     const dirInfo = directoresPorRbd.get(rbd);
     const prev = existingMap.get(rbd);
 

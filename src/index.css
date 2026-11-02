@@ -282,3 +282,32 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
+
+/* ==========================================================================
+   SISTEMA DE DENSIDAD ADAPTATIVA & UTILIDADES RESPONSIVAS MULTI-RESOLUCIÓN
+   ========================================================================== */
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Modo Alta Densidad (Ideal para Notebooks 1366x768 y 1080p @ 125% DPI) */
+html[data-density="compact"] main {
+  padding-top: 0.75rem !important;
+  padding-bottom: 1rem !important;
+}
+
+html[data-density="compact"] .card-elevated {
+  border-radius: 0.75rem;
+}
+
+html[data-density="compact"] table th,
+html[data-density="compact"] table td {
+  padding-top: 0.45rem !important;
+  padding-bottom: 0.45rem !important;
+}
+

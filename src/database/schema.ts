@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS asistentes_educacion (
   horas_sep_plazo_fijo REAL DEFAULT 0,
   horas_pie_indefinido REAL DEFAULT 0,
   horas_pie_plazo_fijo REAL DEFAULT 0,
+  horas_honorarios REAL DEFAULT 0,
   es_dupla_psicosocial INTEGER DEFAULT 0,
   es_equipo_pie INTEGER DEFAULT 0,
   es_tecnico_parvulo INTEGER DEFAULT 0,
@@ -388,6 +389,7 @@ export function runMigrations(db: Database): void {
   }
 
   const gdpAsistentesCols = [
+    "ALTER TABLE asistentes_educacion ADD COLUMN horas_honorarios REAL DEFAULT 0;",
     "ALTER TABLE asistentes_educacion ADD COLUMN horas_vigentes_anterior REAL DEFAULT 0;",
     "ALTER TABLE asistentes_educacion ADD COLUMN propuesta_gdp TEXT DEFAULT 'Continuidad';",
     "ALTER TABLE asistentes_educacion ADD COLUMN remuneracion_mensual_app REAL DEFAULT 0;",

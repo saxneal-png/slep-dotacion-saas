@@ -18,13 +18,14 @@ export interface AsistenteEducacion {
   estamento: EstamentoAsistente;
   horasContrato: number; // Máx 44 hrs
   
-  // Financiamiento y Calidad Contractual (6 columnas estándar)
+  // Financiamiento y Calidad Contractual (6 columnas estándar + Honorarios)
   horasSubvencionGeneralIndefinido: number;
   horasSubvencionGeneralPlazoFijo: number;
   horasSepIndefinido: number;
   horasSepPlazoFijo: number;
   horasPieIndefinido: number;
   horasPiePlazoFijo: number;
+  horasHonorarios?: number;
 
   // Clasificaciones operativas e indicadores
   esDuplaPsicosocial?: boolean;

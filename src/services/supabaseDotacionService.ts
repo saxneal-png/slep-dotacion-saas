@@ -9,6 +9,35 @@ import {
   PlanEstudioCurricular
 } from '../types';
 import { UsuarioSistema } from '../types/authTypes';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
+
+/**
+ * Normaliza y sanea cadenas de fecha para compatibilidad con tipo DATE de PostgreSQL (YYYY-MM-DD o null)
+ */
+export function sanitizeDbDate(d: string | null | undefined): string | null {
+  if (!d) return null;
+  const trimmed = d.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'indefinido' || trimmed.toLowerCase() === 'null') {
+    return null;
+  }
+  // DD-MM-YYYY o DD/MM/YYYY
+  const ddmmyyyy = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (ddmmyyyy) {
+    const day = ddmmyyyy[1].padStart(2, '0');
+    const month = ddmmyyyy[2].padStart(2, '0');
+    const year = ddmmyyyy[3];
+    return `${year}-${month}-${day}`;
+  }
+  // YYYY-MM-DD
+  const yyyymmdd = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (yyyymmdd) {
+    const year = yyyymmdd[1];
+    const month = yyyymmdd[2].padStart(2, '0');
+    const day = yyyymmdd[3].padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return null;
+}
 
 /**
  * Mapeo de tipos y entidades entre TypeScript y Supabase PostgreSQL
@@ -136,8 +165,45 @@ export function mapCursoFromDb(row: any): CursoSae {
   };
 }
 
-export function mapDocenteToDb(docente: Docente) {
-  return {
+/**
+ * Calidades jurídicas aceptadas por la restricción CHECK histórica de PostgreSQL
+ * (calidad_juridica IN ('TITULAR', 'CONTRATA')). Cualquier otra calidad
+ * (p. ej. POSTULANDO_A_TITULARIDAD) se envía como CONTRATA y su valor real se
+ * preserva en metadatos dentro de funciones_no_aula_json para no perder información.
+ */
+const CALIDADES_REMOTAS_PERMITIDAS = new Set(['TITULAR', 'CONTRATA']);
+
+/** Redondea horas a entero para columnas INTEGER de PostgreSQL (evita error 22P02). */
+function toIntHoras(v: any): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+/** Elimina ids duplicados dentro de un lote (evita error 21000 "ON CONFLICT ... a second time"). */
+export function deduplicarPorId<T extends { id: string }>(items: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const it of items) {
+    if (it && it.id) map.set(it.id, it);
+  }
+  return Array.from(map.values());
+}
+
+export function mapDocenteToDb(docente: Docente, incluirColumnaRequiere: boolean = false) {
+  let funcionesArr: any[] = [];
+  if (docente.funcionesNoAula && Array.isArray(docente.funcionesNoAula)) {
+    funcionesArr = docente.funcionesNoAula.map(f => ({ ...f }));
+  }
+  if (docente.requiereAutorizacionDocente) {
+    funcionesArr.push({ __metaRequiereAutorizacionDocente: true });
+  }
+
+  const calidadOriginal = String(docente.calidadJuridica || 'TITULAR').toUpperCase();
+  const calidadRemota = CALIDADES_REMOTAS_PERMITIDAS.has(calidadOriginal) ? calidadOriginal : 'CONTRATA';
+  if (calidadRemota !== calidadOriginal) {
+    funcionesArr.push({ __metaCalidadJuridica: calidadOriginal });
+  }
+
+  const base: any = {
     id: docente.id,
     rbd: docente.rbd.trim(),
     periodo: docente.periodo || 2026,
@@ -145,19 +211,19 @@ export function mapDocenteToDb(docente: Docente) {
     nombres: docente.nombres,
     apellidos: docente.apellidos,
     titulo: docente.titulo || null,
-    calidad_juridica: docente.calidadJuridica || 'TITULAR',
+    calidad_juridica: calidadRemota,
     estamento: docente.estamento || 'DOCENTE_AULA',
-    horas_contrato: Math.max(1, Math.min(44, Number(docente.horasContrato || 44))),
+    horas_contrato: Math.max(1, Math.min(44, toIntHoras(docente.horasContrato || 44))),
     horas_subvencion_general_titular: docente.horasSubvencionGeneralTitular || 0,
     horas_subvencion_general_contrata: docente.horasSubvencionGeneralContrata || 0,
     horas_sep_titular: docente.horasSepTitular || 0,
     horas_sep_contrata: docente.horasSepContrata || 0,
     horas_pie_titular: docente.horasPieTitular || 0,
     horas_pie_contrata: docente.horasPieContrata || 0,
-    horas_directivas: docente.horasDirectivas || 0,
+    horas_directivas: toIntHoras(docente.horasDirectivas),
     horas_inspector_general: docente.horasInspectorGeneral || 0,
-    horas_tecnico_pedagogica: docente.horasTecnicoPedagogicas || 0,
-    horas_coordinacion: docente.horasCoordinacion || 0,
+    horas_tecnico_pedagogica: toIntHoras(docente.horasTecnicoPedagogicas),
+    horas_coordinacion: toIntHoras(docente.horasCoordinacion),
     tipo_coordinacion: docente.tipoCoordinacion || null,
     horas_taller_sep: docente.horasTallerSep || 0,
     horas_trabajo_colaborativo: docente.horasTrabajoColaborativo || 0,
@@ -165,19 +231,18 @@ export function mapDocenteToDb(docente: Docente) {
     horas_convivencia_escolar: docente.horasConvivenciaEscolar || 0,
     horas_extraescolar: docente.horasExtraescolar || 0,
     cargo_institucional: docente.cargoInstitucional || null,
-    horas_aula: docente.horasAula || 0,
-    horas_ingles: docente.horasIngles || 0,
+    horas_aula: toIntHoras(docente.horasAula),
+    horas_ingles: toIntHoras(docente.horasIngles),
     funcion_principal: docente.funcionPrincipal || null,
     funcion_secundaria: docente.funcionSecundaria || null,
     asignatura_principal: docente.asignaturaPrincipal || null,
     aplica_articulo_69: Boolean(docente.aplicaArticulo69),
-    requiere_autorizacion_docente: Boolean(docente.requiereAutorizacionDocente),
-    funciones_no_aula_json: docente.funcionesNoAula ? JSON.stringify(docente.funcionesNoAula) : '[]',
+    funciones_no_aula_json: funcionesArr.length > 0 ? JSON.stringify(funcionesArr) : '[]',
     horas_vigentes_anterior: docente.horasVigentesAnterior || 0,
     propuesta_gdp: docente.propuestaGdp || 'Continuidad',
     remuneracion_mensual_app: docente.remuneracionMensualApp || 0,
-    fecha_inicio_contrato: docente.fechaInicioContrato || '2026-03-01',
-    fecha_termino_contrato: docente.fechaTerminoContrato || '2027-02-28',
+    fecha_inicio_contrato: sanitizeDbDate(docente.fechaInicioContrato) || '2026-03-01',
+    fecha_termino_contrato: sanitizeDbDate(docente.fechaTerminoContrato) || (docente.calidadJuridica === 'TITULAR' ? null : '2027-02-28'),
     accion_pme_sep: docente.accionPmeSep || null,
     horas_pro_retencion: docente.horasProRetencion || 0,
     descripcion_funcion_gdp: docente.descripcionFuncionGdp || null,
@@ -187,6 +252,12 @@ export function mapDocenteToDb(docente: Docente) {
     observaciones_director: docente.observacionesDirector || null,
     observaciones_slep: docente.observacionesSlep || null
   };
+
+  if (incluirColumnaRequiere) {
+    base.requiere_autorizacion_docente = Boolean(docente.requiereAutorizacionDocente);
+  }
+
+  return base;
 }
 
 export function mapDocenteFromDb(row: any): Docente {
@@ -197,6 +268,21 @@ export function mapDocenteFromDb(row: any): Docente {
       : (row.funciones_no_aula_json || []);
   } catch (_) {}
 
+  const metaItem = Array.isArray(funcionesNoAula)
+    ? funcionesNoAula.find((f: any) => f && f.__metaRequiereAutorizacionDocente !== undefined)
+    : undefined;
+  const requiere = row.requiere_autorizacion_docente !== undefined && row.requiere_autorizacion_docente !== null
+    ? Boolean(row.requiere_autorizacion_docente)
+    : (metaItem ? Boolean(metaItem.__metaRequiereAutorizacionDocente) : false);
+
+  const metaCalidad = Array.isArray(funcionesNoAula)
+    ? funcionesNoAula.find((f: any) => f && f.__metaCalidadJuridica !== undefined)
+    : undefined;
+
+  const cleanFunciones = Array.isArray(funcionesNoAula)
+    ? funcionesNoAula.filter((f: any) => !f || (f.__metaRequiereAutorizacionDocente === undefined && f.__metaCalidadJuridica === undefined))
+    : [];
+
   return {
     id: row.id,
     rbd: row.rbd,
@@ -205,7 +291,7 @@ export function mapDocenteFromDb(row: any): Docente {
     nombres: row.nombres,
     apellidos: row.apellidos,
     titulo: row.titulo || undefined,
-    calidadJuridica: row.calidad_juridica,
+    calidadJuridica: (metaCalidad ? metaCalidad.__metaCalidadJuridica : row.calidad_juridica),
     estamento: row.estamento,
     horasContrato: Number(row.horas_contrato || 0),
     horasSubvencionGeneralTitular: Number(row.horas_subvencion_general_titular || 0),
@@ -231,8 +317,8 @@ export function mapDocenteFromDb(row: any): Docente {
     funcionSecundaria: row.funcion_secundaria || undefined,
     asignaturaPrincipal: row.asignatura_principal || undefined,
     aplicaArticulo69: Boolean(row.aplica_articulo_69),
-    requiereAutorizacionDocente: Boolean(row.requiere_autorizacion_docente),
-    funcionesNoAula,
+    requiereAutorizacionDocente: requiere,
+    funcionesNoAula: cleanFunciones,
     horasVigentesAnterior: Number(row.horas_vigentes_anterior || 0),
     propuestaGdp: row.propuesta_gdp || undefined,
     remuneracionMensualApp: Number(row.remuneracion_mensual_app || 0),
@@ -323,6 +409,7 @@ export function mapAsistenteToDb(ast: AsistenteEducacion) {
     horas_sep_plazo_fijo: ast.horasSepPlazoFijo || 0,
     horas_pie_indefinido: ast.horasPieIndefinido || 0,
     horas_pie_plazo_fijo: ast.horasPiePlazoFijo || 0,
+    horas_honorarios: ast.horasHonorarios || 0,
     es_dupla_psicosocial: Boolean(ast.esDuplaPsicosocial),
     es_equipo_pie: Boolean(ast.esEquipoPie),
     es_tecnico_parvulo: Boolean(ast.esTecnicoParvulo),
@@ -333,8 +420,8 @@ export function mapAsistenteToDb(ast: AsistenteEducacion) {
     horas_vigentes_anterior: ast.horasVigentesAnterior || 0,
     propuesta_gdp: ast.propuestaGdp || 'Continuidad',
     remuneracion_mensual_app: ast.remuneracionMensualApp || 0,
-    fecha_inicio_contrato: ast.fechaInicioContrato || '2026-03-01',
-    fecha_termino_contrato: ast.fechaTerminoContrato || '2027-02-28',
+    fecha_inicio_contrato: sanitizeDbDate(ast.fechaInicioContrato) || '2026-03-01',
+    fecha_termino_contrato: sanitizeDbDate(ast.fechaTerminoContrato) || null,
     accion_pme_sep: ast.accionPmeSep || null,
     horas_pro_retencion: ast.horasProRetencion || 0,
     descripcion_funcion_gdp: ast.descripcionFuncionGdp || null,
@@ -363,6 +450,7 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
     horasSepPlazoFijo: Number(row.horas_sep_plazo_fijo || 0),
     horasPieIndefinido: Number(row.horas_pie_indefinido || 0),
     horasPiePlazoFijo: Number(row.horas_pie_plazo_fijo || 0),
+    horasHonorarios: Number(row.horas_honorarios || 0),
     esDuplaPsicosocial: Boolean(row.es_dupla_psicosocial),
     esEquipoPie: Boolean(row.es_equipo_pie),
     esTecnicoParvulo: Boolean(row.es_tecnico_parvulo),
@@ -390,13 +478,76 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
  * Servicio Central de Sincronización y Persistencia con Supabase PostgreSQL
  */
 export class SupabaseDotacionService {
+  // Bandera para rastrear si la columna `requiere_autorizacion_docente` existe en PostgreSQL
+  private static soportaColumnaRequiereAutorizacion: boolean = false;
+  // Bandera para rastrear si la columna `horas_honorarios` existe en PostgreSQL (migración 20261102182500)
+  private static soportaColumnaHonorarios: boolean = true;
+
+  private static payloadAsistente(ast: AsistenteEducacion): any {
+    const p: any = mapAsistenteToDb(ast);
+    if (!this.soportaColumnaHonorarios) delete p.horas_honorarios;
+    return p;
+  }
+
+  private static esErrorColumnaHonorarios(error: any): boolean {
+    return Boolean(error) && String(error.message || '').includes('horas_honorarios');
+  }
+
+  /**
+   * Verifica que los establecimientos existan en la tabla remota `establecimientos`.
+   * Si alguno falta, lo crea a partir del catálogo oficial SLEP para evitar violaciones de clave foránea.
+   */
+  static async asegurarEstablecimientosExisten(rbds: string[]): Promise<void> {
+    if (!isSupabaseEnabled() || !rbds.length) return;
+    const cleanRbds = [...new Set(rbds.map(r => r ? r.trim() : '').filter(Boolean))];
+    if (!cleanRbds.length) return;
+
+    try {
+      const { data: existentes, error } = await supabase
+        .from('establecimientos')
+        .select('rbd')
+        .in('rbd', cleanRbds);
+
+      if (error) {
+        console.warn('[SupabaseDotacionService] Aviso verificando establecimientos existentes:', error);
+        return;
+      }
+
+      const existentesSet = new Set((existentes || []).map(e => String(e.rbd)));
+      const faltantes = cleanRbds.filter(r => !existentesSet.has(r));
+
+      if (faltantes.length > 0) {
+        const nuevosEstablecimientos: Establecimiento[] = faltantes.map(rbd => {
+          const info = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === rbd);
+          return {
+            id: `est-${rbd}`,
+            rbd,
+            nombre: info?.nombre || `ESTABLECIMIENTO RBD ${rbd}`,
+            comuna: info?.comuna || 'Chillán',
+            regimen: 'JEC',
+            porcentajePrioritarios: 75.0,
+            director: info?.director || undefined,
+            asesorUatp: 'UATP SLEP Valle Diguillín'
+          };
+        });
+
+        await this.guardarEstablecimientosBatch(nuevosEstablecimientos);
+      }
+    } catch (err) {
+      console.warn('[SupabaseDotacionService] Error asegurando establecimientos:', err);
+    }
+  }
+
   // Establecimientos
   static async guardarEstablecimiento(est: Establecimiento): Promise<void> {
     if (!isSupabaseEnabled()) return;
     const { error } = await supabase
       .from('establecimientos')
       .upsert(mapEstablecimientoToDb(est), { onConflict: 'rbd' });
-    if (error) console.error('Error Supabase guardarEstablecimiento:', error);
+    if (error) {
+      console.error('Error Supabase guardarEstablecimiento:', error);
+      throw new Error(`Error Supabase guardarEstablecimiento: ${error.message}`);
+    }
   }
 
   static async guardarEstablecimientosBatch(establecimientos: Establecimiento[]): Promise<void> {
@@ -407,7 +558,10 @@ export class SupabaseDotacionService {
       const { error } = await supabase
         .from('establecimientos')
         .upsert(chunk, { onConflict: 'rbd' });
-      if (error) console.error('Error Supabase guardarEstablecimientosBatch:', error);
+      if (error) {
+        console.error('Error Supabase guardarEstablecimientosBatch:', error);
+        throw new Error(`Error Supabase guardarEstablecimientosBatch: ${error.message}`);
+      }
     }
   }
 
@@ -427,98 +581,187 @@ export class SupabaseDotacionService {
   static async eliminarEstablecimiento(rbd: string): Promise<void> {
     if (!isSupabaseEnabled()) return;
     const clean = rbd.replace(/^est-/, '').trim();
-    await supabase.from('establecimientos').delete().eq('rbd', clean);
+    const { error } = await supabase.from('establecimientos').delete().eq('rbd', clean);
+    if (error) console.error('Error Supabase eliminarEstablecimiento:', error);
   }
 
   // Salas
   static async guardarSala(sala: SalaInfraestructura): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('salas_infraestructura').upsert(mapSalaToDb(sala), { onConflict: 'id' });
+    await this.asegurarEstablecimientosExisten([sala.rbd]);
+    const { error } = await supabase.from('salas_infraestructura').upsert(mapSalaToDb(sala), { onConflict: 'id' });
+    if (error) {
+      console.error('Error Supabase guardarSala:', error);
+      throw new Error(`Error Supabase guardarSala: ${error.message}`);
+    }
   }
 
   static async eliminarSala(id: string): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('salas_infraestructura').delete().eq('id', id);
+    const { error } = await supabase.from('salas_infraestructura').delete().eq('id', id);
+    if (error) console.error('Error Supabase eliminarSala:', error);
   }
 
   // Cursos
   static async guardarCurso(curso: CursoSae): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('cursos_sae').upsert(mapCursoToDb(curso), { onConflict: 'id' });
+    await this.asegurarEstablecimientosExisten([curso.rbd]);
+    const { error } = await supabase.from('cursos_sae').upsert(mapCursoToDb(curso), { onConflict: 'id' });
+    if (error) {
+      console.error('Error Supabase guardarCurso:', error);
+      throw new Error(`Error Supabase guardarCurso: ${error.message}`);
+    }
   }
 
   static async guardarCursosBatch(cursos: CursoSae[]): Promise<void> {
     if (!isSupabaseEnabled() || !cursos.length) return;
+    await this.asegurarEstablecimientosExisten(cursos.map(c => c.rbd));
     const chunkSize = 100;
     for (let i = 0; i < cursos.length; i += chunkSize) {
       const chunk = cursos.slice(i, i + chunkSize).map(mapCursoToDb);
-      await supabase.from('cursos_sae').upsert(chunk, { onConflict: 'id' });
+      const { error } = await supabase.from('cursos_sae').upsert(chunk, { onConflict: 'id' });
+      if (error) {
+        console.error('Error Supabase guardarCursosBatch:', error);
+        throw new Error(`Error Supabase guardarCursosBatch: ${error.message}`);
+      }
     }
   }
 
   static async eliminarCurso(id: string): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('cursos_sae').delete().eq('id', id);
+    const { error } = await supabase.from('cursos_sae').delete().eq('id', id);
+    if (error) console.error('Error Supabase eliminarCurso:', error);
   }
 
   // Docentes
   static async guardarDocente(docente: Docente): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('docentes').upsert(mapDocenteToDb(docente), { onConflict: 'id' });
+    await this.asegurarEstablecimientosExisten([docente.rbd]);
+
+    const payload = mapDocenteToDb(docente, this.soportaColumnaRequiereAutorizacion);
+    const { error } = await supabase.from('docentes').upsert(payload, { onConflict: 'id' });
+
+    if (error) {
+      if (error.code === 'PGRST204' && String(error.message || '').includes('requiere_autorizacion_docente')) {
+        this.soportaColumnaRequiereAutorizacion = false;
+        const retryPayload = mapDocenteToDb(docente, false);
+        const retry = await supabase.from('docentes').upsert(retryPayload, { onConflict: 'id' });
+        if (retry.error) {
+          console.error('[SupabaseDotacionService] Error reintentando guardarDocente:', retry.error);
+          throw new Error(`Error Supabase guardarDocente: ${retry.error.message}`);
+        }
+        return;
+      }
+      console.error('[SupabaseDotacionService] Error guardarDocente:', error);
+      throw new Error(`Error Supabase guardarDocente: ${error.message}`);
+    }
   }
 
-  static async guardarDocentesBatch(docentes: Docente[]): Promise<void> {
-    if (!isSupabaseEnabled() || !docentes.length) return;
+  static async guardarDocentesBatch(docentesEntrada: Docente[]): Promise<void> {
+    if (!isSupabaseEnabled() || !docentesEntrada.length) return;
+    const docentes = deduplicarPorId(docentesEntrada);
+    await this.asegurarEstablecimientosExisten(docentes.map(d => d.rbd));
+
     const chunkSize = 100;
     for (let i = 0; i < docentes.length; i += chunkSize) {
-      const chunk = docentes.slice(i, i + chunkSize).map(mapDocenteToDb);
-      await supabase.from('docentes').upsert(chunk, { onConflict: 'id' });
+      const slice = docentes.slice(i, i + chunkSize);
+      let chunk = slice.map(d => mapDocenteToDb(d, this.soportaColumnaRequiereAutorizacion));
+      const { error } = await supabase.from('docentes').upsert(chunk, { onConflict: 'id' });
+
+      if (error) {
+        if (error.code === 'PGRST204' && String(error.message || '').includes('requiere_autorizacion_docente')) {
+          this.soportaColumnaRequiereAutorizacion = false;
+          chunk = slice.map(d => mapDocenteToDb(d, false));
+          const retry = await supabase.from('docentes').upsert(chunk, { onConflict: 'id' });
+          if (retry.error) {
+            console.error('[SupabaseDotacionService] Error reintentando guardarDocentesBatch:', retry.error);
+            throw new Error(`Error Supabase guardarDocentesBatch: ${retry.error.message}`);
+          }
+        } else {
+          console.error('[SupabaseDotacionService] Error guardarDocentesBatch:', error);
+          throw new Error(`Error Supabase guardarDocentesBatch: ${error.message}`);
+        }
+      }
     }
   }
 
   static async eliminarDocente(id: string): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('docentes').delete().eq('id', id);
+    const { error } = await supabase.from('docentes').delete().eq('id', id);
+    if (error) console.error('Error Supabase eliminarDocente:', error);
   }
 
   // Asignaciones Horarias
   static async guardarAsignacion(asignacion: AsignacionHoraria): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('asignaciones_horarias').upsert(mapAsignacionToDb(asignacion), { onConflict: 'id' });
+    await this.asegurarEstablecimientosExisten([asignacion.rbd]);
+    const { error } = await supabase.from('asignaciones_horarias').upsert(mapAsignacionToDb(asignacion), { onConflict: 'id' });
+    if (error) {
+      console.error('Error Supabase guardarAsignacion:', error);
+      throw new Error(`Error Supabase guardarAsignacion: ${error.message}`);
+    }
   }
 
   static async guardarAsignacionesBatch(asignaciones: AsignacionHoraria[]): Promise<void> {
     if (!isSupabaseEnabled() || !asignaciones.length) return;
+    await this.asegurarEstablecimientosExisten(asignaciones.map(a => a.rbd));
     const chunkSize = 100;
     for (let i = 0; i < asignaciones.length; i += chunkSize) {
       const chunk = asignaciones.slice(i, i + chunkSize).map(mapAsignacionToDb);
-      await supabase.from('asignaciones_horarias').upsert(chunk, { onConflict: 'id' });
+      const { error } = await supabase.from('asignaciones_horarias').upsert(chunk, { onConflict: 'id' });
+      if (error) {
+        console.error('Error Supabase guardarAsignacionesBatch:', error);
+        throw new Error(`Error Supabase guardarAsignacionesBatch: ${error.message}`);
+      }
     }
   }
 
   static async eliminarAsignacion(id: string): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('asignaciones_horarias').delete().eq('id', id);
+    const { error } = await supabase.from('asignaciones_horarias').delete().eq('id', id);
+    if (error) console.error('Error Supabase eliminarAsignacion:', error);
   }
 
   // Asistentes de la Educación
   static async guardarAsistente(asistente: AsistenteEducacion): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('asistentes_educacion').upsert(mapAsistenteToDb(asistente), { onConflict: 'id' });
+    await this.asegurarEstablecimientosExisten([asistente.rbd]);
+    let { error } = await supabase.from('asistentes_educacion').upsert(this.payloadAsistente(asistente), { onConflict: 'id' });
+    if (error && this.soportaColumnaHonorarios && this.esErrorColumnaHonorarios(error)) {
+      console.warn('[SupabaseDotacionService] Columna horas_honorarios ausente en Supabase. Aplique la migración 20261102182500_add_horas_honorarios.sql. Reintentando sin la columna.');
+      this.soportaColumnaHonorarios = false;
+      ({ error } = await supabase.from('asistentes_educacion').upsert(this.payloadAsistente(asistente), { onConflict: 'id' }));
+    }
+    if (error) {
+      console.error('Error Supabase guardarAsistente:', error);
+      throw new Error(`Error Supabase guardarAsistente: ${error.message}`);
+    }
   }
 
-  static async guardarAsistentesBatch(asistentes: AsistenteEducacion[]): Promise<void> {
-    if (!isSupabaseEnabled() || !asistentes.length) return;
+  static async guardarAsistentesBatch(asistentesEntrada: AsistenteEducacion[]): Promise<void> {
+    if (!isSupabaseEnabled() || !asistentesEntrada.length) return;
+    const asistentes = deduplicarPorId(asistentesEntrada);
+    await this.asegurarEstablecimientosExisten(asistentes.map(a => a.rbd));
     const chunkSize = 100;
     for (let i = 0; i < asistentes.length; i += chunkSize) {
-      const chunk = asistentes.slice(i, i + chunkSize).map(mapAsistenteToDb);
-      await supabase.from('asistentes_educacion').upsert(chunk, { onConflict: 'id' });
+      const slice = asistentes.slice(i, i + chunkSize);
+      let { error } = await supabase.from('asistentes_educacion').upsert(slice.map(a => this.payloadAsistente(a)), { onConflict: 'id' });
+      if (error && this.soportaColumnaHonorarios && this.esErrorColumnaHonorarios(error)) {
+        console.warn('[SupabaseDotacionService] Columna horas_honorarios ausente en Supabase. Aplique la migración 20261102182500_add_horas_honorarios.sql. Reintentando sin la columna.');
+        this.soportaColumnaHonorarios = false;
+        ({ error } = await supabase.from('asistentes_educacion').upsert(slice.map(a => this.payloadAsistente(a)), { onConflict: 'id' }));
+      }
+      if (error) {
+        console.error('Error Supabase guardarAsistentesBatch:', error);
+        throw new Error(`Error Supabase guardarAsistentesBatch: ${error.message}`);
+      }
     }
   }
 
   static async eliminarAsistente(id: string): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    await supabase.from('asistentes_educacion').delete().eq('id', id);
+    const { error } = await supabase.from('asistentes_educacion').delete().eq('id', id);
+    if (error) console.error('Error Supabase eliminarAsistente:', error);
   }
 
   static async limpiarAsignacionesDeColegio(rbd: string, periodo: number = 2026): Promise<void> {

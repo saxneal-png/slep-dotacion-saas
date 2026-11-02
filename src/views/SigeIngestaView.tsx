@@ -22,6 +22,7 @@ import { guardarEstablecimiento } from '../database/repositories/establecimiento
 import { getDb, persistDb } from '../database/dbCore';
 
 interface SigeIngestaViewProps {
+  periodoActivo?: number;
   onIngestarSigeCompleto: (
     establecimiento: Establecimiento,
     docentes: Docente[]
@@ -46,6 +47,7 @@ const COMUNAS: ComunaValleDiguillin[] = [
 type TipoNomina = 'DOCENTES' | 'ASISTENTES';
 
 export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
+  periodoActivo = 2026,
   onIngestarSigeCompleto,
   onIngestarAsistentesSigeCompleto
 }) => {
@@ -72,14 +74,14 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
       setTipoNomina(targetTipo);
 
       if (targetTipo === 'ASISTENTES') {
-        const res = parsearAsistentesSige(contenido);
+        const res = parsearAsistentesSige(contenido, undefined, periodoActivo);
         setResultadoAsistentes(res);
         setResultadoDocentes(null);
         if (res.establecimientoSugerido.comuna) {
           setComunaSeleccionada(res.establecimientoSugerido.comuna);
         }
       } else {
-        const res = parsearPlanillaSige(contenido);
+        const res = parsearPlanillaSige(contenido, undefined, periodoActivo);
         setResultadoDocentes(res);
         setResultadoAsistentes(null);
         if (res.establecimientoSugerido.comuna) {
@@ -115,26 +117,45 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
         ? resultadoDocentes.establecimientosDetectados
         : [resultadoDocentes.establecimientoSugerido];
 
-      for (const est of establecimientosAGuardar) {
-        await guardarEstablecimiento({
-          ...est,
-          comuna: est.comuna || comunaSeleccionada,
-          regimen: est.regimen || regimenSeleccionado,
-          porcentajePrioritarios: prioritarios,
-          asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
-        });
+      const estsCompletos: Establecimiento[] = establecimientosAGuardar.map(est => ({
+        ...est,
+        comuna: est.comuna || comunaSeleccionada,
+        regimen: est.regimen || regimenSeleccionado,
+        porcentajePrioritarios: prioritarios,
+        asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
+      }));
+
+      for (const est of estsCompletos) {
+        await guardarEstablecimiento(est);
       }
 
-      // 2. Guardar docentes en batch preservando su propio RBD
-      await guardarDocentesBatch(resultadoDocentes.docentesConvertidos);
+      // Sincronizar anticipadamente en Supabase para que las FKs existan antes de insertar docentes
+      const { SupabaseDotacionService } = await import('../services/supabaseDotacionService');
+      await SupabaseDotacionService.guardarEstablecimientosBatch(estsCompletos);
+
+      // 2. Guardar docentes en batch preservando su propio RBD y esperar la sincronización remota
+      let errorNube: string | null = null;
+      try {
+        await guardarDocentesBatch(resultadoDocentes.docentesConvertidos, false, true);
+      } catch (errSync: any) {
+        // SQLite ya quedó guardado (COMMIT previo); solo falló la nube
+        errorNube = errSync?.message || String(errSync);
+        console.error('[SigeIngestaView] Docentes guardados localmente pero no en Supabase:', errSync);
+      }
       await persistDb(true);
 
-      const primerEst = establecimientosAGuardar[0];
+      const primerEst = estsCompletos[0];
       await onIngestarSigeCompleto(primerEst, resultadoDocentes.docentesConvertidos);
 
-      setExitoMsg(
-        `✓ Ingesta Docente completada: ${establecimientosAGuardar.length} establecimiento(s) y ${resultadoDocentes.docentesConvertidos.length} contratos docentes asociados por RBD a SQLite.`
-      );
+      if (errorNube) {
+        setErrorMsg(
+          `Los ${resultadoDocentes.docentesConvertidos.length} docentes quedaron guardados en este equipo, pero NO se sincronizaron con la base remota: ${errorNube}. Use "Sincronizar con la nube" cuando se resuelva el problema.`
+        );
+      } else {
+        setExitoMsg(
+          `✓ Ingesta Docente completada: ${establecimientosAGuardar.length} establecimiento(s) y ${resultadoDocentes.docentesConvertidos.length} contratos docentes asociados por RBD y sincronizados con la nube.`
+        );
+      }
     } catch (err: any) {
       setErrorMsg(`Error al guardar en base de datos: ${err.message}`);
     } finally {
@@ -151,28 +172,34 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
         ? resultadoAsistentes.establecimientosDetectados
         : [resultadoAsistentes.establecimientoSugerido];
 
-      for (const est of establecimientosAGuardar) {
-        await guardarEstablecimiento({
-          ...est,
-          comuna: est.comuna || comunaSeleccionada,
-          regimen: est.regimen || regimenSeleccionado,
-          porcentajePrioritarios: prioritarios,
-          asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
-        });
+      const estsCompletos: Establecimiento[] = establecimientosAGuardar.map(est => ({
+        ...est,
+        comuna: est.comuna || comunaSeleccionada,
+        regimen: est.regimen || regimenSeleccionado,
+        porcentajePrioritarios: prioritarios,
+        asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
+      }));
+
+      for (const est of estsCompletos) {
+        await guardarEstablecimiento(est);
       }
+
+      // Sincronizar anticipadamente en Supabase para que las FKs existan
+      const { SupabaseDotacionService } = await import('../services/supabaseDotacionService');
+      await SupabaseDotacionService.guardarEstablecimientosBatch(estsCompletos);
 
       // 2. Guardar asistentes en batch preservando su propio RBD
       const db = await getDb();
-      await guardarAsistentesBatch(db, resultadoAsistentes.asistentesConvertidos, undefined, 2026, true);
+      await guardarAsistentesBatch(db, resultadoAsistentes.asistentesConvertidos, undefined, periodoActivo, true);
       await persistDb(true);
 
-      const primerEst = establecimientosAGuardar[0];
+      const primerEst = estsCompletos[0];
       if (onIngestarAsistentesSigeCompleto) {
         await onIngestarAsistentesSigeCompleto(primerEst, resultadoAsistentes.asistentesConvertidos);
       }
 
       setExitoMsg(
-        `✓ Ingesta Asistentes completada: ${establecimientosAGuardar.length} establecimiento(s) y ${resultadoAsistentes.asistentesConvertidos.length} contratos de asistentes asociados por RBD a SQLite.`
+        `✓ Ingesta Asistentes completada: ${establecimientosAGuardar.length} establecimiento(s) y ${resultadoAsistentes.asistentesConvertidos.length} contratos de asistentes asociados por RBD y sincronizados con la nube.`
       );
     } catch (err: any) {
       setErrorMsg(`Error al guardar asistentes en base de datos: ${err.message}`);

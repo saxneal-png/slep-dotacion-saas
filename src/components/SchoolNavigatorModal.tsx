@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, School, ArrowRight, X, Building2, Users, AlertTriangle, CheckCircle2, UserCheck } from 'lucide-react';
+import { Search, School, ArrowRight, X, Building2, Users, AlertTriangle, CheckCircle2, UserCheck, ShieldAlert } from 'lucide-react';
 import type { Establecimiento } from '../types';
 import type { DiagnosticoColegioCompleto } from '../services/dotacionCalculationService';
 import { cargarConfiguracionGeneral } from '../services/configuracionGeneralService';
@@ -12,6 +12,7 @@ export interface SchoolNavigatorModalProps {
   onSelectColegio: (est: Establecimiento) => void;
   diagnosticos?: DiagnosticoColegioCompleto[];
   onCrearNuevoColegio?: () => void;
+  onAbrirGestionEstablecimientos?: () => void;
 }
 
 export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
@@ -21,7 +22,8 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
   colegioActivo,
   onSelectColegio,
   diagnosticos = [],
-  onCrearNuevoColegio
+  onCrearNuevoColegio,
+  onAbrirGestionEstablecimientos
 }) => {
   const [config] = useState(() => cargarConfiguracionGeneral());
   const [query, setQuery] = useState('');
@@ -266,7 +268,21 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
 
         {/* Footer con Atajos de Teclado y Botón Crear */}
         <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {onAbrirGestionEstablecimientos && (
+              <button
+                onClick={() => {
+                  onAbrirGestionEstablecimientos();
+                  onClose();
+                }}
+                className="font-bold text-rose-600 hover:text-rose-700 hover:underline flex items-center gap-1"
+                title="Panel Super Usuario"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>+ Gestionar / Eliminar Escuelas</span>
+              </button>
+            )}
+
             {onCrearNuevoColegio && (
               <button
                 onClick={() => {
@@ -275,7 +291,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
                 }}
                 className="font-medium text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
               >
-                + Gestionar escuelas en Cartera
+                + Ver Cartera completa
               </button>
             )}
           </div>

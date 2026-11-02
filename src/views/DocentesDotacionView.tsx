@@ -93,6 +93,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const [filtroFinanciamiento, setFiltroFinanciamiento] = useState<'TODOS' | 'SUBV_GRAL' | 'SEP' | 'PIE'>('TODOS');
   const [filtroMultiEscuela, setFiltroMultiEscuela] = useState<boolean>(false);
   const [ordenDocentes, setOrdenDocentes] = useState<'APELLIDOS_ASC' | 'HORAS_DESC' | 'HORAS_ASC' | 'VACANTES_DESC'>('APELLIDOS_ASC');
+  const [mostrarDesgloseFinanciero, setMostrarDesgloseFinanciero] = useState<boolean>(false);
+  const [mostrarFiltrosAvanzados, setMostrarFiltrosAvanzados] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && window.innerHeight <= 864) return false;
+    return true;
+  });
 
   if (!colegio) {
     return (
@@ -426,294 +431,203 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     });
   }, [docentesAuditados, deferredBusqueda, filtroEstamento, filtroEstadoCarga, filtroCalidad, filtroFinanciamiento, filtroMultiEscuela, ordenDocentes]);
 
+  const totalContratoReal = docentes.reduce((s, d) => s + d.horasContrato, 0);
+  const totalContratoRequerido = docentesAuditados.reduce((s, item) => s + item.auditMulti.contratoCalculadoTotal, 0);
+  const totalSubvGral = docentes.reduce((s, d) => s + (d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0), 0);
+  const totalSep = docentes.reduce((s, d) => s + (d.horasSepTitular || 0) + (d.horasSepContrata || 0), 0);
+  const totalPie = docentes.reduce((s, d) => s + (d.horasPieTitular || 0) + (d.horasPieContrata || 0), 0);
+  const totalHolgura = docentesAuditados.reduce((s, item) => s + (item.auditMulti.saldoHoras > 0 ? item.auditMulti.saldoHoras : 0), 0);
+  const totalDeficit = docentesAuditados.reduce((s, item) => s + (item.auditMulti.saldoHoras < 0 ? Math.abs(item.auditMulti.saldoHoras) : 0), 0);
+
   return (
-    <div className="space-y-6">
-      {/* Banner Superior Ley 20.903 y Régimen Escolar */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <Users className="w-5 h-5 text-orange-600" />
-              Dotación Docente & Ley 20.903
+    <div className="space-y-3.5">
+      {/* Cabecera Ejecutiva Compacta + Resumen Financiero Colapsable */}
+      <div className="card-elevated p-4 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-base font-black text-slate-800 dark:text-white flex items-center gap-2">
+              <Users className="w-4 h-4 text-orange-600" />
+              <span>Nómina Docente ({docentes.length})</span>
             </h2>
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+            <span className={`px-2 py-0.5 rounded-lg text-[11px] font-bold ${
               colegio.porcentajePrioritarios >= 80 ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
             }`}>
-              Régimen {regimenProporcion} ({colegio.porcentajePrioritarios}% Prioritarios SEP)
+              Ley 20.903 ({regimenProporcion})
             </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Gestión de planta docente, horas directivas, técnicas, fuentes de financiamiento (Subv. General, SEP, PIE) y control de topes según tablas oficiales MINEDUC.
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {onNavegarAPestana && (
+            {/* Píldoras de Resumen Ejecutivo en 1 sola línea */}
+            <div className="hidden xl:flex items-center gap-1.5 text-[11px] font-mono">
+              <span className="px-2 py-0.5 rounded-lg bg-slate-900 text-white font-bold">
+                Planta: {totalContratoReal}h
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold">
+                Requerido: {totalContratoRequerido}h
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                Subv.Gral: {totalSubvGral}h
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-800 border border-purple-200 font-bold">
+                SEP: {totalSep}h
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-bold">
+                PIE: {totalPie}h
+              </span>
+              {totalHolgura > 0 && (
+                <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 font-bold">
+                  Holgura: +{totalHolgura}h
+                </span>
+              )}
+              {totalDeficit > 0 && (
+                <span className="px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 font-bold">
+                  Déficit: -{totalDeficit}h
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
             <button
               type="button"
-              onClick={() => onNavegarAPestana('planes_estudio')}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors border border-slate-300 shadow-xs"
-              title="Ver, editar, duplicar o crear planes de estudio curriculares"
+              onClick={() => setMostrarDesgloseFinanciero(!mostrarDesgloseFinanciero)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                mostrarDesgloseFinanciero
+                  ? 'bg-amber-50 border-amber-300 text-amber-800'
+                  : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+              }`}
+              title="Mostrar u ocultar las 12 tarjetas de desglose financiero y multitramo"
             >
-              <BookOpen className="w-4 h-4 text-orange-600" />
-              <span>Gestionar Planes</span>
+              <Coins className="w-3.5 h-3.5 text-orange-600" />
+              <span>{mostrarDesgloseFinanciero ? 'Ocultar Finanzas' : 'Desglose Financiero (12)'}</span>
+              {mostrarDesgloseFinanciero ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => setModalSigeAbierto(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs"
-            title="Importar nómina docente oficial descargada desde SIGE (.csv o .xlsx)"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-            <span>Importar Nómina SIGE</span>
-          </button>
+            {onNavegarAPestana && (
+              <button
+                type="button"
+                onClick={() => onNavegarAPestana('planes_estudio')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors border border-slate-300"
+                title="Ver, editar, duplicar o crear planes de estudio curriculares"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-orange-600" />
+                <span className="hidden sm:inline">Planes</span>
+              </button>
+            )}
 
-          <button
-            type="button"
-            onClick={() => setModalPegarAbierto(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors shadow-xs"
-            title="Copiar y pegar múltiples docentes desde una planilla Excel"
-          >
-            <ClipboardPaste className="w-4 h-4 text-indigo-600" />
-            <span>Pegar desde Excel</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setModalSigeAbierto(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all"
+              title="Importar nómina docente oficial descargada desde SIGE (.csv o .xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+              <span>Importar SIGE</span>
+            </button>
 
-          <button
-            onClick={abrirModalNuevo}
-            className="flex items-center gap-1.5 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nuevo Docente</span>
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => setModalPegarAbierto(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors"
+              title="Copiar y pegar múltiples docentes desde una planilla Excel"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden md:inline">Pegar Excel</span>
+            </button>
 
-      {/* Compendio de Financiamiento y Dotación (7 Métricas Oficiales) */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-        <div className="flex items-center justify-between border-b pb-2">
-          <div className="flex items-center gap-2">
-            <Coins className="w-4 h-4 text-orange-600" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Compendio de Financiamiento Oficial de Planta ({colegio.nombre})
-            </h3>
-          </div>
-          <span className="text-[11px] font-bold text-slate-500 font-mono">
-            Total Planta: {docentes.reduce((s, d) => s + d.horasContrato, 0)} hrs contratadas
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-          {/* 1. Total Contrato */}
-          <div className="bg-slate-900 text-white p-3 rounded-xl">
-            <span className="text-[10px] text-slate-300 font-semibold block uppercase">1. Total Contrato</span>
-            <span className="text-xl font-black">{docentes.reduce((s, d) => s + d.horasContrato, 0)} <span className="text-xs font-normal text-slate-400">hrs</span></span>
-          </div>
-
-          {/* 2. Subv. General Titular */}
-          <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
-            <span className="text-[10px] text-emerald-800 font-semibold block uppercase">2. Subv. Gen. Titular</span>
-            <span className="text-xl font-black text-emerald-900">{docentes.reduce((s, d) => s + (d.horasSubvencionGeneralTitular || 0), 0)} <span className="text-xs font-normal text-emerald-700">hrs</span></span>
-          </div>
-
-          {/* 3. Subv. General Contrata */}
-          <div className="bg-emerald-50/50 border border-emerald-200 p-3 rounded-xl">
-            <span className="text-[10px] text-emerald-800 font-semibold block uppercase">3. Subv. Gen. Contrata</span>
-            <span className="text-xl font-black text-emerald-800">{docentes.reduce((s, d) => s + (d.horasSubvencionGeneralContrata || 0), 0)} <span className="text-xs font-normal text-emerald-600">hrs</span></span>
-          </div>
-
-          {/* 4. SEP Titular */}
-          <div className="bg-purple-50 border border-purple-200 p-3 rounded-xl">
-            <span className="text-[10px] text-purple-800 font-semibold block uppercase">4. SEP Titular</span>
-            <span className="text-xl font-black text-purple-900">{docentes.reduce((s, d) => s + (d.horasSepTitular || 0), 0)} <span className="text-xs font-normal text-purple-700">hrs</span></span>
-          </div>
-
-          {/* 5. SEP Contrata */}
-          <div className="bg-purple-50/50 border border-purple-200 p-3 rounded-xl">
-            <span className="text-[10px] text-purple-800 font-semibold block uppercase">5. SEP Contrata</span>
-            <span className="text-xl font-black text-purple-800">{docentes.reduce((s, d) => s + (d.horasSepContrata || 0), 0)} <span className="text-xs font-normal text-purple-600">hrs</span></span>
-          </div>
-
-          {/* 6. PIE Titular */}
-          <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl">
-            <span className="text-[10px] text-blue-800 font-semibold block uppercase">6. PIE Titular</span>
-            <span className="text-xl font-black text-blue-900">{docentes.reduce((s, d) => s + (d.horasPieTitular || 0), 0)} <span className="text-xs font-normal text-blue-700">hrs</span></span>
-          </div>
-
-          {/* 7. PIE Contrata */}
-          <div className="bg-blue-50/50 border border-blue-200 p-3 rounded-xl">
-            <span className="text-[10px] text-blue-800 font-semibold block uppercase">7. PIE Contrata</span>
-            <span className="text-xl font-black text-blue-800">{docentes.reduce((s, d) => s + (d.horasPieContrata || 0), 0)} <span className="text-xs font-normal text-blue-600">hrs</span></span>
+            <button
+              onClick={abrirModalNuevo}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Nuevo Docente</span>
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Indicadores Estadísticos MINEDUC Multitramo (Ley 20.903) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Total Contratos Requeridos</span>
-          <div className="flex items-baseline gap-1 mt-1.5">
-            <span className="text-2xl font-extrabold text-indigo-600">
-              {docentesAuditados.reduce((s, item) => s + item.auditMulti.contratoCalculadoTotal, 0)}
-            </span>
-            <span className="text-xs text-slate-400 font-semibold">hrs</span>
-          </div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Lookup acumulado MINEDUC</span>
-        </div>
+        {/* Panel Desplegable: 7 Métricas de Financiamiento + 5 Indicadores Multitramo */}
+        {mostrarDesgloseFinanciero && (
+          <div className="pt-3 border-t border-slate-100 space-y-3 animate-fade-in">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              <div className="bg-slate-900 text-white p-2.5 rounded-xl">
+                <span className="text-[10px] text-slate-300 font-semibold block uppercase">1. Total Contrato</span>
+                <span className="text-lg font-black font-mono">{totalContratoReal} <span className="text-xs font-normal text-slate-400">hrs</span></span>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
+                <span className="text-[10px] text-emerald-800 font-semibold block uppercase">2. Subv. Gen. Titular</span>
+                <span className="text-lg font-black text-emerald-900 font-mono">{docentes.reduce((s, d) => s + (d.horasSubvencionGeneralTitular || 0), 0)} <span className="text-xs font-normal text-emerald-700">hrs</span></span>
+              </div>
+              <div className="bg-emerald-50/50 border border-emerald-200 p-2.5 rounded-xl">
+                <span className="text-[10px] text-emerald-800 font-semibold block uppercase">3. Subv. Gen. Contrata</span>
+                <span className="text-lg font-black text-emerald-800 font-mono">{docentes.reduce((s, d) => s + (d.horasSubvencionGeneralContrata || 0), 0)} <span className="text-xs font-normal text-emerald-600">hrs</span></span>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 p-2.5 rounded-xl">
+                <span className="text-[10px] text-purple-800 font-semibold block uppercase">4. SEP Titular</span>
+                <span className="text-lg font-black text-purple-900 font-mono">{docentes.reduce((s, d) => s + (d.horasSepTitular || 0), 0)} <span className="text-xs font-normal text-purple-700">hrs</span></span>
+              </div>
+              <div className="bg-purple-50/50 border border-purple-200 p-2.5 rounded-xl">
+                <span className="text-[10px] text-purple-800 font-semibold block uppercase">5. SEP Contrata</span>
+                <span className="text-lg font-black text-purple-800 font-mono">{docentes.reduce((s, d) => s + (d.horasSepContrata || 0), 0)} <span className="text-xs font-normal text-purple-600">hrs</span></span>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-xl">
+                <span className="text-[10px] text-blue-800 font-semibold block uppercase">6. PIE Titular</span>
+                <span className="text-lg font-black text-blue-900 font-mono">{docentes.reduce((s, d) => s + (d.horasPieTitular || 0), 0)} <span className="text-xs font-normal text-blue-700">hrs</span></span>
+              </div>
+              <div className="bg-blue-50/50 border border-blue-200 p-2.5 rounded-xl">
+                <span className="text-[10px] text-blue-800 font-semibold block uppercase">7. PIE Contrata</span>
+                <span className="text-lg font-black text-blue-800 font-mono">{docentes.reduce((s, d) => s + (d.horasPieContrata || 0), 0)} <span className="text-xs font-normal text-blue-600">hrs</span></span>
+              </div>
+            </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Total Contratos Reales</span>
-          <div className="flex items-baseline gap-1 mt-1.5">
-            <span className="text-2xl font-extrabold text-slate-800">
-              {docentes.reduce((s, d) => s + d.horasContrato, 0)}
-            </span>
-            <span className="text-xs text-slate-400 font-semibold">hrs</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Contratos Requeridos (Lookup)</span>
+                <span className="text-lg font-extrabold text-indigo-600 font-mono">{totalContratoRequerido} hrs</span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Contratos Reales (Planta)</span>
+                <span className="text-lg font-extrabold text-slate-800 font-mono">{totalContratoReal} hrs</span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Total Horas PIE / SEP</span>
+                <span className="text-lg font-extrabold text-purple-600 font-mono">{docentesAuditados.reduce((s, item) => s + (item.pieCronologicas + item.sepExentas), 0)} hrs</span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Sobrante Total (Holgura)</span>
+                <span className="text-lg font-extrabold text-emerald-600 font-mono">+{totalHolgura} hrs</span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Déficit (Faltan Contratar)</span>
+                <span className="text-lg font-extrabold text-rose-600 font-mono">-{totalDeficit} hrs</span>
+              </div>
+            </div>
           </div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Jornadas pagadas en planta</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Total Horas PIE / SEP</span>
-          <div className="flex items-baseline gap-1 mt-1.5">
-            <span className="text-2xl font-extrabold text-purple-600">
-              {docentesAuditados.reduce((s, item) => s + (item.pieCronologicas + item.sepExentas), 0)}
-            </span>
-            <span className="text-xs text-slate-400 font-semibold">hrs</span>
-          </div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Apoyo cronológico directo</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sobrante Total (Holgura)</span>
-          <div className="flex items-baseline gap-1 mt-1.5">
-            <span className="text-2xl font-extrabold text-emerald-600">
-              +{docentesAuditados.reduce((s, item) => s + (item.auditMulti.saldoHoras > 0 ? item.auditMulti.saldoHoras : 0), 0)}
-            </span>
-            <span className="text-xs text-slate-400 font-semibold">hrs</span>
-          </div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Horas libres contratadas</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs col-span-2 sm:col-span-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Déficit (Faltan Contratar)</span>
-          <div className="flex items-baseline gap-1 mt-1.5">
-            <span className="text-2xl font-extrabold text-rose-600">
-              -{docentesAuditados.reduce((s, item) => s + (item.auditMulti.saldoHoras < 0 ? Math.abs(item.auditMulti.saldoHoras) : 0), 0)}
-            </span>
-            <span className="text-xs text-slate-400 font-semibold">hrs</span>
-          </div>
-          <span className="text-[10px] text-slate-500 mt-0.5 block">Déficit de cobertura de aula</span>
-        </div>
+        )}
       </div>
 
       {/* Alerta de Sobreasignación Local */}
       {sobreasignadosCount > 0 && (
-        <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl text-xs flex items-center justify-between">
+        <div className="bg-red-50 border border-red-200 text-red-800 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
             <span>
-              <strong>Alerta de Incumplimiento Ley 20.903:</strong> Se han detectado <strong>{sobreasignadosCount} docente(s)</strong> con asignación de aula superior al límite máximo o exceso lectivo ponderado.
+              <strong>Alerta Normativa Ley 20.903:</strong> <strong>{sobreasignadosCount} docente(s)</strong> con asignación de aula superior al tope legal.
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => setFiltroEstadoCarga(filtroEstadoCarga === 'SOBREASIGNADOS' ? 'TODOS' : 'SOBREASIGNADOS')}
+            className="px-2.5 py-1 rounded-lg bg-red-600 text-white font-bold text-[11px] hover:bg-red-700 shrink-0"
+          >
+            {filtroEstadoCarga === 'SOBREASIGNADOS' ? 'Ver Todos' : 'Filtrar Alertas'}
+          </button>
         </div>
       )}
 
-      {/* Barra de Búsqueda y Filtros de Docentes */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
-          {/* 1. Estamento */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-              Estamento
-            </label>
-            <select
-              value={filtroEstamento}
-              onChange={(e) => setFiltroEstamento(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="TODOS">Todos los Estamentos ({docentes.length})</option>
-              {ESTAMENTOS.map(est => (
-                <option key={est.id} value={est.id}>
-                  {est.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 2. Calidad Jurídica */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-              Calidad Jurídica
-            </label>
-            <select
-              value={filtroCalidad}
-              onChange={(e) => setFiltroCalidad(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="TODOS">Todas las Calidades</option>
-              <option value="TITULAR">Solo Titulares</option>
-              <option value="CONTRATA">Solo Contratas</option>
-              <option value="REEMPLAZANTE">Solo Reemplazantes</option>
-              <option value="POSTULANDO_A_TITULARIDAD">Postulando a Titularidad</option>
-            </select>
-          </div>
-
-          {/* 3. Fuente de Financiamiento */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-              Financiamiento
-            </label>
-            <select
-              value={filtroFinanciamiento}
-              onChange={(e) => setFiltroFinanciamiento(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="TODOS">Cualquier Fuente</option>
-              <option value="SUBV_GRAL">Con Subv. General</option>
-              <option value="SEP">Con Horas SEP</option>
-              <option value="PIE">Con Horas PIE</option>
-            </select>
-          </div>
-
-          {/* 4. Ordenamiento */}
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-              Ordenar por
-            </label>
-            <select
-              value={ordenDocentes}
-              onChange={(e) => setOrdenDocentes(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="APELLIDOS_ASC">Apellidos (A → Z)</option>
-              <option value="HORAS_DESC">Horas Contrato (Mayor → Menor)</option>
-              <option value="HORAS_ASC">Horas Contrato (Menor → Mayor)</option>
-              <option value="VACANTES_DESC">Horas Vacantes Disponibles</option>
-            </select>
-          </div>
-
-          {/* 5. Filtro Multi-Escuela */}
-          <div className="flex flex-col justify-end">
-            <button
-              type="button"
-              onClick={() => setFiltroMultiEscuela(!filtroMultiEscuela)}
-              className={`w-full py-1.5 px-2.5 text-xs font-bold rounded-lg border transition-all flex items-center justify-center gap-1.5 ${
-                filtroMultiEscuela
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Multi-Escuela</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Barra de búsqueda de texto y estados rápidos */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+      {/* Barra de Búsqueda y Filtros de Docentes Compacta */}
+      <div className="card-elevated p-3.5 space-y-2.5">
+        {/* Fila Principal: Buscador + Estado Rápido + Toggle Filtros + Exportar */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
           <div className="flex-1 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2 pointer-events-none" />
             <input
               type="text"
               value={busquedaDocente}
@@ -724,7 +638,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             {busquedaDocente && (
               <button
                 onClick={() => setBusquedaDocente('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 p-0.5"
+                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 p-0.5"
                 title="Limpiar búsqueda"
               >
                 <X className="w-3.5 h-3.5" />
@@ -732,23 +646,23 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-[11px]">
               <button
                 type="button"
                 onClick={() => setFiltroEstadoCarga('TODOS')}
-                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                className={`px-2 py-1 rounded-md font-bold transition-all ${
                   filtroEstadoCarga === 'TODOS'
                     ? 'bg-slate-800 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Todos
+                Todos ({docentes.length})
               </button>
               <button
                 type="button"
                 onClick={() => setFiltroEstadoCarga('SOBREASIGNADOS')}
-                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                className={`px-2 py-1 rounded-md font-bold transition-all ${
                   filtroEstadoCarga === 'SOBREASIGNADOS'
                     ? 'bg-rose-600 text-white shadow-xs'
                     : 'text-rose-700 hover:bg-rose-50'
@@ -759,7 +673,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               <button
                 type="button"
                 onClick={() => setFiltroEstadoCarga('HOLGURA')}
-                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                className={`px-2 py-1 rounded-md font-bold transition-all ${
                   filtroEstadoCarga === 'HOLGURA'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-emerald-700 hover:bg-emerald-50'
@@ -770,7 +684,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               <button
                 type="button"
                 onClick={() => setFiltroEstadoCarga('EXACTO')}
-                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                className={`px-2 py-1 rounded-md font-bold transition-all ${
                   filtroEstadoCarga === 'EXACTO'
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-blue-700 hover:bg-blue-50'
@@ -780,17 +694,28 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               </button>
             </div>
 
-            <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
-              {docentesFiltrados.length} de {docentes.length}
-            </span>
+            <button
+              type="button"
+              onClick={() => setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                mostrarFiltrosAvanzados || hayFiltrosDocenteActivos
+                  ? 'bg-orange-50 border-orange-200 text-orange-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+              title="Mostrar u ocultar filtros por estamento, calidad jurídica y financiamiento"
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filtros</span>
+              {mostrarFiltrosAvanzados ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
 
             {hayFiltrosDocenteActivos && (
               <button
                 onClick={limpiarFiltrosDocentes}
-                className="px-2.5 py-1 text-[11px] font-bold text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
+                className="px-2 py-1 text-[11px] font-bold text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
                 title="Restablecer todos los filtros"
               >
-                Restablecer
+                Limpiar
               </button>
             )}
 
@@ -822,21 +747,97 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                 const nombreLimpio = colegio.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
                 XLSX.writeFile(wb, `Nomina_Docente_${nombreLimpio}_RBD_${colegio.rbd}.xlsx`);
               }}
-              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors shadow-xs"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors"
               title="Descargar exactamente esta lista filtrada a un archivo Excel"
             >
               <Download className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Exportar Lista (.xlsx)</span>
+              <span className="hidden sm:inline">Excel ({docentesFiltrados.length})</span>
             </button>
           </div>
         </div>
+
+        {/* Fila Secundaria Desplegable: Estamento, Calidad, Financiamiento, Orden, Multi-Escuela */}
+        {mostrarFiltrosAvanzados && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 pt-2 border-t border-slate-100 animate-fade-in">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Estamento</label>
+              <select
+                value={filtroEstamento}
+                onChange={(e) => setFiltroEstamento(e.target.value)}
+                className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="TODOS">Todos los Estamentos ({docentes.length})</option>
+                {ESTAMENTOS.map(est => (
+                  <option key={est.id} value={est.id}>{est.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Calidad Jurídica</label>
+              <select
+                value={filtroCalidad}
+                onChange={(e) => setFiltroCalidad(e.target.value as any)}
+                className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="TODOS">Todas las Calidades</option>
+                <option value="TITULAR">Solo Titulares</option>
+                <option value="CONTRATA">Solo Contratas</option>
+                <option value="POSTULANDO_A_TITULARIDAD">Postulando a Titularidad</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Financiamiento</label>
+              <select
+                value={filtroFinanciamiento}
+                onChange={(e) => setFiltroFinanciamiento(e.target.value as any)}
+                className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="TODOS">Cualquier Fuente</option>
+                <option value="SUBV_GRAL">Con Subv. General</option>
+                <option value="SEP">Con Horas SEP</option>
+                <option value="PIE">Con Horas PIE</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Ordenar por</label>
+              <select
+                value={ordenDocentes}
+                onChange={(e) => setOrdenDocentes(e.target.value as any)}
+                className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="APELLIDOS_ASC">Apellidos (A → Z)</option>
+                <option value="HORAS_DESC">Horas Contrato (Mayor → Menor)</option>
+                <option value="HORAS_ASC">Horas Contrato (Menor → Mayor)</option>
+                <option value="VACANTES_DESC">Horas Vacantes Disponibles</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col justify-end">
+              <button
+                type="button"
+                onClick={() => setFiltroMultiEscuela(!filtroMultiEscuela)}
+                className={`w-full py-1 px-2.5 text-xs font-bold rounded-lg border transition-all flex items-center justify-center gap-1.5 ${
+                  filtroMultiEscuela
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Multi-Escuela</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Tabla de Docentes */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* Tabla de Docentes con Cabecera Sticky */}
+      <div className="card-elevated overflow-hidden">
+        <div className="overflow-x-auto max-h-[72vh]">
           <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[11px] border-b">
+            <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-xs text-slate-700 uppercase font-semibold text-[11px] border-b shadow-2xs">
               <tr>
                 <th className="px-4 py-3">Docente</th>
                 <th className="px-3 py-3 text-center">Calidad</th>

@@ -583,7 +583,6 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                 >
                   <option value="TITULAR">Titular</option>
                   <option value="CONTRATA">Contrata</option>
-                  <option value="REEMPLAZANTE">Reemplazante</option>
                   <option value="POSTULANDO_A_TITULARIDAD">Postulando a Titularidad</option>
                 </select>
               </div>

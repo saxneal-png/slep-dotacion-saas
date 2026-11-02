@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  BookOpen, Users, Layers, Scale, CheckCircle2, AlertTriangle, ChevronRight, HelpCircle
+  BookOpen, Users, Layers, Scale, CheckCircle2, AlertTriangle, ChevronRight, HelpCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { CursoSae, Docente, AsignacionHoraria, AsistenteEducacion } from '../types';
 
@@ -11,6 +11,7 @@ export interface ProgresoDotacionBarProps {
   asistentes?: AsistenteEducacion[];
   balanceAula: number;
   onSelectTab: (tabId: 'cursos' | 'docentes' | 'asistentes' | 'balanza') => void;
+  defaultCollapsed?: boolean;
 }
 
 export const ProgresoDotacionBar: React.FC<ProgresoDotacionBarProps> = ({
@@ -19,8 +20,11 @@ export const ProgresoDotacionBar: React.FC<ProgresoDotacionBarProps> = ({
   asignaciones,
   asistentes = [],
   balanceAula,
-  onSelectTab
+  onSelectTab,
+  defaultCollapsed = false
 }) => {
+  const [expandido, setExpandido] = useState(!defaultCollapsed);
+
   // 1. Cursos
   const tieneCursos = cursos.length > 0;
   const matriculaTotal = cursos.reduce((s, c) => s + (c.matriculaProyectada || 0), 0);
@@ -50,22 +54,55 @@ export const ProgresoDotacionBar: React.FC<ProgresoDotacionBarProps> = ({
   ];
   const porcentajeTotal = checks.reduce((a, b) => a + b, 0);
 
+  const pasosCompactos = [
+    { id: 'cursos' as const, label: '1. Cursos', ok: tieneCursos, val: `${cursos.length}` },
+    { id: 'docentes' as const, label: '2. Docentes', ok: tieneDocentes, val: `${docentes.length}` },
+    { id: 'docentes' as const, label: '3. Carga Aula', ok: tieneAsignaciones, val: `${horasAulaTotal}h` },
+    { id: 'asistentes' as const, label: '4. Asistentes', ok: tieneAsistentes && asistentesSinRun === 0, val: `${asistentes.length}` },
+    { id: 'balanza' as const, label: '5. Balanza', ok: balanzaEquilibrada, val: balanceAula > 0 ? `+${balanceAula}h` : `${balanceAula}h` }
+  ];
+
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 shadow-xs space-y-2.5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+    <div className="card-elevated px-3.5 py-2.5 transition-all">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setExpandido(!expandido)}
+            className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5 hover:text-orange-600 transition-colors"
+            title={expandido ? 'Compactar barra de flujo guiado' : 'Expandir detalle de los 5 pasos'}
+          >
             <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-            Flujo Guiado de Dotación Escolar
-          </span>
-          <span className="text-[11px] text-slate-400 font-medium">
-            (Paso 1 al 5 para certificar la dotación del establecimiento)
-          </span>
+            <span>Flujo Guiado (5 Pasos)</span>
+            {expandido ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+          </button>
+
+          {/* Vista en línea de píldoras cuando está colapsado */}
+          {!expandido && (
+            <div className="hidden md:flex items-center gap-1.5 ml-2">
+              {pasosCompactos.map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => onSelectTab(p.id)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-all ${
+                    p.ok
+                      ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300'
+                  }`}
+                >
+                  {p.ok ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                  <span>{p.label}:</span>
+                  <span className="font-mono font-black">{p.val}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-slate-500 font-semibold">Avance General:</span>
-          <div className="w-28 bg-slate-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden">
+          <span className="text-slate-500 font-semibold hidden sm:inline">Avance Certificación:</span>
+          <div className="w-24 bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 porcentajeTotal === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-orange-500 to-indigo-500'
@@ -73,14 +110,22 @@ export const ProgresoDotacionBar: React.FC<ProgresoDotacionBarProps> = ({
               style={{ width: `${porcentajeTotal}%` }}
             />
           </div>
-          <span className={`font-mono font-bold text-xs ${porcentajeTotal === 100 ? 'text-emerald-600' : 'text-slate-800 dark:text-white'}`}>
+          <span className={`font-mono font-bold text-xs tabular-nums ${porcentajeTotal === 100 ? 'text-emerald-600' : 'text-slate-800 dark:text-white'}`}>
             {porcentajeTotal}%
           </span>
+          <button
+            type="button"
+            onClick={() => setExpandido(!expandido)}
+            className="text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800"
+          >
+            {expandido ? 'Compactar' : 'Detalle'}
+          </button>
         </div>
       </div>
 
-      {/* Tarjetas de Pasos Interactivos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+      {/* Tarjetas de Pasos Interactivos (Desplegable) */}
+      {expandido && (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs pt-2.5 mt-2 border-t border-slate-100 dark:border-slate-800">
         {/* Paso 1: Cursos SAE */}
         <button
           type="button"
@@ -184,6 +229,7 @@ export const ProgresoDotacionBar: React.FC<ProgresoDotacionBarProps> = ({
           </div>
         </button>
       </div>
+      )}
     </div>
   );
 };

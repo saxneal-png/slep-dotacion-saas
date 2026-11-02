@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Scale, Users, BookOpen, Clock, ShieldCheck, LayoutGrid,
   FileSpreadsheet, Printer, ArrowRightLeft, FileUp, FileDown, Sparkles,
-  Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2, ShieldAlert, ChevronDown
+  Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2, ShieldAlert, ChevronDown, ChevronUp, Minimize2, Maximize2
 } from 'lucide-react';
 import {
   Establecimiento,
@@ -121,6 +121,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [modalGdpAbierto, setModalGdpAbierto] = useState(false);
   const [modalCentroDescargasAbierto, setModalCentroDescargasAbierto] = useState(false);
   const [menuAvanzadoAbierto, setMenuAvanzadoAbierto] = useState(false);
+  const [kpisExpandidos, setKpisExpandidos] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && window.innerHeight <= 864) return false;
+    return true;
+  });
+
+  // Auto-compactar KPIs cuando el usuario entra a tablas densas (Docentes, Cursos, Asistentes, PIE, Salas)
+  React.useEffect(() => {
+    if (tabActiva !== 'balanza' && typeof window !== 'undefined' && window.innerHeight <= 920) {
+      setKpisExpandidos(false);
+    }
+  }, [tabActiva]);
 
   const handleEjecutarVaciarDotacion = async () => {
     if (onLimpiarDotacionColegio) {
@@ -141,99 +152,119 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-3.5 animate-fade-in">
       
-      {/* Cockpit Ejecutivo Superior */}
-      <div className="card-elevated p-6 overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
-          <div>
+      {/* Cockpit Ejecutivo Superior Adaptativo */}
+      <div className="card-elevated p-4 sm:p-5 overflow-hidden transition-all">
+        <div className={`flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 ${kpisExpandidos ? 'pb-4 border-b border-slate-100 dark:border-slate-800' : ''}`}>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-mono">
+              <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-mono">
                 RBD {colegio.rbd}
               </span>
-              <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
+              <span className={`px-2 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
                 periodoActivo === 2027 
                   ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800' 
                   : 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
               }`}>
                 <Calendar className="w-3 h-3" />
-                {periodoActivo === 2027 ? 'Dotación 2027 (Proyectada)' : 'Dotación 2026 (Actual)'}
+                {periodoActivo === 2027 ? 'Dotación 2027' : 'Dotación 2026'}
               </span>
               <span className="text-slate-300 dark:text-slate-700">•</span>
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-slate-400" /> {colegio.comuna}
               </span>
-              <span className="text-slate-300 dark:text-slate-700">•</span>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Régimen {colegio.regimen} ({colegio.porcentajePrioritarios}% SEP - {colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35'})
+              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
+              <span className="hidden sm:inline text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {colegio.regimen} ({colegio.porcentajePrioritarios}% SEP • {colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35'})
+              </span>
+              <span className="hidden lg:inline text-slate-300 dark:text-slate-700">•</span>
+              <span className="hidden lg:inline text-xs text-slate-500 dark:text-slate-400">
+                Dir: <strong className="text-slate-700 dark:text-slate-300">{colegio.director || 'S/I'}</strong>
               </span>
             </div>
 
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-2 flex items-center gap-3">
-              <span>{colegio.nombre}</span>
+            <div className="flex items-center gap-2.5 flex-wrap mt-1.5">
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight truncate">
+                {colegio.nombre}
+              </h2>
               <button
                 onClick={onAbrirNavegadorColegios}
-                className="text-xs font-bold text-orange-600 dark:text-orange-400 hover:text-orange-700 bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 px-2.5 py-1 rounded-xl border border-orange-200 dark:border-orange-800/60 transition-colors inline-flex items-center gap-1 active:scale-[0.98]"
+                className="text-[11px] font-bold text-orange-600 dark:text-orange-400 hover:text-orange-700 bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 px-2 py-0.5 rounded-lg border border-orange-200 dark:border-orange-800/60 transition-colors inline-flex items-center gap-1 shrink-0"
                 title="Cambiar de escuela (Ctrl+K / ⌘K)"
               >
-                <span>Cambiar Escuela</span>
-                <ChevronRight className="w-3.5 h-3.5" />
+                <span>Cambiar</span>
+                <ChevronRight className="w-3 h-3" />
               </button>
-            </h2>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Director: <strong className="text-slate-700 dark:text-slate-300">{colegio.director || 'No especificado'}</strong> • Asesor UATP: <strong className="text-slate-700 dark:text-slate-300">{colegio.asesorUatp || 'UATP Valle Diguillín'}</strong>
-            </p>
+              {/* Resumen KPI en línea cuando el modo compacto está activo */}
+              {!kpisExpandidos && (
+                <div className="hidden md:flex items-center gap-1.5 ml-1 flex-wrap">
+                  <span className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold border ${
+                    balance > 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : balance < 0 ? 'bg-rose-50 text-rose-800 border-rose-200' : 'bg-slate-100 text-slate-700 border-slate-200'
+                  }`}>
+                    Balanza: {balance > 0 ? `+${balance}` : balance} HA
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    Demanda: {bg?.horasAulaDemandadasCurriculo || 0} HA
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    Matrícula: {bg?.totalMatriculaProyectada || 0}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300">
+                    PIE: {bg?.horasPieDemandadas || 0}h
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Barra de Acciones Desduplicada */}
-          <div className="flex items-center gap-2 flex-wrap">
-            
-            {/* 1. Asistente IA (Solo usuarios con permiso de IA: Asesores y SuperAdmin) */}
-            {onAbrirCopilot && (!permisos || permisos.puedeUsarCopilotIa) && (
-              <button
-                onClick={onAbrirCopilot}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/25 border border-blue-400/30 group active:scale-[0.98]"
-                title="Abrir asistente ¡Qué no va a saber! IA para este colegio (Ctrl+J / ⌘J)"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
-                <span>¡Qué no va a saber! IA</span>
-              </button>
-            )}
+          {/* Barra de Acciones Desduplicada y Compacta */}
+          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+            <button
+              type="button"
+              onClick={() => setKpisExpandidos(!kpisExpandidos)}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
+              title={kpisExpandidos ? 'Ocultar tarjetas KPI grandes para ganar espacio vertical' : 'Mostrar tarjetas KPI detalladas'}
+            >
+              {kpisExpandidos ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{kpisExpandidos ? 'Compactar KPIs' : 'Ver KPIs'}</span>
+            </button>
 
-            {/* 2. Importar Matriz Excel (Oculto para Directores) */}
+            {/* 1. Importar Matriz Excel (Oculto para Directores) */}
             {(!permisos || permisos.puedeImportarMatriz) && (
               <button
                 onClick={() => setModalMatrizAbierto(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm border border-slate-700/80 active:scale-[0.98]"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm border border-slate-700/80 active:scale-[0.98]"
                 title="Importar planilla Excel oficial con asignaciones"
               >
-                <FileSpreadsheet className="w-4 h-4 text-orange-400" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-orange-400" />
                 <span>Importar Matriz</span>
               </button>
             )}
 
-            {/* 3. Centro de Descargas Unificado (Oculto para Directores) */}
+            {/* 2. Centro de Descargas Unificado (Oculto para Directores) */}
             {(!permisos || permisos.puedeVerCentroDescargas) && (
               <button
                 onClick={() => setModalCentroDescargasAbierto(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-[0.98]"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
                 title="Descargar PAL 2027 DEP, GDP, Matriz Excel, Coeficientes Asistentes o Ficha"
               >
-                <FileDown className="w-4 h-4 text-emerald-200" />
-                <span>Centro de Descargas</span>
+                <FileDown className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Descargas</span>
               </button>
             )}
 
-            {/* 4. Traspaso de Dotación (Oculto para Directores) */}
+            {/* 3. Traspaso de Dotación (Oculto para Directores) */}
             {(!permisos || permisos.puedeTraspasarPeriodos) && (
               <button
                 onClick={() => setModalTraspasoAbierto(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/20 active:scale-[0.98]"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
                 title="Asistente guiado de traspaso de dotación 2026 a 2027"
               >
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>Traspaso 2026 ➔ 2027</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden md:inline">Traspaso 26➔27</span>
+                <span className="md:hidden">26➔27</span>
               </button>
             )}
 
@@ -372,11 +403,12 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           </div>
         </div>
 
-        {/* 4 KPIs Clave en Formato Bento */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-6">
+        {/* 4 KPIs Clave en Formato Bento (Colapsable para ganar espacio vertical) */}
+        {kpisExpandidos && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4">
           
           {/* 1. Balanza Lectiva */}
-          <div className={`p-4 rounded-2xl border transition-all ${
+          <div className={`p-3.5 rounded-2xl border transition-all ${
             balance > 0 
               ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200' 
               : balance < 0 
@@ -387,10 +419,10 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
               <span className="text-[10px] font-bold uppercase tracking-wider opacity-75">Balanza de Aula</span>
               <Scale className="w-4 h-4 opacity-75" />
             </div>
-            <div className="text-2xl font-black mt-1 tabular-nums font-mono">
+            <div className="text-xl sm:text-2xl font-black mt-0.5 tabular-nums font-mono">
               {balance > 0 ? `+${balance} HA` : `${balance} HA`}
             </div>
-            <div className="text-[11px] font-medium opacity-80 mt-1">
+            <div className="text-[11px] font-medium opacity-80 mt-0.5">
               {balance > 0 
                 ? 'Superávit disponible para refuerzo' 
                 : balance < 0 
@@ -400,51 +432,52 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           </div>
 
           {/* 2. Demanda Curricular */}
-          <div className="card-elevated p-4">
+          <div className="card-elevated p-3.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Demanda Curricular</span>
               <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
-            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1 tabular-nums font-mono">
+            <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5 tabular-nums font-mono">
               {bg?.horasAulaDemandadasCurriculo || 0} <span className="text-xs font-normal text-slate-400">HA</span>
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 tabular-nums">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
               {cursos.length} cursos matriculados
             </div>
           </div>
 
           {/* 3. Matrícula y Aforo */}
-          <div className="card-elevated p-4">
+          <div className="card-elevated p-3.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Matrícula vs SAE</span>
               <LayoutGrid className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
             </div>
-            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1 tabular-nums font-mono">
+            <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5 tabular-nums font-mono">
               {bg?.totalMatriculaProyectada || 0} <span className="text-xs font-normal text-slate-400">/ {bg?.totalCuposSae || 0} cupos</span>
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 tabular-nums">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
               {salas.length} salas de clases registradas
             </div>
           </div>
 
           {/* 4. Demanda PIE */}
-          <div className="card-elevated p-4">
+          <div className="card-elevated p-3.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Demanda PIE Dec. 170</span>
               <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
             </div>
-            <div className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-1 tabular-nums font-mono">
+            <div className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 mt-0.5 tabular-nums font-mono">
               {bg?.horasPieDemandadas || 0} <span className="text-xs font-normal text-slate-400">hrs</span>
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 tabular-nums">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
               + {bg?.horasColaborativasDemandadas || 0}h co-docencia obligatorias
             </div>
           </div>
 
         </div>
+        )}
       </div>
 
-      {/* Flujo Guiado de 5 Pasos para Certificación Escolar */}
+      {/* Flujo Guiado de 5 Pasos para Certificación Escolar (Compactado por defecto fuera de Balanza) */}
       <ProgresoDotacionBar
         cursos={cursos}
         docentes={docentes}
@@ -452,10 +485,11 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         asistentes={asistentes}
         balanceAula={balance}
         onSelectTab={(tabId) => setTabActiva(tabId)}
+        defaultCollapsed={tabActiva !== 'balanza'}
       />
 
-      {/* Navegación por Pestañas Estilizadas */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5 overflow-x-auto text-xs font-medium">
+      {/* Navegación por Pestañas Estilizadas (Sticky para cambio rápido sin hacer scroll arriba) */}
+      <div className="sticky top-14 sm:top-16 z-30 bg-canvas/95 backdrop-blur-md py-1.5 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar text-xs font-medium">
         {tabs.map(tab => {
           const Icon = tab.icon;
           const isSelected = tabActiva === tab.id;
@@ -463,15 +497,15 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             <button
               key={tab.id}
               onClick={() => setTabActiva(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold transition-all whitespace-nowrap active:scale-[0.98] ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition-all whitespace-nowrap active:scale-[0.98] ${
                 isSelected
                   ? 'bg-slate-900 text-white shadow-soft-sm dark:bg-blue-600 dark:text-white'
                   : 'card-elevated text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
             >
-              <Icon className={`w-4 h-4 ${isSelected ? 'text-orange-400 dark:text-amber-300' : 'text-slate-400'}`} />
+              <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-orange-400 dark:text-amber-300' : 'text-slate-400'}`} />
               <span>{tab.label}</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums font-mono ${
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black tabular-nums font-mono ${
                 isSelected ? 'bg-orange-500 text-white dark:bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
               }`}>
                 {tab.badge}

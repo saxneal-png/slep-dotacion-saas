@@ -162,7 +162,7 @@ export async function listarAsignacionesPorDocente(docenteId: string, rbd?: stri
   });
 }
 
-export async function guardarAsignacionesBatch(asignaciones: AsignacionHoraria[]): Promise<void> {
+export async function guardarAsignacionesBatch(asignaciones: AsignacionHoraria[], skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   db.run("BEGIN TRANSACTION;");
   try {
@@ -206,9 +206,11 @@ export async function guardarAsignacionesBatch(asignaciones: AsignacionHoraria[]
     }
     db.run("COMMIT;");
     persistDb();
-    SupabaseDotacionService.guardarAsignacionesBatch(asignaciones).catch(err =>
-      console.warn('[asignacionesRepo] Aviso sincronizando lote con Supabase:', err)
-    );
+    if (!skipCloudSync) {
+      SupabaseDotacionService.guardarAsignacionesBatch(asignaciones).catch(err =>
+        console.warn('[asignacionesRepo] Aviso sincronizando lote con Supabase:', err)
+      );
+    }
   } catch (err) {
     db.run("ROLLBACK;");
     throw err;

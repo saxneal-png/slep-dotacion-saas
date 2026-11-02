@@ -40,7 +40,8 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
     horasAprobadasGdp: Number(row[31] || 0),
     situacionFinalGdp: row[32] ? String(row[32]) : 'Vigente',
     observacionesDirector: row[33] ? String(row[33]) : undefined,
-    observacionesSlep: row[34] ? String(row[34]) : undefined
+    observacionesSlep: row[34] ? String(row[34]) : undefined,
+    horasHonorarios: Number(row[35]) || 0
   };
 }
 
@@ -54,7 +55,7 @@ export function listarAsistentesSync(db: Database, rbd: string, periodo: number 
       es_inspector_patio, observaciones, activo,
       horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-      situacion_final_gdp, observaciones_director, observaciones_slep
+      situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios
     FROM asistentes_educacion
     WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2026))
     ORDER BY apellidos ASC, nombres ASC
@@ -94,7 +95,7 @@ export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: nu
       es_inspector_patio, observaciones, activo,
       horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-      situacion_final_gdp, observaciones_director, observaciones_slep
+      situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios
     FROM asistentes_educacion
     WHERE (periodo = ? OR (periodo IS NULL AND ? = 2026))
     ORDER BY rbd ASC, apellidos ASC, nombres ASC
@@ -128,7 +129,10 @@ export function obtenerAsistentePorIdSync(db: Database, id: string): AsistenteEd
       horas_contrato, horas_subvencion_general_indefinido, horas_subvencion_general_plazo_fijo,
       horas_sep_indefinido, horas_sep_plazo_fijo, horas_pie_indefinido, horas_pie_plazo_fijo,
       es_dupla_psicosocial, es_equipo_pie, es_tecnico_parvulo, es_auxiliar_servicio,
-      es_inspector_patio, observaciones, activo
+      es_inspector_patio, observaciones, activo,
+      horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
+      accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
+      situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios
     FROM asistentes_educacion
     WHERE id = ?
   `);
@@ -162,8 +166,8 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
       es_inspector_patio, observaciones, activo,
       horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-      situacion_final_gdp, observaciones_director, observaciones_slep
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -200,7 +204,8 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
     a.horasAprobadasGdp || 0,
     a.situacionFinalGdp || 'Vigente',
     a.observacionesDirector || null,
-    a.observacionesSlep || null
+    a.observacionesSlep || null,
+    a.horasHonorarios || 0
   ]);
   stmt.free();
 }
@@ -254,8 +259,8 @@ export function guardarAsistentesBatchSync(
         es_inspector_patio, observaciones, activo,
         horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
         accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-        situacion_final_gdp, observaciones_director, observaciones_slep
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const a of asistentes) {
@@ -294,7 +299,8 @@ export function guardarAsistentesBatchSync(
         a.horasAprobadasGdp || 0,
         a.situacionFinalGdp || 'Vigente',
         a.observacionesDirector || null,
-        a.observacionesSlep || null
+        a.observacionesSlep || null,
+        a.horasHonorarios || 0
       ]);
     }
     stmt.free();
