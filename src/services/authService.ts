@@ -93,7 +93,7 @@ export class AuthService {
           const tieneDirectores = migrados.some(u => u.role === 'director_establecimiento');
           if (!tieneDirectores && DIRECTORES_TERRITORIO.length > 0) {
             huboMigracion = true;
-            const passwordDirectores = '12346';
+            const passwordDirectores = '123456';
             for (const d of DIRECTORES_TERRITORIO) {
               const cleanEmail = d.email.trim().toLowerCase();
               const yaExiste = migrados.some(
@@ -112,7 +112,8 @@ export class AuthService {
                   rbdAsignado: d.rbd,
                   passwordHash,
                   salt,
-                  activo: true
+                  activo: true,
+                  debeCambiarPassword: true
                 });
               }
             }
@@ -148,8 +149,8 @@ export class AuthService {
       });
     }
 
-    // Sembrar directores territoriales iniciales con contraseña 12346
-    const passwordDirectores = '12346';
+    // Sembrar directores territoriales iniciales con contraseña 123456
+    const passwordDirectores = '123456';
     for (const d of DIRECTORES_TERRITORIO) {
       const cleanEmail = d.email.trim().toLowerCase();
       const salt = generateSalt();
@@ -164,7 +165,8 @@ export class AuthService {
         rbdAsignado: d.rbd,
         passwordHash,
         salt,
-        activo: true
+        activo: true,
+        debeCambiarPassword: true
       });
     }
 
@@ -193,6 +195,7 @@ export class AuthService {
               passwordHash: su.passwordHash || prev.passwordHash,
               salt: su.salt || prev.salt,
               rbdAsignado: su.rbdAsignado || prev.rbdAsignado,
+              debeCambiarPassword: su.debeCambiarPassword !== undefined ? su.debeCambiarPassword : prev.debeCambiarPassword,
               carteraRbds: (su.carteraRbds && su.carteraRbds.length > 0) ? su.carteraRbds : (prev.carteraRbds || []),
               asesoresSupervisados: (su.asesoresSupervisados && su.asesoresSupervisados.length > 0) ? su.asesoresSupervisados : (prev.asesoresSupervisados || [])
             });
@@ -246,7 +249,9 @@ export class AuthService {
               asesoresSupervisados,
               passwordHash: row.password_hash || '',
               salt: row.salt || '',
-              activo: row.activo !== false
+              activo: row.activo !== false,
+              debeCambiarPassword: Boolean(row.debe_cambiar_password),
+              ultimoAcceso: row.ultimo_acceso || undefined
             });
           }
 
@@ -411,8 +416,16 @@ export class AuthService {
     const passwordHash = await hashPassword(nuevaPasswordPlain, salt);
     usuarios[idx].salt = salt;
     usuarios[idx].passwordHash = passwordHash;
+    usuarios[idx].debeCambiarPassword = false;
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuarioDb(usuarios[idx]);
+
+    // Refrescar sesión activa si corresponde al usuario autenticado
+    const sesionActual = this.getSessionActual();
+    if (sesionActual && (sesionActual.usuario.id === userId || sesionActual.usuario.username === usuarios[idx].username)) {
+      sesionActual.usuario.debeCambiarPassword = false;
+      localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionActual));
+    }
   }
 
   public static async guardarUsuario(usuario: UsuarioSistema, passwordPlain?: string): Promise<UsuarioSistema> {
@@ -589,12 +602,12 @@ export class AuthService {
 
   /**
    * Genera masivamente los usuarios directores de escuelas y liceos del territorio SLEP.
-   * Asigna su correo SLEP oficial como username/email, contraseña inicial '12346' (hasheada con salt único)
+   * Asigna su correo SLEP oficial como username/email, contraseña inicial '123456' (hasheada con salt único)
    * y rol 'director_establecimiento' vinculado estrictamente a su RBD asignado.
    */
   public static async generarUsuariosDirectoresMasivo(
     directores: DirectorItem[] = DIRECTORES_TERRITORIO,
-    passwordInicial: string = '12346'
+    passwordInicial: string = '123456'
   ): Promise<{
     totalProcesados: number;
     creados: number;
@@ -627,7 +640,7 @@ export class AuthService {
         const passwordHash = await hashPassword(passwordInicial, salt);
 
         if (idx >= 0) {
-          // Si el usuario ya existe, actualizar rbdAsignado, cargo, email, username y resetear clave si no la ha cambiado
+          // Si el usuario ya existe, actualizar rbdAsignado, cargo, email, username y resetear clave
           const uExistente = usuarios[idx];
           uExistente.username = cleanEmail;
           uExistente.email = cleanEmail;
@@ -638,6 +651,7 @@ export class AuthService {
           uExistente.passwordHash = passwordHash;
           uExistente.salt = salt;
           uExistente.activo = true;
+          uExistente.debeCambiarPassword = true;
           actualizados++;
         } else {
           // Crear nuevo usuario director
@@ -651,7 +665,8 @@ export class AuthService {
             passwordHash,
             salt,
             rbdAsignado: cleanRbd,
-            activo: true
+            activo: true,
+            debeCambiarPassword: true
           };
           usuarios.push(nuevoDirector);
           creados++;
@@ -677,7 +692,7 @@ export class AuthService {
             ...prev,
             director: d.director,
             telefono: d.telefono || prev.telefono,
-            email: d.email || prev.email
+            email: d.correoEE || d.email || prev.email
           }, true);
         } else {
           await guardarEstablecimiento({
@@ -689,7 +704,7 @@ export class AuthService {
             porcentajePrioritarios: 75.0,
             director: d.director,
             telefono: d.telefono,
-            email: d.email
+            email: d.correoEE || d.email
           }, true);
         }
       }

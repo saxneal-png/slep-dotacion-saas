@@ -76,6 +76,7 @@ export interface UsuarioSistema {
   comunasPermitidas?: string[]; // (Heredado) filtro opcional por comuna
   geminiApiKey?: string; // ApiKey personal de Gemini del Asesor/Usuario
   activo: boolean;
+  debeCambiarPassword?: boolean;
   ultimoAcceso?: string;
 }
 

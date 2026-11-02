@@ -68,7 +68,7 @@ export async function registrarEventoAuditoria(params: {
 export async function listarEventosAuditoria(
   rbd?: string,
   periodo: number = 2026,
-  limit: number = 100
+  limit: number = 1000
 ): Promise<EventoAuditoria[]> {
   if (isSupabaseEnabled()) {
     try {
@@ -76,7 +76,10 @@ export async function listarEventosAuditoria(
       if (rbd) {
         query = query.eq('rbd', rbd);
       }
-      query = query.eq('periodo', periodo).order('fecha_hora', { ascending: false }).limit(limit);
+      query = query.eq('periodo', periodo).order('fecha_hora', { ascending: false });
+      if (limit > 0) {
+        query = query.limit(limit);
+      }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
         return data.map((row: any) => ({
@@ -110,8 +113,12 @@ export async function listarEventosAuditoria(
       params.push(periodo);
     }
 
-    query += ` ORDER BY fecha_hora DESC, rowid DESC LIMIT ?;`;
-    params.push(limit);
+    if (limit > 0) {
+      query += ` ORDER BY fecha_hora DESC, rowid DESC LIMIT ?;`;
+      params.push(limit);
+    } else {
+      query += ` ORDER BY fecha_hora DESC, rowid DESC;`;
+    }
 
     const res = db.exec(query, params);
     if (!res.length) return [];

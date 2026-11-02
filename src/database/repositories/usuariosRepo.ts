@@ -9,7 +9,7 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
     const res = db.exec(`
       SELECT id, username, email, nombre_completo, role, cargo, rbd_asignado,
              cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json,
-             password_hash, salt, gemini_api_key, activo, ultimo_acceso
+             password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password
       FROM usuarios_sistema
       ORDER BY nombre_completo ASC
     `);
@@ -42,7 +42,8 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
         salt: row[11] ? String(row[11]) : '',
         geminiApiKey: row[12] ? String(row[12]) : undefined,
         activo: row[13] !== undefined && row[13] !== null ? Boolean(row[13]) : true,
-        ultimoAcceso: row[14] ? String(row[14]) : undefined
+        ultimoAcceso: row[14] ? String(row[14]) : undefined,
+        debeCambiarPassword: row[15] !== undefined && row[15] !== null ? Boolean(row[15]) : false
       };
     });
   } catch (err) {
@@ -62,9 +63,9 @@ export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
       INSERT INTO usuarios_sistema (
         id, username, email, nombre_completo, role, cargo, rbd_asignado,
         cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json,
-        password_hash, salt, gemini_api_key, activo, ultimo_acceso
+        password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         username=excluded.username,
         email=excluded.email,
@@ -79,7 +80,8 @@ export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
         salt=excluded.salt,
         gemini_api_key=excluded.gemini_api_key,
         activo=excluded.activo,
-        ultimo_acceso=excluded.ultimo_acceso;
+        ultimo_acceso=excluded.ultimo_acceso,
+        debe_cambiar_password=excluded.debe_cambiar_password;
     `, [
       u.id,
       u.username,
@@ -95,7 +97,8 @@ export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
       u.salt || null,
       u.geminiApiKey || null,
       u.activo !== false ? 1 : 0,
-      u.ultimoAcceso || null
+      u.ultimoAcceso || null,
+      u.debeCambiarPassword ? 1 : 0
     ]);
     await persistDb();
     if (isSupabaseEnabled()) {
@@ -113,7 +116,8 @@ export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
         password_hash: u.passwordHash || null,
         salt: u.salt || null,
         gemini_api_key: u.geminiApiKey || null,
-        activo: u.activo !== false
+        activo: u.activo !== false,
+        debe_cambiar_password: u.debeCambiarPassword ?? false
       }, { onConflict: 'id' }).then(() => {});
     }
   } catch (err) {
@@ -136,9 +140,9 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
           INSERT INTO usuarios_sistema (
             id, username, email, nombre_completo, role, cargo, rbd_asignado,
             cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json,
-            password_hash, salt, gemini_api_key, activo, ultimo_acceso
+            password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             username=excluded.username,
             email=excluded.email,
@@ -153,7 +157,8 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
             salt=excluded.salt,
             gemini_api_key=excluded.gemini_api_key,
             activo=excluded.activo,
-            ultimo_acceso=excluded.ultimo_acceso;
+            ultimo_acceso=excluded.ultimo_acceso,
+            debe_cambiar_password=excluded.debe_cambiar_password;
         `, [
           u.id,
           u.username,
@@ -169,7 +174,8 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
           u.salt || null,
           u.geminiApiKey || null,
           u.activo !== false ? 1 : 0,
-          u.ultimoAcceso || null
+          u.ultimoAcceso || null,
+          u.debeCambiarPassword ? 1 : 0
         ]);
       }
       db.run("COMMIT;");
@@ -202,7 +208,8 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
             password_hash: u.passwordHash || null,
             salt: u.salt || null,
             gemini_api_key: u.geminiApiKey || null,
-            activo: u.activo !== false
+            activo: u.activo !== false,
+            debe_cambiar_password: u.debeCambiarPassword ?? false
           };
         });
 

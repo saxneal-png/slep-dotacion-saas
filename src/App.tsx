@@ -86,6 +86,7 @@ import { colegiosVisibles, puedeAccederRbd } from './services/scopeService';
 import { LoginModal } from './components/auth/LoginModal';
 import { CambiarPasswordModal } from './components/auth/CambiarPasswordModal';
 import { OlvidoPasswordModal } from './components/auth/OlvidoPasswordModal';
+import { PrimerAccesoModal } from './components/auth/PrimerAccesoModal';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
@@ -874,6 +875,16 @@ export const App: React.FC = () => {
             onSuccess={(msg) => mostrarMensaje(msg, 'success')}
           />
         </>
+      )}
+
+      {session && session.usuario.debeCambiarPassword && (
+        <PrimerAccesoModal
+          session={session}
+          onSuccess={(actualizada) => {
+            setSession(actualizada);
+            mostrarMensaje('¡Contraseña actualizada exitosamente! Bienvenido al sistema.');
+          }}
+        />
       )}
 
       <Header

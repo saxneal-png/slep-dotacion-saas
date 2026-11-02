@@ -494,6 +494,37 @@ export class SupabaseDotacionService {
   }
 
   /**
+   * Recupera TODAS las filas de una tabla en Supabase aplicando paginación exhaustiva
+   * secuencial por bloques (range), evitando truncamiento al límite por defecto de PostgREST (1.000 filas).
+   * Garantiza recuperar el 100% de la información remota sin importar cuántas filas existan.
+   */
+  static async fetchAllRows<T = any>(
+    tableName: string,
+    filterFn?: (query: any) => any,
+    batchSize: number = 1000
+  ): Promise<T[]> {
+    if (!isSupabaseEnabled()) return [];
+    let allRows: T[] = [];
+    let from = 0;
+    while (true) {
+      let q = supabase.from(tableName).select('*').range(from, from + batchSize - 1);
+      if (filterFn) {
+        q = filterFn(q);
+      }
+      const { data, error } = await q;
+      if (error) {
+        console.error(`[SupabaseDotacionService] Error recuperando filas de ${tableName} [range ${from}..${from + batchSize - 1}]:`, error);
+        break;
+      }
+      if (!data || data.length === 0) break;
+      allRows = allRows.concat(data as T[]);
+      if (data.length < batchSize) break;
+      from += batchSize;
+    }
+    return allRows;
+  }
+
+  /**
    * Verifica que los establecimientos existan en la tabla remota `establecimientos`.
    * Si alguno falta, lo crea a partir del catálogo oficial SLEP para evitar violaciones de clave foránea.
    */
@@ -552,7 +583,7 @@ export class SupabaseDotacionService {
 
   static async guardarEstablecimientosBatch(establecimientos: Establecimiento[]): Promise<void> {
     if (!isSupabaseEnabled() || !establecimientos.length) return;
-    const chunkSize = 100;
+    const chunkSize = 250;
     for (let i = 0; i < establecimientos.length; i += chunkSize) {
       const chunk = establecimientos.slice(i, i + chunkSize).map(mapEstablecimientoToDb);
       const { error } = await supabase
@@ -567,15 +598,13 @@ export class SupabaseDotacionService {
 
   static async obtenerEstablecimientos(): Promise<Establecimiento[]> {
     if (!isSupabaseEnabled()) return [];
-    const { data, error } = await supabase
-      .from('establecimientos')
-      .select('*')
-      .order('nombre');
-    if (error || !data) {
+    try {
+      const rows = await this.fetchAllRows('establecimientos', q => q.order('nombre'));
+      return rows.map(mapEstablecimientoFromDb);
+    } catch (error) {
       console.error('Error Supabase obtenerEstablecimientos:', error);
       return [];
     }
-    return data.map(mapEstablecimientoFromDb);
   }
 
   static async eliminarEstablecimiento(rbd: string): Promise<void> {
@@ -616,7 +645,7 @@ export class SupabaseDotacionService {
   static async guardarCursosBatch(cursos: CursoSae[]): Promise<void> {
     if (!isSupabaseEnabled() || !cursos.length) return;
     await this.asegurarEstablecimientosExisten(cursos.map(c => c.rbd));
-    const chunkSize = 100;
+    const chunkSize = 250;
     for (let i = 0; i < cursos.length; i += chunkSize) {
       const chunk = cursos.slice(i, i + chunkSize).map(mapCursoToDb);
       const { error } = await supabase.from('cursos_sae').upsert(chunk, { onConflict: 'id' });
@@ -662,7 +691,7 @@ export class SupabaseDotacionService {
     const docentes = deduplicarPorId(docentesEntrada);
     await this.asegurarEstablecimientosExisten(docentes.map(d => d.rbd));
 
-    const chunkSize = 100;
+    const chunkSize = 250;
     for (let i = 0; i < docentes.length; i += chunkSize) {
       const slice = docentes.slice(i, i + chunkSize);
       let chunk = slice.map(d => mapDocenteToDb(d, this.soportaColumnaRequiereAutorizacion));
@@ -705,7 +734,7 @@ export class SupabaseDotacionService {
   static async guardarAsignacionesBatch(asignaciones: AsignacionHoraria[]): Promise<void> {
     if (!isSupabaseEnabled() || !asignaciones.length) return;
     await this.asegurarEstablecimientosExisten(asignaciones.map(a => a.rbd));
-    const chunkSize = 100;
+    const chunkSize = 250;
     for (let i = 0; i < asignaciones.length; i += chunkSize) {
       const chunk = asignaciones.slice(i, i + chunkSize).map(mapAsignacionToDb);
       const { error } = await supabase.from('asignaciones_horarias').upsert(chunk, { onConflict: 'id' });
@@ -742,7 +771,7 @@ export class SupabaseDotacionService {
     if (!isSupabaseEnabled() || !asistentesEntrada.length) return;
     const asistentes = deduplicarPorId(asistentesEntrada);
     await this.asegurarEstablecimientosExisten(asistentes.map(a => a.rbd));
-    const chunkSize = 100;
+    const chunkSize = 250;
     for (let i = 0; i < asistentes.length; i += chunkSize) {
       const slice = asistentes.slice(i, i + chunkSize);
       let { error } = await supabase.from('asistentes_educacion').upsert(slice.map(a => this.payloadAsistente(a)), { onConflict: 'id' });
@@ -814,20 +843,20 @@ export class SupabaseDotacionService {
     }
     const cleanRbd = rbd.trim();
 
-    const [estRes, cursosRes, docRes, asigRes, astRes] = await Promise.all([
+    const [estRes, cursosRows, docRows, asigRows, astRows] = await Promise.all([
       supabase.from('establecimientos').select('*').eq('rbd', cleanRbd).maybeSingle(),
-      supabase.from('cursos_sae').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
-      supabase.from('docentes').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
-      supabase.from('asignaciones_horarias').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
-      supabase.from('asistentes_educacion').select('*').eq('rbd', cleanRbd).eq('periodo', periodo)
+      this.fetchAllRows('cursos_sae', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
+      this.fetchAllRows('docentes', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
+      this.fetchAllRows('asignaciones_horarias', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
+      this.fetchAllRows('asistentes_educacion', q => q.eq('rbd', cleanRbd).eq('periodo', periodo))
     ]);
 
     return {
       establecimiento: estRes.data ? mapEstablecimientoFromDb(estRes.data) : null,
-      cursos: (cursosRes.data || []).map(mapCursoFromDb),
-      docentes: (docRes.data || []).map(mapDocenteFromDb),
-      asignaciones: (asigRes.data || []).map(mapAsignacionFromDb),
-      asistentes: (astRes.data || []).map(mapAsistenteFromDb)
+      cursos: cursosRows.map(mapCursoFromDb),
+      docentes: docRows.map(mapDocenteFromDb),
+      asignaciones: asigRows.map(mapAsignacionFromDb),
+      asistentes: astRows.map(mapAsistenteFromDb)
     };
   }
 
@@ -941,22 +970,22 @@ export class SupabaseDotacionService {
     const cleanRbd = rbd.trim();
     if (!cleanRbd) throw new Error('RBD de colegio inválido');
 
-    // 1. Consultar datos en Supabase
-    const [estRes, salasRes, cursosRes, docRes, asigRes, astRes] = await Promise.all([
+    // 1. Consultar datos en Supabase con paginación completa garantizando recuperación de todas las filas
+    const [estRes, salasData, cursosData, docData, asigData, astData] = await Promise.all([
       supabase.from('establecimientos').select('*').eq('rbd', cleanRbd).maybeSingle(),
-      supabase.from('salas_infraestructura').select('*').eq('rbd', cleanRbd),
-      supabase.from('cursos_sae').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
-      supabase.from('docentes').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
-      supabase.from('asignaciones_horarias').select('*').eq('rbd', cleanRbd).eq('periodo', periodo),
-      supabase.from('asistentes_educacion').select('*').eq('rbd', cleanRbd).eq('periodo', periodo)
+      this.fetchAllRows('salas_infraestructura', q => q.eq('rbd', cleanRbd)),
+      this.fetchAllRows('cursos_sae', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
+      this.fetchAllRows('docentes', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
+      this.fetchAllRows('asignaciones_horarias', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
+      this.fetchAllRows('asistentes_educacion', q => q.eq('rbd', cleanRbd).eq('periodo', periodo))
     ]);
 
     const tieneRegistros = Boolean(
-      (cursosRes.data && cursosRes.data.length > 0) ||
-      (docRes.data && docRes.data.length > 0) ||
-      (asigRes.data && asigRes.data.length > 0) ||
-      (astRes.data && astRes.data.length > 0) ||
-      (salasRes.data && salasRes.data.length > 0)
+      cursosData.length > 0 ||
+      docData.length > 0 ||
+      asigData.length > 0 ||
+      astData.length > 0 ||
+      salasData.length > 0
     );
 
     if (!tieneRegistros && !estRes.data) {
@@ -990,8 +1019,8 @@ export class SupabaseDotacionService {
 
     // 4. Integrar Salas
     let salasCount = 0;
-    if (salasRes.data && salasRes.data.length > 0) {
-      for (const row of salasRes.data) {
+    if (salasData.length > 0) {
+      for (const row of salasData) {
         const s = mapSalaFromDb(row);
         await guardarSala(s, true);
         salasCount++;
@@ -1000,8 +1029,8 @@ export class SupabaseDotacionService {
 
     // 5. Integrar Cursos
     let cursosCount = 0;
-    if (cursosRes.data && cursosRes.data.length > 0) {
-      for (const row of cursosRes.data) {
+    if (cursosData.length > 0) {
+      for (const row of cursosData) {
         const c = mapCursoFromDb(row);
         await guardarCurso(c, true);
         cursosCount++;
@@ -1010,8 +1039,8 @@ export class SupabaseDotacionService {
 
     // 6. Integrar Docentes
     let docCount = 0;
-    if (docRes.data && docRes.data.length > 0) {
-      for (const row of docRes.data) {
+    if (docData.length > 0) {
+      for (const row of docData) {
         const d = mapDocenteFromDb(row);
         await guardarDocente(d, true);
         docCount++;
@@ -1020,8 +1049,8 @@ export class SupabaseDotacionService {
 
     // 7. Integrar Asignaciones
     let asigCount = 0;
-    if (asigRes.data && asigRes.data.length > 0) {
-      for (const row of asigRes.data) {
+    if (asigData.length > 0) {
+      for (const row of asigData) {
         const a = mapAsignacionFromDb(row);
         await guardarAsignacion(a, true);
         asigCount++;
@@ -1030,8 +1059,8 @@ export class SupabaseDotacionService {
 
     // 8. Integrar Asistentes
     let astCount = 0;
-    if (astRes.data && astRes.data.length > 0) {
-      const asistentesObj = astRes.data.map(mapAsistenteFromDb);
+    if (astData.length > 0) {
+      const asistentesObj = astData.map(mapAsistenteFromDb);
       await guardarAsistentesBatch(asistentesObj, cleanRbd, periodo, true);
       astCount = asistentesObj.length;
     }
@@ -1076,19 +1105,19 @@ export class SupabaseDotacionService {
       };
     }
 
-    const [estRes, salasRes, cursosRes, docRes, asigRes, astRes] = await Promise.all([
-      supabase.from('establecimientos').select('*'),
-      supabase.from('salas_infraestructura').select('*'),
-      supabase.from('cursos_sae').select('*').eq('periodo', periodo),
-      supabase.from('docentes').select('*').eq('periodo', periodo),
-      supabase.from('asignaciones_horarias').select('*').eq('periodo', periodo),
-      supabase.from('asistentes_educacion').select('*').eq('periodo', periodo)
+    const [estRows, salasRows, cursosRows, docRows, asigRows, astRows] = await Promise.all([
+      this.fetchAllRows('establecimientos', q => q.order('nombre')),
+      this.fetchAllRows('salas_infraestructura'),
+      this.fetchAllRows('cursos_sae', q => q.eq('periodo', periodo)),
+      this.fetchAllRows('docentes', q => q.eq('periodo', periodo)),
+      this.fetchAllRows('asignaciones_horarias', q => q.eq('periodo', periodo)),
+      this.fetchAllRows('asistentes_educacion', q => q.eq('periodo', periodo))
     ]);
 
     const hayDatos = Boolean(
-      (estRes.data && estRes.data.length > 0) ||
-      (cursosRes.data && cursosRes.data.length > 0) ||
-      (docRes.data && docRes.data.length > 0)
+      estRows.length > 0 ||
+      cursosRows.length > 0 ||
+      docRows.length > 0
     );
 
     if (!hayDatos) {
@@ -1112,46 +1141,46 @@ export class SupabaseDotacionService {
     const { persistDb } = await import('../database/dbCore');
 
     let estCount = 0;
-    if (estRes.data && estRes.data.length > 0) {
-      for (const row of estRes.data) {
+    if (estRows.length > 0) {
+      for (const row of estRows) {
         await guardarEstablecimiento(mapEstablecimientoFromDb(row), true);
         estCount++;
       }
     }
 
     let salasCount = 0;
-    if (salasRes.data && salasRes.data.length > 0) {
-      for (const row of salasRes.data) {
+    if (salasRows.length > 0) {
+      for (const row of salasRows) {
         await guardarSala(mapSalaFromDb(row), true);
         salasCount++;
       }
     }
 
     let cursosCount = 0;
-    if (cursosRes.data && cursosRes.data.length > 0) {
-      for (const row of cursosRes.data) {
+    if (cursosRows.length > 0) {
+      for (const row of cursosRows) {
         await guardarCurso(mapCursoFromDb(row), true);
         cursosCount++;
       }
     }
 
     let docCount = 0;
-    if (docRes.data && docRes.data.length > 0) {
-      const docentes = docRes.data.map(mapDocenteFromDb);
+    if (docRows.length > 0) {
+      const docentes = docRows.map(mapDocenteFromDb);
       await guardarDocentesBatch(docentes);
       docCount = docentes.length;
     }
 
     let asigCount = 0;
-    if (asigRes.data && asigRes.data.length > 0) {
-      const asignaciones = asigRes.data.map(mapAsignacionFromDb);
+    if (asigRows.length > 0) {
+      const asignaciones = asigRows.map(mapAsignacionFromDb);
       await guardarAsignacionesBatch(asignaciones);
       asigCount = asignaciones.length;
     }
 
     let astCount = 0;
-    if (astRes.data && astRes.data.length > 0) {
-      const asistentes = astRes.data.map(mapAsistenteFromDb);
+    if (astRows.length > 0) {
+      const asistentes = astRows.map(mapAsistenteFromDb);
       await guardarAsistentesBatch(asistentes, undefined, periodo, false);
       astCount = asistentes.length;
     }
@@ -1284,7 +1313,8 @@ export class SupabaseDotacionService {
           password_hash: u.passwordHash || null,
           salt: u.salt || null,
           gemini_api_key: u.geminiApiKey || null,
-          activo: u.activo !== false
+          activo: u.activo !== false,
+          debe_cambiar_password: u.debeCambiarPassword ?? false
         };
       });
       await supabase.from('usuarios_sistema').upsert(usersDb, { onConflict: 'id' });

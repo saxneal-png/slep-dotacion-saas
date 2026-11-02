@@ -210,6 +210,7 @@ CREATE TABLE IF NOT EXISTS usuarios_sistema (
   salt TEXT,
   gemini_api_key TEXT,
   activo INTEGER DEFAULT 1,
+  debe_cambiar_password INTEGER DEFAULT 0,
   ultimo_acceso TEXT
 );
 `;
@@ -407,6 +408,10 @@ export function runMigrations(db: Database): void {
   for (const sql of gdpAsistentesCols) {
     try { db.run(sql); } catch (_) {}
   }
+
+  try {
+    db.run("ALTER TABLE usuarios_sistema ADD COLUMN debe_cambiar_password INTEGER DEFAULT 0;");
+  } catch (_) {}
 
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_cursos_rbd_periodo ON cursos_sae(rbd, periodo);',

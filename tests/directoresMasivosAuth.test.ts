@@ -23,8 +23,8 @@ describe('Aprovisionamiento Masivo de Usuarios Directores de Establecimiento', (
     localStorage.clear();
   });
 
-  it('cuenta con el catálogo completo de 89 directores del territorio', () => {
-    expect(DIRECTORES_TERRITORIO.length).toBe(89);
+  it('cuenta con el catálogo completo de 131 directores del territorio', () => {
+    expect(DIRECTORES_TERRITORIO.length).toBe(131);
     for (const d of DIRECTORES_TERRITORIO) {
       expect(d.email).toContain('@eduvallediguillin.gob.cl');
       expect(d.username).toContain('@eduvallediguillin.gob.cl');
@@ -33,9 +33,9 @@ describe('Aprovisionamiento Masivo de Usuarios Directores de Establecimiento', (
     }
   });
 
-  it('siembra automáticamente los directores al inicializar usuarios en AuthService', async () => {
+  it('siembra automáticamente los directores al inicializar usuarios en AuthService con clave 123456 y debeCambiarPassword=true', async () => {
     const usuarios = await AuthService.getUsuarios();
-    expect(usuarios.length).toBeGreaterThanOrEqual(90); // Super admin + 89 directores
+    expect(usuarios.length).toBeGreaterThanOrEqual(132); // Super admin + 131 directores
 
     const directorJose = usuarios.find(u => u.email === 'jose.becerra@eduvallediguillin.gob.cl');
     expect(directorJose).toBeDefined();
@@ -43,52 +43,64 @@ describe('Aprovisionamiento Masivo de Usuarios Directores de Establecimiento', (
     expect(directorJose?.role).toBe('director_establecimiento');
     expect(directorJose?.rbdAsignado).toBe('17742');
     expect(directorJose?.activo).toBe(true);
+    expect(directorJose?.debeCambiarPassword).toBe(true);
 
-    // Verificar que la contraseña coincide con el hash SHA-256 de '12346' con su salt
-    const computedHash = await hashPassword('12346', directorJose!.salt);
+    // Verificar que la contraseña coincide con el hash SHA-256 de '123456' con su salt
+    const computedHash = await hashPassword('123456', directorJose!.salt);
     expect(computedHash).toBe(directorJose!.passwordHash);
   });
 
   it('ejecuta generarUsuariosDirectoresMasivo actualizando y creando cuentas idempotentemente', async () => {
-    const res = await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '12346');
-    expect(res.totalProcesados).toBe(89);
+    const res = await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '123456');
+    expect(res.totalProcesados).toBe(131);
     expect(res.errores.length).toBe(0);
 
     const usuarios = await AuthService.getUsuarios();
     const directores = usuarios.filter(u => u.role === 'director_establecimiento');
-    expect(directores.length).toBe(89);
+    expect(directores.length).toBe(131);
 
     // Segundo pase idempotente: no debe duplicar cuentas
-    const res2 = await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '12346');
-    expect(res2.totalProcesados).toBe(89);
+    const res2 = await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '123456');
+    expect(res2.totalProcesados).toBe(131);
     expect(res2.creados).toBe(0);
-    expect(res2.actualizados).toBe(89);
+    expect(res2.actualizados).toBe(131);
 
     const usuarios2 = await AuthService.getUsuarios();
     const directores2 = usuarios2.filter(u => u.role === 'director_establecimiento');
-    expect(directores2.length).toBe(89);
+    expect(directores2.length).toBe(131);
   });
 
-  it('permite autenticación exitosa con el correo del director y clave 12346', async () => {
+  it('permite autenticación con el correo del director y clave 123456 retornando debeCambiarPassword=true y luego permite cambiarla', async () => {
     await AuthService.getUsuarios();
-    const sesion = await AuthService.login('mario.silva@eduvallediguillin.gob.cl', '12346');
+    const sesion = await AuthService.login('mario.silva@eduvallediguillin.gob.cl', '123456');
     expect(sesion).toBeDefined();
     expect(sesion.usuario.email).toBe('mario.silva@eduvallediguillin.gob.cl');
     expect(sesion.usuario.role).toBe('director_establecimiento');
     expect(sesion.usuario.rbdAsignado).toBe('3980');
+    expect(sesion.usuario.debeCambiarPassword).toBe(true);
+
+    // Cambiar contraseña por una personal
+    await AuthService.cambiarPassword(sesion.usuario.id, 'MiClaveSegura2027!');
+
+    // Intentar login con la clave antigua 123456 debe fallar
+    await expect(AuthService.login('mario.silva@eduvallediguillin.gob.cl', '123456')).rejects.toThrow();
+
+    // Login con la nueva clave debe ser exitoso y debeCambiarPassword debe ser false
+    const sesion2 = await AuthService.login('mario.silva@eduvallediguillin.gob.cl', 'MiClaveSegura2027!');
+    expect(sesion2.usuario.debeCambiarPassword).toBe(false);
   });
 
-  it('persiste los 89 directores en la base de datos SQLite (usuarios_sistema y establecimientos)', async () => {
-    await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '12346');
+  it('persiste los 131 directores en la base de datos SQLite (usuarios_sistema y establecimientos)', async () => {
+    await AuthService.generarUsuariosDirectoresMasivo(DIRECTORES_TERRITORIO, '123456');
 
     const usuariosDb = await listarUsuariosDb();
     const directoresDb = usuariosDb.filter(u => u.role === 'director_establecimiento');
-    expect(directoresDb.length).toBe(89);
+    expect(directoresDb.length).toBe(131);
 
     const establecimientosDb = await listarEstablecimientos();
     const estBecerra = establecimientosDb.find(e => e.rbd === '17742');
     expect(estBecerra).toBeDefined();
-    expect(estBecerra?.director).toBe('José Becerra');
-    expect(estBecerra?.email).toBe('jose.becerra@eduvallediguillin.gob.cl');
+    expect(estBecerra?.director).toBe('José Beccerra Cea');
+    expect(estBecerra?.email).toBe('escuela.efrei@eduvallediguillin.gob.cl');
   });
 });

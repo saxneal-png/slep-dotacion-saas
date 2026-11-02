@@ -249,6 +249,7 @@ CREATE TABLE IF NOT EXISTS public.usuarios_sistema (
   salt TEXT,
   gemini_api_key TEXT,
   activo BOOLEAN NOT NULL DEFAULT TRUE,
+  debe_cambiar_password BOOLEAN NOT NULL DEFAULT FALSE,
   ultimo_acceso TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
