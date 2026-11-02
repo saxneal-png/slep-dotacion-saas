@@ -1566,8 +1566,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       )}
 
                       {/* En 3° y 4° Medio TP, el Plan Común Electivo se imparte con cargo a Libre Disposición (2h) */}
-                      {(esCursoTp || planActivo.categoria === 'MEDIA_TP' || cursoActivo.nivel.includes('3°') || cursoActivo.nivel.includes('4°')) &&
-                        !planActivo.asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo')) && (
+                      {Boolean(cursoActivo && (
+                        !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoActivo.nivel) &&
+                        (
+                          (esCursoTp || (planActivo?.categoria as string) === 'MEDIA_TP') ||
+                          /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoActivo.nivel) ||
+                          (((planActivo?.categoria as string) === 'MEDIA_HC' || (planActivo?.categoria as string) === 'MEDIA_TP') && /[34]/i.test(planActivo?.nivel || ''))
+                        )
+                      )) &&
+                        !planActivo?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo')) && (
                           (() => {
                             const electivoAsignado = asignacionesPlanRegularCurso.some(a =>
                               /electivo/i.test(a.asignatura) ||

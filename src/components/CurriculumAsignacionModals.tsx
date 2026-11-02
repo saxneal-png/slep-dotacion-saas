@@ -59,16 +59,14 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
   const [compartirElectivo, setCompartirElectivo] = useState(false);
   const [cursosCompartidos, setCursosCompartidos] = useState<string[]>([]);
 
-  const es34Medio = Boolean(cursoActivo && (
-    cursoActivo.nivel.includes('3°') ||
-    cursoActivo.nivel.includes('4°') ||
-    cursoActivo.nivel.includes('3o') ||
-    cursoActivo.nivel.includes('4o') ||
-    cursoActivo.nivel.includes('3 ') ||
-    cursoActivo.nivel.includes('4 ') ||
-    planActivo?.nivel.includes('3°') ||
-    planActivo?.nivel.includes('4°')
-  ));
+  const es34Medio = Boolean(
+    cursoActivo &&
+    !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoActivo.nivel) &&
+    (
+      /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoActivo.nivel) ||
+      ((planActivo?.categoria === 'MEDIA_HC' || planActivo?.categoria === 'MEDIA_TP') && /[34]/i.test(planActivo?.nivel || ''))
+    )
+  );
 
   useEffect(() => {
     if (!isOpen) return;

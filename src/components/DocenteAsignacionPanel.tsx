@@ -42,6 +42,7 @@ interface InfoPlanResuelto {
   esJec: boolean;
   talleresJecPredefinidos: { nombre: string; horas?: number }[];
   nombrePlan: string;
+  categoria?: string;
 }
 
 function resolverPlanCurso(
@@ -95,9 +96,12 @@ function resolverPlanCurso(
 
     // En 3° y 4° Medio TP, si el plan no tiene explícito el Plan Común Electivo, incluirlo
     // para que el establecimiento pueda seleccionarlo y asignarlo con cargo a sus horas de libre disposición (2 HA)
-    const esTp34 = curso.nivel.includes('3°') || curso.nivel.includes('4°') || curso.nivel.includes('3o') || curso.nivel.includes('4o');
+    const esMedio34 = !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(curso.nivel) && (
+      /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(curso.nivel) ||
+      ((planMineduc.categoria === 'MEDIA_HC' || planMineduc.categoria === 'MEDIA_TP') && /[34]/i.test(planMineduc.nivel))
+    );
     const esModalidadTecnica = planMineduc.categoria === 'MEDIA_TP' || curso.nivel.toLowerCase().includes('tp') || Boolean(curso.especialidadTp);
-    if (esTp34 && esModalidadTecnica && !asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo'))) {
+    if (esMedio34 && esModalidadTecnica && !asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo'))) {
       asignaturasBase.push({
         nombre: 'Plan Común Electivo (Historia / Artes / Ed. Física / Religión)',
         horas: 2,
@@ -110,7 +114,8 @@ function resolverPlanCurso(
       horasLibreDisposicion: planMineduc.horasLibreDisposicion || (esJec ? 6 : 0),
       esJec: planMineduc.regimen === 'JEC' || esJec,
       talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
-      nombrePlan: planMineduc.nivel
+      nombrePlan: planMineduc.nivel,
+      categoria: planMineduc.categoria
     };
   }
 
@@ -480,16 +485,15 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     (!asigEnPlan && a.cursoId !== 'TRANSVERSAL')
   );
 
-  const esMedio34Fila = Boolean(cursoActual && (
-    cursoActual.nivel.includes('3°') ||
-    cursoActual.nivel.includes('4°') ||
-    cursoActual.nivel.includes('3o') ||
-    cursoActual.nivel.includes('4o') ||
-    cursoActual.nivel.includes('3 ') ||
-    cursoActual.nivel.includes('4 ') ||
-    infoPlan.nombrePlan.includes('3°') ||
-    infoPlan.nombrePlan.includes('4°')
-  ));
+  const esMedio34Fila = Boolean(
+    cursoActual &&
+    !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoActual.nivel) &&
+    (
+      /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoActual.nivel) ||
+      (infoPlan.nombrePlan.toLowerCase().includes('medio') && /[34]/i.test(infoPlan.nombrePlan)) ||
+      ((infoPlan.categoria === 'MEDIA_HC' || infoPlan.categoria === 'MEDIA_TP') && /[34]/i.test(infoPlan.nombrePlan))
+    )
+  );
 
   const matchProfActual = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === a.asignatura.toLowerCase());
   const matchPlanComunActual = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => a.asignatura.toLowerCase().includes(c.nombre.toLowerCase()));
@@ -964,17 +968,16 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   }, [regCursoId]);
 
   const esMedio34Form = useMemo(() => {
-    return Boolean(cursoSeleccionado && (
-      cursoSeleccionado.nivel.includes('3°') ||
-      cursoSeleccionado.nivel.includes('4°') ||
-      cursoSeleccionado.nivel.includes('3o') ||
-      cursoSeleccionado.nivel.includes('4o') ||
-      cursoSeleccionado.nivel.includes('3 ') ||
-      cursoSeleccionado.nivel.includes('4 ') ||
-      infoPlan.nombrePlan.includes('3°') ||
-      infoPlan.nombrePlan.includes('4°')
-    ));
-  }, [cursoSeleccionado, infoPlan.nombrePlan]);
+    return Boolean(
+      cursoSeleccionado &&
+      !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoSeleccionado.nivel) &&
+      (
+        /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoSeleccionado.nivel) ||
+        (infoPlan.nombrePlan.toLowerCase().includes('medio') && /[34]/i.test(infoPlan.nombrePlan)) ||
+        ((infoPlan.categoria === 'MEDIA_HC' || infoPlan.categoria === 'MEDIA_TP') && /[34]/i.test(infoPlan.nombrePlan))
+      )
+    );
+  }, [cursoSeleccionado, infoPlan.nombrePlan, infoPlan.categoria]);
 
   const esModoPersonalizado = 
     regCursoId === 'TRANSVERSAL' ||

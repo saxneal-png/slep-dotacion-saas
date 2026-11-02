@@ -159,3 +159,51 @@ describe('Auditoría y Validación: Educación Parvularia en Aula Combinada y Mu
     expect(normalizarNombreAsignatura('Experiencias de Aprendizaje Integradas')).toBe('experiencias de aprendizaje integradas');
   });
 });
+
+describe('Auditoría y Corrección: Exclusión de Plan Común Electivo en 3° y 4° Básico', () => {
+  it('el plan de estudio de 3° Básico y 4° Básico jamás incluye "Plan Común Electivo"', () => {
+    const plan3Basico = obtenerPlanPorCurso('3° Básico A', 'JEC');
+    expect(plan3Basico).toBeDefined();
+    expect(plan3Basico?.categoria).toBe('BASICA');
+    const electivo3B = plan3Basico?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo'));
+    expect(electivo3B).toBe(false);
+
+    const plan4Basico = obtenerPlanPorCurso('4° Básico B', 'JEC');
+    expect(plan4Basico).toBeDefined();
+    expect(plan4Basico?.categoria).toBe('BASICA');
+    const electivo4B = plan4Basico?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo'));
+    expect(electivo4B).toBe(false);
+
+    const planComb34 = obtenerPlanPorCurso('3° y 4° Básico Combinado', 'JEC');
+    expect(planComb34).toBeDefined();
+    expect(planComb34?.categoria).toBe('BASICA');
+    const electivoComb = planComb34?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo'));
+    expect(electivoComb).toBe(false);
+  });
+
+  it('validador regex de nivel restringe Plan Común Electivo exclusivamente a 3° y 4° Medio', () => {
+    const esNivel34MedioValido = (nivel: string, categoria?: string) => {
+      return !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(nivel) && (
+        /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(nivel) ||
+        ((categoria === 'MEDIA_HC' || categoria === 'MEDIA_TP') && /[34]/i.test(nivel))
+      );
+    };
+
+    // Casos que NO deben ser considerados 3°/4° Medio
+    expect(esNivel34MedioValido('3° Básico', 'BASICA')).toBe(false);
+    expect(esNivel34MedioValido('4° Básico', 'BASICA')).toBe(false);
+    expect(esNivel34MedioValido('3° Básico A', 'BASICA')).toBe(false);
+    expect(esNivel34MedioValido('3° y 4° Básico Combinado', 'MULTIGRADO')).toBe(false);
+    expect(esNivel34MedioValido('Multigrado 1°-6° Básico', 'MULTIGRADO')).toBe(false);
+    expect(esNivel34MedioValido('1° Medio', 'MEDIA_HC')).toBe(false);
+    expect(esNivel34MedioValido('2° Medio', 'MEDIA_HC')).toBe(false);
+    expect(esNivel34MedioValido('Kínder A', 'PARVULARIA')).toBe(false);
+
+    // Casos que SÍ corresponden a 3°/4° Medio
+    expect(esNivel34MedioValido('3° Medio HC', 'MEDIA_HC')).toBe(true);
+    expect(esNivel34MedioValido('4° Medio HC', 'MEDIA_HC')).toBe(true);
+    expect(esNivel34MedioValido('3° Medio TP - Electricidad', 'MEDIA_TP')).toBe(true);
+    expect(esNivel34MedioValido('4° Medio TP', 'MEDIA_TP')).toBe(true);
+    expect(esNivel34MedioValido('3° Medio', 'MEDIA_HC')).toBe(true);
+  });
+});
