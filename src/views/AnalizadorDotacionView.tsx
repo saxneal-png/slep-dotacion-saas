@@ -37,8 +37,10 @@ import {
   guardarCurso,
   guardarAsignacion,
   guardarAsistentesBatch,
-  listarEstablecimientos
+  listarEstablecimientos,
+  listarRbdsEliminados
 } from '../database/db';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 import type { AsistenteEducacion } from '../types';
 import type {
   SchoolSummary,
@@ -376,15 +378,26 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
     setSavingDb(true);
     try {
       const existingColegios = await listarEstablecimientos();
+      const eliminados = await listarRbdsEliminados();
 
       for (const s of schools) {
+        if (eliminados.has(s.rbd)) {
+          console.warn(`[AnalizadorDotacion] Omitiendo colegio ${s.rbd} porque está eliminado.`);
+          continue;
+        }
+
         let est = existingColegios.find((c) => c.rbd === s.rbd);
         if (!est) {
+          const catInfo = SLEP_VALLE_DIGUILLIN_SCHOOLS.find((c) => c.rbd === s.rbd);
+          if (!catInfo) {
+            console.warn(`[AnalizadorDotacion] Omitiendo colegio no oficial ${s.rbd} (${s.establishment}).`);
+            continue;
+          }
           est = {
             id: `est-${s.rbd}`,
             rbd: s.rbd,
-            nombre: s.establishment,
-            comuna: (s.comuna as any) || 'Chillán',
+            nombre: catInfo.nombre,
+            comuna: (catInfo.comuna as any) || (s.comuna as any) || 'Chillán',
             regimen: 'JEC',
             porcentajePrioritarios: 75,
           };
@@ -492,13 +505,27 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
     setSavingDb(true);
     try {
       const existingColegios = await listarEstablecimientos();
+      const eliminados = await listarRbdsEliminados();
+
+      if (eliminados.has(rbd)) {
+        alert(`El establecimiento con RBD ${rbd} está en la lista de colegios eliminados.`);
+        setSavingDb(false);
+        return;
+      }
+
       let est = existingColegios.find((c) => c.rbd === rbd);
       if (!est) {
+        const catInfo = SLEP_VALLE_DIGUILLIN_SCHOOLS.find((c) => c.rbd === rbd);
+        if (!catInfo) {
+          alert(`El establecimiento con RBD ${rbd} no pertenece al catálogo oficial del SLEP Valle Diguillín.`);
+          setSavingDb(false);
+          return;
+        }
         est = {
           id: `est-${rbd}`,
           rbd: rbd,
-          nombre: schoolObj.establishment,
-          comuna: (schoolObj.comuna as any) || 'Chillán',
+          nombre: catInfo.nombre,
+          comuna: (catInfo.comuna as any) || (schoolObj.comuna as any) || 'Chillán',
           regimen: 'JEC',
           porcentajePrioritarios: 75,
         };

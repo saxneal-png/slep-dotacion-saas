@@ -19,7 +19,11 @@ export {
   listarEstablecimientos,
   guardarEstablecimiento,
   obtenerEstablecimientoPorRbd,
-  eliminarEstablecimiento
+  eliminarEstablecimiento,
+  registrarRbdEliminado,
+  desmarcarRbdEliminado,
+  listarRbdsEliminados,
+  esRbdEliminado
 } from './repositories/establecimientosRepo';
 
 export {

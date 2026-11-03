@@ -1,6 +1,7 @@
 import {
   guardarEstablecimiento,
   listarEstablecimientos,
+  listarRbdsEliminados,
   poblarPlanesEstudioEnDb
 } from './db';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
@@ -16,12 +17,9 @@ export async function sincronizarCatalogoEstablecimientos(forzarIgnorarEliminado
   const directoresPorRbd = new Map(DIRECTORES_TERRITORIO.map(d => [d.rbd.trim(), d]));
 
   let rbdsEliminados = new Set<string>();
-  if (!forzarIgnorarEliminados && typeof localStorage !== 'undefined') {
+  if (!forzarIgnorarEliminados) {
     try {
-      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
-      if (eliminadosRaw) {
-        rbdsEliminados = new Set<string>(JSON.parse(eliminadosRaw));
-      }
+      rbdsEliminados = await listarRbdsEliminados();
     } catch {}
   }
 

@@ -27,7 +27,8 @@ import {
   RawAsistenteInput
 } from '../../services/analizador/asistentesClassifier';
 import { AsistenteEducacion, EstamentoAsistente, Establecimiento } from '../../types';
-import { guardarAsistentesBatch, listarEstablecimientos, guardarEstablecimiento } from '../../database/db';
+import { guardarAsistentesBatch, listarEstablecimientos, guardarEstablecimiento, listarRbdsEliminados } from '../../database/db';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
 import { LevantamientoCoeficienteModal } from './LevantamientoCoeficienteModal';
 
 export interface AsistentesAnalizadorViewProps {
@@ -193,19 +194,27 @@ export const AsistentesAnalizadorView: React.FC<AsistentesAnalizadorViewProps> =
 
     try {
       const existingColegios = await listarEstablecimientos();
+      const eliminados = await listarRbdsEliminados();
       const existingRbdSet = new Set(existingColegios.map((c) => c.rbd));
 
       // Agrupar asistentes por RBD
       const mapPorRbd = new Map<string, AsistenteEducacion[]>();
 
       for (const a of asistentes) {
-        // Asegurar que el colegio exista
-        if (a.rbd && !existingRbdSet.has(a.rbd)) {
+        if (!a.rbd || eliminados.has(a.rbd)) continue;
+
+        // Asegurar que el colegio exista únicamente si es oficial SLEP
+        if (!existingRbdSet.has(a.rbd)) {
+          const catInfo = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(c => c.rbd === a.rbd);
+          if (!catInfo) {
+            console.warn(`[AsistentesAnalizadorView] Omitiendo establecimiento no oficial: ${a.rbd}`);
+            continue;
+          }
           await guardarEstablecimiento({
             id: `est-${a.rbd}`,
             rbd: a.rbd,
-            nombre: a.establishment || `Establecimiento RBD ${a.rbd}`,
-            comuna: (a.comuna as any) || 'Chillán',
+            nombre: catInfo.nombre,
+            comuna: (catInfo.comuna as any) || (a.comuna as any) || 'Chillán',
             regimen: 'JEC',
             porcentajePrioritarios: 75,
           });

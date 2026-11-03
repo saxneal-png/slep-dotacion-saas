@@ -69,7 +69,7 @@ export async function importarPlanillaPalDEP(
 
       if (!rutRaw || !rbdNum) return;
 
-      // Asegurar que el colegio exista
+      // Asegurar que el colegio exista en memoria para mapeos sin persistir arbitrariamente en DB
       if (!colegiosMap.has(rbdNum) && nombreEE) {
         const nuevoColegio: Establecimiento = {
           id: `est_${rbdNum}`,
@@ -80,7 +80,6 @@ export async function importarPlanillaPalDEP(
           porcentajePrioritarios: 75
         };
         colegiosMap.set(rbdNum, nuevoColegio);
-        guardarEstablecimiento(nuevoColegio).catch(console.error);
       }
 
       const calidadContratoStr = String(row.getCell(8).text || '').toLowerCase();

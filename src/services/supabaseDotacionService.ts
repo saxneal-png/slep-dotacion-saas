@@ -528,16 +528,27 @@ export class SupabaseDotacionService {
    * Verifica que los establecimientos existan en la tabla remota `establecimientos`.
    * Si alguno falta, lo crea a partir del catálogo oficial SLEP para evitar violaciones de clave foránea.
    */
+  /**
+   * Garantiza que los establecimientos referenciados existan en Supabase antes de insertar registros dependientes.
+   * IMPORTANTE: No crea colegios eliminados ni sintetiza colegios fantasma que no pertenezcan al catálogo SLEP oficial.
+   */
   static async asegurarEstablecimientosExisten(rbds: string[]): Promise<void> {
     if (!isSupabaseEnabled() || !rbds.length) return;
     const cleanRbds = [...new Set(rbds.map(r => r ? r.trim() : '').filter(Boolean))];
     if (!cleanRbds.length) return;
 
     try {
+      const { listarRbdsEliminados } = await import('../database/repositories/establecimientosRepo');
+      const eliminados = await listarRbdsEliminados();
+
+      // Filtrar RBDs que han sido eliminados expresamente por el Super Usuario
+      const candidatos = cleanRbds.filter(r => !eliminados.has(r));
+      if (!candidatos.length) return;
+
       const { data: existentes, error } = await supabase
         .from('establecimientos')
         .select('rbd')
-        .in('rbd', cleanRbds);
+        .in('rbd', candidatos);
 
       if (error) {
         console.warn('[SupabaseDotacionService] Aviso verificando establecimientos existentes:', error);
@@ -545,19 +556,23 @@ export class SupabaseDotacionService {
       }
 
       const existentesSet = new Set((existentes || []).map(e => String(e.rbd)));
-      const faltantes = cleanRbds.filter(r => !existentesSet.has(r));
+      const faltantes = candidatos.filter(r => !existentesSet.has(r));
 
-      if (faltantes.length > 0) {
-        const nuevosEstablecimientos: Establecimiento[] = faltantes.map(rbd => {
-          const info = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === rbd);
+      // ÚNICAMENTE auto-crear si el colegio pertenece oficialmente al catálogo oficial SLEP.
+      // NUNCA auto-crear colegios con nombres genéricos tipo 'ESTABLECIMIENTO RBD...' para evitar contaminación fantasma.
+      const permitidosParaCrear = faltantes.filter(rbd => SLEP_VALLE_DIGUILLIN_SCHOOLS.some(s => s.rbd === rbd));
+
+      if (permitidosParaCrear.length > 0) {
+        const nuevosEstablecimientos: Establecimiento[] = permitidosParaCrear.map(rbd => {
+          const info = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === rbd)!;
           return {
             id: `est-${rbd}`,
             rbd,
-            nombre: info?.nombre || `ESTABLECIMIENTO RBD ${rbd}`,
-            comuna: info?.comuna || 'Chillán',
+            nombre: info.nombre,
+            comuna: info.comuna || 'Chillán',
             regimen: 'JEC',
             porcentajePrioritarios: 75.0,
-            director: info?.director || undefined,
+            director: info.director || undefined,
             asesorUatp: 'UATP SLEP Valle Diguillín'
           };
         });
@@ -600,7 +615,11 @@ export class SupabaseDotacionService {
     if (!isSupabaseEnabled()) return [];
     try {
       const rows = await this.fetchAllRows('establecimientos', q => q.order('nombre'));
-      return rows.map(mapEstablecimientoFromDb);
+      const { listarRbdsEliminados } = await import('../database/repositories/establecimientosRepo');
+      const eliminados = await listarRbdsEliminados();
+      return rows
+        .map(mapEstablecimientoFromDb)
+        .filter(e => !eliminados.has(e.rbd));
     } catch (error) {
       console.error('Error Supabase obtenerEstablecimientos:', error);
       return [];
@@ -610,6 +629,31 @@ export class SupabaseDotacionService {
   static async eliminarEstablecimiento(rbd: string): Promise<void> {
     if (!isSupabaseEnabled()) return;
     const clean = rbd.replace(/^est-/, '').trim();
+
+    // 1. Registrar en lista de eliminados en Supabase para sincronización inter-usuarios
+    try {
+      await supabase.from('establecimientos_eliminados').upsert({
+        rbd: clean,
+        eliminado_por: 'Super Usuario',
+        fecha: new Date().toISOString()
+      }, { onConflict: 'rbd' });
+    } catch {}
+
+    // 2. Cascada relacional en Supabase para evitar errores de claves foráneas o datos huérfanos
+    try {
+      await Promise.allSettled([
+        supabase.from('asignaciones_horarias').delete().eq('rbd', clean),
+        supabase.from('asistentes_educacion').delete().eq('rbd', clean),
+        supabase.from('docentes').delete().eq('rbd', clean),
+        supabase.from('cursos_sae').delete().eq('rbd', clean),
+        supabase.from('salas_infraestructura').delete().eq('rbd', clean),
+        supabase.from('cartera_asesorias').delete().eq('rbd', clean)
+      ]);
+    } catch (errCascade) {
+      console.warn('[SupabaseDotacionService] Aviso cascada al eliminar establecimiento:', errCascade);
+    }
+
+    // 3. Eliminar establecimiento
     const { error } = await supabase.from('establecimientos').delete().eq('rbd', clean);
     if (error) console.error('Error Supabase eliminarEstablecimiento:', error);
   }
@@ -970,6 +1014,21 @@ export class SupabaseDotacionService {
     const cleanRbd = rbd.trim();
     if (!cleanRbd) throw new Error('RBD de colegio inválido');
 
+    // Verificar si el colegio fue eliminado por el Super Usuario para no re-descargarlo
+    const { esRbdEliminado } = await import('../database/repositories/establecimientosRepo');
+    if (await esRbdEliminado(cleanRbd)) {
+      console.log(`[SupabaseDotacionService] Omitiendo descarga de colegio eliminado: ${cleanRbd}`);
+      return {
+        hayDatosRemotos: false,
+        establecimientoActualizado: false,
+        salasDescargadas: 0,
+        cursosDescargados: 0,
+        docentesDescargados: 0,
+        asignacionesDescargadas: 0,
+        asistentesDescargados: 0
+      };
+    }
+
     // 1. Consultar datos en Supabase con paginación completa garantizando recuperación de todas las filas
     const [estRes, salasData, cursosData, docData, asigData, astData] = await Promise.all([
       supabase.from('establecimientos').select('*').eq('rbd', cleanRbd).maybeSingle(),
@@ -1132,7 +1191,7 @@ export class SupabaseDotacionService {
       };
     }
 
-    const { guardarEstablecimiento } = await import('../database/repositories/establecimientosRepo');
+    const { listarRbdsEliminados, registrarRbdEliminado, guardarEstablecimiento } = await import('../database/repositories/establecimientosRepo');
     const { guardarSala } = await import('../database/repositories/salasRepo');
     const { guardarCurso } = await import('../database/repositories/cursosRepo');
     const { guardarDocentesBatch } = await import('../database/repositories/docentesRepo');
@@ -1140,9 +1199,35 @@ export class SupabaseDotacionService {
     const { guardarAsistentesBatch } = await import('../database/repositories/asistentesRepo');
     const { persistDb } = await import('../database/dbCore');
 
+    // 1. Sincronizar lista de colegios eliminados para mantener consistencia inter-usuarios
+    let eliminadosRemotos: string[] = [];
+    try {
+      const { data: delData } = await supabase.from('establecimientos_eliminados').select('rbd');
+      if (delData && delData.length) {
+        eliminadosRemotos = delData.map(d => String(d.rbd).trim());
+      }
+    } catch {}
+
+    const eliminadosSet = await listarRbdsEliminados();
+    for (const remRbd of eliminadosRemotos) {
+      if (remRbd) {
+        eliminadosSet.add(remRbd);
+        await registrarRbdEliminado(remRbd, 'Sincronizacion Remota');
+      }
+    }
+
     let estCount = 0;
     if (estRows.length > 0) {
       for (const row of estRows) {
+        const rbdClean = String(row.rbd || '').trim();
+        // Omitir colegios eliminados por el Super Usuario
+        if (eliminadosSet.has(rbdClean)) continue;
+
+        // Omitir nombres fantasma/sintéticos huérfanos que comiencen con "ESTABLECIMIENTO RBD" y no estén en el catálogo oficial
+        if (row.nombre && String(row.nombre).startsWith('ESTABLECIMIENTO RBD') && !SLEP_VALLE_DIGUILLIN_SCHOOLS.some(s => s.rbd === rbdClean)) {
+          continue;
+        }
+
         await guardarEstablecimiento(mapEstablecimientoFromDb(row), true);
         estCount++;
       }
@@ -1151,6 +1236,8 @@ export class SupabaseDotacionService {
     let salasCount = 0;
     if (salasRows.length > 0) {
       for (const row of salasRows) {
+        const rbdClean = String(row.rbd || '').trim();
+        if (eliminadosSet.has(rbdClean)) continue;
         await guardarSala(mapSalaFromDb(row), true);
         salasCount++;
       }
@@ -1159,6 +1246,8 @@ export class SupabaseDotacionService {
     let cursosCount = 0;
     if (cursosRows.length > 0) {
       for (const row of cursosRows) {
+        const rbdClean = String(row.rbd || '').trim();
+        if (eliminadosSet.has(rbdClean)) continue;
         await guardarCurso(mapCursoFromDb(row), true);
         cursosCount++;
       }
@@ -1166,23 +1255,35 @@ export class SupabaseDotacionService {
 
     let docCount = 0;
     if (docRows.length > 0) {
-      const docentes = docRows.map(mapDocenteFromDb);
-      await guardarDocentesBatch(docentes);
-      docCount = docentes.length;
+      const docentes = docRows
+        .filter(r => !eliminadosSet.has(String(r.rbd || '').trim()))
+        .map(mapDocenteFromDb);
+      if (docentes.length > 0) {
+        await guardarDocentesBatch(docentes);
+        docCount = docentes.length;
+      }
     }
 
     let asigCount = 0;
     if (asigRows.length > 0) {
-      const asignaciones = asigRows.map(mapAsignacionFromDb);
-      await guardarAsignacionesBatch(asignaciones);
-      asigCount = asignaciones.length;
+      const asignaciones = asigRows
+        .filter(r => !eliminadosSet.has(String(r.rbd || '').trim()))
+        .map(mapAsignacionFromDb);
+      if (asignaciones.length > 0) {
+        await guardarAsignacionesBatch(asignaciones);
+        asigCount = asignaciones.length;
+      }
     }
 
     let astCount = 0;
     if (astRows.length > 0) {
-      const asistentes = astRows.map(mapAsistenteFromDb);
-      await guardarAsistentesBatch(asistentes, undefined, periodo, false);
-      astCount = asistentes.length;
+      const asistentes = astRows
+        .filter(r => !eliminadosSet.has(String(r.rbd || '').trim()))
+        .map(mapAsistenteFromDb);
+      if (asistentes.length > 0) {
+        await guardarAsistentesBatch(asistentes, undefined, periodo, false);
+        astCount = asistentes.length;
+      }
     }
 
     await persistDb(true);
@@ -1215,7 +1316,7 @@ export class SupabaseDotacionService {
     }
 
     const { getDb } = await import('../database/dbCore');
-    const { listarEstablecimientos } = await import('../database/repositories/establecimientosRepo');
+    const { listarEstablecimientos, listarRbdsEliminados } = await import('../database/repositories/establecimientosRepo');
     const { listarTodasLasSalas } = await import('../database/repositories/salasRepo');
     const { listarTodosLosCursos } = await import('../database/repositories/cursosRepo');
     const { listarTodosLosDocentesTerritorio } = await import('../database/repositories/docentesRepo');
@@ -1223,7 +1324,8 @@ export class SupabaseDotacionService {
     const { listarTodosLosAsistentesTerritorio } = await import('../database/repositories/asistentesRepo');
     const { listarUsuariosDb } = await import('../database/repositories/usuariosRepo');
 
-    const establecimientos = await listarEstablecimientos();
+    const eliminados = await listarRbdsEliminados();
+    const establecimientos = (await listarEstablecimientos()).filter(e => !eliminados.has(e.rbd.trim()));
     const salas = await listarTodasLasSalas();
     const todosCursos = await listarTodosLosCursos(2027);
     const todosDocentes = await listarTodosLosDocentesTerritorio(2027);
@@ -1233,6 +1335,18 @@ export class SupabaseDotacionService {
     const todosAst = await listarTodosLosAsistentesTerritorio(db, 2027);
 
     const usuarios = await listarUsuariosDb();
+
+    // 0. Sincronizar lista negra de establecimientos eliminados hacia Supabase
+    try {
+      if (eliminados.size > 0) {
+        const delPayload = Array.from(eliminados).map(r => ({
+          rbd: r,
+          eliminado_por: 'Super Usuario',
+          fecha: new Date().toISOString()
+        }));
+        await supabase.from('establecimientos_eliminados').upsert(delPayload, { onConflict: 'rbd' });
+      }
+    } catch {}
 
     // 1. Establecimientos (Entidad Padre Fundamental para evitar errores de Foreign Key 23503)
     if (establecimientos.length) {

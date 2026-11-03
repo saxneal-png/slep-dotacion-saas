@@ -12,7 +12,8 @@ import {
 } from '../database/repositories/usuariosRepo';
 import {
   listarEstablecimientos,
-  guardarEstablecimiento
+  guardarEstablecimiento,
+  listarRbdsEliminados
 } from '../database/repositories/establecimientosRepo';
 import { SupabaseDotacionService } from './supabaseDotacionService';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
@@ -20,7 +21,7 @@ import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 const STORAGE_USERS_KEY = 'slep_usuarios_sistema_v2';
 const STORAGE_SESSION_KEY = 'slep_auth_session_v1';
 
-// Función para derivar hash criptográfico usando SHA-256 con Salt
+// FunciÃ³n para derivar hash criptogrÃ¡fico usando SHA-256 con Salt
 export async function hashPassword(password: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(password + salt);
@@ -36,8 +37,8 @@ export function generateSalt(): string {
 }
 
 /**
- * Genera una clave temporal aleatoria criptográficamente segura (CSPRNG)
- * sin dejar cadenas fijas en el código fuente.
+ * Genera una clave temporal aleatoria criptogrÃ¡ficamente segura (CSPRNG)
+ * sin dejar cadenas fijas en el cÃ³digo fuente.
  */
 export function generarPasswordTemporalSegura(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -48,8 +49,8 @@ export function generarPasswordTemporalSegura(): string {
 }
 
 // Cuenta oficial de Super Usuario Administrador
-// Sin contraseñas en texto plano en el código fuente (resguardo SAST / GitGuardian).
-// La autenticación real se delega a Firebase Auth o al hash sellado en el primer inicio de sesión.
+// Sin contraseÃ±as en texto plano en el cÃ³digo fuente (resguardo SAST / GitGuardian).
+// La autenticaciÃ³n real se delega a Firebase Auth o al hash sellado en el primer inicio de sesiÃ³n.
 export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 'salt'>> = [
   {
     id: 'user-saxneal-superadmin',
@@ -75,7 +76,7 @@ export function migrarUsuario(u: UsuarioSistema): { usuario: UsuarioSistema; cam
 
 export class AuthService {
   private static async inicializarUsuariosSiNoExisten(): Promise<UsuarioSistema[]> {
-    // Purgar cuentas simuladas obsoletas de la versión 1
+    // Purgar cuentas simuladas obsoletas de la versiÃ³n 1
     localStorage.removeItem('slep_usuarios_sistema_v1');
 
     const raw = localStorage.getItem(STORAGE_USERS_KEY);
@@ -129,7 +130,7 @@ export class AuthService {
       }
     }
 
-    // Sembrar super usuario oficial sin contraseñas en texto plano en el código
+    // Sembrar super usuario oficial sin contraseÃ±as en texto plano en el cÃ³digo
     const env = (import.meta as any).env || {};
     const initialSalt = env.VITE_SUPERADMIN_INITIAL_SALT || '';
     const initialHash = env.VITE_SUPERADMIN_INITIAL_HASH || '';
@@ -151,7 +152,7 @@ export class AuthService {
       });
     }
 
-    // Sembrar directores territoriales iniciales con contraseña 123456
+    // Sembrar directores territoriales iniciales con contraseÃ±a 123456
     const passwordDirectores = '123456';
     for (const d of DIRECTORES_TERRITORIO) {
       const cleanEmail = d.email.trim().toLowerCase();
@@ -217,10 +218,10 @@ export class AuthService {
         usuarios = Array.from(mapLocal.values());
       }
     } catch {
-      // Fallback seguro si SQLite aún no está inicializado
+      // Fallback seguro si SQLite aÃºn no estÃ¡ inicializado
     }
 
-    // 2.0 Sincronización desde Supabase PostgreSQL (Fuente Primaria en Nube)
+    // 2.0 SincronizaciÃ³n desde Supabase PostgreSQL (Fuente Primaria en Nube)
     if (isSupabaseEnabled()) {
       try {
         const supaUsers = await SupabaseDotacionService.fetchAllRows<any>('usuarios_sistema');
@@ -262,7 +263,7 @@ export class AuthService {
             if (superLocal) remoteUsers.push(superLocal);
           }
 
-          // Purgar de SQLite cualquier usuario obsoleto que ya no esté en Supabase
+          // Purgar de SQLite cualquier usuario obsoleto que ya no estÃ© en Supabase
           try {
             const { getDb, persistDb } = await import('../database/dbCore');
             const db = await getDb();
@@ -292,7 +293,7 @@ export class AuthService {
     const cleanInput = usernameOrEmail.trim().toLowerCase();
     let usuarios = await this.getUsuarios();
     
-    // 1. Si es el superusuario saxneal@gmail.com, asegurar inicialización
+    // 1. Si es el superusuario saxneal@gmail.com, asegurar inicializaciÃ³n
     if (cleanInput === SUPER_USUARIO_EMAIL || cleanInput === 'saxneal') {
       usuarios = await this.inicializarUsuariosSiNoExisten();
     }
@@ -305,7 +306,7 @@ export class AuthService {
         (u.email && u.email.toLowerCase().split('@')[0] === cleanInput)
     );
 
-    // Si el usuario está registrado pero fue deshabilitado
+    // Si el usuario estÃ¡ registrado pero fue deshabilitado
     if (encontrado && !encontrado.activo) {
       throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
     }
@@ -314,22 +315,22 @@ export class AuthService {
     }
 
     // Si el perfil fue inicializado sin passwordHash/salt local (o antes de almacenar hash en Firestore),
-    // sellar criptográficamente la contraseña en su primer ingreso válido (>= 6 caracteres)
+    // sellar criptogrÃ¡ficamente la contraseÃ±a en su primer ingreso vÃ¡lido (>= 6 caracteres)
     if (!encontrado.passwordHash && !encontrado.salt && passwordPlain.trim().length >= 6) {
       const nuevoSalt = generateSalt();
       encontrado.salt = nuevoSalt;
       encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
     }
 
-    // Validación criptográfica con Salt (SHA-256)
+    // ValidaciÃ³n criptogrÃ¡fica con Salt (SHA-256)
     const testHash = encontrado.salt ? await hashPassword(passwordPlain, encontrado.salt) : '';
     const localPasswordOk = Boolean(encontrado.passwordHash && testHash === encontrado.passwordHash);
 
     if (!localPasswordOk) {
-      throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
+      throw new Error('ContraseÃ±a incorrecta. Verifique sus credenciales.');
     }
 
-    // Actualizar último acceso y refrescar cache
+    // Actualizar Ãºltimo acceso y refrescar cache
     encontrado.ultimoAcceso = new Date().toISOString();
     const existingIdx = usuarios.findIndex(u => u.id === encontrado!.id);
     if (existingIdx >= 0) {
@@ -376,6 +377,19 @@ export class AuthService {
 
   public static logout(): void {
     localStorage.removeItem(STORAGE_SESSION_KEY);
+    // Limpieza de claves temporales de sincronización para evitar contaminación cruzada entre sesiones en el mismo equipo
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('slep_last_cartera_sync_') || key.startsWith('slep_ui_colegio_activo'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch (_) {}
+    }
   }
 
   public static async restablecerPasswordPorEmail(email: string, nuevaPasswordPlain?: string): Promise<string> {
@@ -383,7 +397,7 @@ export class AuthService {
     const usuarios = await this.getUsuarios();
     const idx = usuarios.findIndex(u => (u.email || '').toLowerCase() === cleanEmail);
     if (idx === -1) {
-      throw new Error('No se encontró ninguna cuenta asociada a este correo electrónico institucional.');
+      throw new Error('No se encontrÃ³ ninguna cuenta asociada a este correo electrÃ³nico institucional.');
     }
 
     if (nuevaPasswordPlain) {
@@ -421,7 +435,7 @@ export class AuthService {
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuarioDb(usuarios[idx]);
 
-    // Refrescar sesión activa si corresponde al usuario autenticado
+    // Refrescar sesiÃ³n activa si corresponde al usuario autenticado
     const sesionActual = this.getSessionActual();
     if (sesionActual && (sesionActual.usuario.id === userId || sesionActual.usuario.username === usuarios[idx].username)) {
       sesionActual.usuario.debeCambiarPassword = false;
@@ -449,7 +463,7 @@ export class AuthService {
       usuario.activo = true;
     }
 
-    // 1. Si se especificó contraseña, calcular Salt y SHA-256
+    // 1. Si se especificÃ³ contraseÃ±a, calcular Salt y SHA-256
     if (passwordPlain) {
       const salt = generateSalt();
       usuario.salt = salt;
@@ -467,7 +481,7 @@ export class AuthService {
     }
 
     if (idx >= 0) {
-      // Conservar hash y metadatos previos si en esta edición no fueron modificados
+      // Conservar hash y metadatos previos si en esta ediciÃ³n no fueron modificados
       if (!usuario.passwordHash && usuarios[idx].passwordHash) {
         usuario.passwordHash = usuarios[idx].passwordHash;
         usuario.salt = usuarios[idx].salt;
@@ -514,7 +528,7 @@ export class AuthService {
     }
 
     // Si este usuario es asesor_uatp y se le asignaron RBDs en carteraRbds,
-    // desasignar esos mismos RBDs de las carteras explícitas de otros asesores_uatp para evitar duplicidad.
+    // desasignar esos mismos RBDs de las carteras explÃ­citas de otros asesores_uatp para evitar duplicidad.
     const otrosAsesoresModificados: UsuarioSistema[] = [];
     if (usuario.role === 'asesor_uatp' && usuario.carteraRbds && usuario.carteraRbds.length > 0) {
       const rbdSet = new Set(usuario.carteraRbds);
@@ -536,7 +550,7 @@ export class AuthService {
       await guardarUsuarioDb(otroMod);
     }
 
-    // 5. Si el usuario modificado es el de la sesión actual, refrescar inmediatamente la sesión activa
+    // 5. Si el usuario modificado es el de la sesiÃ³n actual, refrescar inmediatamente la sesiÃ³n activa
     const sesionActual = this.getSessionActual();
     if (sesionActual && (sesionActual.usuario.id === usuario.id || sesionActual.usuario.username === usuario.username)) {
       const { passwordHash: _, salt: __, ...usuarioSeguro } = usuario;
@@ -604,7 +618,7 @@ export class AuthService {
   }
 
   /**
-   * Sincroniza automáticamente un Asesor UATP (desde el registro de asesores)
+   * Sincroniza automÃ¡ticamente un Asesor UATP (desde el registro de asesores)
    * asegurando que exista como cuenta de usuario activa con rol 'asesor_uatp' y su cartera de colegios.
    */
   public static async sincronizarAsesorComoUsuario(asesor: {
@@ -634,11 +648,11 @@ export class AuthService {
     let passwordTemporal: string | undefined = undefined;
 
     if (existente) {
-      // Actualizar datos y cartera de colegios (reemplazo o unión según el modo)
+      // Actualizar datos y cartera de colegios (reemplazo o uniÃ³n segÃºn el modo)
       existente.nombreCompleto = cleanNombre || existente.nombreCompleto;
       existente.email = cleanEmail || existente.email;
       existente.role = 'asesor_uatp';
-      existente.cargo = asesor.cargo || existente.cargo || 'Asesor Técnico Pedagógico UATP';
+      existente.cargo = asesor.cargo || existente.cargo || 'Asesor TÃ©cnico PedagÃ³gico UATP';
       
       const nuevosRbds = asesor.carteraRbds || [];
       if (modoCartera === 'reemplazar') {
@@ -651,7 +665,7 @@ export class AuthService {
       await this.guardarUsuario(existente);
       return { usuario: existente, esNuevo: false };
     } else {
-      // Crear nuevo usuario activo con clave temporal aleatoria criptográficamente segura (CSPRNG)
+      // Crear nuevo usuario activo con clave temporal aleatoria criptogrÃ¡ficamente segura (CSPRNG)
       passwordTemporal = generarPasswordTemporalSegura();
       const salt = generateSalt();
       const passwordHash = await hashPassword(passwordTemporal, salt);
@@ -661,7 +675,7 @@ export class AuthService {
         nombreCompleto: cleanNombre,
         email: cleanEmail,
         role: 'asesor_uatp',
-        cargo: asesor.cargo || 'Asesor Técnico Pedagógico UATP',
+        cargo: asesor.cargo || 'Asesor TÃ©cnico PedagÃ³gico UATP',
         passwordHash,
         salt,
         carteraRbds: Array.from(new Set(asesor.carteraRbds || [])),
@@ -675,7 +689,7 @@ export class AuthService {
 
   /**
    * Genera masivamente los usuarios directores de escuelas y liceos del territorio SLEP.
-   * Asigna su correo SLEP oficial como username/email, contraseña inicial '123456' (hasheada con salt único)
+   * Asigna su correo SLEP oficial como username/email, contraseÃ±a inicial '123456' (hasheada con salt Ãºnico)
    * y rol 'director_establecimiento' vinculado estrictamente a su RBD asignado.
    */
   public static async generarUsuariosDirectoresMasivo(
@@ -688,6 +702,7 @@ export class AuthService {
     errores: string[];
   }> {
     const usuarios = await this.getUsuarios();
+    const eliminados = await listarRbdsEliminados();
     let creados = 0;
     let actualizados = 0;
     const errores: string[] = [];
@@ -698,7 +713,12 @@ export class AuthService {
         const cleanRbd = (d.rbd || '').trim();
         const cleanNombre = (d.director || '').trim();
         if (!cleanEmail || !cleanRbd) {
-          errores.push(`RBD ${d.rbd}: Falta correo electrónico o RBD válido.`);
+          errores.push(`RBD ${d.rbd}: Falta correo electrÃ³nico o RBD vÃ¡lido.`);
+          continue;
+        }
+
+        // Respetar colegios eliminados por el Super Usuario
+        if (eliminados.has(cleanRbd)) {
           continue;
         }
 
@@ -752,12 +772,13 @@ export class AuthService {
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuariosBatchDb(usuarios);
 
-    // Sincronizar información de directores en la tabla establecimientos local SQLite
+    // Sincronizar informaciÃ³n de directores en la tabla establecimientos local SQLite
     try {
       const estActuales = await listarEstablecimientos();
       const mapEst = new Map(estActuales.map(e => [e.rbd.trim(), e]));
       for (const d of directores) {
         const rbd = d.rbd.trim();
+        if (eliminados.has(rbd)) continue;
         const prev = mapEst.get(rbd);
         const cat = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === rbd);
         if (prev) {
@@ -767,12 +788,12 @@ export class AuthService {
             telefono: d.telefono || prev.telefono,
             email: d.correoEE || d.email || prev.email
           }, true);
-        } else {
+        } else if (cat) {
           await guardarEstablecimiento({
             id: `est-${rbd}`,
             rbd,
-            nombre: cat?.nombre || d.nombreEstablecimiento,
-            comuna: (cat?.comuna as any) || (d.comuna as any) || 'Chillán',
+            nombre: cat.nombre,
+            comuna: (cat?.comuna as any) || (d.comuna as any) || 'ChillÃ¡n',
             regimen: cat?.tipo === 'JARDIN' || cat?.tipo === 'SALA_CUNA' ? 'No JEC' : 'JEC',
             porcentajePrioritarios: 75.0,
             director: d.director,

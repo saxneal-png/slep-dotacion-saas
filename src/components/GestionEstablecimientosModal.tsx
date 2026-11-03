@@ -5,6 +5,7 @@ import {
   ArrowRight, Check, RefreshCw
 } from 'lucide-react';
 import { Establecimiento, ComunaValleDiguillin, RegimenJornada } from '../types';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 
 export interface GestionEstablecimientosModalProps {
   isOpen: boolean;
@@ -63,6 +64,36 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
   const [colegioAEliminar, setColegioAEliminar] = useState<Establecimiento | null>(null);
   const [confirmacionTexto, setConfirmacionTexto] = useState('');
   const [eliminando, setEliminando] = useState(false);
+  const [depurandoFantasmas, setDepurandoFantasmas] = useState(false);
+
+  const colegiosFantasma = useMemo(() => {
+    return colegios.filter(c => {
+      const rbdClean = c.rbd.trim();
+      const esSintetico = c.nombre.trim().toUpperCase().startsWith('ESTABLECIMIENTO RBD') || !rbdClean || rbdClean === '0';
+      const existeEnCatalogo = SLEP_VALLE_DIGUILLIN_SCHOOLS.some(s => s.rbd === rbdClean);
+      return esSintetico || !existeEnCatalogo;
+    });
+  }, [colegios]);
+
+  const handleDepurarFantasmas = async () => {
+    if (!colegiosFantasma.length) return;
+    const confirmacion = window.confirm(
+      `¿Desea depurar y eliminar definitivamente ${colegiosFantasma.length} colegios no oficiales o generados automáticamente? Esta acción limpiará sus dependencias tanto en SQLite local como en Supabase.`
+    );
+    if (!confirmacion) return;
+
+    setDepurandoFantasmas(true);
+    try {
+      for (const f of colegiosFantasma) {
+        await onEliminarColegio(f.id);
+      }
+      setMensajeExito(`Se han depurado ${colegiosFantasma.length} colegios fantasma exitosamente.`);
+    } catch (err: any) {
+      setFormError(`Error durante la depuración: ${err.message}`);
+    } finally {
+      setDepurandoFantasmas(false);
+    }
+  };
 
   const filteredColegios = useMemo(() => {
     return colegios.filter(c => {
@@ -304,6 +335,29 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
                 </select>
               </div>
             </div>
+
+            {/* Banner de Detección de Colegios Fantasma */}
+            {colegiosFantasma.length > 0 && (
+              <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shrink-0 animate-fade-in">
+                <div className="flex items-center gap-2.5 text-amber-900 dark:text-amber-200">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-black text-amber-800 dark:text-amber-300">Detección de anomalías: </span>
+                    <span>Se detectaron <strong>{colegiosFantasma.length}</strong> establecimientos no oficiales o sintéticos en el sistema.</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDepurarFantasmas}
+                  disabled={depurandoFantasmas}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all shrink-0 disabled:opacity-50"
+                  title="Eliminar de forma permanente todos los colegios fantasma y sus datos asociados"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{depurandoFantasmas ? 'Depurando...' : `Depurar Colegios Fantasma (${colegiosFantasma.length})`}</span>
+                </button>
+              </div>
+            )}
 
             {/* Listado con scroll */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800">

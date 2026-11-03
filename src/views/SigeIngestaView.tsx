@@ -14,15 +14,21 @@ import {
   Check
 } from 'lucide-react';
 import { Establecimiento, ComunaValleDiguillin, RegimenJornada, AsistenteEducacion, Docente } from '../types';
+import { AuthSession, UsuarioSistema } from '../types/authTypes';
+import { puedeAccederRbd } from '../services/scopeService';
 import { parsearPlanillaSige, decodificarArchivoSige, ResultadoParseoSige } from '../services/sigeParserService';
 import { parsearAsistentesSige, esEncabezadoAsistentesSige, ResultadoParseoAsistentesSige } from '../services/sigeAsistentesParser';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
-import { guardarEstablecimiento } from '../database/repositories/establecimientosRepo';
+import { guardarEstablecimiento, listarRbdsEliminados } from '../database/repositories/establecimientosRepo';
+import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 import { getDb, persistDb } from '../database/dbCore';
 
 interface SigeIngestaViewProps {
   periodoActivo?: number;
+  session?: AuthSession | null;
+  colegios?: Establecimiento[];
+  usuariosSistema?: UsuarioSistema[];
   onIngestarSigeCompleto: (
     establecimiento: Establecimiento,
     docentes: Docente[]
@@ -48,6 +54,9 @@ type TipoNomina = 'DOCENTES' | 'ASISTENTES';
 
 export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
   periodoActivo = 2027,
+  session,
+  colegios = [],
+  usuariosSistema = [],
   onIngestarSigeCompleto,
   onIngestarAsistentesSigeCompleto
 }) => {
@@ -112,26 +121,49 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
     if (!resultadoDocentes) return;
     setCargando(true);
     try {
-      // 1. Guardar todos los establecimientos detectados en el archivo (asociados por columna RBD)
-      const establecimientosAGuardar = resultadoDocentes.establecimientosDetectados.length
+      // 1. Guardar únicamente establecimientos oficiales y no eliminados
+      const eliminados = await listarRbdsEliminados();
+      const rawEstablecimientos = resultadoDocentes.establecimientosDetectados.length
         ? resultadoDocentes.establecimientosDetectados
         : [resultadoDocentes.establecimientoSugerido];
 
-      const estsCompletos: Establecimiento[] = establecimientosAGuardar.map(est => ({
-        ...est,
-        comuna: est.comuna || comunaSeleccionada,
-        regimen: est.regimen || regimenSeleccionado,
-        porcentajePrioritarios: prioritarios,
-        asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
-      }));
+      const establecimientosAGuardar = rawEstablecimientos.filter(est => {
+        const rbdClean = est.rbd.trim();
+        return !eliminados.has(rbdClean) && SLEP_VALLE_DIGUILLIN_SCHOOLS.some(s => s.rbd === rbdClean);
+      });
+
+      // Verificación de alcance autorizado (RBAC): Impedir cruce de establecimientos no autorizados
+      if (session) {
+        for (const est of establecimientosAGuardar) {
+          if (!puedeAccederRbd(session.usuario, est.rbd, colegios, usuariosSistema)) {
+            throw new Error(
+              `Acceso denegado: El archivo SIGE contiene datos del establecimiento "${est.nombre}" (RBD ${est.rbd}), el cual está fuera de su perfil asignado.`
+            );
+          }
+        }
+      }
+
+      const estsCompletos: Establecimiento[] = establecimientosAGuardar.map(est => {
+        const catInfo = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === est.rbd.trim());
+        return {
+          ...est,
+          nombre: catInfo?.nombre || est.nombre,
+          comuna: catInfo?.comuna || est.comuna || comunaSeleccionada,
+          regimen: est.regimen || regimenSeleccionado,
+          porcentajePrioritarios: prioritarios,
+          asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
+        };
+      });
 
       for (const est of estsCompletos) {
         await guardarEstablecimiento(est);
       }
 
       // Sincronizar anticipadamente en Supabase para que las FKs existan antes de insertar docentes
-      const { SupabaseDotacionService } = await import('../services/supabaseDotacionService');
-      await SupabaseDotacionService.guardarEstablecimientosBatch(estsCompletos);
+      if (estsCompletos.length > 0) {
+        const { SupabaseDotacionService } = await import('../services/supabaseDotacionService');
+        await SupabaseDotacionService.guardarEstablecimientosBatch(estsCompletos);
+      }
 
       // 2. Guardar docentes en batch preservando su propio RBD y esperar la sincronización remota
       let errorNube: string | null = null;
@@ -167,26 +199,49 @@ export const SigeIngestaView: React.FC<SigeIngestaViewProps> = ({
     if (!resultadoAsistentes) return;
     setCargando(true);
     try {
-      // 1. Guardar todos los establecimientos detectados en el archivo
-      const establecimientosAGuardar = resultadoAsistentes.establecimientosDetectados.length
+      // 1. Guardar únicamente establecimientos oficiales y no eliminados
+      const eliminados = await listarRbdsEliminados();
+      const rawEstablecimientos = resultadoAsistentes.establecimientosDetectados.length
         ? resultadoAsistentes.establecimientosDetectados
         : [resultadoAsistentes.establecimientoSugerido];
 
-      const estsCompletos: Establecimiento[] = establecimientosAGuardar.map(est => ({
-        ...est,
-        comuna: est.comuna || comunaSeleccionada,
-        regimen: est.regimen || regimenSeleccionado,
-        porcentajePrioritarios: prioritarios,
-        asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
-      }));
+      const establecimientosAGuardar = rawEstablecimientos.filter(est => {
+        const rbdClean = est.rbd.trim();
+        return !eliminados.has(rbdClean) && SLEP_VALLE_DIGUILLIN_SCHOOLS.some(s => s.rbd === rbdClean);
+      });
+
+      // Verificación de alcance autorizado (RBAC): Impedir cruce de establecimientos no autorizados
+      if (session) {
+        for (const est of establecimientosAGuardar) {
+          if (!puedeAccederRbd(session.usuario, est.rbd, colegios, usuariosSistema)) {
+            throw new Error(
+              `Acceso denegado: El archivo SIGE contiene datos del establecimiento "${est.nombre}" (RBD ${est.rbd}), el cual está fuera de su perfil asignado.`
+            );
+          }
+        }
+      }
+
+      const estsCompletos: Establecimiento[] = establecimientosAGuardar.map(est => {
+        const catInfo = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === est.rbd.trim());
+        return {
+          ...est,
+          nombre: catInfo?.nombre || est.nombre,
+          comuna: catInfo?.comuna || est.comuna || comunaSeleccionada,
+          regimen: est.regimen || regimenSeleccionado,
+          porcentajePrioritarios: prioritarios,
+          asesorUatp: est.asesorUatp || 'UATP SLEP Valle Diguillín'
+        };
+      });
 
       for (const est of estsCompletos) {
         await guardarEstablecimiento(est);
       }
 
       // Sincronizar anticipadamente en Supabase para que las FKs existan
-      const { SupabaseDotacionService } = await import('../services/supabaseDotacionService');
-      await SupabaseDotacionService.guardarEstablecimientosBatch(estsCompletos);
+      if (estsCompletos.length > 0) {
+        const { SupabaseDotacionService } = await import('../services/supabaseDotacionService');
+        await SupabaseDotacionService.guardarEstablecimientosBatch(estsCompletos);
+      }
 
       // 2. Guardar asistentes en batch preservando su propio RBD
       const db = await getDb();

@@ -213,6 +213,12 @@ CREATE TABLE IF NOT EXISTS usuarios_sistema (
   debe_cambiar_password INTEGER DEFAULT 0,
   ultimo_acceso TEXT
 );
+
+CREATE TABLE IF NOT EXISTS establecimientos_eliminados (
+  rbd TEXT PRIMARY KEY,
+  eliminado_por TEXT,
+  fecha TEXT
+);
 `;
 
 export function runMigrations(db: Database): void {
@@ -500,6 +506,12 @@ export function runMigrations(db: Database): void {
 
       UPDATE asignaciones_horarias SET periodo = 2027 WHERE periodo != 2027 OR periodo IS NULL;
       UPDATE auditoria_cambios SET periodo = 2027 WHERE periodo != 2027 OR periodo IS NULL;
+
+      CREATE TABLE IF NOT EXISTS establecimientos_eliminados (
+        rbd TEXT PRIMARY KEY,
+        eliminado_por TEXT,
+        fecha TEXT
+      );
     `);
   } catch (e) {
     console.warn('Aviso en migración automática de período 2026 -> 2027:', e);

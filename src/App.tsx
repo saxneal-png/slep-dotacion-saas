@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/Header';
 const SchoolNavigatorModal = React.lazy(() => import('./components/SchoolNavigatorModal').then(m => ({ default: m.SchoolNavigatorModal })));
 const SaveBackupModal = React.lazy(() => import('./components/SaveBackupModal').then(m => ({ default: m.SaveBackupModal })));
@@ -91,6 +91,7 @@ import { PrimerAccesoModal } from './components/auth/PrimerAccesoModal';
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
   const [loading, setLoading] = useState(true);
+  const loadRequestIdRef = useRef<number>(0);
 
   const evaluadorPermisos = useEvaluadorPermisos(session);
   const permisos = evaluadorPermisos.legado;
@@ -132,6 +133,11 @@ export const App: React.FC = () => {
   const handleGuardarCambiosEnNube = async () => {
     if (!colegioActivo) {
       mostrarMensaje('Selecciona un establecimiento para guardar sus cambios en la nube.', 'error');
+      return;
+    }
+    // Protección estricta RBAC: evitar que se guarden cambios en un colegio no autorizado
+    if (session && !puedeAccederRbd(session.usuario, colegioActivo.rbd, colegios, usuariosSistema)) {
+      mostrarMensaje('Acceso denegado: No tiene autorización para modificar este establecimiento.', 'error');
       return;
     }
     setGuardandoEnNube(true);
@@ -277,15 +283,22 @@ export const App: React.FC = () => {
 
       if (isSupabaseEnabled()) {
         try {
-          const userRole = session?.usuario?.role;
+          const rolNormal = session?.usuario?.role ? normalizarRol(session.usuario.role) : undefined;
           const userRbd = session?.usuario?.rbdAsignado;
+          const esDirector = rolNormal === 'director_establecimiento';
 
-          // Optimización de Cuota Gratuita (5GB Egress / 60 conexiones concurrentes):
-          // 1. Si es Director de Colegio, hidratar únicamente su escuela asignada (no los 131 colegios)
-          if (userRole === 'director_colegio' && userRbd) {
+          // Aislamiento Estricto de Descarga Nube y Optimización de Cuota:
+          // 1. Si es Director de Establecimiento, hidratar única y exclusivamente su escuela asignada
+          if (esDirector && userRbd) {
             await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(userRbd, p);
+          } else if (rolNormal === 'asesor_uatp') {
+            // 2. Si es Asesor UATP, hidratar únicamente las escuelas de su cartera
+            const permitidos = session ? colegiosVisibles(session.usuario, listEst, usuariosSistema) : [];
+            for (const est of permitidos) {
+              await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(est.rbd, p);
+            }
           } else {
-            // 2. Para Asesores/Admin: verificar si ya hay datos en SQLite local (IndexedDB)
+            // 3. Para Super Usuario / Admin: verificar si ya hay datos en SQLite local (IndexedDB)
             // y controlar el intervalo para no saturar la transferencia de la base de datos en cada recarga
             const syncKey = `slep_last_cartera_sync_${p}`;
             const lastSync = parseInt(localStorage.getItem(syncKey) || '0', 10);
@@ -311,15 +324,30 @@ export const App: React.FC = () => {
             }
           }
         } catch (errSync) {
-          console.warn('[cargarDatos] Aviso descargando cartera inicial desde Supabase:', errSync);
+          console.warn('[cargarDatos] Aviso descargando cartera desde Supabase:', errSync);
         }
       }
 
       RolesPermisosService.sincronizarDesdeSupabase().catch(() => {});
       cargarConfiguracionGeneralRemota().catch(() => {});
 
-      if (listEst.length > 0) {
-        const defaultEst = colegioActivo || listEst[0];
+      // Determinación estricta del colegio objetivo según el alcance del usuario en sesión
+      let defaultEst: Establecimiento | null = null;
+      if (session) {
+        const defRol = getDefinicionRol(normalizarRol(session.usuario.role));
+        if (defRol.alcance === 'establecimiento' && session.usuario.rbdAsignado) {
+          defaultEst = listEst.find(c => c.rbd === session.usuario.rbdAsignado) || null;
+        } else {
+          const permitidos = colegiosVisibles(session.usuario, listEst, usuariosSistema);
+          if (permitidos.length > 0) {
+            defaultEst = (colegioActivo && permitidos.some(c => c.rbd === colegioActivo.rbd)) ? colegioActivo : permitidos[0];
+          }
+        }
+      } else if (listEst.length > 0) {
+        defaultEst = colegioActivo || listEst[0];
+      }
+
+      if (defaultEst) {
         setColegioActivo(defaultEst);
         await cargarDatosColegio(defaultEst.rbd, p);
       }
@@ -332,27 +360,34 @@ export const App: React.FC = () => {
   };
 
   const cargarDatosColegio = async (rbd: string, p: number = periodoActivo, autoSyncCloud: boolean = false) => {
-    let s = await listarSalas(rbd);
-    let c = await listarCursos(rbd, p);
-    let d = await listarDocentes(rbd, p);
-    let a = await listarAsignaciones(rbd, p);
-    let ast = await listarAsistentes(rbd, p);
+    const currentReqId = ++loadRequestIdRef.current;
+    const cleanRbd = rbd.trim();
+
+    let s = await listarSalas(cleanRbd);
+    let c = await listarCursos(cleanRbd, p);
+    let d = await listarDocentes(cleanRbd, p);
+    let a = await listarAsignaciones(cleanRbd, p);
+    let ast = await listarAsistentes(cleanRbd, p);
 
     // Si localmente está en blanco o falta el estamento docente o se solicita autoSyncCloud, intentar hidratar desde Supabase
     if (autoSyncCloud || (c.length === 0 && d.length === 0 && ast.length === 0) || (d.length === 0 && (c.length > 0 || ast.length > 0))) {
       try {
-        const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(rbd, p);
+        const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(cleanRbd, p);
+        if (currentReqId !== loadRequestIdRef.current) return;
         if (res.hayDatosRemotos) {
-          s = await listarSalas(rbd);
-          c = await listarCursos(rbd, p);
-          d = await listarDocentes(rbd, p);
-          a = await listarAsignaciones(rbd, p);
-          ast = await listarAsistentes(rbd, p);
+          s = await listarSalas(cleanRbd);
+          c = await listarCursos(cleanRbd, p);
+          d = await listarDocentes(cleanRbd, p);
+          a = await listarAsignaciones(cleanRbd, p);
+          ast = await listarAsistentes(cleanRbd, p);
         }
       } catch (err) {
         console.warn('[cargarDatosColegio] Aviso consultando Supabase:', err);
       }
     }
+
+    // Token Anti-Race Condition: Abortar si otra petición más reciente fue iniciada
+    if (currentReqId !== loadRequestIdRef.current) return;
 
     setSalas(s);
     setCursos(c);
@@ -837,8 +872,15 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    loadRequestIdRef.current++;
     AuthService.logout();
     setSession(null);
+    setColegioActivo(null);
+    setSalas([]);
+    setCursos([]);
+    setDocentes([]);
+    setAsignaciones([]);
+    setAsistentes([]);
     setVistaActiva('colegios_asesorados');
     mostrarMensaje('Sesión cerrada correctamente.');
   };
@@ -1036,7 +1078,7 @@ export const App: React.FC = () => {
               onAbrirModuloSige={() => setVistaActiva('sige')}
               onExportarExcel={handleExportarExcel}
               onAbrirNavegadorColegios={() => setModalNavegadorAbierto(true)}
-              todosLosColegios={colegios}
+              todosLosColegios={colegiosPermitidos}
               todosLosDocentes={todosLosDocentes}
               todasLasAsignaciones={todasLasAsignaciones}
               periodoActivo={periodoActivo}
@@ -1073,6 +1115,9 @@ export const App: React.FC = () => {
         {vistaActiva === 'sige' && (
           <SigeIngestaView
             periodoActivo={periodoActivo}
+            session={session}
+            colegios={colegiosPermitidos}
+            usuariosSistema={usuariosSistema}
             onIngestarSigeCompleto={handleIngestarSigeCompleto}
             onIngestarAsistentesSigeCompleto={handleIngestarAsistentesSigeCompleto}
           />
@@ -1137,7 +1182,7 @@ export const App: React.FC = () => {
             onEliminarDocente={handleEliminarDocente}
             onGuardarAsignacion={handleGuardarAsignacion}
             onEliminarAsignacion={handleEliminarAsignacion}
-            todosLosColegios={colegios}
+            todosLosColegios={colegiosPermitidos}
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
             onNavegarAPestana={setVistaActiva}
@@ -1252,7 +1297,7 @@ export const App: React.FC = () => {
         <SaveBackupModal
           isOpen={modalRespaldosAbierto}
           onClose={() => setModalRespaldosAbierto(false)}
-          colegios={colegios}
+          colegios={colegiosPermitidos}
           colegioActivo={colegioActivo}
           periodoActivo={periodoActivo}
           docentes={todosLosDocentes}

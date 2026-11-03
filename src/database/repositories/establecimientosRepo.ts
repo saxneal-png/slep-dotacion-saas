@@ -28,6 +28,9 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
   const db = await getDb();
   const rbdNorm = e.rbd.trim();
 
+  // Si el usuario o Super Usuario guarda un colegio, removerlo de la lista negra de eliminados
+  await desmarcarRbdEliminado(rbdNorm);
+
   // Buscar por RBD o por ID para evitar violación de UNIQUE constraint
   const existing = db.exec("SELECT id FROM establecimientos WHERE rbd = ? OR id = ?", [rbdNorm, e.id]);
   if (existing.length && existing[0].values.length) {
@@ -102,6 +105,86 @@ export async function obtenerEstablecimientoPorRbd(rbd: string): Promise<Estable
   };
 }
 
+export async function registrarRbdEliminado(rbd: string, usuario: string = 'Super Usuario'): Promise<void> {
+  const db = await getDb();
+  const clean = rbd.replace(/^est-/, '').trim();
+  try {
+    db.run("INSERT OR REPLACE INTO establecimientos_eliminados (rbd, eliminado_por, fecha) VALUES (?, ?, ?)", [
+      clean,
+      usuario,
+      new Date().toISOString()
+    ]);
+    persistDb();
+  } catch (err) {
+    console.warn('[establecimientosRepo] Error registrando RBD eliminado en SQLite:', err);
+  }
+
+  // Sincronizar en localStorage como respaldo local
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
+      const set = new Set<string>(eliminadosRaw ? JSON.parse(eliminadosRaw) : []);
+      set.add(clean);
+      localStorage.setItem('slep_rbds_eliminados', JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+}
+
+export async function desmarcarRbdEliminado(rbd: string): Promise<void> {
+  const db = await getDb();
+  const clean = rbd.replace(/^est-/, '').trim();
+  try {
+    db.run("DELETE FROM establecimientos_eliminados WHERE rbd = ?", [clean]);
+    persistDb();
+  } catch {}
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
+      if (eliminadosRaw) {
+        const set = new Set<string>(JSON.parse(eliminadosRaw));
+        set.delete(clean);
+        localStorage.setItem('slep_rbds_eliminados', JSON.stringify(Array.from(set)));
+      }
+    }
+  } catch {}
+}
+
+export async function listarRbdsEliminados(): Promise<Set<string>> {
+  const db = await getDb();
+  const set = new Set<string>();
+
+  try {
+    const res = db.exec("SELECT rbd FROM establecimientos_eliminados");
+    if (res.length && res[0].values) {
+      for (const row of res[0].values) {
+        if (row[0]) set.add(String(row[0]).trim());
+      }
+    }
+  } catch {}
+
+  // Fallback localStorage
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
+      if (eliminadosRaw) {
+        const arr = JSON.parse(eliminadosRaw);
+        for (const item of arr) {
+          if (item) set.add(String(item).trim());
+        }
+      }
+    }
+  } catch {}
+
+  return set;
+}
+
+export async function esRbdEliminado(rbd: string): Promise<boolean> {
+  const clean = rbd.replace(/^est-/, '').trim();
+  const eliminados = await listarRbdsEliminados();
+  return eliminados.has(clean);
+}
+
 export async function eliminarEstablecimiento(idOrRbd: string): Promise<void> {
   const db = await getDb();
   
@@ -125,15 +208,8 @@ export async function eliminarEstablecimiento(idOrRbd: string): Promise<void> {
   
   persistDb();
 
-  // Registrar RBD eliminado para evitar que el seeder lo resucite
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const eliminadosRaw = localStorage.getItem('slep_rbds_eliminados');
-      const set = new Set<string>(eliminadosRaw ? JSON.parse(eliminadosRaw) : []);
-      set.add(rbd);
-      localStorage.setItem('slep_rbds_eliminados', JSON.stringify(Array.from(set)));
-    }
-  } catch {}
+  // Registrar RBD eliminado de forma permanente (SQLite + Supabase + localStorage)
+  await registrarRbdEliminado(rbd);
 
   SupabaseDotacionService.eliminarEstablecimiento(rbd).catch(err =>
     console.warn('[establecimientosRepo] Aviso eliminando en Supabase:', err)
