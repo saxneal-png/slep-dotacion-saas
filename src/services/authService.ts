@@ -7,12 +7,14 @@ import {
   listarUsuariosDb,
   guardarUsuarioDb,
   guardarUsuariosBatchDb,
-  eliminarUsuarioDb
+  eliminarUsuarioDb,
+  parseJsonArray
 } from '../database/repositories/usuariosRepo';
 import {
   listarEstablecimientos,
   guardarEstablecimiento
 } from '../database/repositories/establecimientosRepo';
+import { SupabaseDotacionService } from './supabaseDotacionService';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 
 const STORAGE_USERS_KEY = 'slep_usuarios_sistema_v2';
@@ -182,22 +184,33 @@ export class AuthService {
       const sqlUsers = await listarUsuariosDb();
       if (sqlUsers.length > 0) {
         const mapLocal = new Map<string, UsuarioSistema>();
-        usuarios.forEach(u => mapLocal.set((u.email || u.username || u.id).toLowerCase(), u));
+        usuarios.forEach(u => mapLocal.set(u.id, u));
         for (const su of sqlUsers) {
-          const key = (su.email || su.username || su.id).toLowerCase();
-          const prev = mapLocal.get(key);
+          let prevKey = su.id;
+          let prev = mapLocal.get(prevKey);
           if (!prev) {
-            mapLocal.set(key, su);
+            const matchEntry = Array.from(mapLocal.entries()).find(([, u]) =>
+              (su.email && (u.email || '').toLowerCase() === su.email.toLowerCase()) ||
+              u.username.toLowerCase() === su.username.toLowerCase()
+            );
+            if (matchEntry) {
+              prevKey = matchEntry[0];
+              prev = matchEntry[1];
+              mapLocal.delete(prevKey);
+            }
+          }
+          if (!prev) {
+            mapLocal.set(su.id, su);
           } else {
-            mapLocal.set(key, {
+            mapLocal.set(su.id, {
               ...prev,
               ...su,
               passwordHash: su.passwordHash || prev.passwordHash,
               salt: su.salt || prev.salt,
-              rbdAsignado: su.rbdAsignado || prev.rbdAsignado,
+              rbdAsignado: su.rbdAsignado !== undefined ? su.rbdAsignado : prev.rbdAsignado,
               debeCambiarPassword: su.debeCambiarPassword !== undefined ? su.debeCambiarPassword : prev.debeCambiarPassword,
-              carteraRbds: (su.carteraRbds && su.carteraRbds.length > 0) ? su.carteraRbds : (prev.carteraRbds || []),
-              asesoresSupervisados: (su.asesoresSupervisados && su.asesoresSupervisados.length > 0) ? su.asesoresSupervisados : (prev.asesoresSupervisados || [])
+              carteraRbds: su.carteraRbds !== undefined ? su.carteraRbds : (prev.carteraRbds || []),
+              asesoresSupervisados: su.asesoresSupervisados !== undefined ? su.asesoresSupervisados : (prev.asesoresSupervisados || [])
             });
           }
         }
@@ -210,10 +223,8 @@ export class AuthService {
     // 2.0 Sincronización desde Supabase PostgreSQL (Fuente Primaria en Nube)
     if (isSupabaseEnabled()) {
       try {
-        const { data: supaUsers, error: supaErr } = await supabase
-          .from('usuarios_sistema')
-          .select('*');
-        if (!supaErr && supaUsers && supaUsers.length > 0) {
+        const supaUsers = await SupabaseDotacionService.fetchAllRows<any>('usuarios_sistema');
+        if (supaUsers && supaUsers.length > 0) {
           const remoteUsers: UsuarioSistema[] = [];
 
           for (const row of supaUsers) {
@@ -221,34 +232,24 @@ export class AuthService {
             const esSuper = emailKey === SUPER_USUARIO_EMAIL;
             const rol = esSuper ? 'super_usuario' : normalizarRol(row.role || 'asesor_uatp');
 
-            let carteraRbds: string[] = [];
-            try {
-              const parsed = typeof row.cartera_rbds_json === 'string'
-                ? JSON.parse(row.cartera_rbds_json)
-                : row.cartera_rbds_json;
-              if (Array.isArray(parsed) && parsed.length > 0) carteraRbds = parsed;
-            } catch {}
-
-            let asesoresSupervisados: string[] = [];
-            try {
-              const parsed = typeof row.asesores_supervisados_json === 'string'
-                ? JSON.parse(row.asesores_supervisados_json)
-                : row.asesores_supervisados_json;
-              if (Array.isArray(parsed) && parsed.length > 0) asesoresSupervisados = parsed;
-            } catch {}
+            const carteraRbds = parseJsonArray(row.cartera_rbds_json);
+            const asesoresSupervisados = parseJsonArray(row.asesores_supervisados_json);
+            const comunasArr = parseJsonArray(row.comunas_permitidas_json);
 
             remoteUsers.push({
               id: row.id,
               username: row.username || row.email || row.id,
-              email: row.email || undefined,
+              email: row.email || row.username || `${row.id}@slepvallediguillin.cl`,
               nombreCompleto: row.nombre_completo || 'Usuario SLEP',
               role: rol,
               cargo: row.cargo || 'Funcionario SLEP',
-              rbdAsignado: row.rbd_asignado || undefined,
+              rbdAsignado: row.rbd_asignado && row.rbd_asignado !== 'S/RBD' ? String(row.rbd_asignado).trim() : undefined,
               carteraRbds,
               asesoresSupervisados,
+              comunasPermitidas: comunasArr.length > 0 ? comunasArr : undefined,
               passwordHash: row.password_hash || '',
               salt: row.salt || '',
+              geminiApiKey: row.gemini_api_key || undefined,
               activo: row.activo !== false,
               debeCambiarPassword: Boolean(row.debe_cambiar_password),
               ultimoAcceso: row.ultimo_acceso || undefined
@@ -281,8 +282,8 @@ export class AuthService {
       }
     }
 
-    // 4. Persistir todos los usuarios en la tabla SQLite usuarios_sistema
-    guardarUsuariosBatchDb(usuarios).catch(() => {});
+    // 4. Persistir todos los usuarios en la tabla SQLite local (sin re-subir en segundo plano a Supabase)
+    await guardarUsuariosBatchDb(usuarios, true).catch(() => {});
 
     return usuarios;
   }
@@ -391,7 +392,7 @@ export class AuthService {
       usuarios[idx].salt = salt;
       usuarios[idx].passwordHash = passwordHash;
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
-      guardarUsuarioDb(usuarios[idx]).catch(() => {});
+      await guardarUsuarioDb(usuarios[idx]);
     }
     return usuarios[idx].nombreCompleto;
   }
@@ -403,7 +404,7 @@ export class AuthService {
       usuarios[idx].geminiApiKey = apiKey.trim();
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
       localStorage.setItem('gemini_api_key', apiKey.trim());
-      guardarUsuarioDb(usuarios[idx]).catch(() => {});
+      await guardarUsuarioDb(usuarios[idx]);
     }
   }
 
@@ -430,7 +431,19 @@ export class AuthService {
 
   public static async guardarUsuario(usuario: UsuarioSistema, passwordPlain?: string): Promise<UsuarioSistema> {
     const usuarios = await this.getUsuarios();
-    usuario = { ...usuario, role: normalizarRol(usuario.role) };
+    const cleanUsername = (usuario.username || usuario.email || usuario.id).trim().toLowerCase();
+    const cleanEmail = usuario.email
+      ? usuario.email.trim().toLowerCase()
+      : (cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@slepvallediguillin.cl`);
+    usuario = {
+      ...usuario,
+      username: cleanUsername,
+      email: cleanEmail,
+      nombreCompleto: (usuario.nombreCompleto || '').trim(),
+      role: normalizarRol(usuario.role),
+      carteraRbds: (usuario.carteraRbds || []).map(r => String(r).trim()).filter(r => Boolean(r) && r !== 'S/RBD'),
+      asesoresSupervisados: (usuario.asesoresSupervisados || []).map(a => String(a).trim()).filter(Boolean)
+    };
     if ((usuario.email || '').toLowerCase() === SUPER_USUARIO_EMAIL) {
       usuario.role = 'super_usuario';
       usuario.activo = true;
@@ -443,20 +456,48 @@ export class AuthService {
       usuario.passwordHash = await hashPassword(passwordPlain, salt);
     }
 
-    // 2. Validar existencia de al menos un Super Usuario activo y evitar duplicados por email/username
-    const idx = usuarios.findIndex(
-      u =>
-        u.id === usuario.id ||
-        (usuario.email && (u.email || '').toLowerCase() === usuario.email.toLowerCase()) ||
-        u.username.toLowerCase() === usuario.username.toLowerCase()
-    );
+    // 2. Buscar primero por id exacto; si no existe, por email o username
+    let idx = usuarios.findIndex(u => u.id === usuario.id);
+    if (idx === -1) {
+      idx = usuarios.findIndex(
+        u =>
+          (usuario.email && (u.email || '').toLowerCase() === usuario.email.toLowerCase()) ||
+          u.username.toLowerCase() === usuario.username.toLowerCase()
+      );
+    }
+
     if (idx >= 0) {
-      // Conservar hash previo si en esta edición no se modificó la contraseña
+      // Conservar hash y metadatos previos si en esta edición no fueron modificados
       if (!usuario.passwordHash && usuarios[idx].passwordHash) {
         usuario.passwordHash = usuarios[idx].passwordHash;
         usuario.salt = usuarios[idx].salt;
       }
-      usuario.id = usuarios[idx].id.startsWith('user-') ? usuario.id : usuarios[idx].id;
+      if (usuario.ultimoAcceso === undefined && usuarios[idx].ultimoAcceso) {
+        usuario.ultimoAcceso = usuarios[idx].ultimoAcceso;
+      }
+      if (usuario.geminiApiKey === undefined && usuarios[idx].geminiApiKey) {
+        usuario.geminiApiKey = usuarios[idx].geminiApiKey;
+      }
+      if (usuario.comunasPermitidas === undefined && usuarios[idx].comunasPermitidas) {
+        usuario.comunasPermitidas = usuarios[idx].comunasPermitidas;
+      }
+      if (usuario.debeCambiarPassword === undefined && usuarios[idx].debeCambiarPassword !== undefined) {
+        usuario.debeCambiarPassword = usuarios[idx].debeCambiarPassword;
+      }
+      // Preservar siempre la clave primaria existente para que el UPDATE en SQLite/Supabase sea exacto
+      usuario.id = usuarios[idx].id;
+    }
+
+    // Verificar que otro usuario distinto no tenga el mismo username o email
+    const conflictoOtro = usuarios.find((u, i) =>
+      i !== idx &&
+      (
+        u.username.toLowerCase() === usuario.username.toLowerCase() ||
+        (usuario.email && u.email && u.email.toLowerCase() === usuario.email.toLowerCase())
+      )
+    );
+    if (conflictoOtro) {
+      throw new Error(`Ya existe otro usuario registrado con el login o correo "${usuario.username}" (${conflictoOtro.nombreCompleto}).`);
     }
 
     const resultante = idx >= 0
@@ -471,8 +512,29 @@ export class AuthService {
     } else {
       usuarios.push(usuario);
     }
+
+    // Si este usuario es asesor_uatp y se le asignaron RBDs en carteraRbds,
+    // desasignar esos mismos RBDs de las carteras explícitas de otros asesores_uatp para evitar duplicidad.
+    const otrosAsesoresModificados: UsuarioSistema[] = [];
+    if (usuario.role === 'asesor_uatp' && usuario.carteraRbds && usuario.carteraRbds.length > 0) {
+      const rbdSet = new Set(usuario.carteraRbds);
+      for (let i = 0; i < usuarios.length; i++) {
+        const otro = usuarios[i];
+        if (otro.id !== usuario.id && normalizarRol(otro.role) === 'asesor_uatp' && otro.carteraRbds && otro.carteraRbds.length > 0) {
+          const filtrada = otro.carteraRbds.filter(r => !rbdSet.has(r.trim()));
+          if (filtrada.length !== otro.carteraRbds.length) {
+            usuarios[i] = { ...otro, carteraRbds: filtrada };
+            otrosAsesoresModificados.push(usuarios[i]);
+          }
+        }
+      }
+    }
+
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await guardarUsuarioDb(usuario);
+    for (const otroMod of otrosAsesoresModificados) {
+      await guardarUsuarioDb(otroMod);
+    }
 
     // 5. Si el usuario modificado es el de la sesión actual, refrescar inmediatamente la sesión activa
     const sesionActual = this.getSessionActual();
@@ -517,12 +579,23 @@ export class AuthService {
       throw new Error('Debe existir al menos un Super Usuario activo en el sistema.');
     }
     // Quitar referencias del usuario eliminado en equipos de coordinadores
-    usuarios = usuarios.map(u => u.asesoresSupervisados?.includes(userId)
-      ? { ...u, asesoresSupervisados: u.asesoresSupervisados.filter(id => id !== userId) }
-      : u);
+    const coordinadoresModificados: UsuarioSistema[] = [];
+    usuarios = usuarios.map(u => {
+      if (u.asesoresSupervisados?.includes(userId)) {
+        const actualizado = {
+          ...u,
+          asesoresSupervisados: u.asesoresSupervisados.filter(id => id !== userId)
+        };
+        coordinadoresModificados.push(actualizado);
+        return actualizado;
+      }
+      return u;
+    });
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
     await eliminarUsuarioDb(userId);
-    await guardarUsuariosBatchDb(usuarios);
+    for (const coord of coordinadoresModificados) {
+      await guardarUsuarioDb(coord);
+    }
   }
 
   /** Vista agregada (heredada) de permisos derivada de la matriz granular editable. */

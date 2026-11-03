@@ -1,6 +1,7 @@
 import { ConfiguracionGeneral, PerfilAsesor, ParametrosMineducConfig, GeminiConfig, PreferenciasUiConfig, Establecimiento } from '../types';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/db';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
+import { SupabaseDotacionService } from './supabaseDotacionService';
 
 const STORAGE_KEY_CONFIG = 'slep_configuracion_general_v1';
 
@@ -417,7 +418,7 @@ export function sincronizarEquipoAsesoresConUsuariosLocales(
 }
 
 /**
- * Reasigna masivamente un conjunto de establecimientos por RBD a un asesor UATP en SQLite.
+ * Reasigna masivamente un conjunto de establecimientos por RBD a un asesor UATP en SQLite y Supabase.
  */
 export async function reasignarColegiosMasivo(
   rbds: string[],
@@ -425,50 +426,67 @@ export async function reasignarColegiosMasivo(
   colegiosActuales: Establecimiento[]
 ): Promise<void> {
   const rbdSet = new Set(rbds.map(r => r.trim()));
+  const modificados: Establecimiento[] = [];
   for (const est of colegiosActuales) {
     if (rbdSet.has(est.rbd.trim())) {
       const actualizado: Establecimiento = {
         ...est,
         asesorUatp: nuevoAsesorNombre.trim() || undefined
       };
-      await guardarEstablecimiento(actualizado);
+      await guardarEstablecimiento(actualizado, true);
+      modificados.push(actualizado);
     }
+  }
+  if (modificados.length > 0 && isSupabaseEnabled()) {
+    await SupabaseDotacionService.guardarEstablecimientosBatch(modificados);
   }
 }
 
 /**
  * Actualiza la lista exacta de colegios asignados a un asesor UATP.
- * Asigna los colegios seleccionados y desasigna los que fueron removidos de su cartera.
+ * Asigna los colegios seleccionados y desasigna los que fueron removidos de su cartera
+ * (considerando también el nombre anterior del asesor si fue renombrado).
  */
 export async function actualizarColegiosDeAsesor(
   asesorNombre: string,
   rbdsSeleccionados: string[],
-  colegiosActuales: Establecimiento[]
+  colegiosActuales: Establecimiento[],
+  nombreAnteriorAsesor?: string
 ): Promise<void> {
   const rbdSet = new Set(rbdsSeleccionados.map(r => r.trim()));
   const asesorNorm = asesorNombre.trim().toLowerCase();
+  const anteriorNorm = (nombreAnteriorAsesor || asesorNombre).trim().toLowerCase();
+  const modificados: Establecimiento[] = [];
 
   for (const est of colegiosActuales) {
     const estRbd = est.rbd.trim();
     const estAsesor = (est.asesorUatp || '').trim().toLowerCase();
 
     if (rbdSet.has(estRbd)) {
-      // Debe pertenecer a este asesor
-      if (estAsesor !== asesorNorm) {
-        await guardarEstablecimiento({
+      // Debe pertenecer a este asesor (o actualizarse si cambió su nombre)
+      if (estAsesor !== asesorNorm || est.asesorUatp !== asesorNombre.trim()) {
+        const actualizado: Establecimiento = {
           ...est,
           asesorUatp: asesorNombre.trim()
-        });
+        };
+        await guardarEstablecimiento(actualizado, true);
+        modificados.push(actualizado);
       }
     } else {
-      // Si antes pertenecía a este asesor y ya no está seleccionado, se desasigna
-      if (estAsesor === asesorNorm) {
-        await guardarEstablecimiento({
+      // Si antes pertenecía a este asesor (con el nombre actual o anterior) y ya no está seleccionado, se desasigna
+      if (estAsesor === asesorNorm || (anteriorNorm && estAsesor === anteriorNorm)) {
+        const actualizado: Establecimiento = {
           ...est,
           asesorUatp: undefined
-        });
+        };
+        await guardarEstablecimiento(actualizado, true);
+        modificados.push(actualizado);
       }
     }
+  }
+
+  if (modificados.length > 0 && isSupabaseEnabled()) {
+    await SupabaseDotacionService.guardarEstablecimientosBatch(modificados);
   }
 }
 

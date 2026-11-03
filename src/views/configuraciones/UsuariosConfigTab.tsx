@@ -226,18 +226,26 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
 
       const guardado = await AuthService.guardarUsuario(usuarioAGuardar, password || undefined);
 
-      // Si el usuario es Asesor UATP, sincronizar su perfil y cartera en el catálogo de establecimientos
-      if (guardado.role === 'asesor_uatp') {
+      // Si el usuario es (o era) Asesor UATP, sincronizar su perfil y cartera en el catálogo de establecimientos
+      const eraAsesor = usuarioEnEdicion && normalizarRol(usuarioEnEdicion.role) === 'asesor_uatp';
+      if (guardado.role === 'asesor_uatp' || eraAsesor) {
         try {
-          guardarPerfilAsesor({
-            id: guardado.id,
-            nombre: guardado.nombreCompleto,
-            email: guardado.email || cleanEmail,
-            cargo: guardado.cargo || 'Asesor(a) UATP',
-            colorBadge: '#2563eb'
-          });
-          // Actualizar SQLite siempre con la cartera seleccionada (incluso si está vacía para limpiar asignaciones previas)
-          await actualizarColegiosDeAsesor(guardado.nombreCompleto, guardado.carteraRbds || [], colegios);
+          if (guardado.role === 'asesor_uatp') {
+            guardarPerfilAsesor({
+              id: guardado.id,
+              nombre: guardado.nombreCompleto,
+              email: guardado.email || cleanEmail,
+              cargo: guardado.cargo || 'Asesor(a) UATP',
+              colorBadge: '#2563eb'
+            });
+          }
+          // Actualizar SQLite y Supabase siempre con la cartera seleccionada (incluso si está vacía o si cambió de rol)
+          await actualizarColegiosDeAsesor(
+            guardado.nombreCompleto,
+            guardado.role === 'asesor_uatp' ? (guardado.carteraRbds || []) : [],
+            colegios,
+            usuarioEnEdicion?.nombreCompleto
+          );
           if (onColegiosActualizados) {
             await onColegiosActualizados();
           }
@@ -630,9 +638,39 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
 
               {(alcanceForm === 'cartera' || alcanceForm === 'equipo') && (
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                    {alcanceForm === 'equipo' ? 'Colegios a cargo directo' : 'Cartera de Establecimientos'} ({carteraRbds.length})
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold uppercase text-slate-400">
+                      {alcanceForm === 'equipo' ? 'Colegios a cargo directo' : 'Cartera de Establecimientos'} ({carteraRbds.length})
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const visiblesRbds = colegiosFiltrados.map(c => c.rbd);
+                          const todosMarcados = visiblesRbds.length > 0 && visiblesRbds.every(r => carteraRbds.includes(r));
+                          if (todosMarcados) {
+                            setCarteraRbds(prev => prev.filter(r => !visiblesRbds.includes(r)));
+                          } else {
+                            setCarteraRbds(prev => Array.from(new Set([...prev, ...visiblesRbds])));
+                          }
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                      >
+                        {colegiosFiltrados.length > 0 && colegiosFiltrados.every(c => carteraRbds.includes(c.rbd))
+                          ? 'Desmarcar visibles'
+                          : 'Marcar visibles'}
+                      </button>
+                      {carteraRbds.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCarteraRbds([])}
+                          className="px-2 py-0.5 text-[10px] font-semibold rounded bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-700/50 transition"
+                        >
+                          Limpiar cartera
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <div className="relative mb-1">
                     <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
                     <input
@@ -657,7 +695,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                     ))}
                   </div>
                   <p className="text-[10px] text-slate-500 mt-1">
-                    También se incluyen automáticamente los colegios cuyo "Asesor UATP" coincide con el nombre del usuario.
+                    Al guardar cambios se sincronizará exactamente esta cartera en Supabase y en el catálogo de establecimientos.
                   </p>
                 </div>
               )}

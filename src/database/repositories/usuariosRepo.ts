@@ -2,6 +2,38 @@ import { UsuarioSistema } from '../../types/authTypes';
 import { getDb, persistDb } from '../dbCore';
 import { normalizarRol } from '../../security/rolesDefinitions';
 import { supabase, isSupabaseEnabled } from '../../services/supabaseClient';
+import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
+
+export function parseJsonArray(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) {
+    return val.map(v => String(v).trim()).filter(v => Boolean(v) && v !== 'S/RBD');
+  }
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) {
+        return parsed.map(v => String(v).trim()).filter(v => Boolean(v) && v !== 'S/RBD');
+      }
+      if (typeof parsed === 'string') {
+        const parsed2 = JSON.parse(parsed);
+        if (Array.isArray(parsed2)) {
+          return parsed2.map(v => String(v).trim()).filter(v => Boolean(v) && v !== 'S/RBD');
+        }
+      }
+    } catch {}
+  }
+  return [];
+}
+
+function sanitizeRbdAsignado(rbd?: string | null): string | null {
+  if (!rbd) return null;
+  const clean = String(rbd).trim();
+  if (!clean || clean.toUpperCase() === 'S/RBD' || clean.toLowerCase() === 'null') {
+    return null;
+  }
+  return clean;
+}
 
 export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
   try {
@@ -15,18 +47,10 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
     `);
     if (!res.length) return [];
     return res[0].values.map(row => {
-      let carteraRbds: string[] = [];
-      let asesoresSupervisados: string[] = [];
-      let comunasPermitidas: string[] | undefined = undefined;
-      if (row[7]) {
-        try { carteraRbds = JSON.parse(String(row[7])); } catch {}
-      }
-      if (row[8]) {
-        try { asesoresSupervisados = JSON.parse(String(row[8])); } catch {}
-      }
-      if (row[9]) {
-        try { comunasPermitidas = JSON.parse(String(row[9])); } catch {}
-      }
+      const carteraRbds = parseJsonArray(row[7]);
+      const asesoresSupervisados = parseJsonArray(row[8]);
+      const comunasArr = parseJsonArray(row[9]);
+      const comunasPermitidas = comunasArr.length > 0 ? comunasArr : undefined;
       return {
         id: String(row[0]),
         username: String(row[1]),
@@ -34,7 +58,7 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
         nombreCompleto: String(row[3]),
         role: normalizarRol(row[4]),
         cargo: row[5] ? String(row[5]) : 'Funcionario SLEP',
-        rbdAsignado: row[6] ? String(row[6]) : undefined,
+        rbdAsignado: sanitizeRbdAsignado(row[6] ? String(row[6]) : null) || undefined,
         carteraRbds,
         asesoresSupervisados,
         comunasPermitidas,
@@ -52,13 +76,20 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
   }
 }
 
-export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
+export async function guardarUsuarioDb(u: UsuarioSistema, skipCloudSync: boolean = false): Promise<void> {
+  const carteraArr = (u.carteraRbds || []).map(r => String(r).trim()).filter(r => Boolean(r) && r !== 'S/RBD');
+  const asesoresArr = (u.asesoresSupervisados || []).map(a => String(a).trim()).filter(Boolean);
+  const comunasArr = (u.comunasPermitidas || []).map(c => String(c).trim()).filter(Boolean);
+
+  const carteraJson = JSON.stringify(carteraArr);
+  const asesoresJson = JSON.stringify(asesoresArr);
+  const comunasJson = JSON.stringify(comunasArr);
+  const rbdClean = sanitizeRbdAsignado(u.rbdAsignado);
+  const usernameClean = (u.username || u.email || u.id).trim().toLowerCase();
+  const emailClean = u.email ? u.email.trim().toLowerCase() : null;
+
   try {
     const db = await getDb();
-    const carteraJson = u.carteraRbds && u.carteraRbds.length ? JSON.stringify(u.carteraRbds) : null;
-    const asesoresJson = u.asesoresSupervisados && u.asesoresSupervisados.length ? JSON.stringify(u.asesoresSupervisados) : null;
-    const comunasJson = u.comunasPermitidas && u.comunasPermitidas.length ? JSON.stringify(u.comunasPermitidas) : null;
-
     db.run(`
       INSERT INTO usuarios_sistema (
         id, username, email, nombre_completo, role, cargo, rbd_asignado,
@@ -84,12 +115,12 @@ export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
         debe_cambiar_password=excluded.debe_cambiar_password;
     `, [
       u.id,
-      u.username,
-      u.email || null,
+      usernameClean,
+      emailClean,
       u.nombreCompleto,
       u.role,
       u.cargo || null,
-      u.rbdAsignado || null,
+      rbdClean,
       carteraJson,
       asesoresJson,
       comunasJson,
@@ -101,40 +132,111 @@ export async function guardarUsuarioDb(u: UsuarioSistema): Promise<void> {
       u.debeCambiarPassword ? 1 : 0
     ]);
     await persistDb();
-    if (isSupabaseEnabled()) {
-      supabase.from('usuarios_sistema').upsert({
-        id: u.id,
-        username: u.username || u.email || u.id,
-        email: u.email || null,
-        nombre_completo: u.nombreCompleto,
-        role: u.role,
-        cargo: u.cargo || null,
-        rbd_asignado: u.rbdAsignado || null,
-        cartera_rbds_json: carteraJson || '[]',
-        asesores_supervisados_json: asesoresJson || '[]',
-        comunas_permitidas_json: comunasJson || '[]',
-        password_hash: u.passwordHash || null,
-        salt: u.salt || null,
-        gemini_api_key: u.geminiApiKey || null,
-        activo: u.activo !== false,
-        debe_cambiar_password: u.debeCambiarPassword ?? false
-      }, { onConflict: 'id' }).then(() => {});
-    }
   } catch (err) {
     console.warn('[usuariosRepo] Error guardando usuario en SQLite:', err);
   }
+
+  if (!skipCloudSync && isSupabaseEnabled()) {
+    // Asegurar que el establecimiento referenciado en rbd_asignado exista en Supabase
+    if (rbdClean) {
+      await SupabaseDotacionService.asegurarEstablecimientosExisten([rbdClean]);
+    }
+
+    const payload: Record<string, any> = {
+      id: u.id,
+      username: usernameClean,
+      email: emailClean,
+      nombre_completo: u.nombreCompleto,
+      role: u.role,
+      cargo: u.cargo || null,
+      rbd_asignado: rbdClean,
+      cartera_rbds_json: carteraJson,
+      asesores_supervisados_json: asesoresJson,
+      comunas_permitidas_json: comunasJson,
+      password_hash: u.passwordHash || null,
+      salt: u.salt || null,
+      gemini_api_key: u.geminiApiKey || null,
+      activo: u.activo !== false,
+      ultimo_acceso: u.ultimoAcceso || null,
+      debe_cambiar_password: u.debeCambiarPassword ?? false,
+      updated_at: new Date().toISOString()
+    };
+
+    let { error } = await supabase
+      .from('usuarios_sistema')
+      .upsert(payload, { onConflict: 'id' });
+
+    // Si falla por UNIQUE constraint en username o email (23505) debido a un registro con otro ID en Supabase
+    if (error && error.code === '23505') {
+      try {
+        if (emailClean) {
+          await supabase
+            .from('usuarios_sistema')
+            .delete()
+            .eq('email', emailClean)
+            .neq('id', u.id);
+        }
+        await supabase
+          .from('usuarios_sistema')
+          .delete()
+          .eq('username', usernameClean)
+          .neq('id', u.id);
+
+        const retry = await supabase
+          .from('usuarios_sistema')
+          .upsert(payload, { onConflict: 'id' });
+        error = retry.error;
+      } catch (conflictErr) {
+        console.warn('[usuariosRepo] Aviso resolviendo conflicto UNIQUE en Supabase:', conflictErr);
+      }
+    }
+
+    // Si falla por FK constraint en rbd_asignado (23503), reintentar con rbd_asignado = null
+    if (error && error.code === '23503') {
+      const retryFk = await supabase
+        .from('usuarios_sistema')
+        .upsert({ ...payload, rbd_asignado: null }, { onConflict: 'id' });
+      error = retryFk.error;
+    }
+
+    if (error) {
+      console.error('[usuariosRepo] Error guardando usuario en Supabase:', error);
+      throw new Error(`No se pudo guardar el usuario en Supabase: ${error.message}`);
+    }
+
+    // Sincronizar tabla relacional asesor_cartera en Supabase
+    try {
+      await supabase.from('asesor_cartera').delete().eq('usuario_id', u.id);
+      if ((u.role === 'asesor_uatp' || u.role === 'coordinador_uatp') && carteraArr.length > 0) {
+        await SupabaseDotacionService.asegurarEstablecimientosExisten(carteraArr);
+        const rowsCartera = carteraArr.map(rbd => ({
+          usuario_id: u.id,
+          rbd,
+          rol_asignacion: u.role === 'coordinador_uatp' ? 'COORDINADOR' : 'TITULAR'
+        }));
+        await supabase.from('asesor_cartera').upsert(rowsCartera, { onConflict: 'usuario_id,rbd' });
+      }
+    } catch (carteraErr) {
+      console.warn('[usuariosRepo] Aviso sincronizando asesor_cartera en Supabase:', carteraErr);
+    }
+  }
 }
 
-export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promise<void> {
+export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipCloudSync: boolean = false): Promise<void> {
   if (!usuarios.length) return;
   try {
     const db = await getDb();
     db.run("BEGIN TRANSACTION;");
     try {
       for (const u of usuarios) {
-        const carteraJson = u.carteraRbds && u.carteraRbds.length ? JSON.stringify(u.carteraRbds) : null;
-        const asesoresJson = u.asesoresSupervisados && u.asesoresSupervisados.length ? JSON.stringify(u.asesoresSupervisados) : null;
-        const comunasJson = u.comunasPermitidas && u.comunasPermitidas.length ? JSON.stringify(u.comunasPermitidas) : null;
+        const carteraArr = (u.carteraRbds || []).map(r => String(r).trim()).filter(r => Boolean(r) && r !== 'S/RBD');
+        const asesoresArr = (u.asesoresSupervisados || []).map(a => String(a).trim()).filter(Boolean);
+        const comunasArr = (u.comunasPermitidas || []).map(c => String(c).trim()).filter(Boolean);
+
+        const carteraJson = JSON.stringify(carteraArr);
+        const asesoresJson = JSON.stringify(asesoresArr);
+        const comunasJson = JSON.stringify(comunasArr);
+        const rbdClean = sanitizeRbdAsignado(u.rbdAsignado);
 
         db.run(`
           INSERT INTO usuarios_sistema (
@@ -161,12 +263,12 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
             debe_cambiar_password=excluded.debe_cambiar_password;
         `, [
           u.id,
-          u.username,
-          u.email || null,
+          (u.username || u.email || u.id).trim().toLowerCase(),
+          u.email ? u.email.trim().toLowerCase() : null,
           u.nombreCompleto,
           u.role,
           u.cargo || null,
-          u.rbdAsignado || null,
+          rbdClean,
           carteraJson,
           asesoresJson,
           comunasJson,
@@ -181,8 +283,9 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
       db.run("COMMIT;");
       await persistDb();
 
-      if (isSupabaseEnabled()) {
+      if (!skipCloudSync && isSupabaseEnabled()) {
         const seenEmails = new Set<string>();
+        const seenUsernames = new Set<string>();
         const usersDb = usuarios.map(u => {
           let emailVal = u.email ? u.email.trim().toLowerCase() : null;
           if (emailVal && seenEmails.has(emailVal)) {
@@ -190,36 +293,50 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
           } else if (emailVal) {
             seenEmails.add(emailVal);
           }
-          const carteraJson = u.carteraRbds && u.carteraRbds.length ? JSON.stringify(u.carteraRbds) : null;
-          const asesoresJson = u.asesoresSupervisados && u.asesoresSupervisados.length ? JSON.stringify(u.asesoresSupervisados) : null;
-          const comunasJson = u.comunasPermitidas && u.comunasPermitidas.length ? JSON.stringify(u.comunasPermitidas) : null;
+
+          let usernameVal = (u.username || u.email || u.id).trim().toLowerCase();
+          if (seenUsernames.has(usernameVal)) {
+            usernameVal = `${usernameVal}_${u.id}`;
+          }
+          seenUsernames.add(usernameVal);
+
+          const carteraArr = (u.carteraRbds || []).map(r => String(r).trim()).filter(r => Boolean(r) && r !== 'S/RBD');
+          const asesoresArr = (u.asesoresSupervisados || []).map(a => String(a).trim()).filter(Boolean);
+          const comunasArr = (u.comunasPermitidas || []).map(c => String(c).trim()).filter(Boolean);
 
           return {
             id: u.id,
-            username: u.username || u.email || u.id,
+            username: usernameVal,
             email: emailVal,
             nombre_completo: u.nombreCompleto,
             role: u.role,
             cargo: u.cargo || null,
-            rbd_asignado: u.rbdAsignado || null,
-            cartera_rbds_json: carteraJson || '[]',
-            asesores_supervisados_json: asesoresJson || '[]',
-            comunas_permitidas_json: comunasJson || '[]',
+            rbd_asignado: sanitizeRbdAsignado(u.rbdAsignado),
+            cartera_rbds_json: JSON.stringify(carteraArr),
+            asesores_supervisados_json: JSON.stringify(asesoresArr),
+            comunas_permitidas_json: JSON.stringify(comunasArr),
             password_hash: u.passwordHash || null,
             salt: u.salt || null,
             gemini_api_key: u.geminiApiKey || null,
             activo: u.activo !== false,
-            debe_cambiar_password: u.debeCambiarPassword ?? false
+            ultimo_acceso: u.ultimoAcceso || null,
+            debe_cambiar_password: u.debeCambiarPassword ?? false,
+            updated_at: new Date().toISOString()
           };
         });
 
-        // Subir en chunks de 50
-        (async () => {
-          for (let i = 0; i < usersDb.length; i += 50) {
-            const chunk = usersDb.slice(i, i + 50);
-            await supabase.from('usuarios_sistema').upsert(chunk, { onConflict: 'id' });
+        // Subir en bloques de 100 esperando su finalización real
+        try {
+          for (let i = 0; i < usersDb.length; i += 100) {
+            const chunk = usersDb.slice(i, i + 100);
+            const { error } = await supabase.from('usuarios_sistema').upsert(chunk, { onConflict: 'id' });
+            if (error) {
+              console.warn('[usuariosRepo] Aviso sincronizando bloque de usuarios en Supabase:', error);
+            }
           }
-        })().catch(err => console.warn('[usuariosRepo] Aviso sincronizando lote en Supabase:', err));
+        } catch (err) {
+          console.warn('[usuariosRepo] Aviso sincronizando lote en Supabase:', err);
+        }
       }
     } catch (txErr) {
       db.run("ROLLBACK;");
@@ -230,15 +347,23 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[]): Promis
   }
 }
 
-export async function eliminarUsuarioDb(id: string): Promise<void> {
+export async function eliminarUsuarioDb(id: string, skipCloudSync: boolean = false): Promise<void> {
   try {
     const db = await getDb();
     db.run("DELETE FROM usuarios_sistema WHERE id = ?", [id]);
     await persistDb();
-    if (isSupabaseEnabled()) {
-      supabase.from('usuarios_sistema').delete().eq('id', id).then(() => {});
-    }
   } catch (err) {
     console.warn('[usuariosRepo] Error eliminando usuario de SQLite:', err);
+  }
+
+  if (!skipCloudSync && isSupabaseEnabled()) {
+    try {
+      await supabase.from('asesor_cartera').delete().eq('usuario_id', id);
+    } catch {}
+    const { error } = await supabase.from('usuarios_sistema').delete().eq('id', id);
+    if (error) {
+      console.error('[usuariosRepo] Error eliminando usuario de Supabase:', error);
+      throw new Error(`No se pudo eliminar el usuario en Supabase: ${error.message}`);
+    }
   }
 }
