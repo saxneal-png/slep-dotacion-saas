@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import {
   Scale, Users, BookOpen, Clock, ShieldCheck, LayoutGrid,
   FileSpreadsheet, Printer, ArrowRightLeft, FileUp, FileDown, Sparkles,
-  Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2, ShieldAlert, ChevronDown, ChevronUp, Minimize2, Maximize2
+  Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2, ShieldAlert, ChevronDown, ChevronUp, Minimize2, Maximize2,
+  CloudUpload, RefreshCw, Loader2, Radio
 } from 'lucide-react';
+import { useColaboracionColegio } from '../services/colaboracionService';
 import {
   Establecimiento,
   SalaInfraestructura,
@@ -66,6 +68,11 @@ export interface ColegioWorkspaceViewProps {
   onGuardarColegio?: (est: Establecimiento) => Promise<void>;
   onAbrirCopilot?: () => void;
   onNavegarAPestana?: (pestana: any) => void;
+  onGuardarApartadoNube?: (apartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general') => Promise<void>;
+  onRefrescarApartadoNube?: (apartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general') => Promise<void>;
+  guardandoEnNube?: boolean;
+  sincronizandoNube?: boolean;
+  usuarioActual?: { id: string; nombreCompleto: string; email?: string; role: string } | null;
 }
 
 export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
@@ -103,7 +110,12 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onExportarMatrizExcelColegio,
   onGuardarColegio,
   onAbrirCopilot,
-  onNavegarAPestana
+  onNavegarAPestana,
+  onGuardarApartadoNube,
+  onRefrescarApartadoNube,
+  guardandoEnNube = false,
+  sincronizandoNube = false,
+  usuarioActual
 }) => {
   const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>(initialTab || 'balanza');
 
@@ -124,6 +136,39 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [kpisExpandidos, setKpisExpandidos] = useState<boolean>(() => {
     if (typeof window !== 'undefined' && window.innerHeight <= 864) return false;
     return true;
+  });
+  const [alertaCambioRemoto, setAlertaCambioRemoto] = useState<{
+    apartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general';
+    mensaje: string;
+    timestamp: number;
+  } | null>(null);
+
+  // Colaboración multi-usuario en tiempo real
+  const { usuariosEnColegio, hayOtrosUsuarios } = useColaboracionColegio({
+    rbd: colegio?.rbd,
+    periodo: periodoActivo,
+    usuarioActual: usuarioActual ? {
+      id: usuarioActual.id,
+      nombreCompleto: usuarioActual.nombreCompleto,
+      email: usuarioActual.email,
+      role: usuarioActual.role
+    } : null,
+    apartadoActual: tabActiva,
+    onCambioRemotoDetectado: (notif) => {
+      const labelsApartados: Record<string, string> = {
+        docentes: 'Docentes y Asignaciones',
+        asistentes: 'Asistentes de la Educación',
+        cursos: 'Cursos y Demanda',
+        salas: 'Salas',
+        pie: 'Programa PIE',
+        general: 'Dotación'
+      };
+      setAlertaCambioRemoto({
+        apartado: notif.apartado,
+        mensaje: `Un colega acaba de actualizar el apartado de ${labelsApartados[notif.apartado] || notif.apartado}.`,
+        timestamp: Date.now()
+      });
+    }
   });
 
   // Auto-compactar KPIs cuando el usuario entra a tablas densas (Docentes, Cursos, Asistentes, PIE, Salas)
@@ -221,6 +266,52 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 
           {/* Barra de Acciones Desduplicada y Compacta */}
           <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+            {/* Indicador de Colaboración en Tiempo Real */}
+            {hayOtrosUsuarios && (
+              <div className="relative group">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-bold shadow-sm">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  </span>
+                  <span>{usuariosEnColegio.length} colega{usuariosEnColegio.length > 1 ? 's' : ''} activo{usuariosEnColegio.length > 1 ? 's' : ''}</span>
+                </div>
+                {/* Tooltip con los usuarios y sus apartados */}
+                <div className="absolute right-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-xl p-2.5 shadow-2xl z-50 text-[11px] text-slate-300 hidden group-hover:block animate-in fade-in">
+                  <p className="font-bold text-white border-b border-slate-700 pb-1 mb-1.5">Trabajando ahora en esta escuela:</p>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {usuariosEnColegio.map((u, i) => (
+                      <div key={i} className="flex flex-col border-b border-slate-800 last:border-0 pb-1">
+                        <span className="font-semibold text-slate-200">{u.nombreCompleto}</span>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span>{u.role.replace('_', ' ')}</span>
+                          <span className="text-amber-300 font-mono">Pestaña: {u.apartadoActivo}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Botón Guardar este Apartado en Supabase */}
+            {onGuardarApartadoNube && (
+              <button
+                type="button"
+                onClick={() => onGuardarApartadoNube(tabActiva === 'balanza' ? 'general' : tabActiva)}
+                disabled={guardandoEnNube}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md border border-emerald-400/40 transition-all active:scale-[0.98]"
+                title={`Guardar exclusivamente los cambios de la pestaña "${tabs.find(t => t.id === tabActiva)?.label}" en Supabase sin sobrescribir otros apartados`}
+              >
+                {guardandoEnNube ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                ) : (
+                  <CloudUpload className="w-3.5 h-3.5 text-emerald-200" />
+                )}
+                <span>Guardar {tabActiva === 'balanza' ? 'Todo' : tabs.find(t => t.id === tabActiva)?.label.split(' ')[0]}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setKpisExpandidos(!kpisExpandidos)}
@@ -476,6 +567,45 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         </div>
         )}
       </div>
+
+      {/* Banner de Aviso de Actualización Remota Concurrente */}
+      {alertaCambioRemoto && (
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-sky-950/70 border border-sky-500/40 text-sky-200 text-xs shadow-lg animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <Radio className="w-4 h-4 text-sky-400 animate-pulse shrink-0" />
+            <div>
+              <span className="font-bold text-white">{alertaCambioRemoto.mensaje}</span>
+              <p className="text-[11px] text-sky-300/80">
+                Puedes traer los cambios de ese apartado sin afectar las modificaciones que tienes abiertas en tu pestaña actual.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {onRefrescarApartadoNube && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await onRefrescarApartadoNube(alertaCambioRemoto.apartado);
+                  setAlertaCambioRemoto(null);
+                }}
+                disabled={sincronizandoNube}
+                className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${sincronizandoNube ? 'animate-spin' : ''}`} />
+                <span>Actualizar {alertaCambioRemoto.apartado}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setAlertaCambioRemoto(null)}
+              className="p-1.5 text-sky-400 hover:text-white rounded-lg"
+              title="Ignorar aviso"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Flujo Guiado de 5 Pasos para Certificación Escolar (Compactado por defecto fuera de Balanza) */}
       <ProgresoDotacionBar

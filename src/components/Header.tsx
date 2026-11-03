@@ -34,9 +34,9 @@ interface HeaderProps {
   onAbrirCopilot?: () => void;
   onAbrirConfiguraciones?: () => void;
   onAbrirGestionEstablecimientos?: () => void;
-  onGuardarCambiosEnNube?: () => Promise<void>;
+  onGuardarCambiosEnNube?: (apartado?: any) => Promise<void>;
   guardandoEnNube?: boolean;
-  onRefrescarNube?: () => Promise<void>;
+  onRefrescarNube?: (apartado?: any) => Promise<void>;
   sincronizandoNube?: boolean;
 }
 

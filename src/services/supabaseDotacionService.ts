@@ -905,6 +905,98 @@ export class SupabaseDotacionService {
   }
 
   /**
+   * Guarda y sincroniza selectivamente en Supabase los apartados específicos de un colegio,
+   * permitiendo a múltiples usuarios trabajar en la misma escuela sin sobrescribir
+   * el trabajo que otros realizaron en otras secciones (p. ej., un usuario en Asistentes
+   * y otro en Docentes o Cursos).
+   */
+  static async sincronizarApartadoColegioASupabase(
+    rbd: string,
+    periodo: number = 2027,
+    apartados: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'>
+  ): Promise<{
+    establecimientoActualizado: boolean;
+    salasSincronizadas: number;
+    cursosSincronizados: number;
+    docentesSincronizados: number;
+    asignacionesSincronizadas: number;
+    asistentesSincronizados: number;
+  }> {
+    if (!isSupabaseEnabled()) {
+      throw new Error('Supabase no está configurado o no está disponible.');
+    }
+    const cleanRbd = rbd.trim();
+    if (!cleanRbd) throw new Error('RBD de colegio inválido');
+
+    const result = {
+      establecimientoActualizado: false,
+      salasSincronizadas: 0,
+      cursosSincronizados: 0,
+      docentesSincronizados: 0,
+      asignacionesSincronizadas: 0,
+      asistentesSincronizados: 0
+    };
+
+    if (apartados.includes('establecimiento')) {
+      const { obtenerEstablecimientoPorRbd } = await import('../database/repositories/establecimientosRepo');
+      const est = await obtenerEstablecimientoPorRbd(cleanRbd);
+      if (est) {
+        await this.guardarEstablecimiento(est);
+        result.establecimientoActualizado = true;
+      }
+    }
+
+    if (apartados.includes('salas')) {
+      const { listarSalas } = await import('../database/repositories/salasRepo');
+      const salas = await listarSalas(cleanRbd);
+      if (salas.length) {
+        for (const s of salas) {
+          await this.guardarSala({ ...s, rbd: cleanRbd });
+        }
+      }
+      result.salasSincronizadas = salas.length;
+    }
+
+    if (apartados.includes('cursos')) {
+      const { listarCursos } = await import('../database/repositories/cursosRepo');
+      const cursos = await listarCursos(cleanRbd, periodo);
+      if (cursos.length) {
+        await this.guardarCursosBatch(cursos.map(c => ({ ...c, rbd: cleanRbd, periodo })));
+      }
+      result.cursosSincronizados = cursos.length;
+    }
+
+    if (apartados.includes('docentes')) {
+      const { listarDocentes } = await import('../database/repositories/docentesRepo');
+      const docentes = await listarDocentes(cleanRbd, periodo);
+      if (docentes.length) {
+        await this.guardarDocentesBatch(docentes.map(d => ({ ...d, rbd: cleanRbd, periodo })));
+      }
+      result.docentesSincronizados = docentes.length;
+    }
+
+    if (apartados.includes('asignaciones')) {
+      const { listarAsignaciones } = await import('../database/repositories/asignacionesRepo');
+      const asignaciones = await listarAsignaciones(cleanRbd, periodo);
+      if (asignaciones.length) {
+        await this.guardarAsignacionesBatch(asignaciones.map(a => ({ ...a, rbd: cleanRbd, periodo })));
+      }
+      result.asignacionesSincronizadas = asignaciones.length;
+    }
+
+    if (apartados.includes('asistentes')) {
+      const { listarAsistentes } = await import('../database/repositories/asistentesRepo');
+      const asistentes = await listarAsistentes(cleanRbd, periodo);
+      if (asistentes.length) {
+        await this.guardarAsistentesBatch(asistentes.map(ast => ({ ...ast, rbd: cleanRbd, periodo })));
+      }
+      result.asistentesSincronizados = asistentes.length;
+    }
+
+    return result;
+  }
+
+  /**
    * Guarda y sincroniza en Supabase EXCLUSIVAMENTE la escuela/RBD activa en el periodo dado.
    * Diseñado para trabajo concurrente multi-usuario: no toca ni sobrescribe datos de otras escuelas.
    */
@@ -986,11 +1078,13 @@ export class SupabaseDotacionService {
   /**
    * Descarga la dotación completa de un RBD y Periodo desde Supabase PostgreSQL
    * e hidrata de forma atómica la base de datos local SQLite (IndexedDB).
-   * Fundamental para que el Super Usuario u otros colegas vean los cambios guardados remotamente.
+   * Opcionalmente permite filtrar solo apartados específicos para no sobrescribir
+   * el trabajo local en curso de otras pestañas.
    */
   static async descargarEIntegrarColegioDesdeSupabase(
     rbd: string,
-    periodo: number = 2027
+    periodo: number = 2027,
+    apartados?: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'>
   ): Promise<{
     hayDatosRemotos: boolean;
     establecimientoActualizado: boolean;
@@ -1029,14 +1123,22 @@ export class SupabaseDotacionService {
       };
     }
 
-    // 1. Consultar datos en Supabase con paginación completa garantizando recuperación de todas las filas
+    const incluyeTodos = !apartados || apartados.length === 0;
+    const fetchEst = incluyeTodos || apartados.includes('establecimiento');
+    const fetchSalas = incluyeTodos || apartados.includes('salas');
+    const fetchCursos = incluyeTodos || apartados.includes('cursos');
+    const fetchDoc = incluyeTodos || apartados.includes('docentes');
+    const fetchAsig = incluyeTodos || apartados.includes('asignaciones');
+    const fetchAst = incluyeTodos || apartados.includes('asistentes');
+
+    // 1. Consultar datos en Supabase según los apartados solicitados
     const [estRes, salasData, cursosData, docData, asigData, astData] = await Promise.all([
-      supabase.from('establecimientos').select('*').eq('rbd', cleanRbd).maybeSingle(),
-      this.fetchAllRows('salas_infraestructura', q => q.eq('rbd', cleanRbd)),
-      this.fetchAllRows('cursos_sae', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
-      this.fetchAllRows('docentes', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
-      this.fetchAllRows('asignaciones_horarias', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)),
-      this.fetchAllRows('asistentes_educacion', q => q.eq('rbd', cleanRbd).eq('periodo', periodo))
+      fetchEst ? supabase.from('establecimientos').select('*').eq('rbd', cleanRbd).maybeSingle() : Promise.resolve({ data: null }),
+      fetchSalas ? this.fetchAllRows('salas_infraestructura', q => q.eq('rbd', cleanRbd)) : Promise.resolve([]),
+      fetchCursos ? this.fetchAllRows('cursos_sae', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)) : Promise.resolve([]),
+      fetchDoc ? this.fetchAllRows('docentes', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)) : Promise.resolve([]),
+      fetchAsig ? this.fetchAllRows('asignaciones_horarias', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)) : Promise.resolve([]),
+      fetchAst ? this.fetchAllRows('asistentes_educacion', q => q.eq('rbd', cleanRbd).eq('periodo', periodo)) : Promise.resolve([])
     ]);
 
     const tieneRegistros = Boolean(
@@ -1070,7 +1172,7 @@ export class SupabaseDotacionService {
 
     // 3. Integrar Establecimiento (skipCloudSync = true para evitar bucles de re-subida)
     let estActualizado = false;
-    if (estRes.data) {
+    if (fetchEst && estRes.data) {
       const estObj = mapEstablecimientoFromDb(estRes.data);
       await guardarEstablecimiento(estObj, true);
       estActualizado = true;
@@ -1078,7 +1180,7 @@ export class SupabaseDotacionService {
 
     // 4. Integrar Salas
     let salasCount = 0;
-    if (salasData.length > 0) {
+    if (fetchSalas && salasData.length > 0) {
       for (const row of salasData) {
         const s = mapSalaFromDb(row);
         await guardarSala(s, true);
@@ -1088,7 +1190,7 @@ export class SupabaseDotacionService {
 
     // 5. Integrar Cursos
     let cursosCount = 0;
-    if (cursosData.length > 0) {
+    if (fetchCursos && cursosData.length > 0) {
       for (const row of cursosData) {
         const c = mapCursoFromDb(row);
         await guardarCurso(c, true);
@@ -1098,7 +1200,7 @@ export class SupabaseDotacionService {
 
     // 6. Integrar Docentes
     let docCount = 0;
-    if (docData.length > 0) {
+    if (fetchDoc && docData.length > 0) {
       for (const row of docData) {
         const d = mapDocenteFromDb(row);
         await guardarDocente(d, true);
@@ -1108,7 +1210,7 @@ export class SupabaseDotacionService {
 
     // 7. Integrar Asignaciones
     let asigCount = 0;
-    if (asigData.length > 0) {
+    if (fetchAsig && asigData.length > 0) {
       for (const row of asigData) {
         const a = mapAsignacionFromDb(row);
         await guardarAsignacion(a, true);
@@ -1118,7 +1220,7 @@ export class SupabaseDotacionService {
 
     // 8. Integrar Asistentes
     let astCount = 0;
-    if (astData.length > 0) {
+    if (fetchAst && astData.length > 0) {
       const asistentesObj = astData.map(mapAsistenteFromDb);
       await guardarAsistentesBatch(asistentesObj, cleanRbd, periodo, true);
       astCount = asistentesObj.length;

@@ -130,7 +130,7 @@ export const App: React.FC = () => {
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
   const [guardandoEnNube, setGuardandoEnNube] = useState(false);
 
-  const handleGuardarCambiosEnNube = async () => {
+  const handleGuardarCambiosEnNube = async (apartadoEspecifico?: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general') => {
     if (!colegioActivo) {
       mostrarMensaje('Selecciona un establecimiento para guardar sus cambios en la nube.', 'error');
       return;
@@ -141,14 +141,39 @@ export const App: React.FC = () => {
       return;
     }
     setGuardandoEnNube(true);
-    mostrarMensaje(`☁️ Guardando dotación de ${colegioActivo.nombre} en Supabase...`);
+
+    let apartadosTarget: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'>;
+    let labelApartado = 'completa';
+
+    if (apartadoEspecifico === 'docentes') {
+      apartadosTarget = ['docentes', 'asignaciones'];
+      labelApartado = 'de Docentes y Asignaciones';
+    } else if (apartadoEspecifico === 'asistentes') {
+      apartadosTarget = ['asistentes'];
+      labelApartado = 'de Asistentes de la Educación';
+    } else if (apartadoEspecifico === 'cursos') {
+      apartadosTarget = ['cursos'];
+      labelApartado = 'de Cursos y Demanda';
+    } else if (apartadoEspecifico === 'salas') {
+      apartadosTarget = ['salas'];
+      labelApartado = 'de Salas e Infraestructura';
+    } else if (apartadoEspecifico === 'pie') {
+      apartadosTarget = ['cursos', 'docentes', 'asignaciones', 'asistentes'];
+      labelApartado = 'de Programa de Integración Escolar (PIE)';
+    } else {
+      apartadosTarget = ['establecimiento', 'salas', 'cursos', 'docentes', 'asignaciones', 'asistentes'];
+      labelApartado = 'completa';
+    }
+
+    mostrarMensaje(`☁️ Guardando dotación ${labelApartado} de ${colegioActivo.nombre} en Supabase...`);
     try {
-      const res = await SupabaseDotacionService.sincronizarColegioASupabase(
+      const res = await SupabaseDotacionService.sincronizarApartadoColegioASupabase(
         colegioActivo.rbd,
-        periodoActivo
+        periodoActivo,
+        apartadosTarget
       );
       mostrarMensaje(
-        `✓ Cambios guardados para ${colegioActivo.nombre} (${periodoActivo}): ${res.docentesSincronizados} docentes, ${res.cursosSincronizados} cursos, ${res.asignacionesSincronizadas} asignaciones y ${res.asistentesSincronizados} asistentes sincronizados en Supabase.`,
+        `✓ Cambios guardados (${labelApartado}) para ${colegioActivo.nombre} (${periodoActivo}): ${res.docentesSincronizados} docentes, ${res.cursosSincronizados} cursos, ${res.asignacionesSincronizadas} asignaciones y ${res.asistentesSincronizados} asistentes sincronizados en Supabase sin tocar otros apartados.`,
         'success'
       );
     } catch (err: any) {
@@ -190,17 +215,26 @@ export const App: React.FC = () => {
 
   const [sincronizandoNube, setSincronizandoNube] = useState(false);
 
-  const handleRefrescarDesdeNube = async () => {
+  const handleRefrescarDesdeNube = async (apartadoEspecifico?: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general') => {
     if (!colegioActivo) {
       mostrarMensaje('Selecciona un establecimiento para refrescar sus datos.', 'error');
       return;
     }
     setSincronizandoNube(true);
-    mostrarMensaje(`☁️ Consultando dotación de ${colegioActivo.nombre} en Supabase...`);
+
+    let apartadosTarget: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'> | undefined;
+    if (apartadoEspecifico === 'docentes') apartadosTarget = ['docentes', 'asignaciones'];
+    else if (apartadoEspecifico === 'asistentes') apartadosTarget = ['asistentes'];
+    else if (apartadoEspecifico === 'cursos') apartadosTarget = ['cursos'];
+    else if (apartadoEspecifico === 'salas') apartadosTarget = ['salas'];
+    else if (apartadoEspecifico === 'pie') apartadosTarget = ['cursos', 'docentes', 'asignaciones', 'asistentes'];
+
+    mostrarMensaje(`☁️ Consultando dotación${apartadoEspecifico ? ` (${apartadoEspecifico})` : ''} de ${colegioActivo.nombre} en Supabase...`);
     try {
       const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(
         colegioActivo.rbd,
-        periodoActivo
+        periodoActivo,
+        apartadosTarget
       );
       if (res.hayDatosRemotos) {
         await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
@@ -1092,6 +1126,11 @@ export const App: React.FC = () => {
               onGuardarColegio={handleGuardarColegio}
               onAbrirCopilot={() => setModalCopilotAbierto(true)}
               onNavegarAPestana={setVistaActiva}
+              onGuardarApartadoNube={handleGuardarCambiosEnNube}
+              onRefrescarApartadoNube={handleRefrescarDesdeNube}
+              guardandoEnNube={guardandoEnNube}
+              sincronizandoNube={sincronizandoNube}
+              usuarioActual={session?.usuario}
             />
           ) : (
             <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-center max-w-md mx-auto my-12 animate-in fade-in">
