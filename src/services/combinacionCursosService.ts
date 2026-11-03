@@ -11,6 +11,23 @@ export function extraerGradosDeCurso(curso: CursoSae): string[] {
 
   const nivel = (curso.nivel || '').trim();
 
+    // Caso: Básica Especial combinada ej: "1° y 2° Básico Especial" o "1° a 4° Básico Especial"
+  const matchRangoEspecial = nivel.match(/([1-8])°?\s*a\s*([1-8])°?\s*Básico\s*Especial/i);
+  if (matchRangoEspecial) {
+    const inicio = parseInt(matchRangoEspecial[1], 10);
+    const fin = parseInt(matchRangoEspecial[2], 10);
+    const grados: string[] = [];
+    for (let i = inicio; i <= fin; i++) {
+      grados.push(`${i}° Básico Especial`);
+    }
+    return grados;
+  }
+
+  const matchParesEspecial = nivel.match(/([1-8])°?\s*[-/yea]+\s*([1-8])°?\s*Básico\s*Especial/i);
+  if (matchParesEspecial) {
+    return [`${matchParesEspecial[1]}° Básico Especial`, `${matchParesEspecial[2]}° Básico Especial`];
+  }
+
   // Caso: "Multigrado 1° a 6° Básico" o "1° a 6° Básico"
   const matchRangoBasica = nivel.match(/([1-8])°?\s*a\s*([1-8])°?\s*Básico/i);
   if (matchRangoBasica) {

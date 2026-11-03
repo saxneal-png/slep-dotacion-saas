@@ -8,7 +8,9 @@ import {
   NIVELES_EPJA_OFICIALES,
   NIVELES_ESPECIAL_OFICIALES,
   NIVELES_LABORAL_OFICIALES,
-  GRADOS_COMBINABLES
+  GRADOS_COMBINABLES,
+  GRADOS_BASICA_ESPECIAL,
+  PRESETS_BASICA_ESPECIAL_COMBINADA
 } from '../types';
 import { extraerGradosDeCurso } from '../../../services/combinacionCursosService';
 
@@ -46,6 +48,11 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
   const [matriculaProyectada, setMatriculaProyectada] = useState(35);
   const [alumnosNeet, setAlumnosNeet] = useState(5);
   const [alumnosNeep, setAlumnosNeep] = useState(2);
+  const [subTipoEspecial, setSubTipoEspecial] = useState<'PARVULARIA' | 'BASICA_COMBINADA'>('BASICA_COMBINADA');
+  const [modoCombinadoEspecial, setModoCombinadoEspecial] = useState<'PRESET' | 'LIBRE'>('PRESET');
+  const [presetEspecialSeleccionado, setPresetEspecialSeleccionado] = useState('1-2');
+  const [gradosEspecialSeleccionados, setGradosEspecialSeleccionados] = useState<string[]>(['1° Básico Especial', '2° Básico Especial']);
+  const [nombrePersonalizadoEspecial, setNombrePersonalizadoEspecial] = useState('');
 
   // Cuando se seleccionan cursos existentes a combinar, calcular sumatorias automáticamente
   useEffect(() => {
@@ -104,9 +111,25 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
       else if (nivel.includes('Media HC')) tipoMod = 'EPJA_MEDIA_HC';
       else tipoMod = 'EPJA_BASICA';
     } else if (categoria === 'ESPECIAL') {
-      esMulti = false;
       tipoMod = 'ESPECIAL';
-      nivelFinal = nivel;
+      if (subTipoEspecial === 'PARVULARIA') {
+        esMulti = false;
+        esComb = false;
+        nivelFinal = 'Educación Parvularia Especial (Decreto 83 / Decretos Supremos)';
+      } else {
+        esComb = gradosEspecialSeleccionados.length >= 2;
+        esMulti = false;
+        if (nombrePersonalizadoEspecial.trim()) {
+          nivelFinal = nombrePersonalizadoEspecial.trim();
+        } else if (modoCombinadoEspecial === 'PRESET') {
+          const p = PRESETS_BASICA_ESPECIAL_COMBINADA.find(x => x.id === presetEspecialSeleccionado);
+          nivelFinal = p ? p.label : `Básica Especial (${gradosEspecialSeleccionados.join(' - ')})`;
+        } else {
+          nivelFinal = gradosEspecialSeleccionados.length > 0
+            ? `Básica Especial (${gradosEspecialSeleccionados.map(g => g.replace(' Especial', '')).join(' - ')})`
+            : 'Educación Básica Especial (Decreto 83)';
+        }
+      }
     } else if (categoria === 'LABORAL') {
       esMulti = false;
       tipoMod = 'LABORAL';
@@ -128,7 +151,7 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
       esMultigrado: esMulti,
       esCombinado: esComb,
       tipoModalidad: tipoMod,
-      gradosCombinados: categoria === 'COMBINADO' ? gradosCombinados : undefined,
+      gradosCombinados: categoria === 'COMBINADO' ? gradosCombinados : (categoria === 'ESPECIAL' && subTipoEspecial === 'BASICA_COMBINADA' && gradosEspecialSeleccionados.length >= 2 ? gradosEspecialSeleccionados : undefined),
       especialidadTp: categoria === 'TP' ? nivelFinal : undefined
     };
 
@@ -246,11 +269,16 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
             type="button"
             onClick={() => {
               setCategoria('ESPECIAL');
-              setNivel(NIVELES_ESPECIAL_OFICIALES[1].id);
+              setSubTipoEspecial('BASICA_COMBINADA');
+              setNivel('1° y 2° Básico Especial');
+              setGradosEspecialSeleccionados(['1° Básico Especial', '2° Básico Especial']);
+              setPresetEspecialSeleccionado('1-2');
+              setNombrePersonalizadoEspecial('1° y 2° Básico Especial');
               setRegimen('JEC');
               setCupoSae(15);
               setMatriculaProyectada(12);
               setAlumnosNeep(8);
+              setAlumnosNeet(2);
             }}
             className={`py-1.5 px-1 rounded-lg transition-all text-center flex flex-col items-center gap-0.5 ${
               categoria === 'ESPECIAL'
@@ -458,24 +486,178 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
           )}
 
           {categoria === 'ESPECIAL' && (
-            <div className="space-y-3 p-3 bg-teal-50/70 rounded-xl border border-teal-200/80">
-              <div>
-                <label className="block text-xs font-bold text-teal-950 mb-1">
+            <div className="space-y-3 p-3.5 bg-teal-50/80 rounded-xl border border-teal-200/90 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-teal-950">
                   Educación Especial (Ordinario N° 05/1470 & Decreto N° 83/2015)
                 </label>
-                <select
-                  value={nivel}
-                  onChange={e => setNivel(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-teal-300 rounded-lg text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-teal-500"
-                >
-                  {NIVELES_ESPECIAL_OFICIALES.map(esp => (
-                    <option key={esp.id} value={esp.id}>{esp.label}</option>
-                  ))}
-                </select>
-                <span className="text-[10px] text-teal-800 font-medium block mt-1">
-                  Malla curricular bajo Decreto 83 con Plan Específico de Apoyo Especializado y adaptación curricular.
+                <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                  Decreto 83 / 170
                 </span>
               </div>
+
+              {/* Selector de Subtipo de Educación Especial: Parvularia vs Básica */}
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-teal-100/60 rounded-lg text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubTipoEspecial('BASICA_COMBINADA');
+                    const p = PRESETS_BASICA_ESPECIAL_COMBINADA[0];
+                    setPresetEspecialSeleccionado(p.id);
+                    setGradosEspecialSeleccionados(p.grados);
+                    setNombrePersonalizadoEspecial(p.label);
+                    setNivel(p.label);
+                  }}
+                  className={`py-1.5 px-2 rounded-md transition-all text-center flex items-center justify-center gap-1.5 ${
+                    subTipoEspecial === 'BASICA_COMBINADA'
+                      ? 'bg-white text-teal-950 shadow-xs'
+                      : 'text-teal-700 hover:text-teal-900'
+                  }`}
+                >
+                  <span>Básica Especial (Combinable)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubTipoEspecial('PARVULARIA');
+                    setNivel('Educación Parvularia Especial (Decreto 83 / Decretos Supremos)');
+                  }}
+                  className={`py-1.5 px-2 rounded-md transition-all text-center flex items-center justify-center gap-1.5 ${
+                    subTipoEspecial === 'PARVULARIA'
+                      ? 'bg-white text-teal-950 shadow-xs'
+                      : 'text-teal-700 hover:text-teal-900'
+                  }`}
+                >
+                  <span>Parvularia Especial</span>
+                </button>
+              </div>
+
+              {subTipoEspecial === 'PARVULARIA' ? (
+                <div className="p-2.5 bg-white rounded-lg border border-teal-200 text-xs">
+                  <div className="font-bold text-teal-900 mb-0.5">Parvularia Especial (Atención Temprana / NT1 / NT2)</div>
+                  <p className="text-[11px] text-slate-500">
+                    Cubre estimulación temprana, medio menor, medio mayor, NT1 y NT2 con adecuación Decreto 83 (28 HA JEC / 22 HA No JEC).
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Selector de Modo: Presets por Ciclo vs Selección Libre */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-teal-900">Configuración de Grados de Básica Especial:</span>
+                    <div className="flex rounded bg-teal-100/70 p-0.5 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setModoCombinadoEspecial('PRESET')}
+                        className={`px-2 py-0.5 rounded transition-all ${
+                          modoCombinadoEspecial === 'PRESET' ? 'bg-white text-teal-950 shadow-2xs' : 'text-teal-700'
+                        }`}
+                      >
+                        Por Ciclos Oficiales
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModoCombinadoEspecial('LIBRE')}
+                        className={`px-2 py-0.5 rounded transition-all ${
+                          modoCombinadoEspecial === 'LIBRE' ? 'bg-white text-teal-950 shadow-2xs' : 'text-teal-700'
+                        }`}
+                      >
+                        Selección Libre (Checkboxes)
+                      </button>
+                    </div>
+                  </div>
+
+                  {modoCombinadoEspecial === 'PRESET' ? (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-teal-950 mb-1">
+                        Selecciona Ciclo o Combinación Típica de Básica Especial:
+                      </label>
+                      <select
+                        value={presetEspecialSeleccionado}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setPresetEspecialSeleccionado(val);
+                          const p = PRESETS_BASICA_ESPECIAL_COMBINADA.find(x => x.id === val);
+                          if (p) {
+                            setGradosEspecialSeleccionados(p.grados);
+                            setNombrePersonalizadoEspecial(p.label);
+                            setNivel(p.label);
+                          }
+                        }}
+                        className="w-full px-3 py-2 bg-white border border-teal-300 rounded-lg text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-teal-500"
+                      >
+                        {PRESETS_BASICA_ESPECIAL_COMBINADA.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.label} ({p.grados.length} grados)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[11px] font-bold text-teal-950 mb-1.5">
+                        Selecciona los Grados Especiales a Combinar en la Misma Aula ({gradosEspecialSeleccionados.length} seleccionados):
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto bg-white p-2.5 rounded-lg border border-teal-200 text-xs">
+                        {GRADOS_BASICA_ESPECIAL.map(g => {
+                          const checked = gradosEspecialSeleccionados.includes(g);
+                          return (
+                            <label
+                              key={g}
+                              className={`flex items-center gap-1.5 p-1.5 rounded cursor-pointer transition-colors ${
+                                checked ? 'bg-teal-50 font-bold text-teal-950 border border-teal-200' : 'text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={e => {
+                                  let updated: string[];
+                                  if (e.target.checked) {
+                                    updated = [...gradosEspecialSeleccionados, g];
+                                  } else {
+                                    updated = gradosEspecialSeleccionados.filter(x => x !== g);
+                                  }
+                                  // Ordenar según el orden de GRADOS_BASICA_ESPECIAL
+                                  updated.sort((a, b) => GRADOS_BASICA_ESPECIAL.indexOf(a) - GRADOS_BASICA_ESPECIAL.indexOf(b));
+                                  setGradosEspecialSeleccionados(updated);
+                                  const autoNombre = updated.length > 0
+                                    ? `Básica Especial (${updated.map(x => x.replace(' Especial', '')).join(' - ')})`
+                                    : 'Educación Básica Especial';
+                                  setNombrePersonalizadoEspecial(autoNombre);
+                                  setNivel(autoNombre);
+                                }}
+                                className="rounded text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
+                              />
+                              <span className="truncate">{g}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Nombre descriptivo del curso especial resultante */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-teal-950 mb-1">
+                      Nombre Descriptivo del Curso Especial (Plan Decreto 83):
+                    </label>
+                    <input
+                      type="text"
+                      value={nombrePersonalizadoEspecial}
+                      onChange={e => {
+                        setNombrePersonalizadoEspecial(e.target.value);
+                        setNivel(e.target.value);
+                      }}
+                      placeholder="Ej. 1° y 2° Básico Especial"
+                      className="w-full px-3 py-1.5 bg-white border border-teal-300 rounded-lg text-xs font-bold text-teal-950 focus:ring-2 focus:ring-teal-500"
+                    />
+                    <div className="flex items-center justify-between mt-1 text-[10px] text-teal-800">
+                      <span>✓ Aplica Plan Oficial Básica Especial (38 HA JEC / 30 HA No JEC)</span>
+                      <span>{gradosEspecialSeleccionados.length} grados combinados</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

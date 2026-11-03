@@ -73,6 +73,41 @@ describe('Servicio de Combinación y Descombinación de Cursos', () => {
       expect(extraerGradosDeCurso(curso)).toEqual(['Pre-Kínder', 'Kínder']);
     });
 
+    it('extrae grados de combinaciones de Básica Especial (Decreto 83)', () => {
+      const cursoPares: CursoSae = {
+        id: 'c-esp-1',
+        rbd: '1234',
+        periodo: 2026,
+        nivel: '1° y 2° Básico Especial',
+        letra: 'U',
+        regimen: 'JEC',
+        matriculaProyectada: 12,
+        cupoSae: 15,
+        tipoModalidad: 'ESPECIAL',
+        esCombinado: true
+      };
+      expect(extraerGradosDeCurso(cursoPares)).toEqual(['1° Básico Especial', '2° Básico Especial']);
+
+      const cursoRango: CursoSae = {
+        id: 'c-esp-2',
+        rbd: '1234',
+        periodo: 2026,
+        nivel: '1° a 4° Básico Especial',
+        letra: 'U',
+        regimen: 'JEC',
+        matriculaProyectada: 14,
+        cupoSae: 15,
+        tipoModalidad: 'ESPECIAL',
+        esCombinado: true
+      };
+      expect(extraerGradosDeCurso(cursoRango)).toEqual([
+        '1° Básico Especial',
+        '2° Básico Especial',
+        '3° Básico Especial',
+        '4° Básico Especial'
+      ]);
+    });
+
     it('devuelve el nivel regular si es un curso individual', () => {
       const curso: CursoSae = {
         id: 'c5',

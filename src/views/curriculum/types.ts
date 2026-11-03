@@ -123,6 +123,27 @@ export const NIVELES_ESPECIAL_OFICIALES = [
   { id: 'Educación Básica Especial (1° a 8° Básico con Adecuaciones Curriculares - Dec. 83)', label: 'Básica Especial (1° a 8° Básico con Dec. 83 - 38 HA JEC / 30 HA)', ciclo: 'Básica Especial' },
 ];
 
+export const GRADOS_BASICA_ESPECIAL = [
+  '1° Básico Especial',
+  '2° Básico Especial',
+  '3° Básico Especial',
+  '4° Básico Especial',
+  '5° Básico Especial',
+  '6° Básico Especial',
+  '7° Básico Especial',
+  '8° Básico Especial'
+];
+
+export const PRESETS_BASICA_ESPECIAL_COMBINADA = [
+  { id: '1-2', label: '1° y 2° Básico Especial', grados: ['1° Básico Especial', '2° Básico Especial'] },
+  { id: '3-4', label: '3° y 4° Básico Especial', grados: ['3° Básico Especial', '4° Básico Especial'] },
+  { id: '5-6', label: '5° y 6° Básico Especial', grados: ['5° Básico Especial', '6° Básico Especial'] },
+  { id: '7-8', label: '7° y 8° Básico Especial', grados: ['7° Básico Especial', '8° Básico Especial'] },
+  { id: '1-4', label: '1° a 4° Básico Especial (1° Ciclo Integrado)', grados: ['1° Básico Especial', '2° Básico Especial', '3° Básico Especial', '4° Básico Especial'] },
+  { id: '5-8', label: '5° a 8° Básico Especial (2° Ciclo Integrado)', grados: ['5° Básico Especial', '6° Básico Especial', '7° Básico Especial', '8° Básico Especial'] },
+  { id: '1-8', label: '1° a 8° Básico Especial (Multigrado Completo)', grados: ['1° Básico Especial', '2° Básico Especial', '3° Básico Especial', '4° Básico Especial', '5° Básico Especial', '6° Básico Especial', '7° Básico Especial', '8° Básico Especial'] }
+];
+
 export const NIVELES_LABORAL_OFICIALES = [
   { id: 'Nivel Laboral 1 (Decreto N° 87/1990 y Normativa Especial)', label: 'Nivel Laboral 1 (Decreto 87 - 38 HA JEC / 30 HA)', ciclo: 'Laboral 1' },
   { id: 'Nivel Laboral 2 (Decreto N° 87/1990 y Normativa Especial)', label: 'Nivel Laboral 2 (Decreto 87 - 38 HA JEC / 30 HA)', ciclo: 'Laboral 2' },
