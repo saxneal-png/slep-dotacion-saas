@@ -276,9 +276,9 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
               setNombrePersonalizadoEspecial('1° y 2° Básico Especial');
               setRegimen('JEC');
               setCupoSae(15);
-              setMatriculaProyectada(12);
-              setAlumnosNeep(8);
-              setAlumnosNeet(2);
+              setMatriculaProyectada(15);
+              setAlumnosNeep(15);
+              setAlumnosNeet(0);
             }}
             className={`py-1.5 px-1 rounded-lg transition-all text-center flex flex-col items-center gap-0.5 ${
               categoria === 'ESPECIAL'
@@ -507,6 +507,10 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
                     setGradosEspecialSeleccionados(p.grados);
                     setNombrePersonalizadoEspecial(p.label);
                     setNivel(p.label);
+                    setCupoSae(15);
+                    setMatriculaProyectada(15);
+                    setAlumnosNeep(15);
+                    setAlumnosNeet(0);
                   }}
                   className={`py-1.5 px-2 rounded-md transition-all text-center flex items-center justify-center gap-1.5 ${
                     subTipoEspecial === 'BASICA_COMBINADA'
@@ -521,6 +525,10 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
                   onClick={() => {
                     setSubTipoEspecial('PARVULARIA');
                     setNivel('Educación Parvularia Especial (Decreto 83 / Decretos Supremos)');
+                    setCupoSae(15);
+                    setMatriculaProyectada(15);
+                    setAlumnosNeep(15);
+                    setAlumnosNeet(0);
                   }}
                   className={`py-1.5 px-2 rounded-md transition-all text-center flex items-center justify-center gap-1.5 ${
                     subTipoEspecial === 'PARVULARIA'
@@ -744,6 +752,48 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
             </div>
           </div>
 
+          {categoria === 'ESPECIAL' ? (
+            <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200/80 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-teal-950 flex items-center gap-1.5">
+                  <HeartHandshake className="w-4 h-4 text-teal-600" />
+                  Distribución Estudiantes Educación Especial (Decreto 83 / 170)
+                </span>
+                <span className="text-[10px] font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded">
+                  100% Permanentes (NEEP)
+                </span>
+              </div>
+              <p className="text-[11px] text-teal-900 leading-relaxed">
+                Los cursos de educación especial exclusiva no matriculan estudiantes transitorios (NEET). Su capacidad normativa es de <strong>15 estudiantes permanentes (NEEP)</strong>.
+              </p>
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="bg-white/80 p-2.5 rounded-lg border border-teal-200/60">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase">Transitorios (NEET)</label>
+                  <div className="text-sm font-extrabold text-slate-400 mt-0.5">0 estudiantes</div>
+                  <span className="text-[9px] text-slate-400">No aplica en cursos especiales</span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-teal-300 shadow-2xs">
+                  <label className="block text-[10px] font-bold text-teal-950 uppercase">Permanentes (NEEP)</label>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={alumnosNeep}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        setAlumnosNeep(val);
+                        setMatriculaProyectada(val);
+                      }}
+                      className="w-16 px-2 py-0.5 bg-teal-50 border border-teal-300 rounded text-xs font-black text-teal-950 text-center"
+                    />
+                    <span className="text-[11px] font-bold text-teal-900">estudiantes</span>
+                  </div>
+                  <span className="text-[9px] text-teal-700 font-medium">Matrícula completa del curso</span>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 mb-1">Alumnos NEET (Transitorios)</label>
@@ -768,6 +818,7 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
               />
             </div>
           </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2 border-t">
             <button
