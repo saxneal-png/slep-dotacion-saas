@@ -265,11 +265,27 @@ export interface CarteraExportData {
 }
 
 export interface InconsistenciaTerritorial {
-  tipo: 'RUT_DUPLICADO' | 'EXCESO_JORNADA_GLOBAL' | 'DEFICIT_ESPECIALIDAD';
+  tipo: 'RUT_DUPLICADO' | 'EXCESO_JORNADA_GLOBAL' | 'DEFICIT_ESPECIALIDAD' | 'SOBREASIGNACION_AULA';
+  severidad?: 'CRITICA' | 'ADVERTENCIA' | 'INFO';
   run?: string;
   docenteNombre?: string;
   colegiosInvolucrados: string[];
   horasTotalesSumadas?: number;
+  descripcion: string;
+}
+
+export interface DocenteCompartidoTerritorial {
+  run: string;
+  docenteNombre: string;
+  colegiosInvolucrados: {
+    colegio: string;
+    rbd: string;
+    comuna?: string;
+    horas: number;
+    regimen?: string;
+  }[];
+  horasTotalesSumadas: number;
+  horasDisponiblesHastaTope: number;
   descripcion: string;
 }
 

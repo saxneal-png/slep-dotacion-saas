@@ -17,6 +17,7 @@ import {
   AsignacionHoraria,
   BalanzaHorariaColegio,
   InconsistenciaTerritorial,
+  DocenteCompartidoTerritorial,
   DocenteConsolidadoTerritorial,
   ContratoDocenteColegio
 } from '../types';
@@ -565,6 +566,7 @@ export function consolidarCarteraTerritorial(
   diagnosticos: DiagnosticoColegioCompleto[]
 ): {
   inconsistencias: InconsistenciaTerritorial[];
+  docentesCompartidos: DocenteCompartidoTerritorial[];
   resumenPorComuna: {
     [comuna: string]: {
       colegiosCount: number;
@@ -582,8 +584,9 @@ export function consolidarCarteraTerritorial(
   }[];
 } {
   const inconsistencias: InconsistenciaTerritorial[] = [];
+  const docentesCompartidos: DocenteCompartidoTerritorial[] = [];
 
-  // 1. Detección de RUTs Duplicados y Sobrecarga Cruzada Territorial
+  // 1. Auditoría Territorial: Multicontratos Legales vs. Infracción por Sobrecarga (>44h)
   const docentesPorRun: { [run: string]: Docente[] } = {};
   for (const d of docentes) {
     const runLimpio = normalizarRut(d.run);
@@ -602,27 +605,45 @@ export function consolidarCarteraTerritorial(
         return est ? `${est.nombre} (${doc.horasContrato}h)` : `RBD ${doc.rbd} (${doc.horasContrato}h)`;
       });
 
+      const colegiosDetalle = list.map(doc => {
+        const est = establecimientos.find(e => e.rbd === doc.rbd);
+        return {
+          colegio: est ? est.nombre : `RBD ${doc.rbd}`,
+          rbd: doc.rbd,
+          comuna: est?.comuna,
+          horas: doc.horasContrato,
+          regimen: est?.regimen
+        };
+      });
+
       if (horasTotales > 44) {
+        // INFRACCIÓN CRÍTICA REAL: Sobrepasa el tope legal de 44 hrs del Estatuto Docente
         inconsistencias.push({
           tipo: 'EXCESO_JORNADA_GLOBAL',
+          severidad: 'CRITICA',
           run: list[0].run,
           docenteNombre: `${list[0].nombres} ${list[0].apellidos}`,
           colegiosInvolucrados: nombresColegios,
           horasTotalesSumadas: horasTotales,
-          descripcion: `Infracción Territorial: El docente suma ${horasTotales} hrs semanales entre múltiples escuelas (Límite legal del Estatuto Docente es 44 hrs).`
+          descripcion: `Infracción Territorial: El docente suma ${horasTotales} hrs semanales entre múltiples escuelas (Límite legal de 44 hrs). Exceso de +${horasTotales - 44} hrs.`
         });
       } else {
-        inconsistencias.push({
-          tipo: 'RUT_DUPLICADO',
+        // CONTRATOS COMPARTIDOS CONFORMES A LA LEY (<= 44 hrs)
+        const holgura = 44 - horasTotales;
+        docentesCompartidos.push({
           run: list[0].run,
           docenteNombre: `${list[0].nombres} ${list[0].apellidos}`,
-          colegiosInvolucrados: nombresColegios,
+          colegiosInvolucrados: colegiosDetalle,
           horasTotalesSumadas: horasTotales,
-          descripcion: `Docente compartido en ${list.length} establecimientos con un total de ${horasTotales} hrs.`
+          horasDisponiblesHastaTope: holgura,
+          descripcion: `Docente compartido en ${list.length} escuelas con ${horasTotales} hrs semanales (${holgura > 0 ? `+${holgura}h holgura disponible` : 'jornada completa de 44h'}).`
         });
       }
     }
   }
+
+  // Ordenar docentes compartidos por total de horas descendente
+  docentesCompartidos.sort((a, b) => b.horasTotalesSumadas - a.horasTotalesSumadas);
 
   // 2. Resumen Agregado por Comuna (Bulnes, Chillán Viejo, Yungay, etc.)
   const resumenPorComuna: {
@@ -699,6 +720,7 @@ export function consolidarCarteraTerritorial(
 
   return {
     inconsistencias,
+    docentesCompartidos,
     resumenPorComuna,
     vacantesCruzadas
   };

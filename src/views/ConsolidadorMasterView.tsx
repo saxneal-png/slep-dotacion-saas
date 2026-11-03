@@ -215,8 +215,10 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
     }
   };
 
+  const [filtroTipoDocente, setFiltroTipoDocente] = useState<'todos' | 'multicontrato' | 'exceso'>('todos');
+
   const consolidacion = consolidarCarteraTerritorial(establecimientos, docentes, diagnosticos);
-  const { inconsistencias, resumenPorComuna, vacantesCruzadas } = consolidacion;
+  const { inconsistencias, docentesCompartidos, resumenPorComuna, vacantesCruzadas } = consolidacion;
 
   const totalColegios = establecimientos.length;
   const totalMatriculaTerritorial = diagnosticos.reduce((s, d) => s + d.balanzaGeneral.totalMatriculaProyectada, 0);
@@ -242,15 +244,23 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
   const totalHorasTerritorioSlep = docentesConsolidados.reduce((s, d) => s + d.horasTotalesSlep, 0);
 
   const docentesFiltrados = useMemo(() => {
+    let filtrados = docentesConsolidados;
+
+    if (filtroTipoDocente === 'multicontrato') {
+      filtrados = filtrados.filter(d => d.contratos.length > 1);
+    } else if (filtroTipoDocente === 'exceso') {
+      filtrados = filtrados.filter(d => d.excedeLimiteSlep);
+    }
+
     const q = filtroDocentes.toLowerCase().trim();
-    if (!q) return docentesConsolidados;
-    return docentesConsolidados.filter(d => 
+    if (!q) return filtrados;
+    return filtrados.filter(d => 
       d.nombres.toLowerCase().includes(q) ||
       d.apellidos.toLowerCase().includes(q) ||
       d.run.toLowerCase().includes(q) ||
       d.colegiosNombres.some(cn => cn.toLowerCase().includes(q))
     );
-  }, [docentesConsolidados, filtroDocentes]);
+  }, [docentesConsolidados, filtroDocentes, filtroTipoDocente]);
 
   return (
     <div className="space-y-6">
@@ -432,9 +442,13 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
         >
           <Layers className="w-4 h-4" />
           <span>Balance Territorial & Inconsistencias</span>
-          {inconsistencias.length > 0 && (
-            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">
-              {inconsistencias.length}
+          {inconsistencias.length > 0 ? (
+            <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold ml-1 animate-pulse">
+              {inconsistencias.length} {inconsistencias.length === 1 ? 'alerta' : 'alertas'}
+            </span>
+          ) : (
+            <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold ml-1 border border-emerald-200">
+              0 alertas
             </span>
           )}
         </button>
@@ -508,56 +522,191 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
             </div>
           </div>
 
-          {/* Sección Inconsistencias Cruzadas (RUT Duplicado / Sobrecarga) */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-red-600" />
-                Auditoría de Inconsistencias Territoriales y Sobrecarga Cruzada (&gt;44h)
-              </h3>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border">
-                {inconsistencias.length} caso(s) detectado(s)
-              </span>
-            </div>
-
-            {inconsistencias.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
-                <CheckCircle className="w-6 h-6 text-emerald-600" />
-                <span>No se detectaron RUTs duplicados con sobrecarga horaria ni inconsistencias cruzadas entre los colegios.</span>
+          {/* Sección 1: Auditoría de Inconsistencias Normativas Reales (>44h) */}
+          {inconsistencias.length === 0 ? (
+            <div className="bg-gradient-to-r from-emerald-50/80 to-teal-50/80 border border-emerald-200/90 rounded-2xl p-5 flex items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 bg-emerald-600 text-white rounded-xl shadow-sm">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-black text-emerald-950">
+                      Cero Inconsistencias Normativas en el Territorio
+                    </h4>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      100% Conforme a Ley
+                    </span>
+                  </div>
+                  <p className="text-xs text-emerald-800/90 mt-0.5">
+                    No se registran funcionarios docentes que superen el límite legal de 44 hrs semanales ni sobrecargas horarias indebidas entre escuelas.
+                  </p>
+                </div>
               </div>
-            ) : (
-              <div className="divide-y divide-slate-200">
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/80 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                <Scale className="w-4 h-4 text-emerald-600" />
+                <span>Estatuto Docente DFL 1</span>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border-2 border-red-200 shadow-md overflow-hidden animate-in fade-in">
+              <div className="px-6 py-4 bg-red-50/90 border-b border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-red-600 text-white rounded-xl shadow-sm">
+                    <ShieldAlert className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-red-950 flex items-center gap-2">
+                      <span>Auditoría de Inconsistencias Normativas: Exceso de Jornada Global (&gt;44h)</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-200 text-red-900">
+                        Infracción Legal
+                      </span>
+                    </h3>
+                    <p className="text-xs text-red-800 mt-0.5">
+                      Vulneración al Art. 26 del Estatuto Docente (DFL 1). La jornada ordinaria territorial de trabajo no puede exceder 44 hrs cronológicas semanales.
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-black px-3 py-1 rounded-full bg-red-600 text-white self-start sm:self-auto shadow-sm">
+                  {inconsistencias.length} caso(s) infractor(es)
+                </span>
+              </div>
+
+              <div className="divide-y divide-red-100">
                 {inconsistencias.map((inc, idx) => (
-                  <div key={idx} className="p-4 hover:bg-slate-50 text-xs flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                          inc.tipo === 'EXCESO_JORNADA_GLOBAL'
-                            ? 'bg-red-100 text-red-800 border border-red-200 animate-pulse'
-                            : 'bg-amber-100 text-amber-800 border border-amber-200'
-                        }`}>
-                          {inc.tipo === 'EXCESO_JORNADA_GLOBAL' ? 'SOBRECARGA ILEGAL (>44h)' : 'DOCENTE COMPARTIDO'}
+                  <div key={idx} className="p-4 bg-red-50/30 hover:bg-red-50/60 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 rounded font-black text-[10px] bg-red-600 text-white">
+                          INFRACCIÓN SLEP (&gt;44h)
                         </span>
-                        <span className="font-bold text-slate-800 text-sm">
-                          {inc.docenteNombre} (RUN: {inc.run})
+                        <span className="font-bold text-slate-900 text-sm">
+                          {inc.docenteNombre}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-500">
+                          RUN: {inc.run}
                         </span>
                       </div>
 
-                      <p className="text-slate-600 mt-1.5">{inc.descripcion}</p>
+                      <p className="text-red-900 font-medium">{inc.descripcion}</p>
 
-                      <div className="mt-2 flex items-center gap-1.5 text-slate-500">
-                        <School className="w-3.5 h-3.5" />
-                        <span className="font-medium">Establecimientos involucrados:</span>
-                        <span>{inc.colegiosInvolucrados.join(' • ')}</span>
+                      <div className="flex items-center gap-1.5 text-slate-600 pt-0.5">
+                        <School className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="font-semibold text-[11px]">Colegios:</span>
+                        <span className="text-[11px]">{inc.colegiosInvolucrados.join(' • ')}</span>
                       </div>
                     </div>
 
-                    <div className="text-right whitespace-nowrap">
-                      <span className="text-lg font-black text-slate-800">{inc.horasTotalesSumadas} hrs</span>
-                      <span className="block text-[10px] text-slate-400">Total semanal</span>
+                    <div className="text-right whitespace-nowrap bg-white px-3.5 py-2 rounded-xl border border-red-200 self-end md:self-auto shrink-0">
+                      <span className="text-lg font-black text-red-700">{inc.horasTotalesSumadas} hrs</span>
+                      <span className="block text-[10px] font-bold text-red-600">
+                        +{((inc.horasTotalesSumadas || 0) - 44)} hrs sobre el límite legal
+                      </span>
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sección 2: Catálogo de Planta Docente Compartida (Multicontrato Conforme a Norma <=44h) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 bg-gradient-to-r from-indigo-50/70 via-slate-50 to-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/20">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-slate-900">
+                      Planta Docente Compartida (Multicontrato Inter-Escuelas)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      Conforme a Ley (&le;44h)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Docentes asignados en dos o más escuelas del territorio sin superar el tope legal de 44 hrs. Se refleja el desglose de horas por establecimiento y la holgura disponible.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-sm">
+                  {docentesCompartidos.length} docentes compartidos
+                </span>
+              </div>
+            </div>
+
+            {docentesCompartidos.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs">
+                No se registran docentes con contratos compartidos entre múltiples colegios.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 max-h-[460px] overflow-y-auto">
+                {docentesCompartidos.map((dc, idx) => {
+                  const docenteMatch = docentesConsolidados.find(d => d.run === dc.run);
+                  return (
+                    <div key={idx} className="p-4 hover:bg-slate-50/80 text-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3 transition-colors">
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 text-sm">
+                            {dc.docenteNombre}
+                          </span>
+                          <span className="font-mono text-slate-400 text-[11px]">
+                            RUN: {dc.run}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            dc.horasDisponiblesHastaTope > 0
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}>
+                            {dc.horasDisponiblesHastaTope > 0
+                              ? `+${dc.horasDisponiblesHastaTope} hrs disponibles`
+                              : 'Jornada Completa (44 hrs)'}
+                          </span>
+                        </div>
+
+                        {/* Desglose visual por establecimiento */}
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          {dc.colegiosInvolucrados.map((col, cIdx) => (
+                            <div key={cIdx} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 hover:bg-slate-200/70 text-slate-700 text-[11px] border border-slate-200">
+                              <School className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="font-semibold">{col.colegio}</span>
+                              <span className="font-mono font-black text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-100">
+                                {col.horas}h
+                              </span>
+                              {col.comuna && (
+                                <span className="text-[10px] text-slate-400">({col.comuna})</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0 self-end lg:self-auto">
+                        <div className="text-right">
+                          <span className="text-base font-black text-slate-900">
+                            {dc.horasTotalesSumadas} hrs
+                          </span>
+                          <span className="block text-[10px] text-slate-400">Total semanal SLEP</span>
+                        </div>
+
+                        {docenteMatch && (
+                          <button
+                            type="button"
+                            onClick={() => setDocenteFicha(docenteMatch)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-all border border-blue-200 shadow-sm active:scale-95"
+                            title="Abrir Ficha Técnica 360°"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Ver Ficha</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -719,24 +868,75 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
             </div>
           </div>
 
-          {/* Barra de Búsqueda y Filtros */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-            <Search className="w-4 h-4 text-slate-400 shrink-0" />
-            <input
-              type="text"
-              placeholder="Buscar docente por nombre, apellidos, RUN o establecimiento..."
-              value={filtroDocentes}
-              onChange={e => setFiltroDocentes(e.target.value)}
-              className="flex-1 text-xs text-slate-800 placeholder-slate-400 bg-transparent focus:outline-none"
-            />
-            {filtroDocentes && (
-              <button
-                onClick={() => setFiltroDocentes('')}
-                className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
-              >
-                Limpiar
-              </button>
-            )}
+          {/* Barra de Búsqueda y Filtros Rápidos */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+                  <Filter className="w-3.5 h-3.5" />
+                  Filtrar nómina:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoDocente('todos')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    filtroTipoDocente === 'todos'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  Todos ({docentesConsolidados.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoDocente('multicontrato')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    filtroTipoDocente === 'multicontrato'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Solo Multicontrato ({docentesMultiEscuelaCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoDocente('exceso')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    filtroTipoDocente === 'exceso'
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>Con Infracción &gt;44h ({docentesExceso44hCount})</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] text-slate-500 font-medium self-end sm:self-auto">
+                Mostrando <strong className="text-slate-800">{docentesFiltrados.length}</strong> de {docentesConsolidados.length} docentes
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2 rounded-lg border border-slate-200 focus-within:border-blue-500 focus-within:bg-white transition-all">
+              <Search className="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                placeholder="Buscar docente por nombre, apellidos, RUN o establecimiento..."
+                value={filtroDocentes}
+                onChange={e => setFiltroDocentes(e.target.value)}
+                className="flex-1 text-xs text-slate-800 placeholder-slate-400 bg-transparent focus:outline-none"
+              />
+              {filtroDocentes && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroDocentes('')}
+                  className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Tabla de Docentes Territoriales */}

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { obtenerDocentesConsolidadosTerritorio } from '../src/services/dotacionCalculationService';
+import { 
+  obtenerDocentesConsolidadosTerritorio,
+  consolidarCarteraTerritorial 
+} from '../src/services/dotacionCalculationService';
 import type { Establecimiento, Docente, AsignacionHoraria } from '../src/types';
 
 describe('Consolidación Territorial de Docentes Multi-Contrato y Financiamiento', () => {
@@ -222,5 +225,71 @@ describe('Consolidación Territorial de Docentes Multi-Contrato y Financiamiento
     // Para 30h en 60/40: cálculo de jornada sobre 30h
     expect(contratoAndres?.maxHorasPedagogicasMineduc).toBeGreaterThan(0);
     expect(contratoAndres?.horasPedagogicasAsignadas).toBe(15);
+  });
+
+  it('consolidarCarteraTerritorial: debe clasificar a docentes con multicontrato <= 44h en docentesCompartidos y NO en inconsistencias', () => {
+    const docentes: Docente[] = [
+      {
+        id: 'doc-comp-1',
+        rbd: '3451',
+        run: '15.234.567-8',
+        nombres: 'Andrea',
+        apellidos: 'Garrido Flores',
+        calidadJuridica: 'TITULAR',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 22
+      },
+      {
+        id: 'doc-comp-2',
+        rbd: '3480',
+        run: '15.234.567-8',
+        nombres: 'Andrea',
+        apellidos: 'Garrido Flores',
+        calidadJuridica: 'CONTRATA',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 18
+      },
+      {
+        id: 'doc-infractor-1',
+        rbd: '3451',
+        run: '8.765.432-1',
+        nombres: 'Roberto',
+        apellidos: 'Morales Alarcón',
+        calidadJuridica: 'TITULAR',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 30
+      },
+      {
+        id: 'doc-infractor-2',
+        rbd: '3480',
+        run: '8.765.432-1',
+        nombres: 'Roberto',
+        apellidos: 'Morales Alarcón',
+        calidadJuridica: 'CONTRATA',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 16 // 30 + 16 = 46h (>44h)
+      }
+    ];
+
+    const resultado = consolidarCarteraTerritorial([colegioA, colegioB], docentes, []);
+
+    // 1. Docente compartido legal (22h + 18h = 40h <= 44h) debe estar en docentesCompartidos
+    expect(resultado.docentesCompartidos.length).toBe(1);
+    const andrea = resultado.docentesCompartidos[0];
+    expect(andrea.run).toBe('15.234.567-8');
+    expect(andrea.horasTotalesSumadas).toBe(40);
+    expect(andrea.horasDisponiblesHastaTope).toBe(4); // 44 - 40 = 4h
+    expect(andrea.colegiosInvolucrados.length).toBe(2);
+
+    // 2. Docente infractor (30h + 16h = 46h > 44h) debe estar en inconsistencias y NO en docentesCompartidos
+    expect(resultado.inconsistencias.length).toBe(1);
+    const roberto = resultado.inconsistencias[0];
+    expect(roberto.tipo).toBe('EXCESO_JORNADA_GLOBAL');
+    expect(roberto.run).toBe('8.765.432-1');
+    expect(roberto.horasTotalesSumadas).toBe(46);
+
+    // Andrea NO debe figurar en inconsistencias como falso positivo
+    const falsoPositivoAndrea = resultado.inconsistencias.find(i => i.run === '15.234.567-8');
+    expect(falsoPositivoAndrea).toBeUndefined();
   });
 });
