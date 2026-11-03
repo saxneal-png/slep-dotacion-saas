@@ -3,6 +3,7 @@ import {
   CursoSae,
   Docente,
   AsignacionHoraria,
+  AsistenteEducacion,
   ComunaValleDiguillin
 } from '../types';
 import {
@@ -13,6 +14,44 @@ import {
   calcularDemandaNormativaPieCurso
 } from '@slep/mineduc-engine';
 import { normalizarRut } from '../utils/rutUtils';
+
+export interface EstadisticasAsistentesColegio {
+  totalAsistentes: number;
+  totalHorasContrato: number;
+  horasIndefinidas: number;
+  horasPlazoFijo: number;
+  horasHonorarios: number;
+  porcentajeIndefinidos: number;
+  porcentajePlazoFijo: number;
+
+  // Desglose por Estamentos Ley 21.109
+  profesionalesCount: number;
+  profesionalesHoras: number;
+  tecnicosCount: number;
+  tecnicosHoras: number;
+  administrativosCount: number; // Incluye administrativos y paradocentes/inspectoría
+  administrativosHoras: number;
+  auxiliaresCount: number;
+  auxiliaresHoras: number;
+
+  // Desglose por Subvención
+  subvencionGeneralHoras: number;
+  sepHoras: number;
+  pieHoras: number;
+
+  // Indicadores
+  ratioAlumnosPorAuxiliar: number;
+  duplaPsicosocial: {
+    tienePsicologo: boolean;
+    tieneTrabajadorSocial: boolean;
+    horasTotales: number;
+  };
+  equipoPie: {
+    cantidad: number;
+    horasTotales: number;
+  };
+  desglose: AsistenteEducacion[];
+}
 
 export interface EstadisticasColegioHoras {
   rbd: string;
@@ -25,7 +64,21 @@ export interface EstadisticasColegioHoras {
   totalCursos: number;
   totalMatricula: number;
 
-  // Horas Contractuales y de Jornada
+  // Calidad Jurídica Docente (Estatuto Docente Art. 4° bis - Regla 80/20)
+  calidadJuridica: {
+    titularesCount: number;
+    titularesHoras: number;
+    contrataCount: number;
+    contrataHoras: number;
+    postulandoTitularidadCount: number;
+    postulandoTitularidadHoras: number;
+    reemplazantesCount: number;
+    reemplazantesHoras: number;
+    porcentajeContrata: number; // Horas Contrata / Total Horas (%)
+    cumpleNorma8020: boolean; // porcentajeContrata <= 20%
+  };
+
+  // Horas Contractuales y de Jornada Docente
   horasContratoTotal: number;
   minutosContratoTotal: number;
 
@@ -35,6 +88,8 @@ export interface EstadisticasColegioHoras {
   horasAulaDemandadasPlan: number; // Demanda MINEDUC + Talleres JEC
   horasLectivasMaximasPermitidas: number;
   balanceAulaLectiva: number; // Disponibles vs Demandadas
+  coberturaCurricularPorcentaje: number; // Asignadas / Demandadas (%)
+  deficitAulaCurricular: number; // Demandadas - Asignadas (horas faltantes)
 
   // 2. Horas de Proporción (No Lectivas según Ley 20.903)
   horasNoLectivasCalculadas: number;
@@ -50,7 +105,7 @@ export interface EstadisticasColegioHoras {
   horasDemandaPieNormativa: number;
   horasColaborativasDemandadasPie: number;
 
-  // 5. Fuentes de Financiamiento
+  // 5. Fuentes de Financiamiento Docente
   financiamiento: {
     subvencionGeneralTitular: number;
     subvencionGeneralContrata: number;
@@ -72,17 +127,31 @@ export interface EstadisticasColegioHoras {
   horasTallerSepDocente: number;
   horasInstitucionalesTotal: number;
 
-  // 7. Porcentajes de Distribución de la Jornada
+  // 7. Distribución Cuadrada de la Jornada Docente (Suma 100%)
+  horasVacantesLibresTotal: number; // Horas pagadas no asignadas
   porcentajeAula: number;
   porcentajeNoLectivo: number;
   porcentajeRecreo: number;
   porcentajeInstitucional: number;
+  porcentajeVacantes: number;
 
   // 8. Horas Sin Asignar / Vacantes desglosadas por Subvención
   horasSepSinAsignarTotal: number;
   horasPieSinAsignarTotal: number;
   horasSubvGeneralSinAsignarTotal: number;
   totalHorasSinAsignarColegio: number;
+
+  // 9. Asistentes de la Educación (Ley 21.109)
+  asistentes: EstadisticasAsistentesColegio;
+
+  // 10. Consolidado de Todo el Personal (Docentes + Asistentes)
+  consolidadoPersonal: {
+    totalFuncionarios: number;
+    totalHorasContratadas: number;
+    subvencionGeneralHoras: number;
+    sepHoras: number;
+    pieHoras: number;
+  };
 
   // Detalle por docente para la vista intra-escuela
   desgloseDocentes: {
@@ -117,7 +186,52 @@ export interface EstadisticasTerritorialesHoras {
   totalCursos: number;
   totalMatricula: number;
 
-  // Totales de Jornada
+  // Consolidado Global de Personal SLEP (Docentes + Asistentes)
+  totalPersonalSlep: number;
+  totalHorasPersonalSlep: number;
+  totalHorasSubvencionGeneralPersonal: number;
+  totalHorasSepPersonal: number;
+  totalHorasPiePersonal: number;
+
+  // Calidad Jurídica Docente Territorial (Regla 80/20)
+  calidadJuridicaDocente: {
+    titularesCount: number;
+    titularesHoras: number;
+    contrataCount: number;
+    contrataHoras: number;
+    postulandoTitularidadCount: number;
+    postulandoTitularidadHoras: number;
+    reemplazantesCount: number;
+    reemplazantesHoras: number;
+    porcentajeContrata: number;
+    cumpleNorma8020: boolean;
+  };
+
+  // Asistentes de la Educación Territoriales
+  asistentesTerritorio: {
+    totalAsistentes: number;
+    asistentesUnicosRun: number;
+    totalHoras: number;
+    horasIndefinidas: number;
+    horasPlazoFijo: number;
+    horasHonorarios: number;
+    porcentajeIndefinidos: number;
+    porcentajePlazoFijo: number;
+    profesionales: { count: number; horas: number };
+    tecnicos: { count: number; horas: number };
+    administrativos: { count: number; horas: number };
+    auxiliares: { count: number; horas: number };
+    financiamiento: {
+      subvencionGeneral: number;
+      sep: number;
+      pie: number;
+    };
+    ratioAlumnosPorAuxiliar: number;
+    totalDuplasPsicosociales: number;
+    totalEquipoPie: number;
+  };
+
+  // Totales de Jornada Docente
   horasContratoTotal: number;
   horasAulaPedagogicasTotal: number;
   horasAulaCronologicasTotal: number;
@@ -128,8 +242,10 @@ export interface EstadisticasTerritorialesHoras {
   horasDemandadasPlanTotal: number;
   horasLectivasMaximasTotal: number;
   balanceLectivoGlobal: number;
+  coberturaCurricularGlobalPct: number;
+  deficitCurricularGlobalTotal: number;
 
-  // Financiamiento Consolidado
+  // Financiamiento Consolidado Docente
   financiamiento: {
     subvencionGeneralTitular: number;
     subvencionGeneralContrata: number;
@@ -149,12 +265,14 @@ export interface EstadisticasTerritorialesHoras {
   horasTecnicoPedagogicasTotal: number;
   horasCoordinacionTotal: number;
   horasInstitucionalesTotal: number;
+  horasVacantesLibresTotal: number;
 
-  // Porcentajes Globales
+  // Porcentajes Globales de Jornada Docente
   porcentajeAulaGlobal: number;
   porcentajeNoLectivoGlobal: number;
   porcentajeRecreoGlobal: number;
   porcentajeInstitucionalGlobal: number;
+  porcentajeVacantesGlobal: number;
 
   // Horas sin asignar territoriales
   horasSepSinAsignarTotal: number;
@@ -167,6 +285,10 @@ export interface EstadisticasTerritorialesHoras {
     [comuna: string]: {
       colegiosCount: number;
       matriculaTotal: number;
+      docentesCount: number;
+      docentesHoras: number;
+      asistentesCount: number;
+      asistentesHoras: number;
       horasContrato: number;
       horasAulaPedagogicas: number;
       horasNoLectivas: number;
@@ -176,6 +298,9 @@ export interface EstadisticasTerritorialesHoras {
       pieTotal: number;
       subvGeneralTotal: number;
       balanceLectivo: number;
+      titularesHoras: number;
+      contrataHoras: number;
+      pctContrata: number;
     };
   };
 
@@ -184,16 +309,143 @@ export interface EstadisticasTerritorialesHoras {
 }
 
 /**
- * Calcula el resumen estadístico exhaustivo de horas para un establecimiento escolar específico
+ * Calcula el resumen estadístico de Asistentes de la Educación para un colegio
+ */
+export function calcularEstadisticasAsistentesColegio(
+  colegio: Establecimiento,
+  asistentes: AsistenteEducacion[],
+  matricula: number = 0
+): EstadisticasAsistentesColegio {
+  let totalHoras = 0;
+  let horasIndefinidas = 0;
+  let horasPlazoFijo = 0;
+  let horasHonorarios = 0;
+
+  let profCount = 0;
+  let profHoras = 0;
+  let tecCount = 0;
+  let tecHoras = 0;
+  let admCount = 0;
+  let admHoras = 0;
+  let auxCount = 0;
+  let auxHoras = 0;
+
+  let subvGenHoras = 0;
+  let sepHoras = 0;
+  let pieHoras = 0;
+
+  let tienePsicologo = false;
+  let tieneTrabajadorSocial = false;
+  let horasDupla = 0;
+  let pieCount = 0;
+  let pieHorasTotales = 0;
+
+  for (const a of asistentes) {
+    const hrs = Number(a.horasContrato) || 0;
+    totalHoras += hrs;
+
+    const sInd = Number(a.horasSubvencionGeneralIndefinido) || 0;
+    const sPla = Number(a.horasSubvencionGeneralPlazoFijo) || 0;
+    const spInd = Number(a.horasSepIndefinido) || 0;
+    const spPla = Number(a.horasSepPlazoFijo) || 0;
+    const pInd = Number(a.horasPieIndefinido) || 0;
+    const pPla = Number(a.horasPiePlazoFijo) || 0;
+    const hon = Number(a.horasHonorarios) || 0;
+
+    const sumaFuentes = sInd + sPla + spInd + spPla + pInd + pPla + hon;
+    if (sumaFuentes > 0) {
+      subvGenHoras += (sInd + sPla);
+      sepHoras += (spInd + spPla);
+      pieHoras += (pInd + pPla);
+      horasHonorarios += hon;
+      horasIndefinidas += (sInd + spInd + pInd);
+      horasPlazoFijo += (sPla + spPla + pPla);
+    } else {
+      // Inferencia por defecto si no están desglosadas las fuentes
+      subvGenHoras += hrs;
+      horasPlazoFijo += hrs;
+    }
+
+    // Estamentos Ley 21.109
+    const est = String(a.estamento || '').toUpperCase();
+    if (est === 'PROFESIONAL') {
+      profCount++;
+      profHoras += hrs;
+    } else if (est === 'TECNICO') {
+      tecCount++;
+      tecHoras += hrs;
+    } else if (est === 'AUXILIAR') {
+      auxCount++;
+      auxHoras += hrs;
+    } else {
+      // ADMINISTRATIVO y PARADOCENTE_INSPECTORIA
+      admCount++;
+      admHoras += hrs;
+    }
+
+    // Dupla Psicosocial
+    const cargoNorm = (a.cargoFuncion || '').toLowerCase();
+    if (a.esDuplaPsicosocial || /psic[oó]log|trabajador.*social|asistente.*social/i.test(cargoNorm)) {
+      if (/psic[oó]log/i.test(cargoNorm)) tienePsicologo = true;
+      if (/trabajador.*social|asistente.*social/i.test(cargoNorm)) tieneTrabajadorSocial = true;
+      horasDupla += hrs;
+    }
+
+    // Equipo PIE
+    if (a.esEquipoPie || (pInd + pPla) > 0 || /fonoaudi|terapeuta|kinesi/i.test(cargoNorm)) {
+      pieCount++;
+      pieHorasTotales += hrs;
+    }
+  }
+
+  const pctIndefinido = totalHoras > 0 ? Math.round((horasIndefinidas / totalHoras) * 100) : 0;
+  const pctPlazoFijo = totalHoras > 0 ? Math.round((horasPlazoFijo / totalHoras) * 100) : 0;
+  const ratioAux = auxCount > 0 && matricula > 0 ? Math.round(matricula / auxCount) : 0;
+
+  return {
+    totalAsistentes: asistentes.length,
+    totalHorasContrato: totalHoras,
+    horasIndefinidas,
+    horasPlazoFijo,
+    horasHonorarios,
+    porcentajeIndefinidos: pctIndefinido,
+    porcentajePlazoFijo: pctPlazoFijo,
+    profesionalesCount: profCount,
+    profesionalesHoras: profHoras,
+    tecnicosCount: tecCount,
+    tecnicosHoras: tecHoras,
+    administrativosCount: admCount,
+    administrativosHoras: admHoras,
+    auxiliaresCount: auxCount,
+    auxiliaresHoras: auxHoras,
+    subvencionGeneralHoras: subvGenHoras,
+    sepHoras,
+    pieHoras,
+    ratioAlumnosPorAuxiliar: ratioAux,
+    duplaPsicosocial: {
+      tienePsicologo,
+      tieneTrabajadorSocial,
+      horasTotales: horasDupla
+    },
+    equipoPie: {
+      cantidad: pieCount,
+      horasTotales: pieHorasTotales
+    },
+    desglose: asistentes
+  };
+}
+
+/**
+ * Calcula el resumen estadístico exhaustivo de horas y personal para un establecimiento escolar específico
  */
 export function calcularEstadisticasColegio(
   colegio: Establecimiento,
   cursos: CursoSae[],
   docentes: Docente[],
-  asignaciones: AsignacionHoraria[]
+  asignaciones: AsignacionHoraria[],
+  asistentes: AsistenteEducacion[] = []
 ): EstadisticasColegioHoras {
   const regimenProporcion: '60/40' | '65/35' = colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
-  const regimenTabla = colegio.porcentajePrioritarios >= 80 ? '60_40' : '65_35';
 
   let totalMatricula = 0;
   let horasAulaDemandadasPlan = 0;
@@ -218,7 +470,17 @@ export function calcularEstadisticasColegio(
     }
   }
 
-  // 2. Acumuladores de Planta Docente
+  // 2. Acumuladores de Calidad Jurídica Docente (Estatuto Docente)
+  let titularesCount = 0;
+  let titularesHoras = 0;
+  let contrataCount = 0;
+  let contrataHoras = 0;
+  let postulandoTitularidadCount = 0;
+  let postulandoTitularidadHoras = 0;
+  let reemplazantesCount = 0;
+  let reemplazantesHoras = 0;
+
+  // 3. Acumuladores de Planta Docente
   let horasContratoTotal = 0;
   let horasAulaPedagogicasAsignadas = 0;
   let horasLectivasMaximasPermitidas = 0;
@@ -244,15 +506,41 @@ export function calcularEstadisticasColegio(
   let horasSubvGeneralSinAsignarTotal = 0;
 
   const desgloseDocentes = docentes.map(doc => {
-    horasContratoTotal += doc.horasContrato;
+    const hContrato = Number(doc.horasContrato) || 0;
+    horasContratoTotal += hContrato;
+
+    // Clasificación de Calidad Jurídica
+    const calJur = (doc.calidadJuridica || '').toUpperCase();
+    if (calJur === 'TITULAR') {
+      titularesCount++;
+      titularesHoras += hContrato;
+    } else if (calJur === 'POSTULANDO_A_TITULARIDAD') {
+      postulandoTitularidadCount++;
+      postulandoTitularidadHoras += hContrato;
+    } else if (calJur === 'REEMPLAZANTE') {
+      reemplazantesCount++;
+      reemplazantesHoras += hContrato;
+    } else {
+      contrataCount++;
+      contrataHoras += hContrato;
+    }
 
     // Financiamiento docente
-    const sTit = doc.horasSubvencionGeneralTitular || (doc.calidadJuridica === 'TITULAR' && !doc.horasSepTitular && !doc.horasPieTitular ? doc.horasContrato : 0);
-    const sCon = doc.horasSubvencionGeneralContrata || (doc.calidadJuridica !== 'TITULAR' && !doc.horasSepContrata && !doc.horasPieContrata ? doc.horasContrato : 0);
-    const spTit = doc.horasSepTitular || 0;
-    const spCon = doc.horasSepContrata || 0;
-    const pTit = doc.horasPieTitular || 0;
-    const pCon = doc.horasPieContrata || 0;
+    let sTit = Number(doc.horasSubvencionGeneralTitular) || 0;
+    let sCon = Number(doc.horasSubvencionGeneralContrata) || 0;
+    let spTit = Number(doc.horasSepTitular) || 0;
+    let spCon = Number(doc.horasSepContrata) || 0;
+    let pTit = Number(doc.horasPieTitular) || 0;
+    let pCon = Number(doc.horasPieContrata) || 0;
+
+    const sumaFuentesDoc = sTit + sCon + spTit + spCon + pTit + pCon;
+    if (sumaFuentesDoc === 0 && hContrato > 0) {
+      if (calJur === 'TITULAR') {
+        sTit = hContrato;
+      } else {
+        sCon = hContrato;
+      }
+    }
 
     subvTit += sTit;
     subvCon += sCon;
@@ -262,12 +550,12 @@ export function calcularEstadisticasColegio(
     pieCon += pCon;
 
     // Institucionales
-    const dDir = doc.horasDirectivas || 0;
-    const dInsp = doc.horasInspectorGeneral || 0;
-    const dTec = doc.horasTecnicoPedagogicas || 0;
-    const dCoord = (doc.horasCoordinacion || 0) + (doc.horasCoordinacionPie || 0) + (doc.horasConvivenciaEscolar || 0) + (doc.horasExtraescolar || 0);
-    const dTallerSep = doc.horasTallerSep || 0;
-    const dColab = doc.horasTrabajoColaborativo || 0;
+    const dDir = Number(doc.horasDirectivas) || 0;
+    const dInsp = Number(doc.horasInspectorGeneral) || 0;
+    const dTec = Number(doc.horasTecnicoPedagogicas) || 0;
+    const dCoord = (Number(doc.horasCoordinacion) || 0) + (Number(doc.horasCoordinacionPie) || 0) + (Number(doc.horasConvivenciaEscolar) || 0) + (Number(doc.horasExtraescolar) || 0);
+    const dTallerSep = Number(doc.horasTallerSep) || 0;
+    const dColab = Number(doc.horasTrabajoColaborativo) || 0;
 
     hDirectivas += dDir;
     hInspector += dInsp;
@@ -294,7 +582,7 @@ export function calcularEstadisticasColegio(
     const isPieDoc = doc.estamento === 'DOCENTE_DIFERENCIAL' || ((pTit + pCon) > 0 && (sTit + sCon) === 0 && (spTit + spCon) === 0);
     const isSepDoc = (spTit + spCon) > 0 && (pTit + pCon) === 0 && (sTit + sCon) === 0;
 
-    // Docencia efectiva de aula: Los docentes de aula (Subvención General o SEP) que realizan co-docencia en sala ejercen docencia lectiva
+    // Docencia efectiva de aula
     const asigsDocenciaEfectiva = isPieDoc
       ? asigsRegulares
       : [...asigsRegulares, ...asigsCoDoc];
@@ -318,9 +606,8 @@ export function calcularEstadisticasColegio(
       : Math.round(((haColab * 0.75) + dColab + sumFuncionesNoAulaPie) * 10) / 10;
 
     const hExentas = dDir + dInsp + dTec + dCoord + sepExentas + pieCronologicas + sumFuncionesNoAulaSubvGen;
-    const hAfectasDocencia = Math.max(0, doc.horasContrato - hExentas);
 
-    // Separar horas efectivas según régimen del curso (60/40 vs 65/35) para cálculo independiente
+    // Separar horas según proporción del curso (60/40 vs 65/35)
     const ha60 = asigsDocenciaEfectiva
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
@@ -335,14 +622,13 @@ export function calcularEstadisticasColegio(
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
-    // Auditoría multitramo oficial MINEDUC (calcula 60/40 y 65/35 por separado y suma minutos de recreo, lectivas y HNL)
     const auditDoc = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: ha65,
       horasAula60_40: ha60,
       horasPieCronologicas: pieCronologicas,
       horasTallerSepExento: sepExentas,
       horasNoAulaInstitucionales: dDir + dInsp + dTec + dCoord + sumFuncionesNoAulaSubvGen,
-      horasContratoReal: doc.horasContrato,
+      horasContratoReal: hContrato,
       aplicaArticulo69: Boolean(doc.aplicaArticulo69)
     });
 
@@ -383,7 +669,7 @@ export function calcularEstadisticasColegio(
       nombreCompleto: `${doc.nombres} ${doc.apellidos}`,
       estamento: doc.estamento,
       calidadJuridica: doc.calidadJuridica,
-      horasContrato: doc.horasContrato,
+      horasContrato: hContrato,
       horasAulaPedagogicas: haRegular,
       horasNoLectivas: horasNoLectivasDoc,
       horasRecreo: horasRecreoDoc,
@@ -392,7 +678,7 @@ export function calcularEstadisticasColegio(
       horasPie: pTit + pCon,
       horasSubvGeneral: sTit + sCon,
       horasInstitucionales: hExentas,
-      estaSobreasignado: auditDoc.esInfractorExcesoLectivo || (doc.horasContrato > 0 && auditDoc.saldoHoras < 0),
+      estaSobreasignado: auditDoc.esInfractorExcesoLectivo || (hContrato > 0 && auditDoc.saldoHoras < 0),
       horasSepAsignadas: sepAsignadasDoc,
       horasSepSinAsignar: sepSinAsignarDoc,
       horasPieAsignadas: pieAsignadasDoc,
@@ -407,13 +693,37 @@ export function calcularEstadisticasColegio(
   const horasRecreoCalculadas = Math.round((minutosRecreoCalculadosTotal / 60) * 10) / 10;
   const horasInstitucionalesTotal = hDirectivas + hInspector + hTecnico + hCoord + hTallerSep;
 
-  const totalFinanciamiento = subvTit + subvCon + sepTit + sepCon + pieTit + pieCon;
+  const totalFinanciamientoDocente = subvTit + subvCon + sepTit + sepCon + pieTit + pieCon;
   const minutosContratoTotal = Math.round(horasContratoTotal * 60);
+
+  // Cuadre exacto de la jornada docente (Aula + HNL + Recreo + Inst + Vacantes = 100%)
+  const horasComprometidas = horasAulaCronologicasAsignadas + horasNoLectivasCalculadas + horasRecreoCalculadas + horasInstitucionalesTotal;
+  const horasVacantesLibresTotal = Math.max(0, Math.round((horasContratoTotal - horasComprometidas) * 10) / 10);
 
   const pctAula = horasContratoTotal > 0 ? Math.round((horasAulaCronologicasAsignadas / horasContratoTotal) * 100) : 0;
   const pctNoLectivo = horasContratoTotal > 0 ? Math.round((horasNoLectivasCalculadas / horasContratoTotal) * 100) : 0;
   const pctRecreo = horasContratoTotal > 0 ? Math.round((horasRecreoCalculadas / horasContratoTotal) * 100) : 0;
   const pctInst = horasContratoTotal > 0 ? Math.round((horasInstitucionalesTotal / horasContratoTotal) * 100) : 0;
+  const pctVacantes = Math.max(0, 100 - (pctAula + pctNoLectivo + pctRecreo + pctInst));
+
+  // Cobertura Curricular
+  const coberturaCurricularPorcentaje = horasAulaDemandadasPlan > 0
+    ? Math.min(100, Math.round((horasAulaPedagogicasAsignadas / horasAulaDemandadasPlan) * 100))
+    : 100;
+  const deficitAulaCurricular = Math.max(0, horasAulaDemandadasPlan - horasAulaPedagogicasAsignadas);
+
+  // Calidad Jurídica y Regla 80/20
+  const pctContrata = horasContratoTotal > 0
+    ? Math.round(((contrataHoras + reemplazantesHoras) / horasContratoTotal) * 1000) / 10
+    : 0;
+  const cumpleNorma8020 = pctContrata <= 20.0;
+
+  // 9. Estadísticas de Asistentes de la Educación
+  const statsAsistentes = calcularEstadisticasAsistentesColegio(colegio, asistentes, totalMatricula);
+
+  // 10. Consolidado Todo el Personal
+  const totalFuncionarios = docentes.length + statsAsistentes.totalAsistentes;
+  const totalHorasPersonal = horasContratoTotal + statsAsistentes.totalHorasContrato;
 
   return {
     rbd: colegio.rbd,
@@ -426,6 +736,19 @@ export function calcularEstadisticasColegio(
     totalCursos: cursos.length,
     totalMatricula,
 
+    calidadJuridica: {
+      titularesCount,
+      titularesHoras,
+      contrataCount,
+      contrataHoras,
+      postulandoTitularidadCount,
+      postulandoTitularidadHoras,
+      reemplazantesCount,
+      reemplazantesHoras,
+      porcentajeContrata: pctContrata,
+      cumpleNorma8020
+    },
+
     horasContratoTotal,
     minutosContratoTotal,
 
@@ -434,6 +757,8 @@ export function calcularEstadisticasColegio(
     horasAulaDemandadasPlan,
     horasLectivasMaximasPermitidas,
     balanceAulaLectiva: horasLectivasMaximasPermitidas - horasAulaDemandadasPlan,
+    coberturaCurricularPorcentaje,
+    deficitAulaCurricular,
 
     horasNoLectivasCalculadas,
     minutosNoLectivosCalculados: minutosNoLectivosCalculadosTotal,
@@ -456,7 +781,7 @@ export function calcularEstadisticasColegio(
       pieTitular: pieTit,
       pieContrata: pieCon,
       pieTotal: pieTit + pieCon,
-      total: totalFinanciamiento
+      total: totalFinanciamientoDocente
     },
 
     horasDirectivas: hDirectivas,
@@ -466,15 +791,27 @@ export function calcularEstadisticasColegio(
     horasTallerSepDocente: hTallerSep,
     horasInstitucionalesTotal,
 
+    horasVacantesLibresTotal,
     porcentajeAula: pctAula,
     porcentajeNoLectivo: pctNoLectivo,
     porcentajeRecreo: pctRecreo,
     porcentajeInstitucional: pctInst,
+    porcentajeVacantes: pctVacantes,
 
     horasSepSinAsignarTotal,
     horasPieSinAsignarTotal,
     horasSubvGeneralSinAsignarTotal,
     totalHorasSinAsignarColegio: horasSepSinAsignarTotal + horasPieSinAsignarTotal + horasSubvGeneralSinAsignarTotal,
+
+    asistentes: statsAsistentes,
+
+    consolidadoPersonal: {
+      totalFuncionarios,
+      totalHorasContratadas: totalHorasPersonal,
+      subvencionGeneralHoras: (subvTit + subvCon) + statsAsistentes.subvencionGeneralHoras,
+      sepHoras: (sepTit + sepCon) + statsAsistentes.sepHoras,
+      pieHoras: (pieTit + pieCon) + statsAsistentes.pieHoras
+    },
 
     desgloseDocentes
   };
@@ -487,16 +824,19 @@ export function calcularEstadisticasTerritoriales(
   colegios: Establecimiento[],
   todosLosCursos: CursoSae[],
   todosLosDocentes: Docente[],
-  todasLasAsignaciones: AsignacionHoraria[]
+  todasLasAsignaciones: AsignacionHoraria[],
+  todosLosAsistentes: AsistenteEducacion[] = []
 ): EstadisticasTerritorialesHoras {
   const porColegio: EstadisticasColegioHoras[] = colegios.map(col => {
     const cursosCol = todosLosCursos.filter(c => c.rbd === col.rbd);
     const docentesCol = todosLosDocentes.filter(d => d.rbd === col.rbd);
     const asigsCol = todasLasAsignaciones.filter(a => a.rbd === col.rbd);
-    return calcularEstadisticasColegio(col, cursosCol, docentesCol, asigsCol);
+    const asistCol = todosLosAsistentes.filter(a => a.rbd === col.rbd);
+    return calcularEstadisticasColegio(col, cursosCol, docentesCol, asigsCol, asistCol);
   });
 
-  const runsUnicos = new Set(todosLosDocentes.map(d => normalizarRut(d.run)).filter(Boolean)).size;
+  const runsUnicosDocentes = new Set(todosLosDocentes.map(d => normalizarRut(d.run)).filter(Boolean)).size;
+  const runsUnicosAsistentes = new Set(todosLosAsistentes.map(a => normalizarRut(a.run)).filter(Boolean)).size;
 
   let totalMatricula = 0;
   let totalCursos = 0;
@@ -510,6 +850,17 @@ export function calcularEstadisticasTerritoriales(
   let horasDemandadasPlanTotal = 0;
   let horasLectivasMaximasTotal = 0;
   let balanceLectivoGlobal = 0;
+  let deficitCurricularGlobalTotal = 0;
+
+  // Calidad Jurídica Docente Territorial
+  let titularesDocCount = 0;
+  let titularesDocHoras = 0;
+  let contrataDocCount = 0;
+  let contrataDocHoras = 0;
+  let postTitDocCount = 0;
+  let postTitDocHoras = 0;
+  let reemplazoDocCount = 0;
+  let reemplazoDocHoras = 0;
 
   let subvTit = 0;
   let subvCon = 0;
@@ -523,10 +874,30 @@ export function calcularEstadisticasTerritoriales(
   let hTecnicoTotal = 0;
   let hCoordTotal = 0;
   let hInstitucionalesTotal = 0;
+  let horasVacantesLibresTotal = 0;
 
   let horasSepSinAsignarTotal = 0;
   let horasPieSinAsignarTotal = 0;
   let horasSubvGeneralSinAsignarTotal = 0;
+
+  // Asistentes Territoriales Agregados
+  let asistTotalHoras = 0;
+  let asistHorasIndefinidas = 0;
+  let asistHorasPlazoFijo = 0;
+  let asistHorasHonorarios = 0;
+  let asistProfCount = 0;
+  let asistProfHoras = 0;
+  let asistTecCount = 0;
+  let asistTecHoras = 0;
+  let asistAdmCount = 0;
+  let asistAdmHoras = 0;
+  let asistAuxCount = 0;
+  let asistAuxHoras = 0;
+  let asistSubvGen = 0;
+  let asistSep = 0;
+  let asistPie = 0;
+  let totalDuplas = 0;
+  let totalEquipoPie = 0;
 
   const porComuna: EstadisticasTerritorialesHoras['porComuna'] = {};
 
@@ -543,6 +914,16 @@ export function calcularEstadisticasTerritoriales(
     horasDemandadasPlanTotal += st.horasAulaDemandadasPlan;
     horasLectivasMaximasTotal += st.horasLectivasMaximasPermitidas;
     balanceLectivoGlobal += st.balanceAulaLectiva;
+    deficitCurricularGlobalTotal += st.deficitAulaCurricular;
+
+    titularesDocCount += st.calidadJuridica.titularesCount;
+    titularesDocHoras += st.calidadJuridica.titularesHoras;
+    contrataDocCount += st.calidadJuridica.contrataCount;
+    contrataDocHoras += st.calidadJuridica.contrataHoras;
+    postTitDocCount += st.calidadJuridica.postulandoTitularidadCount;
+    postTitDocHoras += st.calidadJuridica.postulandoTitularidadHoras;
+    reemplazoDocCount += st.calidadJuridica.reemplazantesCount;
+    reemplazoDocHoras += st.calidadJuridica.reemplazantesHoras;
 
     subvTit += st.financiamiento.subvencionGeneralTitular;
     subvCon += st.financiamiento.subvencionGeneralContrata;
@@ -556,16 +937,41 @@ export function calcularEstadisticasTerritoriales(
     hTecnicoTotal += st.horasTecnicoPedagogicas;
     hCoordTotal += st.horasCoordinacion;
     hInstitucionalesTotal += st.horasInstitucionalesTotal;
+    horasVacantesLibresTotal += st.horasVacantesLibresTotal;
 
     horasSepSinAsignarTotal += st.horasSepSinAsignarTotal;
     horasPieSinAsignarTotal += st.horasPieSinAsignarTotal;
     horasSubvGeneralSinAsignarTotal += st.horasSubvGeneralSinAsignarTotal;
+
+    // Asistentes
+    const as = st.asistentes;
+    asistTotalHoras += as.totalHorasContrato;
+    asistHorasIndefinidas += as.horasIndefinidas;
+    asistHorasPlazoFijo += as.horasPlazoFijo;
+    asistHorasHonorarios += as.horasHonorarios;
+    asistProfCount += as.profesionalesCount;
+    asistProfHoras += as.profesionalesHoras;
+    asistTecCount += as.tecnicosCount;
+    asistTecHoras += as.tecnicosHoras;
+    asistAdmCount += as.administrativosCount;
+    asistAdmHoras += as.administrativosHoras;
+    asistAuxCount += as.auxiliaresCount;
+    asistAuxHoras += as.auxiliaresHoras;
+    asistSubvGen += as.subvencionGeneralHoras;
+    asistSep += as.sepHoras;
+    asistPie += as.pieHoras;
+    if (as.duplaPsicosocial.tienePsicologo && as.duplaPsicosocial.tieneTrabajadorSocial) totalDuplas++;
+    totalEquipoPie += as.equipoPie.cantidad;
 
     const com = st.comuna;
     if (!porComuna[com]) {
       porComuna[com] = {
         colegiosCount: 0,
         matriculaTotal: 0,
+        docentesCount: 0,
+        docentesHoras: 0,
+        asistentesCount: 0,
+        asistentesHoras: 0,
         horasContrato: 0,
         horasAulaPedagogicas: 0,
         horasNoLectivas: 0,
@@ -574,34 +980,102 @@ export function calcularEstadisticasTerritoriales(
         sepTotal: 0,
         pieTotal: 0,
         subvGeneralTotal: 0,
-        balanceLectivo: 0
+        balanceLectivo: 0,
+        titularesHoras: 0,
+        contrataHoras: 0,
+        pctContrata: 0
       };
     }
     const pc = porComuna[com];
     pc.colegiosCount += 1;
     pc.matriculaTotal += st.totalMatricula;
+    pc.docentesCount += st.totalDocentes;
+    pc.docentesHoras += st.horasContratoTotal;
+    pc.asistentesCount += as.totalAsistentes;
+    pc.asistentesHoras += as.totalHorasContrato;
     pc.horasContrato += st.horasContratoTotal;
     pc.horasAulaPedagogicas += st.horasAulaPedagogicasAsignadas;
     pc.horasNoLectivas += st.horasNoLectivasCalculadas;
     pc.horasRecreos += st.horasRecreoCalculadas;
     pc.horasColaborativo += st.horasTrabajoColaborativo;
-    pc.sepTotal += st.financiamiento.sepTotal;
-    pc.pieTotal += st.financiamiento.pieTotal;
-    pc.subvGeneralTotal += st.financiamiento.subvencionGeneralTotal;
+    pc.sepTotal += (st.financiamiento.sepTotal + as.sepHoras);
+    pc.pieTotal += (st.financiamiento.pieTotal + as.pieHoras);
+    pc.subvGeneralTotal += (st.financiamiento.subvencionGeneralTotal + as.subvencionGeneralHoras);
     pc.balanceLectivo += st.balanceAulaLectiva;
+    pc.titularesHoras += st.calidadJuridica.titularesHoras;
+    pc.contrataHoras += (st.calidadJuridica.contrataHoras + st.calidadJuridica.reemplazantesHoras);
+    pc.pctContrata = pc.docentesHoras > 0 ? Math.round((pc.contrataHoras / pc.docentesHoras) * 1000) / 10 : 0;
   }
 
   const pctAula = horasContratoTotal > 0 ? Math.round((horasAulaCronologicasTotal / horasContratoTotal) * 100) : 0;
   const pctNoLectivo = horasContratoTotal > 0 ? Math.round((horasNoLectivasTotal / horasContratoTotal) * 100) : 0;
   const pctRecreo = horasContratoTotal > 0 ? Math.round((horasRecreosTotal / horasContratoTotal) * 100) : 0;
   const pctInst = horasContratoTotal > 0 ? Math.round((hInstitucionalesTotal / horasContratoTotal) * 100) : 0;
+  const pctVac = Math.max(0, 100 - (pctAula + pctNoLectivo + pctRecreo + pctInst));
+
+  const coberturaGlobalPct = horasDemandadasPlanTotal > 0
+    ? Math.min(100, Math.round((horasAulaPedagogicasTotal / horasDemandadasPlanTotal) * 100))
+    : 100;
+
+  // Calidad Jurídica Docente Territorial (Regla 80/20)
+  const pctContrataTerritorial = horasContratoTotal > 0
+    ? Math.round(((contrataDocHoras + reemplazoDocHoras) / horasContratoTotal) * 1000) / 10
+    : 0;
+  const cumpleNorma8020Territorial = pctContrataTerritorial <= 20.0;
+
+  // Asistentes ratios
+  const pctAsistIndef = asistTotalHoras > 0 ? Math.round((asistHorasIndefinidas / asistTotalHoras) * 100) : 0;
+  const pctAsistPlazo = asistTotalHoras > 0 ? Math.round((asistHorasPlazoFijo / asistTotalHoras) * 100) : 0;
+  const ratioAuxTerritorial = asistAuxCount > 0 && totalMatricula > 0 ? Math.round(totalMatricula / asistAuxCount) : 0;
 
   return {
     totalEstablecimientos: colegios.length,
     totalDocentesPlanta: todosLosDocentes.length,
-    docentesUnicosRun: runsUnicos,
+    docentesUnicosRun: runsUnicosDocentes,
     totalCursos,
     totalMatricula,
+
+    totalPersonalSlep: todosLosDocentes.length + todosLosAsistentes.length,
+    totalHorasPersonalSlep: horasContratoTotal + asistTotalHoras,
+    totalHorasSubvencionGeneralPersonal: (subvTit + subvCon) + asistSubvGen,
+    totalHorasSepPersonal: (sepTit + sepCon) + asistSep,
+    totalHorasPiePersonal: (pieTit + pieCon) + asistPie,
+
+    calidadJuridicaDocente: {
+      titularesCount: titularesDocCount,
+      titularesHoras: titularesDocHoras,
+      contrataCount: contrataDocCount,
+      contrataHoras: contrataDocHoras,
+      postulandoTitularidadCount: postTitDocCount,
+      postulandoTitularidadHoras: postTitDocHoras,
+      reemplazantesCount: reemplazoDocCount,
+      reemplazantesHoras: reemplazoDocHoras,
+      porcentajeContrata: pctContrataTerritorial,
+      cumpleNorma8020: cumpleNorma8020Territorial
+    },
+
+    asistentesTerritorio: {
+      totalAsistentes: todosLosAsistentes.length,
+      asistentesUnicosRun: runsUnicosAsistentes,
+      totalHoras: asistTotalHoras,
+      horasIndefinidas: asistHorasIndefinidas,
+      horasPlazoFijo: asistHorasPlazoFijo,
+      horasHonorarios: asistHorasHonorarios,
+      porcentajeIndefinidos: pctAsistIndef,
+      porcentajePlazoFijo: pctAsistPlazo,
+      profesionales: { count: asistProfCount, horas: asistProfHoras },
+      tecnicos: { count: asistTecCount, horas: asistTecHoras },
+      administrativos: { count: asistAdmCount, horas: asistAdmHoras },
+      auxiliares: { count: asistAuxCount, horas: asistAuxHoras },
+      financiamiento: {
+        subvencionGeneral: asistSubvGen,
+        sep: asistSep,
+        pie: asistPie
+      },
+      ratioAlumnosPorAuxiliar: ratioAuxTerritorial,
+      totalDuplasPsicosociales: totalDuplas,
+      totalEquipoPie: totalEquipoPie
+    },
 
     horasContratoTotal,
     horasAulaPedagogicasTotal,
@@ -613,6 +1087,8 @@ export function calcularEstadisticasTerritoriales(
     horasDemandadasPlanTotal,
     horasLectivasMaximasTotal,
     balanceLectivoGlobal,
+    coberturaCurricularGlobalPct: coberturaGlobalPct,
+    deficitCurricularGlobalTotal,
 
     financiamiento: {
       subvencionGeneralTitular: subvTit,
@@ -632,6 +1108,7 @@ export function calcularEstadisticasTerritoriales(
     horasTecnicoPedagogicasTotal: hTecnicoTotal,
     horasCoordinacionTotal: hCoordTotal,
     horasInstitucionalesTotal: hInstitucionalesTotal,
+    horasVacantesLibresTotal,
 
     horasSepSinAsignarTotal,
     horasPieSinAsignarTotal,
@@ -642,6 +1119,7 @@ export function calcularEstadisticasTerritoriales(
     porcentajeNoLectivoGlobal: pctNoLectivo,
     porcentajeRecreoGlobal: pctRecreo,
     porcentajeInstitucionalGlobal: pctInst,
+    porcentajeVacantesGlobal: pctVac,
 
     porComuna,
     porColegio

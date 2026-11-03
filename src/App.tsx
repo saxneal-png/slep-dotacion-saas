@@ -1166,6 +1166,8 @@ export const App: React.FC = () => {
             todosLosCursos={todosLosCursos}
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
+            todosLosAsistentes={todosLosAsistentes}
+            asistentesColegioActivo={asistentes}
             periodoActivo={periodoActivo}
             onNavegarColegio={(est) => {
               handleSelectColegio(est);
