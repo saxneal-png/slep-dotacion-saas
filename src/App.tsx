@@ -274,7 +274,7 @@ export const App: React.FC = () => {
       let allAsist = await listarTodosLosAsistentesTerritorio(p);
       setTodosLosAsistentes(allAsist);
 
-      if (allDocs.length === 0 && isSupabaseEnabled()) {
+      if (isSupabaseEnabled()) {
         try {
           const resCartera = await SupabaseDotacionService.descargarTodaLaCarteraDesdeSupabase(p);
           if (resCartera.docentesDescargados > 0 || resCartera.cursosDescargados > 0) {
@@ -1154,7 +1154,7 @@ export const App: React.FC = () => {
             asignaciones={todasLasAsignaciones}
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onExportarExcel={handleExportarExcel}
-            onRecargarDatos={() => cargarDatos(periodoActivo)}
+            onRecargarDatos={handleSincronizarCarteraCompletaDesdeNube}
           />
         )}
 
@@ -1172,6 +1172,7 @@ export const App: React.FC = () => {
               setVistaActiva('workflow');
             }}
             onExportarExcelGlobal={handleExportarExcel}
+            onRecargarDatos={handleSincronizarCarteraCompletaDesdeNube}
           />
         )}
 

@@ -17,7 +17,8 @@ import {
   Users,
   CheckCircle2,
   AlertTriangle,
-  ArrowUpRight
+  ArrowUpRight,
+  RefreshCw
 } from 'lucide-react';
 import {
   Establecimiento,
@@ -43,6 +44,7 @@ interface EstadisticasViewProps {
   periodoActivo: number;
   onNavegarColegio?: (est: Establecimiento) => void;
   onExportarExcelGlobal?: () => void;
+  onRecargarDatos?: () => Promise<void> | void;
 }
 
 const COMUNAS: ComunaValleDiguillin[] = [
@@ -64,11 +66,13 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   todasLasAsignaciones,
   periodoActivo,
   onNavegarColegio,
-  onExportarExcelGlobal
+  onExportarExcelGlobal,
+  onRecargarDatos
 }) => {
   const [vistaModo, setVistaModo] = useState<'territorial' | 'intra_escuela'>('territorial');
   const [comunaFiltro, setComunaFiltro] = useState<string>('TODAS');
   const [busquedaColegioTabla, setBusquedaColegioTabla] = useState<string>('');
+  const [recargandoDatos, setRecargandoDatos] = useState(false);
 
   // Estadísticas Territoriales Calculadas
   const statsTerritoriales = useMemo(() => {
@@ -120,6 +124,26 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {onRecargarDatos && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setRecargandoDatos(true);
+                  try {
+                    await onRecargarDatos();
+                  } finally {
+                    setRecargandoDatos(false);
+                  }
+                }}
+                disabled={recargandoDatos}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow transition-all border border-blue-400 active:scale-95 disabled:opacity-60"
+                title="Leer la información actual disponible en la base de datos (Periodo 2027)"
+              >
+                <RefreshCw className={`w-4 h-4 ${recargandoDatos ? 'animate-spin' : ''}`} />
+                <span>{recargandoDatos ? 'Actualizando 2027...' : 'Actualizar Información 2027'}</span>
+              </button>
+            )}
+
             {/* Segmented Control de Nivel */}
             <div className="bg-slate-900/90 p-1 rounded-xl border border-slate-700 flex items-center">
               <button

@@ -75,6 +75,7 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
   const [filtroDocentes, setFiltroDocentes] = useState('');
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
   const [procesandoPal, setProcesandoPal] = useState(false);
+  const [recargandoDatos, setRecargandoDatos] = useState(false);
   const [feedbackPal, setFeedbackPal] = useState<{ tipo: 'success' | 'error'; texto: string } | null>(null);
   
   // Estados para Modal de Exportación GDP (Individual o Masivo)
@@ -271,6 +272,26 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            {onRecargarDatos && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setRecargandoDatos(true);
+                  try {
+                    await onRecargarDatos();
+                  } finally {
+                    setRecargandoDatos(false);
+                  }
+                }}
+                disabled={recargandoDatos}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg shadow transition-all border border-blue-400 active:scale-95 disabled:opacity-60"
+                title="Leer la información actual disponible en la base de datos (Periodo 2027)"
+              >
+                <RefreshCw className={`w-4 h-4 ${recargandoDatos ? 'animate-spin' : ''}`} />
+                <span>{recargandoDatos ? 'Actualizando 2027...' : 'Actualizar Información 2027'}</span>
+              </button>
+            )}
+
             <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg cursor-pointer transition-colors border border-slate-600">
               <FileUp className="w-4 h-4 text-orange-400" />
               <span>Ingestar Asesores (.slep)</span>
