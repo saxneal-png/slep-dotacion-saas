@@ -176,6 +176,8 @@ export interface EstadisticasColegioHoras {
     horasPieSinAsignar: number;
     horasSubvGeneralSinAsignar: number;
     totalHorasSinAsignar: number;
+    horasLibresDocente: number;
+    horasComprometidasDocente: number;
   }[];
 }
 
@@ -504,6 +506,7 @@ export function calcularEstadisticasColegio(
   let horasSepSinAsignarTotal = 0;
   let horasPieSinAsignarTotal = 0;
   let horasSubvGeneralSinAsignarTotal = 0;
+  let totalHorasLibresColegio = 0;
 
   const desgloseDocentes = docentes.map(doc => {
     const hContrato = Number(doc.horasContrato) || 0;
@@ -659,6 +662,10 @@ export function calcularEstadisticasColegio(
     const subvGenSinAsignarDoc = Math.max(0, (sTit + sCon) - reqSubvDoc);
     const totalSinAsignarDoc = sepSinAsignarDoc + pieSinAsignarDoc + subvGenSinAsignarDoc;
 
+    const horasComprometidasDocente = auditDoc.contratoCalculadoTotal;
+    const horasLibresDocente = Math.max(0, auditDoc.horasVacantes);
+    totalHorasLibresColegio += horasLibresDocente;
+
     horasSepSinAsignarTotal += sepSinAsignarDoc;
     horasPieSinAsignarTotal += pieSinAsignarDoc;
     horasSubvGeneralSinAsignarTotal += subvGenSinAsignarDoc;
@@ -684,7 +691,9 @@ export function calcularEstadisticasColegio(
       horasPieAsignadas: pieAsignadasDoc,
       horasPieSinAsignar: pieSinAsignarDoc,
       horasSubvGeneralSinAsignar: subvGenSinAsignarDoc,
-      totalHorasSinAsignar: totalSinAsignarDoc
+      totalHorasSinAsignar: totalSinAsignarDoc,
+      horasLibresDocente,
+      horasComprometidasDocente
     };
   });
 
@@ -696,9 +705,8 @@ export function calcularEstadisticasColegio(
   const totalFinanciamientoDocente = subvTit + subvCon + sepTit + sepCon + pieTit + pieCon;
   const minutosContratoTotal = Math.round(horasContratoTotal * 60);
 
-  // Cuadre exacto de la jornada docente (Aula + HNL + Recreo + Inst + Vacantes = 100%)
-  const horasComprometidas = horasAulaCronologicasAsignadas + horasNoLectivasCalculadas + horasRecreoCalculadas + horasInstitucionalesTotal;
-  const horasVacantesLibresTotal = Math.max(0, Math.round((horasContratoTotal - horasComprometidas) * 10) / 10);
+  // Horas de holgura / vacantes sin función asignada (ni aula, ni directivas, ni UTP, ni talleres)
+  const horasVacantesLibresTotal = totalHorasLibresColegio;
 
   const pctAula = horasContratoTotal > 0 ? Math.round((horasAulaCronologicasAsignadas / horasContratoTotal) * 100) : 0;
   const pctNoLectivo = horasContratoTotal > 0 ? Math.round((horasNoLectivasCalculadas / horasContratoTotal) * 100) : 0;

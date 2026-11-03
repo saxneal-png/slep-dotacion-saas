@@ -504,13 +504,13 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 </div>
 
                 {/* 6. Horas Vacantes / Libres */}
-                <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm">
-                  <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Horas Libres (Holgura)</span>
+                <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm" title="Horas de contrato formal pagadas a las que no se les ha asignado ninguna función en específico (ni aula, ni directivas, ni UTP, ni talleres).">
+                  <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Horas Holgura (Sin Función)</span>
                   <div className="text-xl font-black text-amber-900 mt-1">
                     {statsTerritoriales.horasVacantesLibresTotal.toLocaleString()} <span className="text-xs font-bold text-amber-400">hrs</span>
                   </div>
                   <span className="text-[11px] text-amber-700 mt-0.5 block font-semibold">
-                    {statsTerritoriales.porcentajeVacantesGlobal}% contrato no asignado
+                    {statsTerritoriales.porcentajeVacantesGlobal}% contrato sin función asignada
                   </span>
                 </div>
               </div>
@@ -752,7 +752,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     <th className="px-2 py-2.5 text-center text-purple-700">Aula (HA)</th>
                     <th className="px-2 py-2.5 text-center">SEP</th>
                     <th className="px-2 py-2.5 text-center">PIE</th>
-                    <th className="px-2 py-2.5 text-center text-amber-700">Horas Libres</th>
+                    <th className="px-2 py-2.5 text-center text-amber-700" title="Horas de contrato formal pagadas a las que no se les ha asignado ninguna función en específico (ni aula, ni directivas, ni UTP, ni talleres). Disponibles para el establecimiento.">Horas Holgura (Sin Función)</th>
                     <th className="px-2 py-2.5 text-center">Cobertura Plan</th>
                     <th className="px-2 py-2.5 text-center">Acción</th>
                   </tr>
@@ -953,13 +953,13 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                   </span>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm">
-                  <span className="text-[10px] font-bold text-amber-700 uppercase block">Horas Libres</span>
+                <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm" title="Horas de contrato formal pagadas a las que no se les ha asignado ninguna función en específico (ni aula, ni directivas, ni UTP, ni talleres).">
+                  <span className="text-[10px] font-bold text-amber-700 uppercase block">Horas Holgura (Sin Función)</span>
                   <div className="text-xl font-black text-amber-900 mt-1">
                     {statsColegioActivo.horasVacantesLibresTotal} <span className="text-xs font-bold text-amber-400">hrs</span>
                   </div>
                   <span className="text-[11px] text-amber-700 mt-0.5 block font-semibold">
-                    {statsColegioActivo.porcentajeVacantes}% sin asignar
+                    {statsColegioActivo.porcentajeVacantes}% sin función asignada
                   </span>
                 </div>
               </div>
@@ -1071,6 +1071,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                         <th className="px-2 py-2.5 text-center">SEP</th>
                         <th className="px-2 py-2.5 text-center">PIE</th>
                         <th className="px-2 py-2.5 text-center">Subv. Gral</th>
+                        <th className="px-2 py-2.5 text-center text-amber-700" title="Horas de contrato pagadas a las que no se les ha asignado ninguna función (ni aula, ni directivas, ni UTP, ni talleres). Disponibles para asignación.">Horas Holgura</th>
                         <th className="px-2 py-2.5 text-center">Estado</th>
                       </tr>
                     </thead>
@@ -1100,6 +1101,15 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                           <td className="px-2 py-2.5 text-center font-mono">{d.horasSep}h</td>
                           <td className="px-2 py-2.5 text-center font-mono">{d.horasPie}h</td>
                           <td className="px-2 py-2.5 text-center font-mono">{d.horasSubvGeneral}h</td>
+                          <td className="px-2 py-2.5 text-center">
+                            {d.horasLibresDocente > 0 ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200" title={`Docente tiene ${d.horasLibresDocente}h libres sin función asignada`}>
+                                +{d.horasLibresDocente}h libres
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">0h (Completo)</span>
+                            )}
+                          </td>
                           <td className="px-2 py-2.5 text-center">
                             {d.estaSobreasignado ? (
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800">

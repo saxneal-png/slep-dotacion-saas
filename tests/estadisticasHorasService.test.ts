@@ -210,6 +210,25 @@ describe('Servicio de Estadísticas y Auditoría de Dotación de Personal SLEP',
     expect(stats.horasVacantesLibresTotal).toBeGreaterThan(0);
   });
 
+  it('debe calcular exactamente las horas de holgura / libres individuales por docente (sin función asignada)', () => {
+    const stats = calcularEstadisticasColegio(colegioMock, cursosMock, docentesMock, asignacionesMock, asistentesMock);
+
+    const doc1 = stats.desgloseDocentes.find(d => d.id === 'doc-1')!;
+    const doc2 = stats.desgloseDocentes.find(d => d.id === 'doc-2')!;
+
+    // doc-1 tiene 44h contrato y 14 HA asignadas (requieren 16h base MINEDUC). Sus horas libres son 44 - 16 = 28h
+    expect(doc1.horasComprometidasDocente).toBe(16);
+    expect(doc1.horasLibresDocente).toBe(28);
+
+    // doc-2 tiene 30h contrato y 4 HA asignadas (requieren 5h base MINEDUC). Sus horas libres son 30 - 5 = 25h
+    expect(doc2.horasComprometidasDocente).toBe(5);
+    expect(doc2.horasLibresDocente).toBe(25);
+
+    // La suma de horas libres de los docentes debe igualar exactamente a horasVacantesLibresTotal del colegio
+    const sumaLibresDocentes = stats.desgloseDocentes.reduce((s, d) => s + d.horasLibresDocente, 0);
+    expect(stats.horasVacantesLibresTotal).toBe(sumaLibresDocentes);
+  });
+
   it('debe calcular estadísticas territoriales consolidadas incluyendo comunas, RUNs únicos y regla 80/20', () => {
     const colegio2: Establecimiento = {
       id: 'col-2',
