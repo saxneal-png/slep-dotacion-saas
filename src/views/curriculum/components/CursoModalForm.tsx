@@ -296,8 +296,9 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
               setNivel(NIVELES_LABORAL_OFICIALES[0].id);
               setRegimen('JEC');
               setCupoSae(15);
-              setMatriculaProyectada(12);
-              setAlumnosNeep(10);
+              setMatriculaProyectada(15);
+              setAlumnosNeep(15);
+              setAlumnosNeet(0);
             }}
             className={`py-1.5 px-1 rounded-lg transition-all text-center flex flex-col items-center gap-0.5 ${
               categoria === 'LABORAL'
@@ -752,19 +753,21 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
             </div>
           </div>
 
-          {categoria === 'ESPECIAL' ? (
+          {(categoria === 'ESPECIAL' || categoria === 'LABORAL') ? (
             <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200/80 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-teal-950 flex items-center gap-1.5">
                   <HeartHandshake className="w-4 h-4 text-teal-600" />
-                  Distribución Estudiantes Educación Especial (Decreto 83 / 170)
+                  {categoria === 'LABORAL' ? 'Distribución Estudiantes Nivel Laboral (Decreto 87 / 170)' : 'Distribución Estudiantes Educación Especial (Decreto 83 / 170)'}
                 </span>
                 <span className="text-[10px] font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded">
                   100% Permanentes (NEEP)
                 </span>
               </div>
               <p className="text-[11px] text-teal-900 leading-relaxed">
-                Los cursos de educación especial exclusiva no matriculan estudiantes transitorios (NEET). Su capacidad normativa es de <strong>15 estudiantes permanentes (NEEP)</strong>.
+                {categoria === 'LABORAL'
+                  ? <>Los talleres laborales de educación especial no contemplan estudiantes transitorios (NEET). Su capacidad normativa oficial es de <strong>15 estudiantes permanentes (NEEP)</strong>.</>
+                  : <>Los cursos de educación especial exclusiva no matriculan estudiantes transitorios (NEET). Su capacidad normativa es de <strong>15 estudiantes permanentes (NEEP)</strong>.</>}
               </p>
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div className="bg-white/80 p-2.5 rounded-lg border border-teal-200/60">
