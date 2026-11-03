@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, FileSpreadsheet, Download, DollarSign, Users, ShieldCheck, Check, Sparkles } from 'lucide-react';
+import { X, FileSpreadsheet, Download, DollarSign, Users, ShieldCheck, Check, Sparkles, AlertTriangle, CheckCircle2, KeyRound } from 'lucide-react';
 import { Establecimiento, Docente, AsistenteEducacion, CursoSae, AsignacionHoraria } from '../types';
 import { generarExcelGdpColegio } from '../services/depGdpExportService';
 import { guardarArchivoNativoOEnNavegador } from '../services/excelReportService';
+import { obtenerGeminiApiKeyActiva } from '../services/geminiKeyResolver';
 
 interface GdpParametrosModalProps {
   isOpen: boolean;
@@ -33,6 +34,9 @@ export const GdpParametrosModal: React.FC<GdpParametrosModalProps> = ({
   const [cupoPieAe, setCupoPieAe] = useState<number>(establecimiento.cupoHorasPieAsistentes || 0);
   const [guardando, setGuardando] = useState(false);
   const [exportando, setExportando] = useState(false);
+  const [feedback, setFeedback] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
+
+  const activeApiKey = obtenerGeminiApiKeyActiva();
 
   if (!isOpen) return null;
 
@@ -73,6 +77,7 @@ export const GdpParametrosModal: React.FC<GdpParametrosModalProps> = ({
   const handleExportarGdp = async () => {
     try {
       setExportando(true);
+      setFeedback(null);
       const estActualizado: Establecimiento = {
         ...establecimiento,
         subvencionSepMensual: subvSep,
@@ -92,16 +97,24 @@ export const GdpParametrosModal: React.FC<GdpParametrosModalProps> = ({
       const nombreLimpio = establecimiento.nombre.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
       const filename = `Planilla_GDP_${nombreLimpio}_RBD_${establecimiento.rbd}_2026.xlsx`;
 
-      await guardarArchivoNativoOEnNavegador(
+      const guardado = await guardarArchivoNativoOEnNavegador(
         bytes,
         filename,
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         [{ name: 'Planilla Oficial GDP Microsoft Excel', extensions: ['xlsx'] }]
       );
 
-      onNotificar?.(`✓ Planilla GDP de ${establecimiento.nombre} generada con éxito (6 hojas completas).`, 'success');
+      if (guardado !== false) {
+        const msgExito = `✓ Planilla GDP de ${establecimiento.nombre} generada y descargada con éxito (6 hojas oficiales con fórmulas preservadas).`;
+        setFeedback({ tipo: 'success', mensaje: msgExito });
+        onNotificar?.(msgExito, 'success');
+      } else {
+        setFeedback({ tipo: 'error', mensaje: 'La descarga fue cancelada por el usuario o bloqueada por el navegador.' });
+      }
     } catch (e: any) {
-      onNotificar?.(`Error al exportar Planilla GDP: ${e.message || e}`, 'error');
+      const msgError = `Error al exportar Planilla GDP: ${e.message || e}`;
+      setFeedback({ tipo: 'error', mensaje: msgError });
+      onNotificar?.(msgError, 'error');
     } finally {
       setExportando(false);
     }
@@ -138,6 +151,48 @@ export const GdpParametrosModal: React.FC<GdpParametrosModalProps> = ({
 
         {/* Contenido / Formulario */}
         <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+          {/* Feedback de Operación de Exportación / Guardado */}
+          {feedback && (
+            <div className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in duration-150 ${
+              feedback.tipo === 'success'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200'
+                : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                {feedback.tipo === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                )}
+                <span>{feedback.mensaje}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedback(null)}
+                className="text-[11px] underline opacity-80 hover:opacity-100"
+              >
+                Cerrar
+              </button>
+            </div>
+          )}
+
+          {/* Estado de API Key de Gemini desde Perfil */}
+          <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
+            <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+              <KeyRound className={`w-4 h-4 ${activeApiKey ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <span>
+                {activeApiKey ? (
+                  <strong className="text-emerald-700 dark:text-emerald-400">API Key Gemini vinculada (Perfil Activo)</strong>
+                ) : (
+                  <span className="text-slate-500">Sin API Key propia en perfil (Modo manual estándar)</span>
+                )}
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-500">
+              {activeApiKey ? 'Asistencia IA habilitada' : 'Configurable en Perfil / Ajustes'}
+            </span>
+          </div>
+
           <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 p-4 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-start gap-3">
             <ShieldCheck className="w-5 h-5 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
             <div>

@@ -9,33 +9,13 @@ import { homologarDocenteAPal, homologarAsistenteAPal, sanitizeExcelText } from 
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
+import { cargarPlantillaOficialBuffer } from './templateLoaderService';
 
 /**
  * Obtiene el buffer de la plantilla oficial PAL 2027
  */
 async function obtenerPlantillaPalBuffer(): Promise<ArrayBuffer> {
-  // 1. Intentar cargar desde public/templates (vía fetch en navegador/Electron)
-  if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
-    try {
-      const res = await fetch('./templates/Planilla_Final_PAL_2027_DEP_Template.xlsx');
-      if (res.ok) {
-        return await res.arrayBuffer();
-      }
-    } catch (_) {}
-  }
-
-  // 2. Intentar cargar en entorno Node.js / Electron si está disponible
-  if (typeof process !== 'undefined' && (process as any).versions?.node) {
-    try {
-      const fs = await import('fs/promises');
-      const path = await import('path');
-      const localPath = path.resolve('public/templates/Planilla_Final_PAL_2027_DEP_Template.xlsx');
-      const buf = await fs.readFile(localPath);
-      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    } catch (_) {}
-  }
-
-  throw new Error('No se pudo localizar la plantilla base Planilla_Final_PAL_2027_DEP_Template.xlsx');
+  return await cargarPlantillaOficialBuffer('Planilla_Final_PAL_2027_DEP_Template.xlsx');
 }
 
 /**

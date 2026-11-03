@@ -9,6 +9,7 @@ import { generarExcelMatrizDotacionColegio } from '../services/excelMatrizDotaci
 import { generarExcelConsolidadoPalDEP } from '../services/depPalExportService';
 import { exportarLevantamientoIndividualExcel } from '../services/analizador/asistentesLevantamientoExporter';
 import { guardarArchivoNativoOEnNavegador } from '../services/excelReportService';
+import { obtenerGeminiApiKeyActiva } from '../services/geminiKeyResolver';
 
 export interface CentroDescargasModalProps {
   isOpen: boolean;
@@ -45,7 +46,7 @@ export const CentroDescargasModal: React.FC<CentroDescargasModalProps> = ({
       setDescargando('matriz');
       setMensajeEstado(null);
 
-      const geminiApiKey = localStorage.getItem('gemini_api_key') || '';
+      const geminiApiKey = obtenerGeminiApiKeyActiva();
       const geminiModel = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
       const geminiAnalizarTodos = localStorage.getItem('gemini_export_analizar_todos') === 'true';
 

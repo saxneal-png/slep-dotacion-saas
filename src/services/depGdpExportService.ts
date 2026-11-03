@@ -7,6 +7,7 @@
 import ExcelJS from 'exceljs';
 import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria } from '../types';
 import { formatRut, inferirPropuestaGdp, sanitizeExcelText } from './depHomologationEngine';
+import { cargarPlantillaOficialBuffer } from './templateLoaderService';
 
 /**
  * Asegura la capacidad de una fila duplicando dinámicamente la última fila del bloque
@@ -28,28 +29,7 @@ function asegurarCapacidadFila(
  * Obtiene el buffer de la plantilla oficial GDP
  */
 async function obtenerPlantillaGdpBuffer(): Promise<ArrayBuffer> {
-  // 1. Intentar cargar desde public/templates (vía fetch en navegador/Electron)
-  if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
-    try {
-      const res = await fetch('./templates/Planilla_GDP_Template.xlsx');
-      if (res.ok) {
-        return await res.arrayBuffer();
-      }
-    } catch (_) {}
-  }
-
-  // 2. Intentar cargar en entorno Node.js / Electron si está disponible
-  if (typeof process !== 'undefined' && (process as any).versions?.node) {
-    try {
-      const fs = await import('fs/promises');
-      const path = await import('path');
-      const localPath = path.resolve('public/templates/Planilla_GDP_Template.xlsx');
-      const buf = await fs.readFile(localPath);
-      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    } catch (_) {}
-  }
-
-  throw new Error('No se pudo localizar la plantilla base Planilla_GDP_Template.xlsx');
+  return await cargarPlantillaOficialBuffer('Planilla_GDP_Template.xlsx');
 }
 
 /**

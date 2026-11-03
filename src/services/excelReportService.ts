@@ -432,12 +432,24 @@ export async function guardarArchivoNativoOEnNavegador(
     return true;
   } else if (typeof window !== 'undefined') {
     const blob = new Blob([data as any], { type: mimeType });
+    if (typeof (navigator as any) !== 'undefined' && (navigator as any).msSaveOrOpenBlob) {
+      return (navigator as any).msSaveOrOpenBlob(blob, defaultFilename);
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.style.display = 'none';
     a.href = url;
     a.download = defaultFilename;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      try {
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
+        URL.revokeObjectURL(url);
+      } catch (_) {}
+    }, 2500);
     return true;
   }
   return false;

@@ -142,6 +142,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
     mensaje: string;
     timestamp: number;
   } | null>(null);
+  const [toastGdp, setToastGdp] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null);
 
   // Colaboración multi-usuario en tiempo real
   const { usuariosEnColegio, hayOtrosUsuarios } = useColaboracionColegio({
@@ -807,7 +808,25 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           cursos={cursos}
           asignaciones={asignaciones}
           onGuardarEstablecimiento={onGuardarColegio || (async () => {})}
+          onNotificar={(texto, tipo) => setToastGdp({ texto, tipo: tipo || 'success' })}
         />
+      )}
+
+      {/* Toast Flotante para Notificaciones de Exportación */}
+      {toastGdp && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md animate-fade-in shadow-2xl">
+          <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold text-white shadow-lg ${
+            toastGdp.tipo === 'success' ? 'bg-emerald-600 border-emerald-500' : 'bg-rose-600 border-rose-500'
+          }`}>
+            <span>{toastGdp.texto}</span>
+            <button
+              onClick={() => setToastGdp(null)}
+              className="text-white/80 hover:text-white underline text-[11px] ml-2"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Centro Unificado de Descargas & Reportes Oficiales */}
