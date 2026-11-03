@@ -442,8 +442,13 @@ export function homologarAsignaturaPorRegla(
     return { asignaturaOficial: 'Historia, Geografía y Ciencias Sociales', confianza: 'ALTA', justificacion: 'Plan común obligatorio MINEDUC' };
   }
 
-  // 8. Ciencias Naturales / Biología / Química / Física (sin confundir con ed. física)
-  if (/^cien|c\.?\s*nat|natural|biolog|quimic|^(fisica|ciencias fisicas)/i.test(norm)) {
+  // 8. Ciencias para la Ciudadanía (3° y 4° Medio) - Evaluar antes de Ciencias Naturales y Educación Ciudadana
+  if (/ciudadania.*cien|cien.*ciudad/i.test(norm)) {
+    return { asignaturaOficial: 'Ciencias para la Ciudadanía', confianza: 'ALTA', justificacion: 'Plan común formación general 3° y 4° Medio' };
+  }
+
+  // 9. Ciencias Naturales / Biología / Química / Física (sin confundir con ed. física ni ciencias para la ciudadanía)
+  if ((/^cien|c\.?\s*nat|natural|biolog|quimic|^(fisica|ciencias fisicas)/i.test(norm)) && !/ciudad/i.test(norm)) {
     return { asignaturaOficial: 'Ciencias Naturales', confianza: 'ALTA', justificacion: 'Plan común obligatorio MINEDUC' };
   }
 
@@ -484,14 +489,14 @@ export function homologarAsignaturaPorRegla(
     return { asignaturaOficial: 'Filosofía', confianza: 'ALTA', justificacion: 'Plan común formación general 3° y 4° Medio' };
   }
 
-  // 16. Formación Ciudadana / Educación Ciudadana
-  if (/ciudadan|formacion c/i.test(norm)) {
-    return { asignaturaOficial: 'Educación Ciudadana', confianza: 'ALTA', justificacion: 'Plan común formación general 3° y 4° Medio' };
-  }
-
-  // 17. Ciencias para la Ciudadanía (3° y 4° Medio)
+  // 16. Ciencias para la Ciudadanía (3° y 4° Medio) - Evaluar antes de Formación Ciudadana
   if (/ciudadania.*cien|cien.*ciudad/i.test(norm)) {
     return { asignaturaOficial: 'Ciencias para la Ciudadanía', confianza: 'ALTA', justificacion: 'Plan común formación general 3° y 4° Medio' };
+  }
+
+  // 17. Formación Ciudadana / Educación Ciudadana
+  if (/ciudadan|formacion c/i.test(norm)) {
+    return { asignaturaOficial: 'Educación Ciudadana', confianza: 'ALTA', justificacion: 'Plan común formación general 3° y 4° Medio' };
   }
 
   // 17. Talleres JEC / Libre Disposición

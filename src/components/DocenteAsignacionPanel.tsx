@@ -237,7 +237,7 @@ export function normalizarNombreAsignatura(nombre: string): string {
   }
 
   // 7. Ciencias Naturales y sus ramas en Media (Biología, Física de ciencias, Química)
-  // Se excluye estrictamente cualquier referencia a Educación Física
+  // Se excluye estrictamente cualquier referencia a Educación Física y Ciencias para la Ciudadanía
   if (
     (
       n.includes('ciencias naturales') ||
@@ -246,7 +246,7 @@ export function normalizarNombreAsignatura(nombre: string): string {
       n.includes('quimic') ||
       /\b(fisica|ciencias fisicas)\b/i.test(n)
     ) &&
-    !n.includes('celular y molecular') && !n.includes('ecosistemas') && !n.includes('ciencias de la salud')
+    !n.includes('celular y molecular') && !n.includes('ecosistemas') && !n.includes('ciencias de la salud') && !n.includes('ciudadan')
   ) {
     return 'ciencias naturales';
   }
@@ -257,7 +257,27 @@ export function normalizarNombreAsignatura(nombre: string): string {
   if (n.includes('orienta')) return 'orientacion';
   if (n.includes('relig')) return 'religion';
   if (n.includes('filosof')) return 'filosofia';
-  if (n.includes('ciudadan')) return 'educacion ciudadana';
+
+  // 8. CIENCIAS PARA LA CIUDADANÍA (3° y 4° Medio) - NUNCA debe colisionar con Educación Ciudadana
+  if (
+    n.includes('ciencias para la ciudadania') ||
+    n.includes('ciencia para la ciudadania') ||
+    n.includes('ciencias ciudadania') ||
+    (n.includes('cienc') && n.includes('ciudadan'))
+  ) {
+    return 'ciencias para la ciudadania';
+  }
+
+  // 9. EDUCACIÓN CIUDADANA (3° y 4° Medio) - NUNCA debe colisionar con Ciencias para la Ciudadanía
+  if (
+    n.includes('educacion ciudadana') ||
+    n.includes('formacion ciudadana') ||
+    n.includes('ed. ciudadana') ||
+    n.includes('ed ciudadana') ||
+    (n.includes('ciudadan') && !n.includes('cienc'))
+  ) {
+    return 'educacion ciudadana';
+  }
 
   return n;
 }
@@ -268,6 +288,16 @@ export function sonAsignaturasEquivalentes(asigA: string, asigB: string): boolea
 
   const aNorm = asigA.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const bNorm = asigB.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  // NUNCA considerar equivalentes Ciencias para la Ciudadanía con Educación Ciudadana
+  const esCienciasCiudadaniaA = aNorm.includes('cienc') && aNorm.includes('ciudadan');
+  const esCienciasCiudadaniaB = bNorm.includes('cienc') && bNorm.includes('ciudadan');
+  const esEdCiudadanaA = !esCienciasCiudadaniaA && aNorm.includes('ciudadan');
+  const esEdCiudadanaB = !esCienciasCiudadaniaB && bNorm.includes('ciudadan');
+
+  if ((esCienciasCiudadaniaA && esEdCiudadanaB) || (esEdCiudadanaA && esCienciasCiudadaniaB)) {
+    return false;
+  }
 
   // Formación Diferenciada HC (18 HA) equivale a cualquiera de las 27 asignaturas de profundización
   const esDiferenciadaA = aNorm.includes('formacion diferenciada') || aNorm.includes('diferenciado hc');

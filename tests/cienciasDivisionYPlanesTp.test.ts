@@ -1,16 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizarNombreAsignatura,
-  sonAsignaturasEquivalentes
+  sonAsignaturasEquivalentes,
+  calcularDisponibilidadCurso
 } from '../src/components/DocenteAsignacionPanel';
 import {
   obtenerPlanPorCurso,
   PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
   PLANES_MINEDUC
 } from '@slep/mineduc-engine';
-import { CursoSae } from '../src/types';
+import { CursoSae, AsignacionHoraria } from '../src/types';
 import { purgarAsignacionesPlanComunElectivoInvalidas } from '../src/database/repositories/asignacionesRepo';
 import { getDb } from '../src/database/dbCore';
+import { homologarAsignaturaPorRegla } from '../src/services/analizador/homologationService';
 
 describe('Auditoría y Corrección: División de Ciencias Naturales vs. Educación Física y Salud', () => {
   it('normalizarNombreAsignatura distingue estrictamente Educación Física y Salud de Ciencias Naturales', () => {
@@ -251,5 +253,110 @@ describe('Auditoría y Corrección: Exclusión de Plan Común Electivo en 3° y 
     db.run("DELETE FROM cursos_sae WHERE id IN ('test-curso-3bas', 'test-curso-3med')");
     db.run("DELETE FROM docentes WHERE id = 'doc-test-purga'");
     db.run("DELETE FROM establecimientos WHERE id = 'est-test-99999'");
+  });
+});
+
+describe('Auditoría y Corrección: Distinción Estricta entre Ciencias para la Ciudadanía y Educación Ciudadana (3° y 4° Medio)', () => {
+  it('normalizarNombreAsignatura distingue estrictamente Ciencias para la Ciudadanía de Educación Ciudadana', () => {
+    expect(normalizarNombreAsignatura('Ciencias para la Ciudadanía')).toBe('ciencias para la ciudadania');
+    expect(normalizarNombreAsignatura('Ciencias para la ciudadania')).toBe('ciencias para la ciudadania');
+    expect(normalizarNombreAsignatura('Ciencia para la Ciudadanía')).toBe('ciencias para la ciudadania');
+    expect(normalizarNombreAsignatura('Ciencias Ciudadanía')).toBe('ciencias para la ciudadania');
+
+    expect(normalizarNombreAsignatura('Educación Ciudadana')).toBe('educacion ciudadana');
+    expect(normalizarNombreAsignatura('Educacion Ciudadana')).toBe('educacion ciudadana');
+    expect(normalizarNombreAsignatura('Formación Ciudadana')).toBe('educacion ciudadana');
+    expect(normalizarNombreAsignatura('Ed. Ciudadana')).toBe('educacion ciudadana');
+  });
+
+  it('sonAsignaturasEquivalentes NUNCA confunde Ciencias para la Ciudadanía con Educación Ciudadana', () => {
+    expect(sonAsignaturasEquivalentes('Ciencias para la Ciudadanía', 'Educación Ciudadana')).toBe(false);
+    expect(sonAsignaturasEquivalentes('Educación Ciudadana', 'Ciencias para la Ciudadanía')).toBe(false);
+    expect(sonAsignaturasEquivalentes('Ciencias para la Ciudadanía', 'Ciencias para la Ciudadanía')).toBe(true);
+    expect(sonAsignaturasEquivalentes('Educación Ciudadana', 'Educación Ciudadana')).toBe(true);
+  });
+
+  it('homologarAsignaturaPorRegla homologa adecuadamente cada una a su asignatura oficial MINEDUC', () => {
+    const resCiencias = homologarAsignaturaPorRegla('Ciencias para la Ciudadanía');
+    expect(resCiencias.asignaturaOficial).toBe('Ciencias para la Ciudadanía');
+
+    const resCiudadana = homologarAsignaturaPorRegla('Educación Ciudadana');
+    expect(resCiudadana.asignaturaOficial).toBe('Educación Ciudadana');
+  });
+
+  it('en calcularDisponibilidadCurso, asignar Educación Ciudadana NO cubre Ciencias para la Ciudadanía y viceversa', () => {
+    const curso3Medio: CursoSae = {
+      id: 'curso-3m-disp',
+      rbd: '12345',
+      nivel: '3° Medio HC',
+      letra: 'A',
+      regimen: 'JEC',
+      cupoSae: 35,
+      matriculaProyectada: 32,
+      alumnosNeet: 5,
+      alumnosNeep: 2
+    };
+
+    const infoPlan = {
+      asignaturas: [
+        { nombre: 'Lengua y Literatura', horas: 3 },
+        { nombre: 'Matemática', horas: 3 },
+        { nombre: 'Educación Ciudadana', horas: 2 },
+        { nombre: 'Filosofía', horas: 2 },
+        { nombre: 'Inglés', horas: 2 },
+        { nombre: 'Ciencias para la Ciudadanía', horas: 2 }
+      ],
+      horasLibreDisposicion: 8,
+      esJec: true,
+      talleresJecPredefinidos: [],
+      nombrePlan: '3° Medio Humanístico-Científico'
+    };
+
+    // Caso 1: Solo se asignan 2 HA de Educación Ciudadana
+    const asignacionEdCiudadana: AsignacionHoraria = {
+      id: 'asig-ed-ciud-1',
+      rbd: '12345',
+      cursoId: 'curso-3m-disp',
+      docenteId: 'doc-1',
+      asignatura: 'Educación Ciudadana',
+      horasPedagogicasAula: 2
+    };
+
+    const disp1 = calcularDisponibilidadCurso(curso3Medio, infoPlan, [asignacionEdCiudadana]);
+
+    // Educación Ciudadana debe estar CUBIERTA
+    const edCiudadanaDisp1 = disp1.todas.find(a => a.nombre === 'Educación Ciudadana');
+    expect(edCiudadanaDisp1?.estado).toBe('CUBIERTA');
+    expect(edCiudadanaDisp1?.horasAsignadas).toBe(2);
+
+    // Ciencias para la Ciudadanía DEBE permanecer DISPONIBLE con sus 2 HA intactas
+    const cienciasDisp1 = disp1.todas.find(a => a.nombre === 'Ciencias para la Ciudadanía');
+    expect(cienciasDisp1?.estado).toBe('DISPONIBLE');
+    expect(cienciasDisp1?.horasAsignadas).toBe(0);
+    expect(cienciasDisp1?.horasDisponibles).toBe(2);
+
+    // En la lista de 'disponibles', Ciencias para la Ciudadanía DEBE existir
+    const nombresDisponibles = disp1.disponibles.map(d => d.nombre);
+    expect(nombresDisponibles).toContain('Ciencias para la Ciudadanía');
+    expect(nombresDisponibles).not.toContain('Educación Ciudadana');
+
+    // Caso 2: Se asignan las 2 HA de Ciencias para la Ciudadanía (ambas ahora quedan cubiertas por separado)
+    const asignacionCiencias: AsignacionHoraria = {
+      id: 'asig-cien-ciud-1',
+      rbd: '12345',
+      cursoId: 'curso-3m-disp',
+      docenteId: 'doc-2',
+      asignatura: 'Ciencias para la Ciudadanía',
+      horasPedagogicasAula: 2
+    };
+
+    const disp2 = calcularDisponibilidadCurso(curso3Medio, infoPlan, [asignacionEdCiudadana, asignacionCiencias]);
+    const edCiudadanaDisp2 = disp2.todas.find(a => a.nombre === 'Educación Ciudadana');
+    const cienciasDisp2 = disp2.todas.find(a => a.nombre === 'Ciencias para la Ciudadanía');
+
+    expect(edCiudadanaDisp2?.estado).toBe('CUBIERTA');
+    expect(cienciasDisp2?.estado).toBe('CUBIERTA');
+    expect(edCiudadanaDisp2?.horasAsignadas).toBe(2);
+    expect(cienciasDisp2?.horasAsignadas).toBe(2);
   });
 });
