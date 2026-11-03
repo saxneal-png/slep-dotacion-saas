@@ -218,7 +218,8 @@ export const App: React.FC = () => {
     mostrarMensaje(`☁️ Sincronizando toda la cartera territorial desde Supabase (${periodoActivo})...`);
     try {
       const res = await SupabaseDotacionService.descargarTodaLaCarteraDesdeSupabase(periodoActivo);
-      await cargarDatos(periodoActivo);
+      localStorage.setItem(`slep_last_cartera_sync_${periodoActivo}`, String(Date.now()));
+      await cargarDatos(periodoActivo, true);
       mostrarMensaje(
         `✓ Sincronización territorial completada: ${res.establecimientosDescargados} colegios actualizados (${res.docentesDescargados} docentes, ${res.cursosDescargados} cursos, ${res.asistentesDescargados} asistentes).`,
         'success'
@@ -250,8 +251,8 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [permisos]);
 
-  // 1. Cargar Base de Datos y Colecciones Globales
-  const cargarDatos = async (p: number = 2027) => {
+  // 1. Cargar Base de Datos y Colecciones Globales (Optimizado para Nivel Gratuito de Vercel/Supabase)
+  const cargarDatos = async (p: number = 2027, forceCloudSync: boolean = false) => {
     try {
       await getDb();
       await checkAndSeedInitialData();
@@ -276,18 +277,38 @@ export const App: React.FC = () => {
 
       if (isSupabaseEnabled()) {
         try {
-          const resCartera = await SupabaseDotacionService.descargarTodaLaCarteraDesdeSupabase(p);
-          if (resCartera.docentesDescargados > 0 || resCartera.cursosDescargados > 0) {
-            allSalas = await listarTodasLasSalas();
-            allCursos = await listarTodosLosCursos(p);
-            allDocs = await listarTodosLosDocentesTerritorio(p);
-            allAsigs = await listarTodasLasAsignaciones(p);
-            allAsist = await listarTodosLosAsistentesTerritorio(p);
-            setTodasLasSalas(allSalas);
-            setTodosLosCursos(allCursos);
-            setTodosLosDocentes(allDocs);
-            setTodasLasAsignaciones(allAsigs);
-            setTodosLosAsistentes(allAsist);
+          const userRole = session?.usuario?.role;
+          const userRbd = session?.usuario?.rbdAsignado;
+
+          // Optimización de Cuota Gratuita (5GB Egress / 60 conexiones concurrentes):
+          // 1. Si es Director de Colegio, hidratar únicamente su escuela asignada (no los 131 colegios)
+          if (userRole === 'director_colegio' && userRbd) {
+            await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(userRbd, p);
+          } else {
+            // 2. Para Asesores/Admin: verificar si ya hay datos en SQLite local (IndexedDB)
+            // y controlar el intervalo para no saturar la transferencia de la base de datos en cada recarga
+            const syncKey = `slep_last_cartera_sync_${p}`;
+            const lastSync = parseInt(localStorage.getItem(syncKey) || '0', 10);
+            const now = Date.now();
+            const tieneDatosLocales = allDocs.length > 0 && allCursos.length > 0;
+            const intervaloExpirado = (now - lastSync) > 20 * 60 * 1000; // 20 minutos de caché local
+
+            if (forceCloudSync || !tieneDatosLocales || intervaloExpirado) {
+              const resCartera = await SupabaseDotacionService.descargarTodaLaCarteraDesdeSupabase(p);
+              localStorage.setItem(syncKey, String(now));
+              if (resCartera.docentesDescargados > 0 || resCartera.cursosDescargados > 0) {
+                allSalas = await listarTodasLasSalas();
+                allCursos = await listarTodosLosCursos(p);
+                allDocs = await listarTodosLosDocentesTerritorio(p);
+                allAsigs = await listarTodasLasAsignaciones(p);
+                allAsist = await listarTodosLosAsistentesTerritorio(p);
+                setTodasLasSalas(allSalas);
+                setTodosLosCursos(allCursos);
+                setTodosLosDocentes(allDocs);
+                setTodasLasAsignaciones(allAsigs);
+                setTodosLosAsistentes(allAsist);
+              }
+            }
           }
         } catch (errSync) {
           console.warn('[cargarDatos] Aviso descargando cartera inicial desde Supabase:', errSync);
