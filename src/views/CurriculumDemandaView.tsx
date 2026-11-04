@@ -22,7 +22,9 @@ import {
   esModalidadMultigradoOCombinado,
   esModalidadEspecial,
   esModalidadLaboral,
-  esModalidadTp
+  esModalidadTp,
+  esNivelParvulario,
+  calcularDotacionParvulariaCurso
 } from '@slep/mineduc-engine';
 import {
   ModalAsignarDocencia,
@@ -279,6 +281,28 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
       (((planActivo?.categoria as string) === 'MEDIA_HC' || (planActivo?.categoria as string) === 'MEDIA_TP') && /[34]/i.test(planActivo?.nivel || ''))
     )
   );
+
+  const esCursoParvulario = Boolean(cursoActivo && esNivelParvulario(cursoActivo.nivel));
+
+  const dotacionParvularia = useMemo(() => {
+    if (!esCursoParvulario || !cursoActivo || !colegio) return null;
+    const asigTitular = asignaciones.find(
+      a => a.cursoId === cursoActivo.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
+    );
+    const docTitular = asigTitular ? docentes.find(d => d.id === asigTitular.docenteId) : null;
+    return calcularDotacionParvulariaCurso(
+      {
+        id: cursoActivo.id,
+        nivel: cursoActivo.nivel,
+        letra: cursoActivo.letra,
+        regimen: cursoActivo.regimen,
+        matriculaProyectada: cursoActivo.matriculaProyectada,
+        esCombinado: cursoActivo.esCombinado
+      },
+      colegio.porcentajePrioritarios,
+      docTitular ? { horasContrato: docTitular.horasContrato, aplicaArticulo69: docTitular.aplicaArticulo69 } : null
+    );
+  }, [esCursoParvulario, cursoActivo, colegio, asignaciones, docentes]);
 
   // Asignaciones del curso activo (incluyendo asignaturas compartidas en paralelo con este curso)
   const asignacionesCurso = useMemo(() => {
@@ -1235,6 +1259,73 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                         <span className="text-[11px] font-bold text-orange-700">
                           ⚠️ Asigna una especialidad para ver los módulos técnicos de 42 HA.
                         </span>
+                      )}
+                    </div>
+                  )}
+
+                  {dotacionParvularia && (
+                    <div className="mt-2.5 p-3.5 bg-gradient-to-r from-teal-50/95 via-emerald-50/90 to-teal-50/95 rounded-2xl border border-teal-200/90 shadow-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-200/70 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="p-1.5 bg-teal-600 text-white rounded-lg shadow-xs">
+                            <GraduationCap className="w-4 h-4" />
+                          </span>
+                          <div>
+                            <h4 className="text-xs font-black text-teal-950 uppercase tracking-wide">
+                              Normativa Educación Parvularia (DTO 306/2007 & Ley 20.903)
+                            </h4>
+                            <p className="text-[11px] text-teal-700 font-medium">
+                              Permanencia: <strong>{dotacionParvularia.permanenciaTexto}</strong> (60 min/hora) | Régimen: <strong>{dotacionParvularia.regimenNormativoProporcion === '60_40' ? '60/40 (Vulnerable ≥ 60% Prioritarios)' : '65/35'}</strong>
+                            </p>
+                          </div>
+                        </div>
+                        {dotacionParvularia.segundaEducadoraRequerida && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalCoDocencia({
+                                isOpen: true,
+                                editandoAsig: null,
+                                asignaturaSugerida: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
+                                horasSugeridas: dotacionParvularia.horasContratoSegundaEducadora
+                              });
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Asignar 2da Educadora ({dotacionParvularia.horasContratoSegundaEducadora} hrs)</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-2.5 text-center">
+                        <div className="bg-white/85 p-2 rounded-xl border border-teal-100">
+                          <span className="block text-[10px] uppercase font-bold text-slate-500">Permanencia Niños</span>
+                          <span className="text-sm font-black text-slate-800">{dotacionParvularia.permanenciaTexto}</span>
+                        </div>
+                        <div className="bg-white/85 p-2 rounded-xl border border-teal-100">
+                          <span className="block text-[10px] uppercase font-bold text-slate-500">Aula Educadora Titular</span>
+                          <span className="text-sm font-black text-teal-700">{dotacionParvularia.minutosAulaTitularTexto}</span>
+                        </div>
+                        <div className={`p-2 rounded-xl border ${dotacionParvularia.minutosDeficit > 0 ? 'bg-amber-50/95 border-amber-300' : 'bg-emerald-50/95 border-emerald-300'}`}>
+                          <span className="block text-[10px] uppercase font-bold text-slate-500">Déficit No Cubierto</span>
+                          <span className={`text-sm font-black ${dotacionParvularia.minutosDeficit > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
+                            {dotacionParvularia.minutosDeficitTexto}
+                          </span>
+                        </div>
+                        <div className="bg-white/85 p-2 rounded-xl border border-teal-100">
+                          <span className="block text-[10px] uppercase font-bold text-slate-500">2da Educadora Proyectada</span>
+                          <span className="text-sm font-black text-indigo-700">
+                            {dotacionParvularia.horasContratoSegundaEducadora > 0 ? `${dotacionParvularia.horasContratoSegundaEducadora} hrs contrato` : 'Completo'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {dotacionParvularia.requiereTecnicoParvuloDto315 && (
+                        <div className="mt-2 text-[11px] text-teal-900 flex items-center gap-1.5 font-medium bg-teal-100/70 px-2.5 py-1 rounded-lg">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                          <span>Exigencia Coeficiente Técnico (DTO 315/2010): Requiere obligatoriamente 1 Técnico en Educación Parvularia (TEP) por matrícula &gt; 15.</span>
+                        </div>
                       )}
                     </div>
                   )}

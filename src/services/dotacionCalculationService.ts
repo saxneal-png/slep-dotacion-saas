@@ -8,7 +8,12 @@ import {
   evaluarCapacidadSaeYInfraestructura,
   obtenerPlanPorCurso,
   calcularHorasPlanCurso,
-  esModalidadAdultos
+  esModalidadAdultos,
+  esNivelParvulario,
+  calcularDotacionParvulariaCurso,
+  consolidarDotacionParvulariaEstablecimiento,
+  ConsolidadoDotacionParvulariaColegio,
+  ResultadoDotacionParvulariaCurso
 } from '@slep/mineduc-engine';
 import {
   Establecimiento,
@@ -41,6 +46,7 @@ export interface DiagnosticoColegioCompleto {
     curso: CursoSae;
     demanda: ReturnType<typeof calcularDemandaNormativaPieCurso>;
   }[];
+  consolidadoParvularia?: ConsolidadoDotacionParvulariaColegio;
   estadoDocentes: {
     docente: Docente;
     horasPedagogicasAsignadas: number;
@@ -180,6 +186,56 @@ export function calcularDiagnosticoColegio(
     }
   }
 
+  // 3.1 Diagnóstico de Educación Parvularia (Decreto 306/2007, Ley 20.903 y DTO 315)
+  const cursosParvularios = cursos.filter(c => esNivelParvulario(c.nivel));
+  const diagnosticoParvulariaAlertas: string[] = [];
+  let consolidadoParvularia: ConsolidadoDotacionParvulariaColegio | undefined = undefined;
+
+  if (cursosParvularios.length > 0) {
+    const titularesMap = new Map<string, { horasContrato: number; aplicaArticulo69?: boolean }>();
+
+    for (const c of cursosParvularios) {
+      const asigTitular = asignaciones.find(
+        a => a.cursoId === c.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
+      );
+      if (asigTitular) {
+        const docTitular = docentes.find(d => d.id === asigTitular.docenteId);
+        if (docTitular) {
+          titularesMap.set(c.id, {
+            horasContrato: docTitular.horasContrato,
+            aplicaArticulo69: docTitular.aplicaArticulo69
+          });
+        }
+      }
+    }
+
+    consolidadoParvularia = consolidarDotacionParvulariaEstablecimiento(
+      cursosParvularios.map(c => ({
+        id: c.id,
+        nivel: c.nivel,
+        letra: c.letra,
+        regimen: c.regimen,
+        matriculaProyectada: c.matriculaProyectada,
+        esCombinado: c.esCombinado
+      })),
+      est.porcentajePrioritarios,
+      titularesMap
+    );
+
+    for (const d of consolidadoParvularia.diagnosticoCursos) {
+      if (d.segundaEducadoraRequerida) {
+        diagnosticoParvulariaAlertas.push(
+          `PARVULARIA (DTO 306/2007): ${d.nivel} ${d.letra || ''}: Permanencia (${d.permanenciaTexto}) supera tope aula titular (${d.minutosAulaTitularTexto}). Déficit: ${d.minutosDeficitTexto}. Proyectar 2da Educadora de ${d.horasContratoSegundaEducadora} hrs (Régimen ${d.regimenNormativoProporcion}).`
+        );
+      }
+      if (d.requiereTecnicoParvuloDto315) {
+        diagnosticoParvulariaAlertas.push(
+          `COEFICIENTE TÉCNICO (DTO 315/2010): ${d.nivel} ${d.letra || ''}: Matrícula (${cursos.find(c => c.id === d.cursoId)?.matriculaProyectada || 0} alumnos) > 15 requiere 1 Técnico en Educación Parvularia (TEP).`
+        );
+      }
+    }
+  }
+
   // 4. Dotación Docente y Detección de Sobreasignación (considerando Directivas, Inspectoría General, UTP, Coordinación, Taller SEP, Trabajo Colaborativo y Co-Docencia)
   let horasContratadasTotales = 0;
   let horasDirectivasTotales = 0;
@@ -240,7 +296,7 @@ export function calcularDiagnosticoColegio(
     const coDocenteAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
 
     const asigsCoDocencia = [
-      ...docenteAsigs.filter(a => a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'),
+      ...docenteAsigs.filter(a => a.esCoDocencia || a.esCoDocenciaParvularia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'),
       ...coDocenteAsigs
     ];
     const asigsTallerSep = docenteAsigs.filter(a => (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a));
@@ -487,6 +543,7 @@ export function calcularDiagnosticoColegio(
   for (const asig of asignaciones) {
     const esCoDoc = Boolean(
       asig.esCoDocencia ||
+      asig.esCoDocenciaParvularia ||
       asig.esAgrupacionFlexible ||
       asig.tipoApoyo === 'CO_DOCENCIA' ||
       asig.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
@@ -554,7 +611,9 @@ export function calcularDiagnosticoColegio(
     superavitDeficitLectivo,
     sobreasignacionesAlertas,
     alertasInfraestructura,
-    alertasAforoPie
+    alertasAforoPie,
+    diagnosticoParvulariaAlertas,
+    totalSegundaEducadoraParvulariaSugeridaHoras: consolidadoParvularia?.contratoSugeridoPoolSegundaEducadoraHoras || 0
   };
 
   return {
@@ -563,6 +622,7 @@ export function calcularDiagnosticoColegio(
     diagnosticoPorEspecialidad,
     evaluacionesSalasSae,
     demandaPiePorCurso,
+    consolidadoParvularia,
     estadoDocentes
   };
 }

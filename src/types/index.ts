@@ -114,6 +114,7 @@ export type CalidadJuridicaDocente = 'TITULAR' | 'CONTRATA' | 'REEMPLAZANTE' | '
 
 export type EstamentoDocente = 
   | 'DOCENTE_AULA'
+  | 'EDUCADORA_PARVULO'
   | 'DOCENTE_DIFERENCIAL'
   | 'PROFESIONAL_PAE'
   | 'TECNICO_ESPECIAL'
@@ -184,6 +185,7 @@ export interface Docente {
   funcionSecundaria?: string;
   asignaturaPrincipal?: string;
   aplicaArticulo69?: boolean; // Reducción a máx 24 hrs por >= 30 años servicio
+  esEducadoraParvulo?: boolean; // Rol docente especializado en NT1/NT2 (Ley 20.903 y DTO 306)
   requiereAutorizacionDocente?: boolean; // Requiere autorización docente anual SEREMI (Dto. 352 / Estatuto Docente)
   // Metadatos Oficiales DEP y Planilla GDP
   horasVigentesAnterior?: number;
@@ -218,6 +220,7 @@ export interface AsignacionHoraria {
   esProporcionDocente?: boolean;
   esAgrupacionFlexible?: boolean;
   esCoDocencia?: boolean; // Co-docencia en aula regular Decreto 170 (Categoría de apoyo independiente)
+  esCoDocenciaParvularia?: boolean; // Co-docencia / Segunda Educadora para cobertura permanencia JECD (Decreto 306/2007)
   asignatura: string;
   horasPedagogicasAula: number;
   horasCronologicasPie?: number;
@@ -248,6 +251,8 @@ export interface BalanzaHorariaColegio {
   sobreasignacionesAlertas: string[];
   alertasInfraestructura: string[];
   alertasAforoPie: string[];
+  diagnosticoParvulariaAlertas?: string[];
+  totalSegundaEducadoraParvulariaSugeridaHoras?: number;
 }
 
 export interface CarteraExportData {

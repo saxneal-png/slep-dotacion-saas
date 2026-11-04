@@ -25,6 +25,7 @@ import type {
 
 export const ESTAMENTOS: { id: EstamentoDocente; label: string }[] = [
   { id: 'DOCENTE_AULA', label: 'Docente de Aula Regular' },
+  { id: 'EDUCADORA_PARVULO', label: 'Educadora de Párvulos' },
   { id: 'DOCENTE_DIFERENCIAL', label: 'Docente Educación Diferencial (PIE)' },
   { id: 'PROFESIONAL_PAE', label: 'Profesional Asistente PAE (Fono/Psico/TO)' },
   { id: 'TECNICO_ESPECIAL', label: 'Técnico en Educación Especial' },
@@ -327,6 +328,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       horasTrabajoColaborativo: Number(horasTrabajoColaborativo) || 0,
       asignaturaPrincipal: asignaturaPrincipal.trim() || undefined,
       aplicaArticulo69,
+      esEducadoraParvulo: estamento === 'EDUCADORA_PARVULO' || Boolean(editingDoc?.esEducadoraParvulo),
       requiereAutorizacionDocente,
       fechaInicioContrato: fechaInicioContrato || undefined,
       fechaTerminoContrato: fechaTerminoContrato || undefined,

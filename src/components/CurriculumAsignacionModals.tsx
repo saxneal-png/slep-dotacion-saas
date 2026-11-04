@@ -5,7 +5,8 @@ import {
   PlanEstudioNivel, 
   AsignaturaPlan,
   CATALOGO_PROFUNDIZACION_HC_27,
-  CATALOGO_PLAN_COMUN_ELECTIVO_3_4
+  CATALOGO_PLAN_COMUN_ELECTIVO_3_4,
+  esNivelParvulario
 } from '@slep/mineduc-engine';
 
 export const TIPOS_APOYO_PIE = [
@@ -440,20 +441,29 @@ export const ModalAsignarCoDocencia: React.FC<ModalCoDocenciaProps> = ({
       }
       setEsSep(Boolean(editandoAsig.esTallerSep));
     } else {
-      setAsignatura(asignaturaSugerida || (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación'));
-      setHoras(horasSugeridas || 4);
-      setTipoModalidad('AGRUPACION_FLEXIBLE');
+      const esParv = Boolean(cursoActivo && esNivelParvulario(cursoActivo.nivel));
+      const defaultAsig = esParv
+        ? 'Atención Directa y Co-Docencia Parvularia (DTO 306)'
+        : (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación');
+
+      setAsignatura(asignaturaSugerida || defaultAsig);
+      setHoras(horasSugeridas || (esParv ? 11 : 4));
+      setTipoModalidad(esParv ? 'CO_DOCENCIA' : 'AGRUPACION_FLEXIBLE');
       setEsSep(false);
-      const docSugerido = docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0];
+      const docSugerido = esParv
+        ? (docentes.find(d => d.estamento === 'EDUCADORA_PARVULO' || d.esEducadoraParvulo) || docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0])
+        : (docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0]);
       setDocenteId(docSugerido ? docSugerido.id : '');
     }
-  }, [isOpen, editandoAsig, asignaturaSugerida, horasSugeridas, planActivo, docentes]);
+  }, [isOpen, editandoAsig, asignaturaSugerida, horasSugeridas, planActivo, docentes, cursoActivo]);
 
   if (!isOpen || !cursoActivo) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!docenteId || !asignatura.trim()) return;
+
+    const esParv = Boolean(cursoActivo && esNivelParvulario(cursoActivo.nivel));
 
     const asig: AsignacionHoraria = {
       id: editandoAsig ? editandoAsig.id : `asig-codoc-${Date.now()}`,
@@ -464,6 +474,7 @@ export const ModalAsignarCoDocencia: React.FC<ModalCoDocenciaProps> = ({
       asignatura: asignatura.trim(),
       horasPedagogicasAula: Number(horas),
       esCoDocencia: true,
+      esCoDocenciaParvularia: esParv || Boolean(editandoAsig?.esCoDocenciaParvularia),
       esAgrupacionFlexible: tipoModalidad === 'AGRUPACION_FLEXIBLE',
       esTallerSep: esSep,
       tipoApoyo: tipoModalidad
