@@ -245,4 +245,121 @@ describe('Cálculo de Carga Horaria para Docente de Aula con Co-Docencia / Apoyo
     expect(docContrato.horasPieCronologicas).toBe(0);
     expect(docContrato.horasTallerSepExento).toBe(26);
   });
+
+  it('audita caso real de Carla Nataly Fernández Saavedra (16 HA de co-docencia aula regular con proporción Ley 20.903 + 10h Coordinadora PIE): calcula 28h req y +16h libres', () => {
+    // Carla Nataly Fernández Saavedra (17.756.967-4)
+    // Educadora Diferencial, CONTRATA 44 hrs PIE
+    // 1 función no aula (10h Coordinadora PIE)
+    // 4 asignaciones de 4 HA de co-docencia en aula regular en cursos No JEC (65/35) = 16 HA lectivas
+    const docenteCarla: Docente = {
+      id: 'doc-carla-fernandez',
+      rbd: '12345',
+      periodo: 2027,
+      run: '17.756.967-4',
+      nombres: 'Carla Nataly',
+      apellidos: 'Fernández Saavedra',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      calidadJuridica: 'CONTRATA',
+      horasContrato: 44,
+      horasPieContrata: 44,
+      funcionesNoAula: [
+        {
+          id: 'func-coord-carla',
+          nombre: 'Coordinadora PIE',
+          horas: 10,
+          tipo: 'COORDINACION_PIE',
+          financiamiento: 'PIE'
+        }
+      ]
+    };
+
+    const asignacionesCarla: AsignacionHoraria[] = [
+      {
+        id: 'asig-carla-1',
+        rbd: '12345',
+        periodo: 2027,
+        cursoId: 'c1',
+        docenteId: 'doc-carla-fernandez',
+        asignatura: 'Apoyo PIE - Co-docencia Aula Común (Decreto 170)',
+        horasPedagogicasAula: 4,
+        horasCronologicasPie: 3,
+        esCoDocencia: true,
+        esProporcionDocente: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      },
+      {
+        id: 'asig-carla-2',
+        rbd: '12345',
+        periodo: 2027,
+        cursoId: 'c2',
+        docenteId: 'doc-carla-fernandez',
+        asignatura: 'Apoyo PIE - Co-docencia Aula Común (Decreto 170)',
+        horasPedagogicasAula: 4,
+        horasCronologicasPie: 3,
+        esCoDocencia: true,
+        esProporcionDocente: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      },
+      {
+        id: 'asig-carla-3',
+        rbd: '12345',
+        periodo: 2027,
+        cursoId: 'c3',
+        docenteId: 'doc-carla-fernandez',
+        asignatura: 'Apoyo PIE - Co-docencia Aula Común (Decreto 170)',
+        horasPedagogicasAula: 4,
+        horasCronologicasPie: 3,
+        esCoDocencia: true,
+        esProporcionDocente: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      },
+      {
+        id: 'asig-carla-4',
+        rbd: '12345',
+        periodo: 2027,
+        cursoId: 'c4',
+        docenteId: 'doc-carla-fernandez',
+        asignatura: 'Apoyo PIE - Co-docencia Aula Común (Decreto 170)',
+        horasPedagogicasAula: 4,
+        horasCronologicasPie: 3,
+        esCoDocencia: true,
+        esProporcionDocente: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio(
+      [colegioMock],
+      [docenteCarla],
+      asignacionesCarla,
+      cursosMock
+    );
+
+    const docContrato = consolidado[0]?.contratos[0];
+    expect(docContrato).toBeDefined();
+    if (!docContrato) return;
+
+    // 1. Debe computar exactamente 16 HA de aula regular en 65/35 (¡NO 0 HA!)
+    expect(docContrato.horasAula65_35).toBe(16);
+    expect(docContrato.horasAula60_40).toBe(0);
+
+    // 2. Horas PIE cronológicas exentas deben ser SOLO las funciones no aula (10 hrs de Coordinación PIE)
+    expect(docContrato.horasPieCronologicas).toBe(10);
+
+    // 3. Contrato calculado total: 18h requeridas por MINEDUC para 16 HA + 10h Coordinación PIE = 28 hrs
+    expect(docContrato.contratoCalculadoTotal).toBe(28);
+
+    // 4. Saldo en contrato de 44 hrs: 44 - 28 = +16 hrs (Libres)
+    expect(docContrato.saldoHoras).toBe(16);
+    expect(docContrato.estadoSaldo).toBe('HOLGURA');
+
+    // 5. Desglose normativo oficial Ley 20.903 (Tabla 65/35 oficial MINEDUC)
+    expect(docContrato.minutosLectivosMineduc).toBe(720); // 16 HA * 45 = 720 min = 12h
+    expect(docContrato.minutosRecreoMineduc).toBe(74); // 1h 14m
+    expect(docContrato.minutosNoLectivosMineduc).toBe(286); // 4h 46m
+    expect(docContrato.minutosHnlPlanificacion40).toBe(114); // 1h 54m (40% de 286 min)
+
+    // 6. No debe marcar infracción de exceso lectivo
+    expect(docContrato.esInfractorExcesoLectivo).toBe(false);
+  });
 });

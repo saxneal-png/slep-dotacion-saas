@@ -321,9 +321,17 @@ export function calcularDiagnosticoColegio(
       ? doc.funcionesNoAula.filter(f => !isSepFin(f) && !isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
+    // Asignaciones de co-docencia PIE con proporción docente Ley 20.903 (aula regular vinculada a curso)
+    const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => 
+      a.cursoId && a.cursoId !== 'TRANSVERSAL' && Boolean(a.esProporcionDocente)
+    );
+    const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
+      !asigsCoDocenciaPieProporcional.includes(a)
+    );
+
     // Conversión rigurosa de horas cronológicas
     const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
-    const cronCoDocenciaPie = asigsCoDocenciaPie.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
+    const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
     const cronCoDocenciaSep = asigsCoDocenciaSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
     const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
     const cronApoyoPie = Math.round((cronTrabajoColab + cronCoDocenciaPie) * 10) / 10;
@@ -332,13 +340,13 @@ export function calcularDiagnosticoColegio(
     // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
     // Para docentes con contrato SEP estándar de aula (como Laura de la Hoz y Valentina Alarcón), las horas de aula (co-docencia y talleres) forman parte de su carga lectiva regulada
     const asigsTallerSepLectivos = (hTallerSepDoc > 0) ? [] : asigsTallerSep;
-    const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos];
+    const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos, ...asigsCoDocenciaPieProporcional];
     const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + a.horasPedagogicasAula, 0);
     const esSepProporcional = isSepDoc && (doc.horasContrato > 0 && buscarContratoMinimoPorTabla(pedCandidatas, regimenTabla) <= doc.horasContrato);
 
-    const asigsDocenciaAulaEfectiva = (isPieDoc || (isSepDoc && !esSepProporcional))
-      ? asigsAulaRegular
-      : asigsCandidatasAula;
+    const asigsDocenciaAulaEfectiva = isPieDoc
+      ? [...asigsAulaRegular, ...asigsCoDocenciaPieProporcional]
+      : ((isSepDoc && !esSepProporcional) ? asigsAulaRegular : asigsCandidatasAula);
 
     const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
       ? (cronSepTotal > 0 || hTallerSepDoc > 0 || sumFuncionesNoAulaSep > 0
@@ -348,9 +356,11 @@ export function calcularDiagnosticoColegio(
 
     const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
     const pieCronologicas = isPieDoc
-      ? (cronApoyoPie > 0
-          ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
-          : hNoAulaPieEfectivas)
+      ? (asigsCoDocenciaPieProporcional.length > 0
+          ? (cronApoyoPie + hNoAulaPieEfectivas)
+          : (cronApoyoPie > 0
+              ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+              : hNoAulaPieEfectivas))
       : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
     const hInstNoAula = sumFuncionesNoAulaSubvGen;
@@ -887,9 +897,17 @@ export function obtenerDocentesConsolidadosTerritorio(
         ? doc.funcionesNoAula.filter(f => !isSepFin(f) && !isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
+      // Asignaciones de co-docencia PIE con proporción docente Ley 20.903 (aula regular vinculada a curso)
+      const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => 
+        a.cursoId && a.cursoId !== 'TRANSVERSAL' && Boolean(a.esProporcionDocente)
+      );
+      const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
+        !asigsCoDocenciaPieProporcional.includes(a)
+      );
+
       // Conversión rigurosa de horas cronológicas
       const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
-      const cronCoDocenciaPie = asigsCoDocenciaPie.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
+      const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
       const cronCoDocenciaSep = asigsCoDocenciaSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
       const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
       const cronApoyoPie = Math.round((cronTrabajoColab + cronCoDocenciaPie) * 10) / 10;
@@ -901,13 +919,13 @@ export function obtenerDocentesConsolidadosTerritorio(
       // Docencia efectiva de aula lectiva que requiere proporción Ley 20.903 (HNL + recreos)
       // Para docentes con contrato SEP estándar de aula (como Laura de la Hoz y Valentina Alarcón), las horas de aula (co-docencia y talleres) forman parte de su carga lectiva regulada
       const asigsTallerSepLectivos = (hTallerSepDoc > 0) ? [] : asigsTallerSep;
-      const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos];
+      const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos, ...asigsCoDocenciaPieProporcional];
       const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + a.horasPedagogicasAula, 0);
       const esSepProporcional = isSepDoc && (doc.horasContrato > 0 && buscarContratoMinimoPorTabla(pedCandidatas, regimenTabla) <= doc.horasContrato);
 
-      const asigsDocenciaAulaEfectiva = (isPieDoc || (isSepDoc && !esSepProporcional))
-        ? asigsAulaRegular
-        : asigsCandidatasAula;
+      const asigsDocenciaAulaEfectiva = isPieDoc
+        ? [...asigsAulaRegular, ...asigsCoDocenciaPieProporcional]
+        : ((isSepDoc && !esSepProporcional) ? asigsAulaRegular : asigsCandidatasAula);
 
       const sepExentas = (isPieDoc || (isSepDoc && !esSepProporcional))
         ? (cronSepTotal > 0 || hTallerSepDoc > 0 || sumFuncionesNoAulaSep > 0
@@ -917,9 +935,11 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
       const pieCronologicas = isPieDoc
-        ? (cronApoyoPie > 0
-            ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
-            : hNoAulaPieEfectivas)
+        ? (asigsCoDocenciaPieProporcional.length > 0
+            ? (cronApoyoPie + hNoAulaPieEfectivas)
+            : (cronApoyoPie > 0
+                ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+                : hNoAulaPieEfectivas))
         : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;

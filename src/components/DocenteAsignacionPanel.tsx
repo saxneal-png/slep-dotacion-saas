@@ -463,34 +463,6 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   const [editandoManual, setEditandoManual] = useState(false);
   const [nombreManual, setNombreManual] = useState(a.asignatura);
   const [asigTransversal, setAsigTransversal] = useState(a.asignatura);
-  const esPieInitial = Boolean(
-    (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
-    (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
-    (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
-    (a.horasCronologicasPie && a.horasCronologicasPie > 0)
-  );
-  const [localHoras, setLocalHoras] = useState<number | string>(
-    esPieInitial ? (a.horasCronologicasPie || a.horasPedagogicasAula) : a.horasPedagogicasAula
-  );
-
-  useEffect(() => {
-    setNombreManual(a.asignatura);
-    setAsigTransversal(a.asignatura);
-    setLocalHoras(esPieInitial ? (a.horasCronologicasPie || a.horasPedagogicasAula) : a.horasPedagogicasAula);
-  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, esPieInitial]);
-
-  const cursoActual = useMemo(() => {
-    return cursos.find(c => c.id === a.cursoId) || null;
-  }, [cursos, a.cursoId]);
-
-  const infoPlan = useMemo(() => {
-    return resolverPlanCurso(cursoActual, planesDb);
-  }, [cursoActual, planesDb]);
-
-  const disponibilidad = useMemo(() => {
-    return calcularDisponibilidadCurso(cursoActual, infoPlan, asignacionesColegio);
-  }, [cursoActual, infoPlan, asignacionesColegio]);
-
   const esCoDoc = (a.coDocenteId === docente.id && a.tieneCoDocente) ||
                   a.esCoDocencia ||
                   a.esAgrupacionFlexible ||
@@ -506,6 +478,50 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
     (a.horasCronologicasPie && a.horasCronologicasPie > 0)
   );
+
+  const esApoyoAulaCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && (esCoDoc || esPie));
+  const esProporcionalAula = Boolean(
+    a.esProporcionDocente === true || 
+    (esApoyoAulaCurso && a.esProporcionDocente !== false && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO')
+  );
+
+  const [modoUnidad, setModoUnidad] = useState<'HA' | 'CRON'>(
+    esProporcionalAula || !esPie ? 'HA' : 'CRON'
+  );
+
+  const [localHoras, setLocalHoras] = useState<number | string>(
+    (esProporcionalAula || !esPie)
+      ? a.horasPedagogicasAula
+      : (a.horasCronologicasPie || a.horasPedagogicasAula)
+  );
+
+  useEffect(() => {
+    setNombreManual(a.asignatura);
+    setAsigTransversal(a.asignatura);
+    const prop = Boolean(
+      a.esProporcionDocente === true || 
+      (a.cursoId && a.cursoId !== 'TRANSVERSAL' && (esCoDoc || esPie) && a.esProporcionDocente !== false && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO')
+    );
+    const nuevoModo = prop || !esPie ? 'HA' : 'CRON';
+    setModoUnidad(nuevoModo);
+    setLocalHoras(
+      nuevoModo === 'HA'
+        ? a.horasPedagogicasAula
+        : (a.horasCronologicasPie || a.horasPedagogicasAula)
+    );
+  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.esProporcionDocente, a.cursoId, esPie, esCoDoc]);
+
+  const cursoActual = useMemo(() => {
+    return cursos.find(c => c.id === a.cursoId) || null;
+  }, [cursos, a.cursoId]);
+
+  const infoPlan = useMemo(() => {
+    return resolverPlanCurso(cursoActual, planesDb);
+  }, [cursoActual, planesDb]);
+
+  const disponibilidad = useMemo(() => {
+    return calcularDisponibilidadCurso(cursoActual, infoPlan, asignacionesColegio);
+  }, [cursoActual, infoPlan, asignacionesColegio]);
 
   // Verificar si la asignatura actual coincide con alguna del plan
   const asigEnPlan = infoPlan.asignaturas.find(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura));
@@ -808,36 +824,97 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
 
       {/* 3. Columna HORAS ASIGNADAS */}
       <td className="px-3 py-2 text-center font-bold text-slate-800">
-        <div className="inline-flex items-center justify-center gap-1">
-          <input
-            type="number"
-            value={localHoras}
-            min={1}
-            max={44}
-            step={esPie ? '0.5' : '1'}
-            onChange={(e) => setLocalHoras(e.target.value === '' ? '' : Number(e.target.value))}
-            onBlur={async () => {
-              const h = Number(localHoras);
-              if (h > 0 && onGuardarAsignacion) {
-                if (esPie && h !== a.horasCronologicasPie) {
-                  await onGuardarAsignacion({ 
-                    ...a, 
-                    horasCronologicasPie: h, 
-                    horasPedagogicasAula: Math.round(h * 1.333) 
-                  });
-                } else if (!esPie && h !== a.horasPedagogicasAula) {
-                  await onGuardarAsignacion({ ...a, horasPedagogicasAula: h });
+        <div className="flex flex-col items-center justify-center gap-0.5">
+          <div className="inline-flex items-center justify-center gap-1">
+            <input
+              type="number"
+              value={localHoras}
+              min={1}
+              max={44}
+              step={modoUnidad === 'CRON' ? '0.5' : '1'}
+              onChange={(e) => setLocalHoras(e.target.value === '' ? '' : Number(e.target.value))}
+              onBlur={async () => {
+                const h = Number(localHoras);
+                if (h > 0 && onGuardarAsignacion) {
+                  if (modoUnidad === 'HA') {
+                    const cron = Math.round(h * 0.75 * 10) / 10;
+                    if (h !== a.horasPedagogicasAula || a.esProporcionDocente !== true) {
+                      await onGuardarAsignacion({ 
+                        ...a, 
+                        horasPedagogicasAula: h,
+                        horasCronologicasPie: cron,
+                        esProporcionDocente: true
+                      });
+                    }
+                  } else {
+                    const ped = Math.round(h * 1.333);
+                    if (h !== a.horasCronologicasPie || a.esProporcionDocente !== false) {
+                      await onGuardarAsignacion({ 
+                        ...a, 
+                        horasCronologicasPie: h, 
+                        horasPedagogicasAula: ped,
+                        esProporcionDocente: false 
+                      });
+                    }
+                  }
                 }
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-            }}
-            className="w-16 text-center font-black bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-1 py-0.5 text-xs focus:ring-1 focus:ring-orange-500 outline-none"
-          />
-          <span className="text-[10px] text-slate-400 font-normal">
-            {esPie ? 'hrs cron' : 'HA'}
-          </span>
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
+              className="w-16 text-center font-black bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded px-1 py-0.5 text-xs focus:ring-1 focus:ring-orange-500 outline-none"
+            />
+            {esApoyoAulaCurso ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const nuevoModo = modoUnidad === 'HA' ? 'CRON' : 'HA';
+                  setModoUnidad(nuevoModo);
+                  const h = Number(localHoras) || 4;
+                  if (nuevoModo === 'HA') {
+                    const ped = a.horasPedagogicasAula || Math.round(h * 1.333) || 4;
+                    setLocalHoras(ped);
+                    if (onGuardarAsignacion) {
+                      await onGuardarAsignacion({
+                        ...a,
+                        horasPedagogicasAula: ped,
+                        horasCronologicasPie: Math.round(ped * 0.75 * 10) / 10,
+                        esProporcionDocente: true
+                      });
+                    }
+                  } else {
+                    const cron = a.horasCronologicasPie || Math.round(h * 0.75 * 10) / 10 || 3;
+                    setLocalHoras(cron);
+                    if (onGuardarAsignacion) {
+                      await onGuardarAsignacion({
+                        ...a,
+                        horasCronologicasPie: cron,
+                        horasPedagogicasAula: Math.round(cron * 1.333),
+                        esProporcionDocente: false
+                      });
+                    }
+                  }
+                }}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                  modoUnidad === 'HA'
+                    ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
+                    : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                }`}
+                title={modoUnidad === 'HA' ? 'Horas Pedagógicas con Proporción Ley 20.903 activa. Clic para cambiar a cronológicas exentas.' : 'Horas Cronológicas exentas. Clic para computar como Horas Pedagógicas con proporción docente.'}
+              >
+                {modoUnidad === 'HA' ? 'HA (Aula)' : 'hrs cron'}
+              </button>
+            ) : (
+              <span className="text-[10px] text-slate-400 font-normal">
+                {modoUnidad === 'CRON' ? 'hrs cron' : 'HA'}
+              </span>
+            )}
+          </div>
+          {esApoyoAulaCurso && modoUnidad === 'HA' && (
+            <span className="text-[9px] text-purple-600 font-semibold" title="Horas pedagógicas lectivas con proporción 65/35 o 60/40">
+              ⚖️ Proporción 20.903
+            </span>
+          )}
         </div>
       </td>
 
@@ -1628,8 +1705,10 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
     if (!pieCursoId) return;
 
     const esColab = pieTipo.includes('Colaborativo') || pieTipo.includes('86');
-    const horasCron = Number(pieHoras);
-    const horasPed = Math.round(horasCron * 1.333);
+    const esCoDocAula = pieTipo === 'Co-Docencia en Aula Regular';
+    const numInput = Number(pieHoras);
+    const horasPed = esCoDocAula ? numInput : Math.round(numInput * 1.333);
+    const horasCron = esCoDocAula ? Math.round(numInput * 0.75 * 10) / 10 : numInput;
 
     const newAsig: AsignacionHoraria = {
       id: `asig-pie-${Date.now()}`,
@@ -1643,7 +1722,7 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
       esCoDocencia: true,
       esTrabajoColaborativo: esColab,
       tipoApoyo: pieTipo,
-      esProporcionDocente: false
+      esProporcionDocente: esCoDocAula
     };
 
     await onGuardar(newAsig);
@@ -1709,8 +1788,10 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
         />
       </div>
 
-      <div className="w-24">
-        <label className="block text-[10px] font-bold text-purple-900 mb-0.5">Horas Cron.</label>
+      <div className="w-28">
+        <label className="block text-[10px] font-bold text-purple-900 mb-0.5">
+          {pieTipo === 'Co-Docencia en Aula Regular' ? 'Horas Aula (HA)' : 'Horas Cron.'}
+        </label>
         <input
           type="number"
           value={pieHoras}
@@ -1719,9 +1800,14 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
           className="w-full px-2 py-1 border border-purple-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-purple-500 focus:outline-none"
           min={1}
           max={44}
-          step="0.5"
+          step={pieTipo === 'Co-Docencia en Aula Regular' ? '1' : '0.5'}
           required
         />
+        {pieTipo === 'Co-Docencia en Aula Regular' && (
+          <span className="block text-[9px] text-purple-600 font-semibold text-center mt-0.5">
+            Ley 20.903 activa
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-2 pt-4">
@@ -2011,7 +2097,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                     type="button"
                     onClick={async () => {
                       if (onGuardarAsignacion) {
-                        const horas = prompt(`Horas cronológicas de Apoyo PIE (Dec. 170) en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, '8');
+                        const horas = prompt(`Horas pedagógicas (HA) de Co-Docencia / Apoyo PIE (con proporción Ley 20.903) en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, '4');
                         const h = Number(horas);
                         if (h && h > 0) {
                           const nuevaAsig: AsignacionHoraria = {
@@ -2020,10 +2106,11 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             docenteId: docente.id,
                             asignatura: 'Apoyo PIE - Co-docencia Aula Común (Decreto 170)',
                             cursoId: cursoInspeccion.id,
-                            horasCronologicasPie: h,
-                            horasPedagogicasAula: Math.round(h * 1.333),
+                            horasPedagogicasAula: h,
+                            horasCronologicasPie: Math.round(h * 0.75 * 10) / 10,
                             periodo: 2027,
                             esCoDocencia: true,
+                            esProporcionDocente: true,
                             tipoApoyo: 'Co-Docencia en Aula Regular'
                           };
                           await onGuardarAsignacion(nuevaAsig);
@@ -2031,7 +2118,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                       }
                     }}
                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 rounded text-[11px] font-bold transition-all hover:scale-105 shadow-xs"
-                    title={`Asignar Co-Docencia PIE Decreto 170 en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}`}
+                    title={`Asignar Co-Docencia PIE Decreto 170 con proporción de aula en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}`}
                   >
                     <ShieldCheck className="w-3 h-3 text-purple-600" />
                     <span>🛡️ Asignar Apoyo PIE (Dec. 170)</span>
