@@ -223,10 +223,25 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         ? d.funcionesNoAula.filter(f => !isSepFin(f) && !isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
-      // Asignaciones de co-docencia PIE con proporción docente Ley 20.903 (aula regular vinculada a curso)
-      const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => 
-        a.cursoId && a.cursoId !== 'TRANSVERSAL' && Boolean(a.esProporcionDocente)
-      );
+      // Función para obtener las horas de aula lectiva (45 minutos) de una asignación frente a curso
+      const getHorasAulaLectivaAsig = (a: any) => {
+        if (a.horasPedagogicasAula && a.horasCronologicasPie && Math.abs(a.horasPedagogicasAula * 0.75 - a.horasCronologicasPie) < 0.1) {
+          return a.horasPedagogicasAula;
+        }
+        if (a.horasCronologicasPie && a.horasPedagogicasAula === Math.round(a.horasCronologicasPie * 1.333)) {
+          return a.horasCronologicasPie;
+        }
+        return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+      };
+
+      // Asignaciones de co-docencia PIE con curso: se calculan como horas de aula lectiva (45 minutos) con proporción Ley 20.903
+      const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
+        const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
+        const noEsColab = !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO';
+        if (a.esProporcionDocente === true) return true;
+        if (a.esProporcionDocente === false) return false;
+        return isPieDoc && tieneCurso && noEsColab;
+      });
       const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
         !asigsCoDocenciaPieProporcional.includes(a)
       );
@@ -243,7 +258,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       // Para docentes con contrato SEP estándar de aula (como Laura de la Hoz y Valentina Alarcón), las horas de aula (co-docencia y talleres) forman parte de su carga lectiva regulada
       const asigsTallerSepLectivos = (hTallerSepDoc > 0) ? [] : asigsTallerSep;
       const asigsCandidatasAula = [...asigsAulaRegular, ...asigsCoDocenciaSep, ...asigsTallerSepLectivos, ...asigsCoDocenciaPieProporcional];
-      const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + a.horasPedagogicasAula, 0);
+      const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
       const esSepProporcional = isSepDoc && (d.horasContrato > 0 && buscarContratoMinimoPorTabla(pedCandidatas, regimenTabla) <= d.horasContrato);
 
       const asigsDocenciaAulaEfectiva = isPieDoc
@@ -308,14 +323,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
-        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+        .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
 
       const ped60 = asigsDocenciaAulaEfectiva
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
         })
-        .reduce((s, a) => s + a.horasPedagogicasAula, 0);
+        .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
 
       const auditMulti = calcularAuditoriaDocenteMultitramo({
         horasAula65_35: ped65,

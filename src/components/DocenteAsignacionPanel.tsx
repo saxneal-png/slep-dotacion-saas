@@ -18,7 +18,9 @@ import {
   obtenerPlanPorCurso, 
   PlanEstudioNivel,
   CATALOGO_PROFUNDIZACION_HC_27,
-  CATALOGO_PLAN_COMUN_ELECTIVO_3_4
+  CATALOGO_PLAN_COMUN_ELECTIVO_3_4,
+  buscarContratoMinimoPorTabla,
+  calcularAuditoriaDocenteMultitramo
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
 
@@ -451,6 +453,16 @@ interface FilaAsignacionProps {
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
 }
 
+export function getHorasAulaLectivaAsig(a: Partial<AsignacionHoraria>): number {
+  if (a.horasPedagogicasAula && a.horasCronologicasPie && Math.abs(a.horasPedagogicasAula * 0.75 - a.horasCronologicasPie) < 0.1) {
+    return a.horasPedagogicasAula;
+  }
+  if (a.horasCronologicasPie && a.horasPedagogicasAula === Math.round(a.horasCronologicasPie * 1.333)) {
+    return a.horasCronologicasPie;
+  }
+  return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+}
+
 const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   asignacion: a,
   docente,
@@ -476,10 +488,12 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
     (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
     (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
-    (a.horasCronologicasPie && a.horasCronologicasPie > 0)
+    (a.horasCronologicasPie && a.horasCronologicasPie > 0) ||
+    docente.estamento === 'DOCENTE_DIFERENCIAL' ||
+    (docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0
   );
 
-  const esApoyoAulaCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && (esCoDoc || esPie));
+  const esApoyoAulaCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
   const esProporcionalAula = Boolean(
     a.esProporcionDocente === true || 
     (esApoyoAulaCurso && a.esProporcionDocente !== false && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO')
@@ -491,8 +505,8 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
 
   const [localHoras, setLocalHoras] = useState<number | string>(
     (esProporcionalAula || !esPie)
-      ? a.horasPedagogicasAula
-      : (a.horasCronologicasPie || a.horasPedagogicasAula)
+      ? getHorasAulaLectivaAsig(a)
+      : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
   );
 
   useEffect(() => {
@@ -500,14 +514,14 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     setAsigTransversal(a.asignatura);
     const prop = Boolean(
       a.esProporcionDocente === true || 
-      (a.cursoId && a.cursoId !== 'TRANSVERSAL' && (esCoDoc || esPie) && a.esProporcionDocente !== false && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO')
+      (a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO' && a.esProporcionDocente !== false && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO')
     );
     const nuevoModo = prop || !esPie ? 'HA' : 'CRON';
     setModoUnidad(nuevoModo);
     setLocalHoras(
       nuevoModo === 'HA'
-        ? a.horasPedagogicasAula
-        : (a.horasCronologicasPie || a.horasPedagogicasAula)
+        ? getHorasAulaLectivaAsig(a)
+        : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
     );
   }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.esProporcionDocente, a.cursoId, esPie, esCoDoc]);
 
@@ -900,19 +914,19 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                     ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
                     : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
                 }`}
-                title={modoUnidad === 'HA' ? 'Horas Pedagógicas con Proporción Ley 20.903 activa. Clic para cambiar a cronológicas exentas.' : 'Horas Cronológicas exentas. Clic para computar como Horas Pedagógicas con proporción docente.'}
+                title={modoUnidad === 'HA' ? 'Horas Pedagógicas (45 min) de aula con Proporción Ley 20.903 activa. Clic para cambiar a cronológicas exentas.' : 'Horas Cronológicas exentas. Clic para computar como Horas Pedagógicas con proporción docente.'}
               >
-                {modoUnidad === 'HA' ? 'HA (Aula)' : 'hrs cron'}
+                {modoUnidad === 'HA' ? 'HA (45m)' : 'hrs cron'}
               </button>
             ) : (
-              <span className="text-[10px] text-slate-400 font-normal">
-                {modoUnidad === 'CRON' ? 'hrs cron' : 'HA'}
+              <span className="text-[10px] text-slate-500 font-semibold">
+                {modoUnidad === 'CRON' ? 'hrs cron' : 'HA (45m)'}
               </span>
             )}
           </div>
           {esApoyoAulaCurso && modoUnidad === 'HA' && (
-            <span className="text-[9px] text-purple-600 font-semibold" title="Horas pedagógicas lectivas con proporción 65/35 o 60/40">
-              ⚖️ Proporción 20.903
+            <span className="text-[9px] text-purple-700 font-bold flex items-center gap-0.5" title={`Horas lectivas frente a curso computadas con Proporción Docente Ley 20.903 (${cursoActual?.regimenProporcion === '60_40' ? '60/40' : '65/35'})`}>
+              ⚖️ Aula {cursoActual?.regimenProporcion === '60_40' ? '60/40' : '65/35'}
             </span>
           )}
         </div>
@@ -1921,6 +1935,83 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     return cubiertasBase + dispCursoInspeccion.horasLibreAsignadas;
   }, [dispCursoInspeccion]);
 
+  // Cálculo de Carga Horaria y Proporción Docente Ley 20.903 en tiempo real para este docente
+  const resumenCargaHoraria = useMemo(() => {
+    const isDocenteDiferencial = docente.estamento === 'DOCENTE_DIFERENCIAL' || 
+      ((docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0 && 
+       (docente.horasSubvencionGeneralTitular || 0) + (docente.horasSubvencionGeneralContrata || 0) === 0);
+
+    // Asignaciones vinculadas a curso con proporción activa o por defecto
+    const asigsProporcionales = asignacionesDocente.filter(a => {
+      const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
+      const esTrabajoColab = Boolean(a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO');
+      return a.esProporcionDocente === true || (tieneCurso && !esTrabajoColab && a.esProporcionDocente !== false);
+    });
+
+    let haLectivas65 = 0;
+    let haLectivas60 = 0;
+
+    asigsProporcionales.forEach(a => {
+      const c = cursos.find(cur => cur.id === a.cursoId);
+      const es60 = c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+      const ha = getHorasAulaLectivaAsig(a);
+      if (es60) {
+        haLectivas60 += ha;
+      } else {
+        haLectivas65 += ha;
+      }
+    });
+
+    const totalHaLectivas = haLectivas65 + haLectivas60;
+
+    // Asignaciones exentas o de trabajo colaborativo / fuera de curso
+    const asigsExentas = asignacionesDocente.filter(a => !asigsProporcionales.includes(a));
+    const horasCronExentasAsig = asigsExentas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
+
+    // Funciones No Aula Institucionales / Coordinación PIE / Directivas / UTP
+    const horasFuncionesNoAula = (docente.funcionesNoAula && docente.funcionesNoAula.length > 0)
+      ? docente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : ((docente.horasCoordinacionPie || 0) + (docente.horasDirectivas || 0) + (docente.horasInspectorGeneral || 0) + (docente.horasTecnicoPedagogicas || 0) + (docente.horasCoordinacion || 0));
+
+    // Contrato Requerido por Aula según Tabla Mineduc
+    const reqContrato65 = buscarContratoMinimoPorTabla(haLectivas65, '65_35');
+    const reqContrato60 = buscarContratoMinimoPorTabla(haLectivas60, '60_40');
+    const reqContratoAulaTotal = reqContrato65 + reqContrato60;
+
+    // Contrato Total Requerido
+    const contratoRequeridoTotal = reqContratoAulaTotal + Math.round((horasCronExentasAsig + horasFuncionesNoAula) * 10) / 10;
+    const horasContratoReal = docente.horasContrato || 0;
+    const saldoHoras = Math.round((horasContratoReal - contratoRequeridoTotal) * 10) / 10;
+
+    // Auditoría multitramo oficial para recreos y HNL
+    const audit = calcularAuditoriaDocenteMultitramo({
+      horasAula65_35: haLectivas65,
+      horasAula60_40: haLectivas60,
+      horasPieCronologicas: Math.round(horasCronExentasAsig * 10) / 10,
+      horasTallerSepExento: 0,
+      horasPieSepCronologicas: Math.round(horasCronExentasAsig * 10) / 10,
+      horasNoAulaInstitucionales: horasFuncionesNoAula,
+      horasContratoReal,
+      aplicaArticulo69: Boolean(docente.aplicaArticulo69)
+    });
+
+    return {
+      isDocenteDiferencial,
+      haLectivas65,
+      haLectivas60,
+      totalHaLectivas,
+      reqContrato65,
+      reqContrato60,
+      reqContratoAulaTotal,
+      horasCronExentasAsig,
+      horasFuncionesNoAula,
+      contratoRequeridoTotal,
+      horasContratoReal,
+      saldoHoras,
+      audit
+    };
+  }, [asignacionesDocente, cursos, colegio.porcentajePrioritarios, docente]);
+
   return (
     <div className="space-y-3.5">
       {/* Barra de Acciones / Botones de Asignación Rápida */}
@@ -1971,6 +2062,129 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
             <ShieldCheck className="w-3 h-3" />
             <span>🛡️ Asignar Apoyo PIE</span>
           </button>
+        </div>
+      </div>
+
+      {/* Tarjeta Resumen: Cómputo de Carga Horaria & Proporción Docente (Ley 20.903) */}
+      <div className="bg-gradient-to-r from-slate-50 via-indigo-50/20 to-purple-50/20 border border-slate-200/90 rounded-xl p-3.5 shadow-2xs space-y-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-slate-200/60 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <span>⚖️ Cómputo de Carga Horaria & Proporción Docente (Ley 20.903)</span>
+            </span>
+            {resumenCargaHoraria.isDocenteDiferencial && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">
+                🛡️ Docente Diferencial PIE
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] text-slate-500 font-medium">
+            Jornada Contratada: <strong className="text-slate-800 font-bold">{resumenCargaHoraria.horasContratoReal} hrs cronológicas</strong>
+          </span>
+        </div>
+
+        {/* Indicadores Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+          {/* 1. Horas Aula Lectivas (45 min) */}
+          <div className="bg-white border border-indigo-100 rounded-lg p-2.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">1. Horas Aula (45m)</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-black text-indigo-700">{resumenCargaHoraria.totalHaLectivas}</span>
+              <span className="text-xs font-bold text-slate-500">HA</span>
+            </div>
+            <span className="text-[10px] text-slate-500 block truncate" title={`${resumenCargaHoraria.haLectivas65} HA en 65/35, ${resumenCargaHoraria.haLectivas60} HA en 60/40`}>
+              {resumenCargaHoraria.haLectivas65} HA (65/35){resumenCargaHoraria.haLectivas60 > 0 ? ` • ${resumenCargaHoraria.haLectivas60} HA (60/40)` : ''}
+            </span>
+          </div>
+
+          {/* 2. Contrato Req. por Aula */}
+          <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">2. Contrato Req. Aula</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-black text-slate-800">{resumenCargaHoraria.reqContratoAulaTotal}</span>
+              <span className="text-xs font-bold text-slate-500">hrs</span>
+            </div>
+            <span className="text-[10px] text-slate-400 block">
+              Tabla Ley 20.903
+            </span>
+          </div>
+
+          {/* 3. Funciones No Aula / Coordinación */}
+          <div className="bg-white border border-purple-100 rounded-lg p-2.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">3. Func. No Aula</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-black text-purple-700">
+                {resumenCargaHoraria.horasFuncionesNoAula + resumenCargaHoraria.horasCronExentasAsig}
+              </span>
+              <span className="text-xs font-bold text-slate-500">hrs</span>
+            </div>
+            <span className="text-[10px] text-slate-500 block truncate" title={`Funciones No Aula: ${resumenCargaHoraria.horasFuncionesNoAula}h | Exentas: ${resumenCargaHoraria.horasCronExentasAsig}h`}>
+              {resumenCargaHoraria.horasFuncionesNoAula > 0 ? `${resumenCargaHoraria.horasFuncionesNoAula}h No Aula` : ''}
+              {resumenCargaHoraria.horasCronExentasAsig > 0 ? ` +${resumenCargaHoraria.horasCronExentasAsig}h Exenta` : ''}
+              {(resumenCargaHoraria.horasFuncionesNoAula + resumenCargaHoraria.horasCronExentasAsig === 0) ? '0h' : ''}
+            </span>
+          </div>
+
+          {/* 4. Total Contrato Requerido */}
+          <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">4. Contrato Calculado</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-black text-slate-900">{resumenCargaHoraria.contratoRequeridoTotal}</span>
+              <span className="text-xs font-bold text-slate-500">hrs</span>
+            </div>
+            <span className="text-[10px] text-slate-400 block">
+              Aula ({resumenCargaHoraria.reqContratoAulaTotal}h) + No Aula
+            </span>
+          </div>
+
+          {/* 5. Saldo Disponible / Horas Libres */}
+          <div className={`rounded-lg p-2.5 shadow-2xs border ${
+            resumenCargaHoraria.saldoHoras > 0 
+              ? 'bg-emerald-50/70 border-emerald-200' 
+              : resumenCargaHoraria.saldoHoras < 0 
+              ? 'bg-rose-50/70 border-rose-200' 
+              : 'bg-slate-50 border-slate-200'
+          }`}>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">5. Saldo Jornada</span>
+            <div className="flex items-baseline gap-1">
+              <span className={`text-lg font-black ${
+                resumenCargaHoraria.saldoHoras > 0 
+                  ? 'text-emerald-700' 
+                  : resumenCargaHoraria.saldoHoras < 0 
+                  ? 'text-rose-700' 
+                  : 'text-slate-700'
+              }`}>
+                {resumenCargaHoraria.saldoHoras > 0 ? `+${resumenCargaHoraria.saldoHoras}` : resumenCargaHoraria.saldoHoras}
+              </span>
+              <span className="text-xs font-bold text-slate-500">hrs</span>
+            </div>
+            <span className={`text-[10px] font-bold block ${
+              resumenCargaHoraria.saldoHoras > 0 
+                ? 'text-emerald-700' 
+                : resumenCargaHoraria.saldoHoras < 0 
+                ? 'text-rose-700' 
+                : 'text-slate-500'
+            }`}>
+              {resumenCargaHoraria.saldoHoras > 0 ? 'Horas Libres' : resumenCargaHoraria.saldoHoras < 0 ? 'Sobreasignado' : 'Exacto'}
+            </span>
+          </div>
+        </div>
+
+        {/* Desglose de Derechos Mineduc (Recreo y Horas No Lectivas) */}
+        <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 bg-white/70 rounded-lg px-3 py-1.5 border border-slate-200/50">
+          <span className="flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Recreo Garantizado: <strong>{Math.floor(resumenCargaHoraria.audit.minutosRecreoTotal / 60)}h {resumenCargaHoraria.audit.minutosRecreoTotal % 60}m</strong></span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span>📚 Horas No Lectivas (HNL): <strong>{Math.floor(resumenCargaHoraria.audit.minutosHnlTotal / 60)}h {resumenCargaHoraria.audit.minutosHnlTotal % 60}m</strong></span>
+            <span className="text-slate-400 text-[10px]">(Preparación, Colaboración, PACI/FUDEI)</span>
+          </span>
+          {resumenCargaHoraria.totalHaLectivas > 0 && (
+            <span className="text-[10px] font-semibold text-indigo-700">
+              {resumenCargaHoraria.totalHaLectivas} periodos lectivos de 45 min asignados a cursos
+            </span>
+          )}
         </div>
       </div>
 

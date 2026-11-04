@@ -339,6 +339,7 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
         horasPedagogicasAula: 11,
         horasCronologicasPie: 11,
         esCoDocencia: true,
+        esProporcionDocente: false,
         tipoApoyo: 'Co-Docencia en Aula Regular'
       }
     ];
@@ -406,6 +407,7 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
         horasPedagogicasAula: 15, // 15 HA pedagógicas = 11h cronológicas
         horasCronologicasPie: 11,
         esCoDocencia: true,
+        esProporcionDocente: false,
         tipoApoyo: 'Co-Docencia en Aula Regular'
       }
     ];
