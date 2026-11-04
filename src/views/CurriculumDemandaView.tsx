@@ -15,6 +15,7 @@ import {
 import {
   PLANES_MINEDUC,
   obtenerPlanPorCurso,
+  calcularHorasPlanCurso,
   calcularDemandaNormativaPieCurso,
   autoAsignarHorasPieCursos,
   esModalidadAdultos,
@@ -260,13 +261,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   );
   const planActivo = cursoActivo ? obtenerPlanPorCurso(cursoActivo.nivel, cursoActivo.regimen, cursoActivo.especialidadTp) : null;
   const horasPlanCurso = planActivo ? planActivo.totalHorasPlan : (
-    esCursoTp ? 42 : (
-      cursoActivo?.regimen === 'JEC' ? 38 : (
-        cursoActivo && /k[ií]nder|nt[12]|parvul/i.test(cursoActivo.nivel)
-          ? (/pre[- ]?k|nt1|primer/i.test(cursoActivo.nivel) ? 22 : 20)
-          : 30
-      )
-    )
+    cursoActivo ? calcularHorasPlanCurso(cursoActivo.nivel, cursoActivo.regimen, cursoActivo.especialidadTp) : 30
   );
 
   // Asignaciones transversales / institucionales (sin curso asociado)
@@ -390,9 +385,10 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   // Demanda total calculada de horas aula de todo el colegio (incluye cursos + talleres transversales)
   const totalHorasDemandaColegio = useMemo(() => {
     const sumCursos = cursos.reduce((sum, c) => {
-      const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
+      const plan = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
       const horasTalleres = (c.talleresJec || []).reduce((s, t) => s + t.horas, 0);
-      return sum + (plan ? plan.totalHorasPlan : c.regimen === 'JEC' ? 38 : 30) + horasTalleres;
+      const horasP = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
+      return sum + horasP + horasTalleres;
     }, 0);
     return sumCursos + totalHorasTransversales;
   }, [cursos, totalHorasTransversales]);
@@ -593,8 +589,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
     let matchCobertura = true;
     if (filtroCoberturaCurso !== 'TODOS') {
-      const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
-      const hrsPlan = plan ? plan.totalHorasPlan : (c.regimen === 'JEC' ? 38 : 30);
+      const plan = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
+      const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
       const asigsDoc = asignaciones.filter(a => 
         (a.cursoId === c.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(c.id))) && 
         !esApoyoPie(a)
@@ -834,8 +830,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
             ) : (
               cursosFiltrados.map(c => {
                 const isSelected = cursoActivo?.id === c.id;
-                const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
-                const hrsPlan = plan ? plan.totalHorasPlan : c.regimen === 'JEC' ? 38 : 30;
+                const plan = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
+                const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
 
                 // Horas de docencia asignadas en el plan regular de este curso (sin inflar por SEP, Co-Docencia ni PIE)
                 const asigsPlanReg = asignaciones.filter(a =>

@@ -7,6 +7,7 @@ import {
   calcularDemandaNormativaPieCurso,
   evaluarCapacidadSaeYInfraestructura,
   obtenerPlanPorCurso,
+  calcularHorasPlanCurso,
   esModalidadAdultos
 } from '@slep/mineduc-engine';
 import {
@@ -113,7 +114,7 @@ export function calcularDiagnosticoColegio(
 
   for (const curso of cursos) {
     const plan = obtenerPlanPorCurso(curso.nivel, curso.regimen);
-    const horasPlan = plan ? plan.totalHorasPlan : (curso.regimen === 'JEC' ? 38 : 30);
+    const horasPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(curso.nivel, curso.regimen);
     const horasTalleres = (curso.talleresJec || []).reduce((sum, t) => sum + t.horas, 0);
 
     horasAulaDemandadasCurriculo += (horasPlan + horasTalleres);

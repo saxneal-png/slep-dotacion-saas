@@ -11,6 +11,7 @@ import {
   calcularAuditoriaDocenteMultitramo,
   buscarContratoMinimoPorTabla,
   obtenerPlanPorCurso,
+  calcularHorasPlanCurso,
   calcularDemandaNormativaPieCurso
 } from '@slep/mineduc-engine';
 import { normalizarRut } from '../utils/rutUtils';
@@ -458,7 +459,7 @@ export function calcularEstadisticasColegio(
   for (const c of cursos) {
     totalMatricula += c.matriculaProyectada || 0;
     const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
-    const hrsPlan = plan ? plan.totalHorasPlan : (c.regimen === 'JEC' ? 38 : 30);
+    const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen);
     const hrsTalleres = (c.talleresJec || []).reduce((sum, t) => sum + t.horas, 0);
     horasAulaDemandadasPlan += (hrsPlan + hrsTalleres);
 

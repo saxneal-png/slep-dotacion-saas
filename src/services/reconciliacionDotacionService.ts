@@ -1,6 +1,7 @@
 import { Establecimiento, CursoSae, Docente, AsignacionHoraria } from '../types';
 import {
   obtenerPlanPorCurso,
+  calcularHorasPlanCurso,
   calcularJornadaMinutos,
   esModalidadTp,
   esModalidadMultigradoOCombinado,
@@ -113,7 +114,7 @@ export function analizarSincronizacionDotacion(
   // 4. Evaluar cursos con déficit de cobertura
   const cursosIncompletos = cursos.map(c => {
     const plan = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
-    const hrsPlan = plan ? plan.totalHorasPlan : (c.regimen === 'JEC' ? 38 : 30);
+    const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
     const asigsC = asignaciones.filter(a => 
       a.cursoId === c.id && 
       !a.tipoApoyo?.toLowerCase().includes('pie') && 

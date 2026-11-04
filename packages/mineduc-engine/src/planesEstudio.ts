@@ -2056,12 +2056,18 @@ export function obtenerPlanPorCurso(
       grupo = "1° y 2° Básico Combinado (1° Ciclo Básica)";
     }
   }
-  // 6. PARVULARIA REGULAR
-  else if ((c.includes('prekinder') || c.includes('pre-kinder') || c.includes('pre-k') || c.includes('pk') || c.includes('nt1') || c.includes('primer nivel de transicion')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
+  // 6. PARVULARIA REGULAR (Pre-Kínder, Kínder, Transición, Medio Menor/Mayor)
+  else if (c.includes('medio menor') || c.includes('medio mayor')) {
+    grupo = "Educación Parvularia Especial (Decreto 83 / Decretos Supremos)";
+  }
+  else if ((c.includes('prekinder') || c.includes('pre-kinder') || c.includes('pre-k') || c.includes('pk') || c.includes('nt1') || c.includes('primer nivel de transicion') || c.includes('transicion 1') || c.includes('transicion menor') || c.includes('1er nivel transicion')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
     grupo = "Educación Parvularia - Primer Nivel de Transición (Pre-Kínder)";
   }
-  else if ((c.includes('kinder') || c.includes('nt2') || c.includes('segundo nivel de transicion')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
+  else if ((c.includes('kinder') || c.includes('nt2') || c.includes('segundo nivel de transicion') || c.includes('transicion 2') || c.includes('transicion mayor') || c.includes('2do nivel transicion')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
     grupo = "Educación Parvularia - Segundo Nivel de Transición (Kínder)";
+  }
+  else if (c.includes('transic') && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
+    grupo = 'Educación Parvularia (NT1 y NT2)';
   }
   else if (c.includes('parvular') && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
     grupo = 'Educación Parvularia (NT1 y NT2)';
@@ -2099,4 +2105,51 @@ export function obtenerPlanPorCurso(
 
   return PLANES_MINEDUC.find(p => p.nivel === grupo) || null;
 }
+
+/**
+ * Calcula las horas pedagógicas de aula semanales requeridas para un curso según su nivel y régimen.
+ * Si no se encuentra un plan oficial explícito, aplica la regla supletoria oficial MINEDUC:
+ * - Técnico-Profesional (3° y 4° Medio): 42 HA en JEC / 36 HA en No JEC
+ * - Educación Básica / Media HC: 38 HA en JEC / 30 HA en No JEC
+ * - Educación Parvularia:
+ *   - Con JEC (Pre-Kínder y Kínder): 38 HA
+ *   - Sin JEC Pre-Kínder (NT1): 22 HA
+ *   - Sin JEC Kínder (NT2): 20 HA
+ *   - Sin JEC Parvularia general / combinada: 22 HA
+ */
+export function calcularHorasPlanCurso(
+  nivel: string,
+  regimen: 'JEC' | 'No JEC' | string = 'JEC',
+  especialidadTp?: string
+): number {
+  const reg: 'JEC' | 'No JEC' = regimen === 'No JEC' ? 'No JEC' : 'JEC';
+  const plan = obtenerPlanPorCurso(nivel, reg, especialidadTp);
+  if (plan && plan.totalHorasPlan > 0) {
+    return plan.totalHorasPlan;
+  }
+
+  const clean = (nivel || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const esJec = reg === 'JEC';
+
+  // Parvularia
+  if (clean.includes('kinder') || clean.includes('nt1') || clean.includes('nt2') || clean.includes('parvul') || clean.includes('transic') || clean.includes('medio menor') || clean.includes('medio mayor')) {
+    if (esJec) return 38;
+    if (clean.includes('prekinder') || clean.includes('pre-kinder') || clean.includes('pre-k') || clean.includes('pk') || clean.includes('nt1') || clean.includes('primer')) {
+      return 22;
+    }
+    if (clean.includes('kinder') || clean.includes('nt2') || clean.includes('segundo')) {
+      return 20;
+    }
+    return 22;
+  }
+
+  // Especialidad TP
+  if (clean.includes('tp') || clean.includes('tecnico') || clean.includes('profesional') || clean.includes('especialidad') || Boolean(especialidadTp)) {
+    return esJec ? 42 : 36;
+  }
+
+  // Básica y Media regular
+  return esJec ? 38 : 30;
+}
+
 
