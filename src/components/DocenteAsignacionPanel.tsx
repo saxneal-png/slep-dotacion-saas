@@ -596,6 +596,19 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     );
   }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.esProporcionDocente, a.cursoId, esPie, esCoDoc, esTrabajoNoAula, esApoyoAulaCurso, esDocenteDiferencialFila]);
 
+  // Auto-sincronización a BD: si es docente diferencial frente a curso en co-docencia de aula común, asegurar esProporcionDocente: true
+  useEffect(() => {
+    if (esDocenteDiferencialFila && esApoyoAulaCurso && !esTrabajoNoAula && a.esProporcionDocente !== true && onGuardarAsignacion) {
+      const ha = getHorasAulaLectivaAsig(a);
+      onGuardarAsignacion({
+        ...a,
+        horasPedagogicasAula: ha,
+        horasCronologicasPie: Math.round(ha * 0.75 * 10) / 10,
+        esProporcionDocente: true
+      });
+    }
+  }, [a.id, esDocenteDiferencialFila, esApoyoAulaCurso, esTrabajoNoAula, a.esProporcionDocente]);
+
   const cursoActual = useMemo(() => {
     return cursos.find(c => c.id === a.cursoId) || null;
   }, [cursos, a.cursoId]);
@@ -1656,7 +1669,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
       esAgrupacionFlexible: coDocTipo === 'AGRUPACION_FLEXIBLE',
       tipoApoyo: coDocTipo,
       esTallerSep: coDocFinanciamiento === 'SEP',
-      esProporcionDocente: false
+      esProporcionDocente: coDocTipo === 'CO_DOCENCIA' || coDocCursoId !== 'TRANSVERSAL'
     };
 
     await onGuardar(newAsig);
@@ -2421,35 +2434,19 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
             {dotacionParvulariaCursoActivo.segundaEducadoraRequerida && (
               <button
                 type="button"
-                onClick={async () => {
-                  if (onGuardarAsignacion && cursoParvularioActivo) {
-                    const horasSugeridas = dotacionParvulariaCursoActivo.horasContratoSegundaEducadora;
-                    const horasPrompt = prompt(
-                      `Horas de contrato para la 2da Educadora (Co-docencia DTO 306) en ${cursoParvularioActivo.nivel} ${cursoParvularioActivo.letra}:`,
-                      String(horasSugeridas)
-                    );
-                    const h = Number(horasPrompt);
-                    if (h && h > 0) {
-                      const nuevaAsig: AsignacionHoraria = {
-                        id: `asig_codoc_parv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                        rbd: colegio.rbd,
-                        docenteId: docente.id,
-                        asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
-                        cursoId: cursoParvularioActivo.id,
-                        horasPedagogicasAula: h,
-                        periodo: 2027,
-                        esCoDocencia: true,
-                        esCoDocenciaParvularia: true,
-                        tipoApoyo: 'CO_DOCENCIA',
-                        esProporcionDocente: true
-                      };
-                      await onGuardarAsignacion(nuevaAsig);
-                    }
+                onClick={() => {
+                  if (cursoParvularioActivo) {
+                    const hrsSugeridas = dotacionParvulariaCursoActivo.horasContratoSegundaEducadora;
+                    setHoras2daEducadoraInput(hrsSugeridas);
+                    // Seleccionar por defecto la primera educadora con horas disponibles distinta o el primer disponible
+                    const candidata = educadorasDisponibles.find(e => e.horasLibres > 0) || educadorasDisponibles[0];
+                    setDocenteSeleccionada2daId(candidata ? candidata.docente.id : docente.id);
+                    setModalSegundaEducadoraOpen(true);
                   }
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Users className="w-3.5 h-3.5" />
                 <span>Asignar 2da Educadora ({dotacionParvulariaCursoActivo.horasContratoSegundaEducadora} hrs)</span>
               </button>
             )}
@@ -2464,6 +2461,9 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
             <div className="bg-white/85 p-2 rounded-xl border border-teal-100 shadow-2xs">
               <span className="block text-[10px] uppercase font-bold text-slate-500">Aula Educadora Titular</span>
               <span className="text-sm font-black text-teal-700">{dotacionParvulariaCursoActivo.minutosAulaTitularTexto}</span>
+              <span className="block text-[9px] text-slate-400 font-medium">
+                {dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h disp. ({dotacionParvulariaCursoActivo.horasContratoTitular}h contrato)
+              </span>
             </div>
             <div className={`p-2 rounded-xl border shadow-2xs ${dotacionParvulariaCursoActivo.minutosDeficit > 0 ? 'bg-amber-50/95 border-amber-300' : 'bg-emerald-50/95 border-emerald-300'}`}>
               <span className="block text-[10px] uppercase font-bold text-slate-500">Déficit No Cubierto</span>
@@ -2830,6 +2830,189 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           </tbody>
         </table>
       </div>
+
+      {/* Modal Interactivo: Asignar 2da Educadora Complementaria DTO 306 */}
+      {modalSegundaEducadoraOpen && cursoParvularioActivo && dotacionParvulariaCursoActivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-teal-200 my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Header Modal */}
+            <div className="p-4 bg-gradient-to-r from-teal-700 to-emerald-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-white/20 rounded-lg">
+                  <GraduationCap className="w-5 h-5 text-white" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold leading-tight">
+                    Asignar 2da Educadora Complementaria (DTO 306)
+                  </h3>
+                  <p className="text-[11px] text-teal-100">
+                    Curso: {cursoParvularioActivo.nivel} {cursoParvularioActivo.letra} ({cursoParvularioActivo.regimen})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalSegundaEducadoraOpen(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Contenido Modal */}
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!docenteSeleccionada2daId || horas2daEducadoraInput <= 0) {
+                  alert('Por favor selecciona una educadora y una cantidad válida de horas.');
+                  return;
+                }
+
+                if (onGuardarAsignacion) {
+                  const nuevaAsig: AsignacionHoraria = {
+                    id: `asig_codoc_parv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                    rbd: colegio.rbd,
+                    docenteId: docenteSeleccionada2daId,
+                    asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
+                    cursoId: cursoParvularioActivo.id,
+                    horasPedagogicasAula: horas2daEducadoraInput,
+                    periodo: 2027,
+                    esCoDocencia: true,
+                    esCoDocenciaParvularia: true,
+                    tipoApoyo: 'CO_DOCENCIA',
+                    esProporcionDocente: true
+                  };
+                  await onGuardarAsignacion(nuevaAsig);
+                }
+                setModalSegundaEducadoraOpen(false);
+              }}
+              className="p-4 space-y-4 text-xs"
+            >
+              {/* Resumen del Déficit a Cubrir */}
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-1.5">
+                <div className="flex justify-between items-center text-teal-950 font-bold">
+                  <span>Déficit de Atención de Aula:</span>
+                  <span className="text-sm font-black text-amber-700">{dotacionParvulariaCursoActivo.minutosDeficitTexto}</span>
+                </div>
+                <div className="flex justify-between items-center text-teal-800 text-[11px]">
+                  <span>Jornada de Contrato Proyectada:</span>
+                  <span className="font-extrabold text-indigo-700">{dotacionParvulariaCursoActivo.horasContratoSegundaEducadora} hrs (Régimen {dotacionParvulariaCursoActivo.regimenNormativoProporcion === '60_40' ? '60/40' : '65/35'})</span>
+                </div>
+                <div className="text-[10px] text-teal-700 pt-0.5 border-t border-teal-200/60">
+                  Titular con {dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h disponibles para aula aporta {dotacionParvulariaCursoActivo.minutosAulaTitularTexto} de los {dotacionParvulariaCursoActivo.permanenciaTexto} de permanencia de los párvulos.
+                </div>
+              </div>
+
+              {/* Selector de Educadora / Docente con Disponibilidad */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1.5 flex items-center justify-between">
+                  <span>Educadora o Docente a Asignar *</span>
+                  <span className="text-[10px] font-normal text-slate-400">({educadorasDisponibles.length} docentes en colegio)</span>
+                </label>
+                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 custom-scrollbar">
+                  {educadorasDisponibles.map(({ docente: docItem, horasContrato, horasAsignadas, horasLibres, esEducadora: esEd }) => {
+                    const estaSeleccionada = docenteSeleccionada2daId === docItem.id;
+                    return (
+                      <div
+                        key={docItem.id}
+                        onClick={() => setDocenteSeleccionada2daId(docItem.id)}
+                        className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                          estaSeleccionada 
+                            ? 'bg-teal-50 border-l-4 border-teal-600' 
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="docenteSegunda"
+                            checked={estaSeleccionada}
+                            onChange={() => setDocenteSeleccionada2daId(docItem.id)}
+                            className="text-teal-600 focus:ring-teal-500"
+                          />
+                          <div>
+                            <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <span>{docItem.nombres} {docItem.apellidos}</span>
+                              {esEd && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-teal-100 text-teal-800 border border-teal-200">
+                                  Educadora Párvulo
+                                </span>
+                              )}
+                              {docItem.id === docente.id && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600">
+                                  Titular Actual
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              RUN: {docItem.run} • Contrato: {horasContrato}h
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                            horasLibres > 0
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}>
+                            {horasLibres > 0 ? `${horasLibres}h Libres` : 'Sin horas libres'}
+                          </span>
+                          <span className="block text-[9px] text-slate-400 mt-0.5">
+                            {horasAsignadas}h asignadas
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Horas a Asignar */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                <div>
+                  <label className="block text-slate-800 font-bold mb-0.5">
+                    Horas de Aula / Co-docencia a Asignar (60 min):
+                  </label>
+                  <p className="text-[10px] text-slate-500">
+                    Sugerido por Ceil Matching: <strong>{dotacionParvulariaCursoActivo.horasContratoSegundaEducadora} hrs</strong>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <input
+                    type="number"
+                    min={1}
+                    max={44}
+                    value={horas2daEducadoraInput}
+                    onChange={(e) => setHoras2daEducadoraInput(Math.max(1, Number(e.target.value)))}
+                    className="w-20 text-center font-black text-base bg-white border border-teal-300 rounded-lg py-1 text-teal-900 focus:ring-2 focus:ring-teal-500 outline-none"
+                    required
+                  />
+                  <span className="text-xs font-bold text-slate-600">hrs</span>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalSegundaEducadoraOpen(false)}
+                  className="px-3.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Confirmar y Asignar Horas</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
