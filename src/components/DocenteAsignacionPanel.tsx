@@ -312,6 +312,17 @@ export function sonAsignaturasEquivalentes(asigA: string, asigB: string): boolea
     return false;
   }
 
+  // NUNCA considerar equivalente un Taller / Refuerzo / Libre Disposición con una asignatura regular del plan de estudio
+  // (salvo la excepción normativa oficial de 'Taller de Literatura' en 3°/4° Medio y 'Taller Laboral' en Especial)
+  const esTallerA = /\b(taller|reforzamiento|refuerzo|jec|libre disposicion)\b/i.test(aNorm);
+  const esTallerB = /\b(taller|reforzamiento|refuerzo|jec|libre disposicion)\b/i.test(bNorm);
+  const esTallerOficialA = aNorm.includes('taller de literatura') || aNorm.includes('taller laboral');
+  const esTallerOficialB = bNorm.includes('taller de literatura') || bNorm.includes('taller laboral');
+
+  if ((esTallerA && !esTallerOficialA && !esTallerB) || (esTallerB && !esTallerOficialB && !esTallerA)) {
+    return false;
+  }
+
   // Formación Diferenciada HC (18 HA) equivale a cualquiera de las 27 asignaturas de profundización
   const esDiferenciadaA = aNorm.includes('formacion diferenciada') || aNorm.includes('diferenciado hc');
   const esDiferenciadaB = bNorm.includes('formacion diferenciada') || bNorm.includes('diferenciado hc');
@@ -392,8 +403,15 @@ export function calcularDisponibilidadCurso(
     .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
   const todas: DisponibilidadAsignatura[] = infoPlan.asignaturas.map(asigPlan => {
+    const esAsigPlanTallerOficial = /taller de literatura|taller laboral/i.test(asigPlan.nombre);
     const horasAsig = asigsCurso
-      .filter(a => sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre))
+      .filter(a => {
+        // Un taller JEC, taller SEP o libre disposición NUNCA debe descontar horas del plan regular (salvo asignaturas oficiales como Taller de Literatura)
+        if (a.esTallerJec && !esAsigPlanTallerOficial) return false;
+        if (a.esTallerSep) return false;
+        if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigPlanTallerOficial) return false;
+        return sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre);
+      })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
     const horasDisp = Math.max(0, asigPlan.horas - horasAsig);
@@ -1216,7 +1234,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       horasPedagogicasAula: Number(regHoras),
       esTallerJec: esJec,
       esTallerSep: regEsTallerSep,
-      esProporcionDocente: false,
+      esProporcionDocente: regCursoId !== 'TRANSVERSAL',
       cursosCompartidosIds: regCompartir && regCursosCompartidos.length > 0 ? regCursosCompartidos : undefined,
       esDiferenciadoCompartido: regCompartir && regCursosCompartidos.length > 0
     };
