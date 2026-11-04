@@ -47,6 +47,8 @@ export function useColaboracionColegio({
 }) {
   const [usuariosEnColegio, setUsuariosEnColegio] = useState<PresenciaUsuario[]>([]);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const ultimoTrackRef = useRef<{ apartado: string; rbd: string; usuarioId: string } | null>(null);
+  const timerDebounceRef = useRef<any>(null);
 
   const cleanRbd = rbd ? rbd.trim() : '';
 
@@ -124,6 +126,11 @@ export function useColaboracionColegio({
     // 3. Suscribirse y publicar presencia inicial
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        ultimoTrackRef.current = {
+          apartado: apartadoActual,
+          rbd: cleanRbd,
+          usuarioId: usuarioActual.id
+        };
         await channel.track({
           usuarioId: usuarioActual.id,
           nombreCompleto: usuarioActual.nombreCompleto,
@@ -132,30 +139,60 @@ export function useColaboracionColegio({
           apartadoActivo: apartadoActual,
           rbd: cleanRbd,
           timestamp: Date.now()
-        });
+        }).catch(() => {});
       }
     });
 
     return () => {
+      if (timerDebounceRef.current) {
+        clearTimeout(timerDebounceRef.current);
+      }
       channel.unsubscribe();
       channelRef.current = null;
+      ultimoTrackRef.current = null;
     };
   }, [cleanRbd, periodo, usuarioActual?.id]);
 
-  // Actualizar el apartado en el que está trabajando actualmente
+  // Actualizar el apartado en el que está trabajando actualmente (con debounce y comparación para evitar rate limit)
   useEffect(() => {
-    if (channelRef.current && usuarioActual && cleanRbd) {
-      channelRef.current.track({
-        usuarioId: usuarioActual.id,
-        nombreCompleto: usuarioActual.nombreCompleto,
-        email: usuarioActual.email,
-        role: usuarioActual.role,
-        apartadoActivo: apartadoActual,
-        rbd: cleanRbd,
-        timestamp: Date.now()
-      }).catch(() => {});
+    if (!channelRef.current || !usuarioActual || !cleanRbd) return;
+
+    // Si ya enviamos el track para este mismo apartado, rbd y usuario, omitir
+    const prev = ultimoTrackRef.current;
+    if (prev && prev.apartado === apartadoActual && prev.rbd === cleanRbd && prev.usuarioId === usuarioActual.id) {
+      return;
     }
-  }, [apartadoActual, cleanRbd, usuarioActual]);
+
+    if (timerDebounceRef.current) {
+      clearTimeout(timerDebounceRef.current);
+    }
+
+    // Debounce de 300ms para evitar spam al navegar o cambiar tabs rápidamente
+    timerDebounceRef.current = setTimeout(() => {
+      if (channelRef.current) {
+        ultimoTrackRef.current = {
+          apartado: apartadoActual,
+          rbd: cleanRbd,
+          usuarioId: usuarioActual.id
+        };
+        channelRef.current.track({
+          usuarioId: usuarioActual.id,
+          nombreCompleto: usuarioActual.nombreCompleto,
+          email: usuarioActual.email,
+          role: usuarioActual.role,
+          apartadoActivo: apartadoActual,
+          rbd: cleanRbd,
+          timestamp: Date.now()
+        }).catch(() => {});
+      }
+    }, 300);
+
+    return () => {
+      if (timerDebounceRef.current) {
+        clearTimeout(timerDebounceRef.current);
+      }
+    };
+  }, [apartadoActual, cleanRbd, usuarioActual?.id, usuarioActual?.nombreCompleto, usuarioActual?.role]);
 
   return {
     usuariosEnColegio,

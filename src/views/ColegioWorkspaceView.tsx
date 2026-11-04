@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Scale, Users, BookOpen, Clock, ShieldCheck, LayoutGrid,
   FileSpreadsheet, Printer, ArrowRightLeft, FileUp, FileDown, Sparkles,
@@ -144,16 +144,21 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   } | null>(null);
   const [toastGdp, setToastGdp] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null);
 
-  // Colaboración multi-usuario en tiempo real
-  const { usuariosEnColegio, hayOtrosUsuarios } = useColaboracionColegio({
-    rbd: colegio?.rbd,
-    periodo: periodoActivo,
-    usuarioActual: usuarioActual ? {
+  // Colaboración multi-usuario en tiempo real (memoizado para evitar re-suscripciones innecesarias)
+  const usuarioColaboracion = useMemo(() => {
+    if (!usuarioActual) return null;
+    return {
       id: usuarioActual.id,
       nombreCompleto: usuarioActual.nombreCompleto,
       email: usuarioActual.email,
       role: usuarioActual.role
-    } : null,
+    };
+  }, [usuarioActual?.id, usuarioActual?.nombreCompleto, usuarioActual?.email, usuarioActual?.role]);
+
+  const { usuariosEnColegio, hayOtrosUsuarios } = useColaboracionColegio({
+    rbd: colegio?.rbd,
+    periodo: periodoActivo,
+    usuarioActual: usuarioColaboracion,
     apartadoActual: tabActiva,
     onCambioRemotoDetectado: (notif) => {
       const labelsApartados: Record<string, string> = {
