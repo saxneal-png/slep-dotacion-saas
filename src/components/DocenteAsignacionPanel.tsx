@@ -11,7 +11,9 @@ import {
   Sparkles,
   Check,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  X,
+  UserCheck
 } from 'lucide-react';
 import { Docente, AsignacionHoraria, CursoSae, Establecimiento, PlanEstudioCurricular } from '../types';
 import { 
@@ -31,6 +33,7 @@ interface DocenteAsignacionPanelProps {
   colegio: Establecimiento;
   cursos: CursoSae[];
   asignaciones: AsignacionHoraria[];
+  docentes?: Docente[];
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
 }
@@ -352,6 +355,7 @@ export interface DisponibilidadAsignatura {
   horasDisponibles: number;
   estado: 'DISPONIBLE' | 'CUBIERTA' | 'EXCEDIDA';
   caracter?: string;
+  horasCompensadasLibreDisposicion?: number;
 }
 
 export function esAsignacionCoDocenciaOApoyo(a: AsignacionHoraria): boolean {
@@ -402,6 +406,24 @@ export function calcularDisponibilidadCurso(
     .filter(a => (a.cursoId === curso.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(curso.id))) && esAsignacionCoDocenciaOApoyo(a))
     .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
+  // Libre Disposición / JEC: calcular las horas asignadas a talleres o asignaturas no presentes en el plan base
+  const horasLibrePlan = infoPlan.horasLibreDisposicion || (curso.regimen === 'JEC' ? 6 : 0);
+  
+  // Asignaciones que no coincidieron con ninguna asignatura obligatoria/base del plan son consideradas JEC/Libre Disposición
+  const asigsLibres = asigsCurso.filter(a => {
+    const esOficial = /taller de literatura|taller laboral/i.test(a.asignatura);
+    if (!esOficial && (a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))) return true;
+    const coincideConBase = infoPlan.asignaturas.some(asigPlan => sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre));
+    return !coincideConBase;
+  });
+
+  const horasTalleresJecAsignadas = asigsLibres.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+
+  // Compensación con Libre Disposición para cursos JEC (ej: Orientación de 0.5 HA a 1 o 2 HA)
+  // Según Ley N° 19.532, los establecimientos pueden destinar horas de Libre Disposición para fortalecer asignaturas del plan común.
+  let saldoLibreDisponible = Math.max(0, horasLibrePlan - horasTalleresJecAsignadas);
+  let totalCompensadoLibre = 0;
+
   const todas: DisponibilidadAsignatura[] = infoPlan.asignaturas.map(asigPlan => {
     const esAsigPlanTallerOficial = /taller de literatura|taller laboral/i.test(asigPlan.nombre);
     const horasAsig = asigsCurso
@@ -415,8 +437,21 @@ export function calcularDisponibilidadCurso(
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
     const horasDisp = Math.max(0, asigPlan.horas - horasAsig);
+    const horasExceso = Math.max(0, horasAsig - asigPlan.horas);
+
+    // Compensación automática con cargo a Libre Disposición para cursos JEC (especialmente Orientación o refuerzos)
+    let horasCompensadas = 0;
+    if (curso.regimen === 'JEC' && horasExceso > 0 && saldoLibreDisponible > 0) {
+      horasCompensadas = Math.min(horasExceso, saldoLibreDisponible);
+      saldoLibreDisponible -= horasCompensadas;
+      totalCompensadoLibre += horasCompensadas;
+    }
+
+    const excesoNoCubierto = horasExceso - horasCompensadas;
     const estado: 'DISPONIBLE' | 'CUBIERTA' | 'EXCEDIDA' = 
-      horasAsig >= asigPlan.horas ? (horasAsig > asigPlan.horas ? 'EXCEDIDA' : 'CUBIERTA') : 'DISPONIBLE';
+      horasAsig < asigPlan.horas 
+        ? 'DISPONIBLE' 
+        : (excesoNoCubierto > 0 ? 'EXCEDIDA' : 'CUBIERTA');
 
     return {
       nombre: asigPlan.nombre,
@@ -424,24 +459,15 @@ export function calcularDisponibilidadCurso(
       horasAsignadas: horasAsig,
       horasDisponibles: horasDisp,
       estado,
-      caracter: asigPlan.caracter
+      caracter: asigPlan.caracter,
+      horasCompensadasLibreDisposicion: horasCompensadas
     };
   });
 
   const disponibles = todas.filter(a => a.estado === 'DISPONIBLE');
   const cubiertas = todas.filter(a => a.estado !== 'DISPONIBLE');
 
-  // Libre Disposición / JEC: calcular las horas asignadas a talleres o asignaturas no presentes en el plan base
-  const horasLibrePlan = infoPlan.horasLibreDisposicion || (curso.regimen === 'JEC' ? 6 : 0);
-  
-  // Asignaciones que no coincidieron con ninguna asignatura obligatoria/base del plan son consideradas JEC/Libre Disposición
-  const asigsLibres = asigsCurso.filter(a => {
-    if (a.esTallerJec || /taller|jec|libre/i.test(a.asignatura)) return true;
-    const coincideConBase = infoPlan.asignaturas.some(asigPlan => sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre));
-    return !coincideConBase;
-  });
-
-  const horasLibreAsignadas = asigsLibres.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+  const horasLibreAsignadas = horasTalleresJecAsignadas + totalCompensadoLibre;
   const horasLibreDisponibles = Math.max(0, horasLibrePlan - horasLibreAsignadas);
 
   return {
@@ -522,18 +548,31 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     (docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0
   );
 
+  const esTrabajoNoAula = Boolean(
+    a.esTrabajoColaborativo || 
+    a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
+    (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+    (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
+  );
+
   const esApoyoAulaCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
+  const esDocenteDiferencialFila = docente.estamento === 'DOCENTE_DIFERENCIAL' || 
+    (docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0;
+
   const esProporcionalAula = Boolean(
-    a.esProporcionDocente === true || 
-    (esApoyoAulaCurso && a.esProporcionDocente !== false && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO')
+    esApoyoAulaCurso && !esTrabajoNoAula && (
+      esDocenteDiferencialFila || 
+      a.esProporcionDocente === true || 
+      (a.esProporcionDocente !== false && !esPie)
+    )
   );
 
   const [modoUnidad, setModoUnidad] = useState<'HA' | 'CRON'>(
-    esProporcionalAula || !esPie ? 'HA' : 'CRON'
+    esProporcionalAula ? 'HA' : 'CRON'
   );
 
   const [localHoras, setLocalHoras] = useState<number | string>(
-    (esProporcionalAula || !esPie)
+    esProporcionalAula
       ? getHorasAulaLectivaAsig(a)
       : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
   );
@@ -542,17 +581,20 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     setNombreManual(a.asignatura);
     setAsigTransversal(a.asignatura);
     const prop = Boolean(
-      a.esProporcionDocente === true || 
-      (a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO' && a.esProporcionDocente !== false && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO')
+      esApoyoAulaCurso && !esTrabajoNoAula && (
+        esDocenteDiferencialFila || 
+        a.esProporcionDocente === true || 
+        (a.esProporcionDocente !== false && !esPie)
+      )
     );
-    const nuevoModo = prop || !esPie ? 'HA' : 'CRON';
+    const nuevoModo = prop ? 'HA' : 'CRON';
     setModoUnidad(nuevoModo);
     setLocalHoras(
       nuevoModo === 'HA'
         ? getHorasAulaLectivaAsig(a)
         : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
     );
-  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.esProporcionDocente, a.cursoId, esPie, esCoDoc]);
+  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.esProporcionDocente, a.cursoId, esPie, esCoDoc, esTrabajoNoAula, esApoyoAulaCurso, esDocenteDiferencialFila]);
 
   const cursoActual = useMemo(() => {
     return cursos.find(c => c.id === a.cursoId) || null;
@@ -779,7 +821,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   <optgroup label="⚪ Asignaturas Ya Cubiertas en este Curso">
                     {disponibilidad.cubiertas.map(d => (
                       <option key={d.nombre} value={d.nombre}>
-                        {d.nombre} (Cubierta: {d.horasAsignadas}/{d.horasPlan} HA)
+                        {d.nombre} (Cubierta: {d.horasAsignadas}/{d.horasPlan} HA{d.horasCompensadasLibreDisposicion ? ` [+${d.horasCompensadasLibreDisposicion}h JEC]` : ''})
                       </option>
                     ))}
                   </optgroup>
@@ -1318,7 +1360,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                 <optgroup label={`⚪ Asignaturas Cubiertas al 100% (${datosDisp.cubiertas.length})`}>
                   {datosDisp.cubiertas.map((asig, idx) => (
                     <option key={`cub-${idx}`} value={asig.nombre}>
-                      ⚪ {asig.nombre} (Cubierta: {asig.horasAsignadas}/{asig.horasPlan} HA)
+                      ⚪ {asig.nombre} (Cubierta: {asig.horasAsignadas}/{asig.horasPlan} HA{asig.horasCompensadasLibreDisposicion ? ` [+${asig.horasCompensadasLibreDisposicion}h JEC]` : ''})
                     </option>
                   ))}
                 </optgroup>
@@ -1520,7 +1562,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
                 <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                 <span>
-                  <strong>{infoAsigSeleccionada.nombre} (Cubierta):</strong> Esta materia ya tiene sus <strong>{infoAsigSeleccionada.horasAsignadas}/{infoAsigSeleccionada.horasPlan} HA cubiertas</strong> en el plan de este curso.
+                  <strong>{infoAsigSeleccionada.nombre} (Cubierta):</strong> Esta materia ya tiene sus <strong>{infoAsigSeleccionada.horasAsignadas}/{infoAsigSeleccionada.horasPlan} HA cubiertas</strong> en el plan de este curso{infoAsigSeleccionada.horasCompensadasLibreDisposicion ? ` (${infoAsigSeleccionada.horasCompensadasLibreDisposicion} HA financiadas con cargo a Libre Disposición JEC)` : ''}.
                 </span>
               </div>
             )
@@ -1912,11 +1954,15 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
   colegio,
   cursos,
   asignaciones,
+  docentes = [],
   onGuardarAsignacion,
   onEliminarAsignacion
 }) => {
   const [formActivo, setFormActivo] = useState<TipoFormularioActivo>(null);
   const [planesDb, setPlanesDb] = useState<PlanEstudioCurricular[]>([]);
+  const [modalSegundaEducadoraOpen, setModalSegundaEducadoraOpen] = useState(false);
+  const [docenteSeleccionada2daId, setDocenteSeleccionada2daId] = useState<string>('');
+  const [horas2daEducadoraInput, setHoras2daEducadoraInput] = useState<number>(0);
 
   useEffect(() => {
     let cancel = false;
@@ -2023,6 +2069,20 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     return lista;
   }, [asignacionesDocente, cursos, cursoInspeccion]);
 
+  // Cálculo de Horas No Aula / Deducibles del docente
+  const horasNoAulaDocente = useMemo(() => {
+    const fnNoAula = (docente.funcionesNoAula && docente.funcionesNoAula.length > 0)
+      ? docente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : ((docente.horasCoordinacionPie || 0) + (docente.horasDirectivas || 0) + (docente.horasInspectorGeneral || 0) + (docente.horasTecnicoPedagogicas || 0) + (docente.horasCoordinacion || 0));
+    const trabajoColab = docente.horasTrabajoColaborativo || 0;
+    return fnNoAula + trabajoColab;
+  }, [docente]);
+
+  // Horas de contrato disponibles netas para docencia de aula
+  const horasContratoDisponiblesAula = useMemo(() => {
+    return Math.max(0, (docente.horasContrato || 0) - horasNoAulaDocente);
+  }, [docente.horasContrato, horasNoAulaDocente]);
+
   // Cálculo de dotación parvularia DTO 306 para el curso relevante
   const cursoParvularioActivo = useMemo(() => {
     if (cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel)) {
@@ -2038,10 +2098,12 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       colegio.porcentajePrioritarios,
       {
         horasContrato: docente.horasContrato || 0,
+        horasNoAulaDeducibles: horasNoAulaDocente,
+        horasContratoDisponiblesAula: horasContratoDisponiblesAula,
         aplicaArticulo69: Boolean(docente.aplicaArticulo69)
       }
     );
-  }, [cursoParvularioActivo, colegio.porcentajePrioritarios, docente.horasContrato, docente.aplicaArticulo69]);
+  }, [cursoParvularioActivo, colegio.porcentajePrioritarios, docente.horasContrato, horasNoAulaDocente, horasContratoDisponiblesAula, docente.aplicaArticulo69]);
 
   // Cálculo de Carga Horaria y Proporción Docente Ley 20.903 en tiempo real para este docente
   const resumenCargaHoraria = useMemo(() => {
@@ -2049,11 +2111,18 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       ((docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0 && 
        (docente.horasSubvencionGeneralTitular || 0) + (docente.horasSubvencionGeneralContrata || 0) === 0);
 
-    // Asignaciones vinculadas a curso con proporción activa o por defecto
+    // Asignaciones vinculadas a curso con proporción activa o por defecto normativo
     const asigsProporcionales = asignacionesDocente.filter(a => {
       const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-      const esTrabajoColab = Boolean(a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO');
-      return a.esProporcionDocente === true || (tieneCurso && !esTrabajoColab && a.esProporcionDocente !== false);
+      const esTrabajoNoAula = Boolean(
+        a.esTrabajoColaborativo || 
+        a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
+        (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+        (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
+      );
+      if (!tieneCurso || esTrabajoNoAula) return false;
+      if (isDocenteDiferencial) return true;
+      return a.esProporcionDocente === true || a.esProporcionDocente !== false;
     });
 
     let haLectivas65 = 0;
@@ -2119,6 +2188,29 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       audit
     };
   }, [asignacionesDocente, cursos, colegio.porcentajePrioritarios, docente]);
+
+  // Lista de Educadoras y Docentes de Aula disponibles en el colegio con su disponibilidad de horas
+  const educadorasDisponibles = useMemo(() => {
+    return docentes.map(d => {
+      const asigsD = asignaciones.filter(a => a.docenteId === d.id);
+      const horasAsignadas = asigsD.reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
+      const horasContrato = d.horasContrato || 0;
+      const horasLibres = Math.max(0, horasContrato - horasAsignadas);
+      const esEdParv = d.estamento === 'EDUCADORA_PARVULO' || Boolean(d.esEducadoraParvulo) || (d.cargoInstitucional && /p[aá]rvulo/i.test(d.cargoInstitucional));
+      return {
+        docente: d,
+        horasContrato,
+        horasAsignadas,
+        horasLibres,
+        esEducadora: esEdParv
+      };
+    }).sort((a, b) => {
+      // Priorizar primero educadoras de párvulos, luego mayor cantidad de horas libres
+      if (a.esEducadora && !b.esEducadora) return -1;
+      if (!a.esEducadora && b.esEducadora) return 1;
+      return b.horasLibres - a.horasLibres;
+    });
+  }, [docentes, asignaciones]);
 
   return (
     <div className="space-y-3.5">

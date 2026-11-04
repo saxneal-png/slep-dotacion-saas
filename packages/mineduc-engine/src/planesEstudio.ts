@@ -631,6 +631,7 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
   },
   "1_4_basico": {
     nombre: "1° a 4° año de Educación Básica",
+    referenciaFuente: "Decreto Exento N° 2960/2012 (Orientación 0.5 HA y Libre Disposición 6.5 HA)",
     regimen: {
       JEC: { total: 38, libre: 6.5 },
       No_JEC: { total: 30, libre: 0 }
@@ -644,6 +645,46 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
       { nombre: "Educación Física y Salud", JEC: 4, No_JEC: 3 },
       { nombre: "Orientación", JEC: 0.5, No_JEC: 0.5 },
       { nombre: "Tecnología", JEC: 1, No_JEC: 0.5 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 },
+      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 }
+    ]
+  },
+  "1_4_basico_orientacion_1h": {
+    nombre: "1° a 4° año de Educación Básica (Orientación 1 HA / Libre 6 HA)",
+    referenciaFuente: "Decreto Exento N° 2960/2012 y Ley N° 19.532 (Orientación regular con cargo a Libre Disposición)",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 8, No_JEC: 8 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 3, No_JEC: 3 },
+      { nombre: "Artes Visuales", JEC: 2, No_JEC: 2 },
+      { nombre: "Música", JEC: 2, No_JEC: 2 },
+      { nombre: "Educación Física y Salud", JEC: 4, No_JEC: 3 },
+      { nombre: "Orientación", JEC: 1, No_JEC: 1 },
+      { nombre: "Tecnología", JEC: 1, No_JEC: 0.5 },
+      { nombre: "Religión", JEC: 2, No_JEC: 2 },
+      { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 }
+    ]
+  },
+  "1_4_basico_orientacion_2h": {
+    nombre: "1° a 4° año de Educación Básica (Orientación 2 HA / Libre 6 HA)",
+    referenciaFuente: "Decreto Exento N° 2960/2012 (Orientación 2 HA y Ed. Física 3 HA)",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 30, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Lenguaje y Comunicación", JEC: 8, No_JEC: 8 },
+      { nombre: "Matemática", JEC: 6, No_JEC: 6 },
+      { nombre: "Historia, Geografía y Ciencias Sociales", JEC: 3, No_JEC: 3 },
+      { nombre: "Artes Visuales", JEC: 2, No_JEC: 2 },
+      { nombre: "Música", JEC: 2, No_JEC: 2 },
+      { nombre: "Educación Física y Salud", JEC: 3, No_JEC: 2 },
+      { nombre: "Orientación", JEC: 2, No_JEC: 1 },
+      { nombre: "Tecnología", JEC: 1, No_JEC: 1 },
       { nombre: "Religión", JEC: 2, No_JEC: 2 },
       { nombre: "Ciencias Naturales", JEC: 3, No_JEC: 3 }
     ]
@@ -1730,6 +1771,8 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
 
   // 1. Básica Regular
   addSimplePlan("1_4_basico", "1° a 4° Básico", "BASICA");
+  addSimplePlan("1_4_basico_orientacion_1h", "1° a 4° Básico (Orientación 1 HA / Libre 6 HA)", "BASICA");
+  addSimplePlan("1_4_basico_orientacion_2h", "1° a 4° Básico (Orientación 2 HA / Libre 6 HA)", "BASICA");
   addSimplePlan("5_6_basico", "5° a 6° Básico", "BASICA");
   addSimplePlan("7_8_basico", "7° a 8° Básico", "BASICA");
   addSimplePlan("7_8_basico_indigena", "7° a 8° año de Educación Básica - Con Sector Lengua Indígena", "BASICA");
@@ -2089,7 +2132,13 @@ export function obtenerPlanPorCurso(
         grupo = '3° y 4° Medio (Humanístico-Científico)';
       }
     } else {
-      grupo = '1° a 4° Básico';
+      if (c.includes('orientacion 2') || c.includes('orientacion 2h')) {
+        grupo = '1° a 4° Básico (Orientación 2 HA / Libre 6 HA)';
+      } else if (c.includes('orientacion 1') || c.includes('orientacion 1h')) {
+        grupo = '1° a 4° Básico (Orientación 1 HA / Libre 6 HA)';
+      } else {
+        grupo = '1° a 4° Básico';
+      }
     }
   } else if (c.includes('5°') || c.includes('6°') || c.includes('5o') || c.includes('6o') || c.includes('5 ') || c.includes('6 ')) {
     grupo = '5° a 6° Básico';

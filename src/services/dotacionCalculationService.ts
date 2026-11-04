@@ -192,7 +192,7 @@ export function calcularDiagnosticoColegio(
   let consolidadoParvularia: ConsolidadoDotacionParvulariaColegio | undefined = undefined;
 
   if (cursosParvularios.length > 0) {
-    const titularesMap = new Map<string, { horasContrato: number; aplicaArticulo69?: boolean }>();
+    const titularesMap = new Map<string, { horasContrato: number; horasNoAulaDeducibles?: number; aplicaArticulo69?: boolean }>();
 
     for (const c of cursosParvularios) {
       const asigTitular = asignaciones.find(
@@ -201,8 +201,16 @@ export function calcularDiagnosticoColegio(
       if (asigTitular) {
         const docTitular = docentes.find(d => d.id === asigTitular.docenteId);
         if (docTitular) {
+          // Calcular horas no aula deducibles (coordinación, UTP, directivas, colaboración PIE, funciones no aula)
+          const horasFuncNoAula = (docTitular.funcionesNoAula && docTitular.funcionesNoAula.length > 0)
+            ? docTitular.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+            : ((docTitular.horasCoordinacionPie || 0) + (docTitular.horasDirectivas || 0) + (docTitular.horasInspectorGeneral || 0) + (docTitular.horasTecnicoPedagogicas || 0) + (docTitular.horasCoordinacion || 0));
+
+          const horasTrabajoColab = (docTitular.horasTrabajoColaborativo || 0);
+
           titularesMap.set(c.id, {
             horasContrato: docTitular.horasContrato,
+            horasNoAulaDeducibles: horasFuncNoAula + horasTrabajoColab,
             aplicaArticulo69: docTitular.aplicaArticulo69
           });
         }
@@ -391,10 +399,16 @@ export function calcularDiagnosticoColegio(
     // Asignaciones de co-docencia PIE con curso: se calculan como horas de aula lectiva (45 minutos) con proporción Ley 20.903
     const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
       const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-      const noEsColab = !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO';
-      if (a.esProporcionDocente === true) return true;
-      if (a.esProporcionDocente === false) return false;
-      return isPieDoc && tieneCurso && noEsColab;
+      const esTrabajoNoAula = Boolean(
+        a.esTrabajoColaborativo || 
+        a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
+        (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+        (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
+      );
+      if (!tieneCurso || esTrabajoNoAula) return false;
+      // Para docente diferencial frente a curso en co-docencia de aula común, es SIEMPRE aula lectiva proporcional Ley 20.903
+      if (isPieDoc) return true;
+      return a.esProporcionDocente === true;
     });
     const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
       !asigsCoDocenciaPieProporcional.includes(a)
@@ -1004,10 +1018,16 @@ export function obtenerDocentesConsolidadosTerritorio(
       // Asignaciones de co-docencia PIE con curso: se calculan como horas de aula lectiva (45 minutos) con proporción Ley 20.903
       const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
         const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-        const noEsColab = !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO';
-        if (a.esProporcionDocente === true) return true;
-        if (a.esProporcionDocente === false) return false;
-        return isPieDoc && tieneCurso && noEsColab;
+        const esTrabajoNoAula = Boolean(
+          a.esTrabajoColaborativo || 
+          a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
+          (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+          (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
+        );
+        if (!tieneCurso || esTrabajoNoAula) return false;
+        // Para docente diferencial frente a curso en co-docencia de aula común, es SIEMPRE aula lectiva proporcional Ley 20.903
+        if (isPieDoc) return true;
+        return a.esProporcionDocente === true;
       });
       const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
         !asigsCoDocenciaPieProporcional.includes(a)

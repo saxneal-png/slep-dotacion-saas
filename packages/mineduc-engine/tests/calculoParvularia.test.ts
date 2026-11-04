@@ -105,6 +105,32 @@ describe('Motor de Dotación en Educación Parvularia (Ley 20.903, DTO 306/2007,
       expect(res.advertenciasNormativas.some(a => a.includes('Art. 69'))).toBe(true);
     });
 
+    it('Caso 4.1: Titular con contrato de 44h pero 6h deducibles por PIE y UTP (38h disponibles para aula)', () => {
+      // Caso oficial del usuario: contrato 44h, 3h colab PIE + 3h coord UTP = 6h no aula -> 38h disponibles aula
+      const res = calcularDotacionParvulariaCurso(
+        { nivel: 'NT1', regimen: 'JEC', matriculaProyectada: 20 },
+        40, // < 60% prioritarios -> Régimen 65/35
+        { 
+          horasContrato: 44, 
+          horasNoAulaDeducibles: 6 
+        }
+      );
+
+      expect(res.regimenNormativoProporcion).toBe('65_35');
+      expect(res.horasContratoTitular).toBe(44);
+      expect(res.horasDisponiblesAulaTitular).toBe(38);
+      // En 65/35: 38h contrato da exactamente 1.485 minutos (24h 45m)
+      expect(res.minutosAulaTitular).toBe(1485);
+      // Déficit: 2.125 - 1.485 = 640 minutos (10h 40m)
+      expect(res.minutosDeficit).toBe(640);
+      expect(res.segundaEducadoraRequerida).toBe(true);
+
+      // Ceil matching en 65/35: 16h = 630 min (< 640), 17h = 675 min (>= 640).
+      expect(res.horasContratoSegundaEducadora).toBe(17);
+      expect(res.minutosAulaSegundaEducadora).toBe(675);
+      expect(res.superavitMinutosAula).toBe(35); // 675 - 640 = 35 min
+    });
+
     it('Caso 5: Media Jornada (Sin JEC) no genera déficit con titular de 44h', () => {
       const resNt1 = calcularDotacionParvulariaCurso(
         { nivel: 'NT1', regimen: 'No JEC', matriculaProyectada: 18 },

@@ -237,10 +237,16 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       // Asignaciones de co-docencia PIE con curso: se calculan como horas de aula lectiva (45 minutos) con proporción Ley 20.903
       const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
         const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-        const noEsColab = !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO';
-        if (a.esProporcionDocente === true) return true;
-        if (a.esProporcionDocente === false) return false;
-        return isPieDoc && tieneCurso && noEsColab;
+        const esTrabajoNoAula = Boolean(
+          a.esTrabajoColaborativo || 
+          a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
+          (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+          (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
+        );
+        if (!tieneCurso || esTrabajoNoAula) return false;
+        // Para docente diferencial frente a curso en co-docencia de aula común, es SIEMPRE aula lectiva proporcional Ley 20.903
+        if (isPieDoc) return true;
+        return a.esProporcionDocente === true;
       });
       const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
         !asigsCoDocenciaPieProporcional.includes(a)
@@ -1127,6 +1133,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           colegio={colegio}
                           cursos={cursos}
                           asignaciones={asignaciones}
+                          docentes={docentes}
                           onGuardarAsignacion={onGuardarAsignacion}
                           onEliminarAsignacion={onEliminarAsignacion}
                         />

@@ -155,6 +155,8 @@ export interface InputCursoParvularia {
 
 export interface InputEducadoraTitular {
   horasContrato: number;
+  horasNoAulaDeducibles?: number;
+  horasContratoDisponiblesAula?: number;
   aplicaArticulo69?: boolean;
 }
 
@@ -167,6 +169,7 @@ export interface ResultadoDotacionParvulariaCurso {
   permanenciaMinutos: number;
   permanenciaTexto: string;
   horasContratoTitular: number;
+  horasDisponiblesAulaTitular?: number;
   minutosAulaTitular: number;
   minutosAulaTitularTexto: string;
   minutosDeficit: number;
@@ -207,17 +210,35 @@ export function calcularDotacionParvulariaCurso(
   // 3. Aporte de Aula de la Educadora Titular
   let minutosAulaTitular = 0;
   let horasContratoTitular = 0;
+  let horasDisponiblesAulaTitular = 0;
   const advertencias: string[] = [];
 
   if (educadoraTitular && educadoraTitular.horasContrato > 0) {
     horasContratoTitular = educadoraTitular.horasContrato;
-    const tramo = obtenerTramoMineduc(horasContratoTitular, regimenNormativo);
+    
+    // Determinar las horas de contrato efectivas para aula:
+    // Si se especifican horas disponibles para aula o se deducen horas no lectivas/funciones no aula
+    if (typeof educadoraTitular.horasContratoDisponiblesAula === 'number') {
+      horasDisponiblesAulaTitular = Math.max(0, Math.min(44, educadoraTitular.horasContratoDisponiblesAula));
+    } else if (typeof educadoraTitular.horasNoAulaDeducibles === 'number') {
+      horasDisponiblesAulaTitular = Math.max(0, horasContratoTitular - educadoraTitular.horasNoAulaDeducibles);
+    } else {
+      horasDisponiblesAulaTitular = horasContratoTitular;
+    }
+
+    if (horasDisponiblesAulaTitular < horasContratoTitular) {
+      advertencias.push(
+        `Educadora Titular con ${horasContratoTitular}h contrato tiene ${horasContratoTitular - horasDisponiblesAulaTitular}h en funciones no aula/colaboración. Horas disponibles para aula: ${horasDisponiblesAulaTitular}h.`
+      );
+    }
+
+    const tramo = obtenerTramoMineduc(horasDisponiblesAulaTitular, regimenNormativo);
     
     if (tramo) {
       minutosAulaTitular = tramo.lectivasMinutosCronologicos;
     } else {
       const prop = regimenNormativo === '60_40' ? 0.60 : 0.65;
-      minutosAulaTitular = Math.floor(horasContratoTitular * 60 * prop);
+      minutosAulaTitular = Math.floor(horasDisponiblesAulaTitular * 60 * prop);
     }
 
     // Si aplica Artículo 69 (rebaja por antigüedad), tope de 24 horas cronológicas de aula (1.440 min)
@@ -274,6 +295,7 @@ export function calcularDotacionParvulariaCurso(
     permanenciaMinutos,
     permanenciaTexto: formatearMinutosAHHMM(permanenciaMinutos),
     horasContratoTitular,
+    horasDisponiblesAulaTitular,
     minutosAulaTitular,
     minutosAulaTitularTexto: formatearMinutosAHHMM(minutosAulaTitular),
     minutosDeficit,

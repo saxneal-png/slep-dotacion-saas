@@ -1614,8 +1614,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     </h5>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       {planActivo.asignaturasBase.map((asig, i) => {
-                        const yaAsignada = asignacionesPlanRegularCurso.some(a => {
-                          const esAsigTallerOficial = /taller de literatura|taller laboral/i.test(asig.nombre);
+                        const esAsigTallerOficial = /taller de literatura|taller laboral/i.test(asig.nombre);
+                        const asigsDeEstaMateria = asignacionesPlanRegularCurso.filter(a => {
                           if (a.esTallerJec && !esAsigTallerOficial) return false;
                           if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigTallerOficial) return false;
                           return (
@@ -1623,6 +1623,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                             asig.nombre.toLowerCase().includes(a.asignatura.toLowerCase())
                           );
                         });
+                        const yaAsignada = asigsDeEstaMateria.length > 0;
+                        const horasAsignadasEstaMateria = asigsDeEstaMateria.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+                        const deltaJecCompensado = horasAsignadasEstaMateria > asig.horasSugeridas ? (horasAsignadasEstaMateria - asig.horasSugeridas) : 0;
 
                         return (
                           <div
@@ -1638,7 +1641,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                 {yaAsignada ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : null}
                                 <span className="truncate max-w-[130px]">{asig.nombre}</span>
                               </div>
-                              <div className="text-[10px] text-slate-500">Plan: {asig.horasSugeridas} HA</div>
+                              <div className="text-[10px] text-slate-500">
+                                Plan: {asig.horasSugeridas} HA{deltaJecCompensado > 0 ? ` (+${deltaJecCompensado}h JEC)` : ''}
+                              </div>
                             </div>
 
                             {!yaAsignada && (
@@ -1657,9 +1662,26 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       {/* Si el plan cuenta con horas de libre disposición JEC, mostrar tarjeta rápida para asignarlas */}
                       {planActivo.horasLibreDisposicion > 0 && (
                         (() => {
-                          const horasJecAsignadas = asignacionesPlanRegularCurso
+                          const horasTalleresJec = asignacionesPlanRegularCurso
                             .filter(a => a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))
                             .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+
+                          // Calcular excedente de asignaturas base absorbido legítimamente por Libre Disposición JEC (ej: Orientación de 0.5 a 1 o 2 HA)
+                          let excesoCompensadoBase = 0;
+                          for (const asigBase of planActivo.asignaturasBase) {
+                            const esTallerOficial = /taller de literatura|taller laboral/i.test(asigBase.nombre);
+                            const asigsDeEstaMateria = asignacionesPlanRegularCurso.filter(a => {
+                              if (a.esTallerJec && !esTallerOficial) return false;
+                              if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esTallerOficial) return false;
+                              return a.asignatura.toLowerCase().includes(asigBase.nombre.toLowerCase()) || asigBase.nombre.toLowerCase().includes(a.asignatura.toLowerCase());
+                            });
+                            const totalAsig = asigsDeEstaMateria.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+                            if (totalAsig > asigBase.horasSugeridas) {
+                              excesoCompensadoBase += (totalAsig - asigBase.horasSugeridas);
+                            }
+                          }
+
+                          const horasJecAsignadas = horasTalleresJec + excesoCompensadoBase;
                           const horasJecRestantes = Math.max(0, planActivo.horasLibreDisposicion - horasJecAsignadas);
                           const yaCompletada = horasJecRestantes === 0;
 
