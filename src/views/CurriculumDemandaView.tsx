@@ -1614,10 +1614,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     </h5>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       {planActivo.asignaturasBase.map((asig, i) => {
-                        const yaAsignada = asignacionesPlanRegularCurso.some(a =>
-                          a.asignatura.toLowerCase().includes(asig.nombre.toLowerCase()) ||
-                          asig.nombre.toLowerCase().includes(a.asignatura.toLowerCase())
-                        );
+                        const yaAsignada = asignacionesPlanRegularCurso.some(a => {
+                          const esAsigTallerOficial = /taller de literatura|taller laboral/i.test(asig.nombre);
+                          if (a.esTallerJec && !esAsigTallerOficial) return false;
+                          if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigTallerOficial) return false;
+                          return (
+                            a.asignatura.toLowerCase().includes(asig.nombre.toLowerCase()) ||
+                            asig.nombre.toLowerCase().includes(a.asignatura.toLowerCase())
+                          );
+                        });
 
                         return (
                           <div
