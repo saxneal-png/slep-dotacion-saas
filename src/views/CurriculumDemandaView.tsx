@@ -544,22 +544,28 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     }
 
     // 3. Asignar Horas Colaborativas si faltan (3.0 hrs Art. 86)
-    if (desglosePieAsignado.colab < 3.0 && docentesAula.length > 0) {
-      const docAula = docentesAula[0];
-      const asigColab: AsignacionHoraria = {
-        id: `auto-pie-colab-${cursoActivo.id}-${Date.now()}`,
-        rbd: colegio.rbd,
-        periodo: periodoActivo,
-        cursoId: cursoActivo.id,
-        docenteId: docAula.id,
-        asignatura: 'Trabajo Colaborativo / Co-Planificación (Art. 86)',
-        horasPedagogicasAula: 4,
-        horasCronologicasPie: 3.0,
-        esCoDocencia: true,
-        tipoApoyo: 'Trabajo Colaborativo / Co-Planificación'
-      };
-      await onGuardarAsignacion(asigColab);
-      asignadasCount++;
+    if (desglosePieAsignado.colab < 3.0) {
+      // Buscar un docente de aula que efectivamente tenga horas asignadas en este curso
+      const docAula = docentesAula.find(d => 
+        asignaciones.some(a => a.cursoId === cursoActivo.id && (a.docenteId === d.id || a.coDocenteId === d.id))
+      );
+      if (docAula) {
+        const asigColab: AsignacionHoraria = {
+          id: `auto-pie-colab-${cursoActivo.id}-${Date.now()}`,
+          rbd: colegio.rbd,
+          periodo: periodoActivo,
+          cursoId: cursoActivo.id,
+          docenteId: docAula.id,
+          asignatura: 'Trabajo Colaborativo / Co-Planificación (Art. 86)',
+          horasPedagogicasAula: 4,
+          horasCronologicasPie: 3.0,
+          esCoDocencia: true,
+          esTrabajoColaborativo: true,
+          tipoApoyo: 'Trabajo Colaborativo / Co-Planificación'
+        };
+        await onGuardarAsignacion(asigColab);
+        asignadasCount++;
+      }
     }
 
     alert(`¡Asignación Inteligente Jidoka Completada! Se generaron ${asignadasCount} asignaciones PIE para ${cursoActivo.nivel} ${cursoActivo.letra}.`);

@@ -57,12 +57,16 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
       : calcularDemandaNormativaPieCurso(c.alumnosNeet, c.alumnosNeep, isJec);
 
     const asigsCurso = asignaciones.filter(a => a.cursoId === c.id);
-    const asigsPie = asigsCurso.filter(a => 
-      Boolean(a.horasCronologicasPie) || 
-      a.esCoDocencia || 
-      (a.tipoApoyo && /pie|diferencial|recurso|co-docencia|pae/i.test(a.tipoApoyo)) ||
-      (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura))
-    );
+    const asigsPie = asigsCurso.filter(a => {
+      if (a.esTallerSep || (a.tipoApoyo && /sep/i.test(a.tipoApoyo))) return false;
+      const doc = docentes.find(d => d.id === a.docenteId || d.id === a.coDocenteId);
+      const esDocPie = doc && (doc.estamento === 'DOCENTE_DIFERENCIAL' || doc.estamento === 'PROFESIONAL_PAE');
+      return Boolean(
+        esDocPie ||
+        (a.tipoApoyo && /pie|decreto 170|recurso|pae/i.test(a.tipoApoyo)) ||
+        (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura))
+      );
+    });
     const horasPieAsignadasCurso = asigsPie.reduce((s, a) => s + (a.horasCronologicasPie || a.horasPedagogicasAula * 0.75), 0);
     return { curso: c, demanda: dem, asigsPie, horasPieAsignadasCurso, esEpja };
   });

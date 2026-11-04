@@ -336,7 +336,6 @@ export function calcularDiagnosticoColegio(
     );
 
     const esPieAsig = (a: any) => !esSepAsig(a) && Boolean(
-      (a.horasCronologicasPie && a.horasCronologicasPie > 0) || 
       (a.tipoApoyo && /pie|decreto 170|aula de recurso|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) || 
       (a.asignatura && /pie|decreto 170|aula de recurso/i.test(a.asignatura)) ||
       doc.estamento === 'DOCENTE_DIFERENCIAL' || 
@@ -553,7 +552,7 @@ export function calcularDiagnosticoColegio(
     );
     const esSep = Boolean(asig.esTallerSep || asig.tipoApoyo === 'TALLER_SEP');
     const esColab = Boolean(asig.esTrabajoColaborativo || asig.tipoApoyo === 'TRABAJO_COLABORATIVO' || (asig.asignatura && /colaborativ/i.test(asig.asignatura)));
-    const esPie = Boolean((asig.asignatura && /pie/i.test(asig.asignatura)) || (asig.horasCronologicasPie && asig.horasCronologicasPie > 0));
+    const esPie = Boolean((asig.tipoApoyo && /pie|decreto 170|recurso/i.test(asig.tipoApoyo)) || (asig.asignatura && /pie|decreto 170|recurso/i.test(asig.asignatura)));
 
     // La co-docencia, independiente de la subvención con la que se financie, no debe sumar a las horas del plan de estudio del curso
     if (esCoDoc || esSep || esColab || esPie) {
@@ -912,8 +911,7 @@ export function obtenerDocentesConsolidadosTerritorio(
       );
 
       const esPieAsig = (a: any) => !esSepAsig(a) && Boolean(
-        (a.horasCronologicasPie && a.horasCronologicasPie > 0) || 
-        (a.tipoApoyo && /pie|decreto 170|aula de recurso|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) || 
+      (a.tipoApoyo && /pie|decreto 170|aula de recurso|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) || 
         (a.asignatura && /pie|decreto 170|aula de recurso/i.test(a.asignatura)) ||
         doc.estamento === 'DOCENTE_DIFERENCIAL' || 
         (contratoPieDoc > 0 && subTotalDoc === 0 && contratoSepDoc === 0)

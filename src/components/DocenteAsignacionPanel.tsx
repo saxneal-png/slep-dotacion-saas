@@ -24,7 +24,8 @@ import {
   buscarContratoMinimoPorTabla,
   calcularAuditoriaDocenteMultitramo,
   esNivelParvulario,
-  calcularDotacionParvulariaCurso
+  calcularDotacionParvulariaCurso,
+  CATALOGO_BCEP_PARVULARIA
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
 
@@ -366,9 +367,8 @@ export function esAsignacionCoDocenciaOApoyo(a: AsignacionHoraria): boolean {
     a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
     a.tipoApoyo === 'REFUERZO_AULA' ||
     a.tipoApoyo === 'APOYO_DOCENTE' ||
-    (a.tipoApoyo && /co-docencia|codocencia|refuerzo|agrupaci[oó]n|apoyo/i.test(a.tipoApoyo)) ||
-    (a.asignatura && /co-docencia|codocencia|refuerzo aula|agrupaci[oó]n/i.test(a.asignatura)) ||
-    Boolean(a.horasCronologicasPie && a.horasCronologicasPie > 0)
+    (a.tipoApoyo && /co-docencia|codocencia|refuerzo|agrupaci[oó]n|apoyo|decreto 170/i.test(a.tipoApoyo)) ||
+    (a.asignatura && /co-docencia|codocencia|refuerzo aula|agrupaci[oó]n|apoyo pie/i.test(a.asignatura))
   );
 }
 
@@ -509,13 +509,9 @@ interface FilaAsignacionProps {
 }
 
 export function getHorasAulaLectivaAsig(a: Partial<AsignacionHoraria>): number {
-  if (a.horasPedagogicasAula && a.horasCronologicasPie && Math.abs(a.horasPedagogicasAula * 0.75 - a.horasCronologicasPie) < 0.1) {
-    return a.horasPedagogicasAula;
-  }
-  if (a.horasCronologicasPie && a.horasPedagogicasAula === Math.round(a.horasCronologicasPie * 1.333)) {
-    return a.horasCronologicasPie;
-  }
-  return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+  if (a.horasPedagogicasAula) return a.horasPedagogicasAula;
+  if (a.horasCronologicasPie) return Math.round(a.horasCronologicasPie * 1.333);
+  return 0;
 }
 
 const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
@@ -539,14 +535,19 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   a.tipoApoyo === 'APOYO_DOCENTE' ||
                   (a.asignatura && /co.*docenc|codocenc|agrupaci/i.test(a.asignatura));
 
-  const esPie = Boolean(
-    (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
-    (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
-    (a.asignatura && a.asignatura.toLowerCase().includes('pie')) ||
-    (a.horasCronologicasPie && a.horasCronologicasPie > 0) ||
-    docente.estamento === 'DOCENTE_DIFERENCIAL' ||
-    (docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0
+  // Una asignación es PIE única y exclusivamente si su denominación o tipo lo indica,
+  // o si el docente asignado es de estamento diferencial / 100% financiamiento PIE.
+  // JAMÁS debe activarse por tener horas numéricas cronológicas.
+  const esAsignacionPie = Boolean(
+    (a.tipoApoyo && /pie|decreto 170|recurso|multidisciplinario|cl[ií]nico/i.test(a.tipoApoyo)) ||
+    (a.asignatura && /pie|decreto 170|aula de recurso/i.test(a.asignatura))
   );
+
+  const esDocentePiePuro = docente.estamento === 'DOCENTE_DIFERENCIAL' ||
+    ((docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0 &&
+     (docente.horasSubvencionGeneralTitular || 0) + (docente.horasSubvencionGeneralContrata || 0) === 0);
+
+  const esPie = esAsignacionPie || (esDocentePiePuro && !a.esTallerSep && !a.esTallerJec);
 
   const esTrabajoNoAula = Boolean(
     a.esTrabajoColaborativo || 
@@ -559,55 +560,36 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   const esDocenteDiferencialFila = docente.estamento === 'DOCENTE_DIFERENCIAL' || 
     (docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0;
 
-  const esProporcionalAula = Boolean(
-    esApoyoAulaCurso && !esTrabajoNoAula && (
-      esDocenteDiferencialFila || 
-      a.esProporcionDocente === true || 
-      (a.esProporcionDocente !== false && !esPie)
-    )
-  );
-
-  const [modoUnidad, setModoUnidad] = useState<'HA' | 'CRON'>(
-    esProporcionalAula ? 'HA' : 'CRON'
-  );
-
+  // En todas las asignaturas asignadas a curso, las horas son siempre pedagógicas (45m)
+  // y sujetas a cálculo de proporción docente Ley 20.903 (salvo párvulos con DTO 306).
   const [localHoras, setLocalHoras] = useState<number | string>(
-    esProporcionalAula
-      ? getHorasAulaLectivaAsig(a)
+    esApoyoAulaCurso
+      ? (a.horasPedagogicasAula || a.horasCronologicasPie || 0)
       : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
   );
 
   useEffect(() => {
     setNombreManual(a.asignatura);
     setAsigTransversal(a.asignatura);
-    const prop = Boolean(
-      esApoyoAulaCurso && !esTrabajoNoAula && (
-        esDocenteDiferencialFila || 
-        a.esProporcionDocente === true || 
-        (a.esProporcionDocente !== false && !esPie)
-      )
-    );
-    const nuevoModo = prop ? 'HA' : 'CRON';
-    setModoUnidad(nuevoModo);
     setLocalHoras(
-      nuevoModo === 'HA'
-        ? getHorasAulaLectivaAsig(a)
+      esApoyoAulaCurso
+        ? (a.horasPedagogicasAula || a.horasCronologicasPie || 0)
         : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
     );
-  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.esProporcionDocente, a.cursoId, esPie, esCoDoc, esTrabajoNoAula, esApoyoAulaCurso, esDocenteDiferencialFila]);
+  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.cursoId, esApoyoAulaCurso]);
 
-  // Auto-sincronización a BD: si es docente diferencial frente a curso en co-docencia de aula común, asegurar esProporcionDocente: true
+  // Asegurar proporción docente activa en toda asignación frente a curso
   useEffect(() => {
-    if (esDocenteDiferencialFila && esApoyoAulaCurso && !esTrabajoNoAula && a.esProporcionDocente !== true && onGuardarAsignacion) {
-      const ha = getHorasAulaLectivaAsig(a);
+    if (esApoyoAulaCurso && !esTrabajoNoAula && a.esProporcionDocente !== true && onGuardarAsignacion) {
+      const ha = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
       onGuardarAsignacion({
         ...a,
         horasPedagogicasAula: ha,
-        horasCronologicasPie: Math.round(ha * 0.75 * 10) / 10,
-        esProporcionDocente: true
+        esProporcionDocente: true,
+        horasCronologicasPie: esPie ? Math.round(ha * 0.75 * 10) / 10 : undefined
       });
     }
-  }, [a.id, esDocenteDiferencialFila, esApoyoAulaCurso, esTrabajoNoAula, a.esProporcionDocente]);
+  }, [a.id, esApoyoAulaCurso, esTrabajoNoAula, a.esProporcionDocente, esPie]);
 
   const cursoActual = useMemo(() => {
     return cursos.find(c => c.id === a.cursoId) || null;
@@ -932,28 +914,26 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
               value={localHoras}
               min={1}
               max={44}
-              step={modoUnidad === 'CRON' ? '0.5' : '1'}
+              step={esApoyoAulaCurso ? '1' : '0.5'}
               onChange={(e) => setLocalHoras(e.target.value === '' ? '' : Number(e.target.value))}
               onBlur={async () => {
                 const h = Number(localHoras);
                 if (h > 0 && onGuardarAsignacion) {
-                  if (modoUnidad === 'HA') {
-                    const cron = Math.round(h * 0.75 * 10) / 10;
+                  if (esApoyoAulaCurso) {
                     if (h !== a.horasPedagogicasAula || a.esProporcionDocente !== true) {
                       await onGuardarAsignacion({ 
                         ...a, 
                         horasPedagogicasAula: h,
-                        horasCronologicasPie: cron,
+                        horasCronologicasPie: esPie ? Math.round(h * 0.75 * 10) / 10 : undefined,
                         esProporcionDocente: true
                       });
                     }
                   } else {
-                    const ped = Math.round(h * 1.333);
                     if (h !== a.horasCronologicasPie || a.esProporcionDocente !== false) {
                       await onGuardarAsignacion({ 
                         ...a, 
                         horasCronologicasPie: h, 
-                        horasPedagogicasAula: ped,
+                        horasPedagogicasAula: Math.round(h * 1.333),
                         esProporcionDocente: false 
                       });
                     }
@@ -973,48 +953,18 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                 h (60m)
               </span>
             ) : esApoyoAulaCurso ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  const nuevoModo = modoUnidad === 'HA' ? 'CRON' : 'HA';
-                  setModoUnidad(nuevoModo);
-                  const h = Number(localHoras) || 4;
-                  if (nuevoModo === 'HA') {
-                    const ped = a.horasPedagogicasAula || Math.round(h * 1.333) || 4;
-                    setLocalHoras(ped);
-                    if (onGuardarAsignacion) {
-                      await onGuardarAsignacion({
-                        ...a,
-                        horasPedagogicasAula: ped,
-                        horasCronologicasPie: Math.round(ped * 0.75 * 10) / 10,
-                        esProporcionDocente: true
-                      });
-                    }
-                  } else {
-                    const cron = a.horasCronologicasPie || Math.round(h * 0.75 * 10) / 10 || 3;
-                    setLocalHoras(cron);
-                    if (onGuardarAsignacion) {
-                      await onGuardarAsignacion({
-                        ...a,
-                        horasCronologicasPie: cron,
-                        horasPedagogicasAula: Math.round(cron * 1.333),
-                        esProporcionDocente: false
-                      });
-                    }
-                  }
-                }}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
-                  modoUnidad === 'HA'
-                    ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
-                    : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
-                }`}
-                title={modoUnidad === 'HA' ? 'Horas Pedagógicas (45 min) de aula con Proporción Ley 20.903 activa. Clic para cambiar a cronológicas exentas.' : 'Horas Cronológicas exentas. Clic para computar como Horas Pedagógicas con proporción docente.'}
+              <span 
+                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300"
+                title="Horas Pedagógicas (45 min) lectivas frente a curso, sujetas a Proporción Docente Ley 20.903."
               >
-                {modoUnidad === 'HA' ? 'HA (45m)' : 'hrs cron'}
-              </button>
+                HA (45m)
+              </span>
             ) : (
-              <span className="text-[10px] text-slate-500 font-semibold">
-                {modoUnidad === 'CRON' ? 'hrs cron' : 'HA (45m)'}
+              <span 
+                className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300"
+                title="Horas Cronológicas (60 min) fuera de curso o exentas de proporción."
+              >
+                hrs cron
               </span>
             )}
           </div>
@@ -1022,7 +972,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
             <span className="text-[9px] text-teal-700 font-bold flex items-center gap-0.5" title="Docencia directa y permanencia DTO 306/2007 (60 min/hora)">
               👶 DTO 306 (60m)
             </span>
-          ) : esApoyoAulaCurso && modoUnidad === 'HA' && (
+          ) : esApoyoAulaCurso && (
             <span className="text-[9px] text-purple-700 font-bold flex items-center gap-0.5" title={`Horas lectivas frente a curso computadas con Proporción Docente Ley 20.903 (${cursoActual?.regimenProporcion === '60_40' ? '60/40' : '65/35'})`}>
               ⚖️ Aula {cursoActual?.regimenProporcion === '60_40' ? '60/40' : '65/35'}
             </span>
@@ -1045,7 +995,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
         ) : esPie ? (
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 inline-flex items-center gap-1">
             <ShieldCheck className="w-3 h-3 text-purple-600" />
-            <span>{a.tipoApoyo || 'Apoyo PIE Dec. 170'}</span>
+            <span>{a.tipoApoyo || a.asignatura || 'Apoyo PIE Dec. 170'}</span>
           </span>
         ) : esCoDoc ? (
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200 inline-flex items-center gap-1">
@@ -1208,6 +1158,10 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     );
   }, [cursoSeleccionado, infoPlan.nombrePlan, infoPlan.categoria]);
 
+  const esParvularioForm = useMemo(() => {
+    return Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
+  }, [cursoSeleccionado]);
+
   const esModoPersonalizado = 
     regCursoId === 'TRANSVERSAL' ||
     tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ||
@@ -1218,6 +1172,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
 
     const matchProf = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === valor.toLowerCase());
     const matchComunElec = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => valor.toLowerCase().includes(c.nombre.toLowerCase()));
+    const matchBcep = CATALOGO_BCEP_PARVULARIA.find(b => b.nucleo.toLowerCase() === valor.toLowerCase());
 
     if (valor.startsWith('__TALLER_EXISTENTE__:')) {
       const nombreTaller = valor.replace('__TALLER_EXISTENTE__:', '');
@@ -1231,6 +1186,10 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     } else if (valor === '__OTRO_PERSONALIZADO__') {
       setRegNombreCustom('');
       setRegHoras(2);
+    } else if (matchBcep) {
+      setRegNombreCustom('');
+      const hrsBcep = infoPlan.esJec ? matchBcep.horasJecCronologicas : matchBcep.horasMediaJornadaCronologicas;
+      setRegHoras(hrsBcep);
     } else if (matchProf) {
       setRegNombreCustom('');
       setRegHoras(6);
@@ -1379,6 +1338,39 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                 </optgroup>
               )}
 
+              {esParvularioForm && (
+                <>
+                  <optgroup label="👶 BCEP - Ámbito Desarrollo Personal y Social">
+                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Desarrollo Personal y Social').map(b => (
+                      <option key={b.id} value={b.nucleo}>
+                        🌱 {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🗣️ BCEP - Ámbito Comunicación Integral">
+                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Comunicación Integral').map(b => (
+                      <option key={b.id} value={b.nucleo}>
+                        🗣️ {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🔍 BCEP - Ámbito Interacción y Comprensión del Entorno">
+                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Interacción y Comprensión del Entorno').map(b => (
+                      <option key={b.id} value={b.nucleo}>
+                        🔍 {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="🧩 BCEP - Experiencias Integradas & Libre Disposición">
+                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Experiencias Integradas y Libre Disposición').map(b => (
+                      <option key={b.id} value={b.nucleo}>
+                        🧩 {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
+                      </option>
+                    ))}
+                  </optgroup>
+                </>
+              )}
+
               {esMedio34Form && (
                 <>
                   <optgroup label="✨ Plan Común Electivo (3° y 4° Medio - 2 HA)">
@@ -1447,24 +1439,25 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           </div>
         )}
 
-        {/* 4. HORAS PEDAGÓGICAS DE AULA */}
-        <div className="w-24">
+        {/* 4. HORAS PEDAGÓGICAS DE AULA / CRONOLÓGICAS PARVULARIA */}
+        <div className={esParvularioForm ? 'w-28' : 'w-24'}>
           <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
             <Clock className="w-3.5 h-3.5 text-slate-500" />
-            <span>Horas Aula</span>
+            <span>{esParvularioForm ? 'Horas Aula (60m)' : 'Horas Aula'}</span>
           </label>
           <div className="flex items-center gap-1">
             <input
               type="number"
+              step={esParvularioForm ? '0.1' : '1'}
               value={regHoras}
               onChange={(e) => setRegHoras(Number(e.target.value))}
               onFocus={(e) => e.target.select()}
               className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs text-center font-black focus:ring-2 focus:ring-orange-500 focus:outline-none"
-              min={1}
+              min={0.5}
               max={44}
               required
             />
-            <span className="text-[10px] font-bold text-slate-500">HA</span>
+            <span className="text-[10px] font-bold text-slate-500">{esParvularioForm ? 'hrs' : 'HA'}</span>
           </div>
         </div>
 
@@ -2225,14 +2218,50 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     });
   }, [docentes, asignaciones]);
 
+  // Detección de posibles asignaciones duplicadas de este docente
+  const idsDuplicadosSugeridos = useMemo(() => {
+    const vistos = new Map<string, string>(); // clave -> id
+    const duplicados: string[] = [];
+    asignacionesDocente.forEach(a => {
+      const normAsig = (a.asignatura || '').trim().toLowerCase();
+      const clave = `${a.cursoId || 'TRANSVERSAL'}_${normAsig}`;
+      if (vistos.has(clave)) {
+        duplicados.push(a.id);
+      } else {
+        vistos.set(clave, a.id);
+      }
+    });
+    return duplicados;
+  }, [asignacionesDocente]);
+
+  const handleLimpiarDuplicados = async () => {
+    if (!onEliminarAsignacion || idsDuplicadosSugeridos.length === 0) return;
+    if (confirm(`Se detectaron ${idsDuplicadosSugeridos.length} asignaciones duplicadas para ${docente.nombres}. ¿Deseas depurarlas para conservar una sola asignación por asignatura?`)) {
+      for (const id of idsDuplicadosSugeridos) {
+        await onEliminarAsignacion(id);
+      }
+    }
+  };
+
   return (
     <div className="space-y-3.5">
       {/* Barra de Acciones / Botones de Asignación Rápida */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200">
-        <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+        <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
           <Layers className="w-4 h-4 text-orange-600" />
           <span>Carga Horaria & Asignaciones de {docente.nombres} {docente.apellidos}</span>
           <span className="text-[11px] font-normal text-slate-500">({asignacionesDocente.length} asignaciones)</span>
+          {idsDuplicadosSugeridos.length > 0 && onEliminarAsignacion && (
+            <button
+              type="button"
+              onClick={handleLimpiarDuplicados}
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded shadow-2xs transition-colors ml-1"
+              title={`Depurar ${idsDuplicadosSugeridos.length} asignaciones duplicadas en este docente`}
+            >
+              <Sparkles className="w-3 h-3 text-amber-600" />
+              <span>Depurar Duplicados ({idsDuplicadosSugeridos.length})</span>
+            </button>
+          )}
         </h4>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -2278,133 +2307,133 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
         </div>
       </div>
 
-      {/* Tarjeta Resumen: Cómputo de Carga Horaria & Proporción Docente (Ley 20.903) */}
-      <div className="bg-gradient-to-r from-slate-50 via-indigo-50/20 to-purple-50/20 border border-slate-200/90 rounded-xl p-3.5 shadow-2xs space-y-2.5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-slate-200/60 pb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-              <span>⚖️ Cómputo de Carga Horaria & Proporción Docente (Ley 20.903)</span>
-            </span>
-            {esEducadora && (
+      {/* Tarjeta Resumen: Cómputo de Carga Horaria & Proporción Docente (Ley 20.903) - Exclusivo para Educadoras de Párvulo */}
+      {esEducadora && (
+        <div className="bg-gradient-to-r from-slate-50 via-indigo-50/20 to-purple-50/20 border border-slate-200/90 rounded-xl p-3.5 shadow-2xs space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-slate-200/60 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>⚖️ Cómputo de Carga Horaria & Proporción Docente (Ley 20.903)</span>
+              </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-100 text-teal-800 border border-teal-200">
                 👶 Educadora de Párvulos (DTO 306)
               </span>
-            )}
-            {resumenCargaHoraria.isDocenteDiferencial && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">
-                🛡️ Docente Diferencial PIE
+              {resumenCargaHoraria.isDocenteDiferencial && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">
+                  🛡️ Docente Diferencial PIE
+                </span>
+              )}
+            </div>
+            <span className="text-[11px] text-slate-500 font-medium">
+              Jornada Contratada: <strong className="text-slate-800 font-bold">{resumenCargaHoraria.horasContratoReal} hrs cronológicas</strong>
+            </span>
+          </div>
+
+          {/* Indicadores Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            {/* 1. Horas Aula Lectivas (45 min) */}
+            <div className="bg-white border border-indigo-100 rounded-lg p-2.5 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">1. Horas Aula (45m)</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-black text-indigo-700">{resumenCargaHoraria.totalHaLectivas}</span>
+                <span className="text-xs font-bold text-slate-500">HA</span>
+              </div>
+              <span className="text-[10px] text-slate-500 block truncate" title={`${resumenCargaHoraria.haLectivas65} HA en 65/35, ${resumenCargaHoraria.haLectivas60} HA en 60/40`}>
+                {resumenCargaHoraria.haLectivas65} HA (65/35){resumenCargaHoraria.haLectivas60 > 0 ? ` • ${resumenCargaHoraria.haLectivas60} HA (60/40)` : ''}
               </span>
-            )}
-          </div>
-          <span className="text-[11px] text-slate-500 font-medium">
-            Jornada Contratada: <strong className="text-slate-800 font-bold">{resumenCargaHoraria.horasContratoReal} hrs cronológicas</strong>
-          </span>
-        </div>
-
-        {/* Indicadores Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-          {/* 1. Horas Aula Lectivas (45 min) */}
-          <div className="bg-white border border-indigo-100 rounded-lg p-2.5 shadow-2xs">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">1. Horas Aula (45m)</span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg font-black text-indigo-700">{resumenCargaHoraria.totalHaLectivas}</span>
-              <span className="text-xs font-bold text-slate-500">HA</span>
             </div>
-            <span className="text-[10px] text-slate-500 block truncate" title={`${resumenCargaHoraria.haLectivas65} HA en 65/35, ${resumenCargaHoraria.haLectivas60} HA en 60/40`}>
-              {resumenCargaHoraria.haLectivas65} HA (65/35){resumenCargaHoraria.haLectivas60 > 0 ? ` • ${resumenCargaHoraria.haLectivas60} HA (60/40)` : ''}
-            </span>
-          </div>
 
-          {/* 2. Contrato Req. por Aula */}
-          <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">2. Contrato Req. Aula</span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg font-black text-slate-800">{resumenCargaHoraria.reqContratoAulaTotal}</span>
-              <span className="text-xs font-bold text-slate-500">hrs</span>
-            </div>
-            <span className="text-[10px] text-slate-400 block">
-              Tabla Ley 20.903
-            </span>
-          </div>
-
-          {/* 3. Funciones No Aula / Coordinación */}
-          <div className="bg-white border border-purple-100 rounded-lg p-2.5 shadow-2xs">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">3. Func. No Aula</span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg font-black text-purple-700">
-                {resumenCargaHoraria.horasFuncionesNoAula + resumenCargaHoraria.horasCronExentasAsig}
+            {/* 2. Contrato Req. por Aula */}
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">2. Contrato Req. Aula</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-black text-slate-800">{resumenCargaHoraria.reqContratoAulaTotal}</span>
+                <span className="text-xs font-bold text-slate-500">hrs</span>
+              </div>
+              <span className="text-[10px] text-slate-400 block">
+                Tabla Ley 20.903
               </span>
-              <span className="text-xs font-bold text-slate-500">hrs</span>
             </div>
-            <span className="text-[10px] text-slate-500 block truncate" title={`Funciones No Aula: ${resumenCargaHoraria.horasFuncionesNoAula}h | Exentas: ${resumenCargaHoraria.horasCronExentasAsig}h`}>
-              {resumenCargaHoraria.horasFuncionesNoAula > 0 ? `${resumenCargaHoraria.horasFuncionesNoAula}h No Aula` : ''}
-              {resumenCargaHoraria.horasCronExentasAsig > 0 ? ` +${resumenCargaHoraria.horasCronExentasAsig}h Exenta` : ''}
-              {(resumenCargaHoraria.horasFuncionesNoAula + resumenCargaHoraria.horasCronExentasAsig === 0) ? '0h' : ''}
-            </span>
-          </div>
 
-          {/* 4. Total Contrato Requerido */}
-          <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">4. Contrato Calculado</span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg font-black text-slate-900">{resumenCargaHoraria.contratoRequeridoTotal}</span>
-              <span className="text-xs font-bold text-slate-500">hrs</span>
+            {/* 3. Funciones No Aula / Coordinación */}
+            <div className="bg-white border border-purple-100 rounded-lg p-2.5 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">3. Func. No Aula</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-black text-purple-700">
+                  {resumenCargaHoraria.horasFuncionesNoAula + resumenCargaHoraria.horasCronExentasAsig}
+                </span>
+                <span className="text-xs font-bold text-slate-500">hrs</span>
+              </div>
+              <span className="text-[10px] text-slate-500 block truncate" title={`Funciones No Aula: ${resumenCargaHoraria.horasFuncionesNoAula}h | Exentas: ${resumenCargaHoraria.horasCronExentasAsig}h`}>
+                {resumenCargaHoraria.horasFuncionesNoAula > 0 ? `${resumenCargaHoraria.horasFuncionesNoAula}h No Aula` : ''}
+                {resumenCargaHoraria.horasCronExentasAsig > 0 ? ` +${resumenCargaHoraria.horasCronExentasAsig}h Exenta` : ''}
+                {(resumenCargaHoraria.horasFuncionesNoAula + resumenCargaHoraria.horasCronExentasAsig === 0) ? '0h' : ''}
+              </span>
             </div>
-            <span className="text-[10px] text-slate-400 block">
-              Aula ({resumenCargaHoraria.reqContratoAulaTotal}h) + No Aula
-            </span>
-          </div>
 
-          {/* 5. Saldo Disponible / Horas Libres */}
-          <div className={`rounded-lg p-2.5 shadow-2xs border ${
-            resumenCargaHoraria.saldoHoras > 0 
-              ? 'bg-emerald-50/70 border-emerald-200' 
-              : resumenCargaHoraria.saldoHoras < 0 
-              ? 'bg-rose-50/70 border-rose-200' 
-              : 'bg-slate-50 border-slate-200'
-          }`}>
-            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">5. Saldo Jornada</span>
-            <div className="flex items-baseline gap-1">
-              <span className={`text-lg font-black ${
+            {/* 4. Total Contrato Requerido */}
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">4. Contrato Calculado</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-black text-slate-900">{resumenCargaHoraria.contratoRequeridoTotal}</span>
+                <span className="text-xs font-bold text-slate-500">hrs</span>
+              </div>
+              <span className="text-[10px] text-slate-400 block">
+                Aula ({resumenCargaHoraria.reqContratoAulaTotal}h) + No Aula
+              </span>
+            </div>
+
+            {/* 5. Saldo Disponible / Horas Libres */}
+            <div className={`rounded-lg p-2.5 shadow-2xs border ${
+              resumenCargaHoraria.saldoHoras > 0 
+                ? 'bg-emerald-50/70 border-emerald-200' 
+                : resumenCargaHoraria.saldoHoras < 0 
+                ? 'bg-rose-50/70 border-rose-200' 
+                : 'bg-slate-50 border-slate-200'
+            }`}>
+              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">5. Saldo Jornada</span>
+              <div className="flex items-baseline gap-1">
+                <span className={`text-lg font-black ${
+                  resumenCargaHoraria.saldoHoras > 0 
+                    ? 'text-emerald-700' 
+                    : resumenCargaHoraria.saldoHoras < 0 
+                    ? 'text-rose-700' 
+                    : 'text-slate-700'
+                }`}>
+                  {resumenCargaHoraria.saldoHoras > 0 ? `+${resumenCargaHoraria.saldoHoras}` : resumenCargaHoraria.saldoHoras}
+                </span>
+                <span className="text-xs font-bold text-slate-500">hrs</span>
+              </div>
+              <span className={`text-[10px] font-bold block ${
                 resumenCargaHoraria.saldoHoras > 0 
                   ? 'text-emerald-700' 
                   : resumenCargaHoraria.saldoHoras < 0 
                   ? 'text-rose-700' 
-                  : 'text-slate-700'
+                  : 'text-slate-500'
               }`}>
-                {resumenCargaHoraria.saldoHoras > 0 ? `+${resumenCargaHoraria.saldoHoras}` : resumenCargaHoraria.saldoHoras}
+                {resumenCargaHoraria.saldoHoras > 0 ? 'Horas Libres' : resumenCargaHoraria.saldoHoras < 0 ? 'Sobreasignado' : 'Exacto'}
               </span>
-              <span className="text-xs font-bold text-slate-500">hrs</span>
             </div>
-            <span className={`text-[10px] font-bold block ${
-              resumenCargaHoraria.saldoHoras > 0 
-                ? 'text-emerald-700' 
-                : resumenCargaHoraria.saldoHoras < 0 
-                ? 'text-rose-700' 
-                : 'text-slate-500'
-            }`}>
-              {resumenCargaHoraria.saldoHoras > 0 ? 'Horas Libres' : resumenCargaHoraria.saldoHoras < 0 ? 'Sobreasignado' : 'Exacto'}
+          </div>
+
+          {/* Desglose de Derechos Mineduc (Recreo y Horas No Lectivas) */}
+          <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 bg-white/70 rounded-lg px-3 py-1.5 border border-slate-200/50">
+            <span className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Recreo Garantizado: <strong>{Math.floor(resumenCargaHoraria.audit.minutosRecreoTotal / 60)}h {resumenCargaHoraria.audit.minutosRecreoTotal % 60}m</strong></span>
             </span>
+            <span className="flex items-center gap-1">
+              <span>📚 Horas No Lectivas (HNL): <strong>{Math.floor(resumenCargaHoraria.audit.minutosHnlTotal / 60)}h {resumenCargaHoraria.audit.minutosHnlTotal % 60}m</strong></span>
+              <span className="text-slate-400 text-[10px]">(Preparación, Colaboración, PACI/FUDEI)</span>
+            </span>
+            {resumenCargaHoraria.totalHaLectivas > 0 && (
+              <span className="text-[10px] font-semibold text-indigo-700">
+                {resumenCargaHoraria.totalHaLectivas} periodos lectivos de 45 min asignados a cursos
+              </span>
+            )}
           </div>
         </div>
-
-        {/* Desglose de Derechos Mineduc (Recreo y Horas No Lectivas) */}
-        <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 bg-white/70 rounded-lg px-3 py-1.5 border border-slate-200/50">
-          <span className="flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Recreo Garantizado: <strong>{Math.floor(resumenCargaHoraria.audit.minutosRecreoTotal / 60)}h {resumenCargaHoraria.audit.minutosRecreoTotal % 60}m</strong></span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span>📚 Horas No Lectivas (HNL): <strong>{Math.floor(resumenCargaHoraria.audit.minutosHnlTotal / 60)}h {resumenCargaHoraria.audit.minutosHnlTotal % 60}m</strong></span>
-            <span className="text-slate-400 text-[10px]">(Preparación, Colaboración, PACI/FUDEI)</span>
-          </span>
-          {resumenCargaHoraria.totalHaLectivas > 0 && (
-            <span className="text-[10px] font-semibold text-indigo-700">
-              {resumenCargaHoraria.totalHaLectivas} periodos lectivos de 45 min asignados a cursos
-            </span>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Tarjeta Resumen de Normativa Educación Parvularia (DTO 306/2007 & Ley 20.903) */}
       {esEducadora && dotacionParvulariaCursoActivo && (
@@ -2682,8 +2711,177 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   </button>
                 )}
 
-                {/* Para docentes regulares / mixtos con horas de Subvención General: ofrecer las asignaturas disponibles del plan regular */}
-                {!isDocenteSepPuro && !isDocentePiePuro && dispCursoInspeccion.disponibles.map(asig => (
+                {/* Si es curso de Educación Parvularia: Desplegar Menú Modular BCEP por Ámbitos y Núcleos en Horas Cronológicas (60 min) */}
+                {!isDocenteSepPuro && !isDocentePiePuro && cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel) && (
+                  <div className="w-full mt-1.5 space-y-2 bg-teal-50/60 p-2.5 rounded-xl border border-teal-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black text-teal-900 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Bases Curriculares BCEP (Decreto 28/2019) — Asignar por Núcleos (Horas Cronológicas 60 min):</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-teal-700 bg-white/80 px-2 py-0.5 rounded-full border border-teal-200">
+                        Régimen: {cursoInspeccion.regimen} ({cursoInspeccion.regimen === 'JEC' ? '35h 25m' : '22h 30m'})
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
+                      {/* Ámbito 1: Desarrollo Personal y Social */}
+                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                          🌱 Des. Personal y Social
+                        </span>
+                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Desarrollo Personal y Social').map(b => {
+                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={async () => {
+                                if (onGuardarAsignacion) {
+                                  const nuevaAsig: AsignacionHoraria = {
+                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                    rbd: colegio.rbd,
+                                    docenteId: docente.id,
+                                    asignatura: b.nucleo,
+                                    cursoId: cursoInspeccion.id,
+                                    horasPedagogicasAula: hrs,
+                                    periodo: 2027,
+                                    esProporcionDocente: true
+                                  };
+                                  await onGuardarAsignacion(nuevaAsig);
+                                }
+                              }}
+                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
+                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
+                            >
+                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
+                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
+                                {hrs}h
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Ámbito 2: Comunicación Integral */}
+                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                          🗣️ Comunicación Integral
+                        </span>
+                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Comunicación Integral').map(b => {
+                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={async () => {
+                                if (onGuardarAsignacion) {
+                                  const nuevaAsig: AsignacionHoraria = {
+                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                    rbd: colegio.rbd,
+                                    docenteId: docente.id,
+                                    asignatura: b.nucleo,
+                                    cursoId: cursoInspeccion.id,
+                                    horasPedagogicasAula: hrs,
+                                    periodo: 2027,
+                                    esProporcionDocente: true
+                                  };
+                                  await onGuardarAsignacion(nuevaAsig);
+                                }
+                              }}
+                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
+                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
+                            >
+                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
+                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
+                                {hrs}h
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Ámbito 3: Interacción y Comprensión del Entorno */}
+                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                          🔍 Interacción y Entorno
+                        </span>
+                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Interacción y Comprensión del Entorno').map(b => {
+                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={async () => {
+                                if (onGuardarAsignacion) {
+                                  const nuevaAsig: AsignacionHoraria = {
+                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                    rbd: colegio.rbd,
+                                    docenteId: docente.id,
+                                    asignatura: b.nucleo,
+                                    cursoId: cursoInspeccion.id,
+                                    horasPedagogicasAula: hrs,
+                                    periodo: 2027,
+                                    esProporcionDocente: true
+                                  };
+                                  await onGuardarAsignacion(nuevaAsig);
+                                }
+                              }}
+                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
+                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
+                            >
+                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
+                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
+                                {hrs}h
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Experiencias Integradas & Talleres */}
+                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                          🧩 Experiencias & Talleres
+                        </span>
+                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Experiencias Integradas y Libre Disposición').map(b => {
+                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={async () => {
+                                if (onGuardarAsignacion) {
+                                  const nuevaAsig: AsignacionHoraria = {
+                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                    rbd: colegio.rbd,
+                                    docenteId: docente.id,
+                                    asignatura: b.nucleo,
+                                    cursoId: cursoInspeccion.id,
+                                    horasPedagogicasAula: hrs,
+                                    periodo: 2027,
+                                    esProporcionDocente: true
+                                  };
+                                  await onGuardarAsignacion(nuevaAsig);
+                                }
+                              }}
+                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
+                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
+                            >
+                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
+                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
+                                {hrs}h
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Para docentes regulares / mixtos con horas de Subvención General en cursos de Básica/Media: ofrecer las asignaturas disponibles del plan regular */}
+                {!isDocenteSepPuro && !isDocentePiePuro && (!cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && dispCursoInspeccion.disponibles.map(asig => (
                   <button
                     key={asig.nombre}
                     type="button"
@@ -2713,7 +2911,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   </button>
                 ))}
 
-                {!isDocenteSepPuro && !isDocentePiePuro && dispCursoInspeccion.horasLibreDisponibles > 0 && (
+                {!isDocenteSepPuro && !isDocentePiePuro && (!cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && dispCursoInspeccion.horasLibreDisponibles > 0 && (
                   <button
                     type="button"
                     onClick={async () => {

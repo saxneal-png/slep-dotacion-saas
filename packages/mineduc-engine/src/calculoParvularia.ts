@@ -29,6 +29,101 @@ export const CONSTANTES_PARVULARIA = {
 } as const;
 
 /**
+ * Catálogo Oficial Curricular BCEP (Decreto 28/2019 y DTO 306/2007)
+ * Ámbitos de Experiencias y Núcleos de Aprendizaje expresados en horas cronológicas (60 min).
+ */
+export interface NucleoParvulariaBcep {
+  id: string;
+  ambito: string;
+  nucleo: string;
+  horasJecCronologicas: number; // Horas cronológicas de 60 min para JEC
+  horasMediaJornadaCronologicas: number; // Horas cronológicas de 60 min para Sin JEC
+  descripcion?: string;
+}
+
+export const CATALOGO_BCEP_PARVULARIA: NucleoParvulariaBcep[] = [
+  // 1. Ámbito Desarrollo Personal y Social
+  {
+    id: 'bcep_identidad',
+    ambito: 'Desarrollo Personal y Social',
+    nucleo: 'Identidad y Autonomía',
+    horasJecCronologicas: 3,
+    horasMediaJornadaCronologicas: 2,
+    descripcion: 'Toma de conciencia de sus capacidades, emociones, corporalidad y toma de decisiones autónomas.'
+  },
+  {
+    id: 'bcep_convivencia',
+    ambito: 'Desarrollo Personal y Social',
+    nucleo: 'Convivencia y Ciudadanía',
+    horasJecCronologicas: 2.5,
+    horasMediaJornadaCronologicas: 1.5,
+    descripcion: 'Pautas de convivencia armónica, empatía, sentido de pertenencia y resolución pacífica.'
+  },
+  {
+    id: 'bcep_corporalidad',
+    ambito: 'Desarrollo Personal y Social',
+    nucleo: 'Corporalidad y Movimiento',
+    horasJecCronologicas: 2.5,
+    horasMediaJornadaCronologicas: 1.5,
+    descripcion: 'Esquema corporal, motricidad fina y gruesa, tono muscular y bienestar físico.'
+  },
+
+  // 2. Ámbito Comunicación Integral
+  {
+    id: 'bcep_lenguaje_verbal',
+    ambito: 'Comunicación Integral',
+    nucleo: 'Lenguaje Verbal',
+    horasJecCronologicas: 6,
+    horasMediaJornadaCronologicas: 4,
+    descripcion: 'Comunicación oral reflexiva, conciencia fonológica, iniciación a la lectura y escritura.'
+  },
+  {
+    id: 'bcep_lenguajes_artisticos',
+    ambito: 'Comunicación Integral',
+    nucleo: 'Lenguajes Artísticos',
+    horasJecCronologicas: 4.5,
+    horasMediaJornadaCronologicas: 3.5,
+    descripcion: 'Expresión visual, plástica, musical, dramática y apreciación estética.'
+  },
+
+  // 3. Ámbito Interacción y Comprensión del Entorno
+  {
+    id: 'bcep_entorno_natural',
+    ambito: 'Interacción y Comprensión del Entorno',
+    nucleo: 'Exploración del Entorno Natural',
+    horasJecCronologicas: 2.5,
+    horasMediaJornadaCronologicas: 1.5,
+    descripcion: 'Curiosidad científica, seres vivos, sostenibilidad y fenómenos de la naturaleza.'
+  },
+  {
+    id: 'bcep_entorno_sociocultural',
+    ambito: 'Interacción y Comprensión del Entorno',
+    nucleo: 'Comprensión del Entorno Sociocultural',
+    horasJecCronologicas: 2.5,
+    horasMediaJornadaCronologicas: 1.5,
+    descripcion: 'Diversidad social, patrimonio cultural, instituciones y modos de vida.'
+  },
+  {
+    id: 'bcep_pensamiento_matematico',
+    ambito: 'Interacción y Comprensión del Entorno',
+    nucleo: 'Pensamiento Matemático',
+    horasJecCronologicas: 4,
+    horasMediaJornadaCronologicas: 3,
+    descripcion: 'Nociones espaciotemporales, seriación, clasificación, cuantificación y patrones.'
+  },
+
+  // 4. Experiencias Integradas, Juego y Talleres JEC
+  {
+    id: 'bcep_talleres_integrados',
+    ambito: 'Experiencias Integradas y Libre Disposición',
+    nucleo: 'Juego Libre Guiado y Talleres de Desarrollo Integral',
+    horasJecCronologicas: 7.9, // Complemento para totalizar 35h 25m (~35.41h)
+    horasMediaJornadaCronologicas: 4,
+    descripcion: 'Proyectos integrados, rincones de juego libre guiado, talleres psicomotrices y de libre disposición.'
+  }
+];
+
+/**
  * Determina si el nivel o curso corresponde a Educación Parvularia (NT1, NT2, Kínder, Pre-Kínder o Combinado Parvulario).
  */
 export function esNivelParvulario(nivelOCurso: string): boolean {

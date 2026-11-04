@@ -175,7 +175,6 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       );
 
       const esPieAsig = (a: any) => !esSepAsig(a) && Boolean(
-        (a.horasCronologicasPie && a.horasCronologicasPie > 0) || 
         (a.tipoApoyo && /pie|decreto 170|aula de recurso|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) || 
         (a.asignatura && /pie|decreto 170|aula de recurso/i.test(a.asignatura)) ||
         d.estamento === 'DOCENTE_DIFERENCIAL' || 
