@@ -573,18 +573,46 @@ export function validarEleccionEstudianteHc(nombresAsignaturas: string[]): {
 }
 
 export const DATA_PLANES_ESTUDIO_MINEDUC = {
+  "prekinder": {
+    nombre: "Educación Parvularia - Primer Nivel de Transición (Pre-Kínder)",
+    referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 22, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 6 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
+    ]
+  },
+  "kinder": {
+    nombre: "Educación Parvularia - Segundo Nivel de Transición (Kínder)",
+    referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
+    regimen: {
+      JEC: { total: 38, libre: 6 },
+      No_JEC: { total: 20, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 6 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 0 }
+    ]
+  },
   "parvularia": {
     nombre: "Educación Parvularia (NT1 y NT2)",
     referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
     regimen: {
       JEC: { total: 38, libre: 6 },
-      No_JEC: { total: 30, libre: 0 }
+      No_JEC: { total: 22, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 8 },
-      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 10 },
-      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 8 },
-      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 4 }
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 6 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
     ]
   },
   "multigrado_parvularia": {
@@ -592,13 +620,13 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
     referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
     regimen: {
       JEC: { total: 38, libre: 6 },
-      No_JEC: { total: 30, libre: 0 }
+      No_JEC: { total: 22, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 8 },
-      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 10 },
-      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 8 },
-      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 4 }
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 6 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
     ]
   },
   "1_4_basico": {
@@ -765,13 +793,13 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
     referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
     regimen: {
       JEC: { total: 38, libre: 6 },
-      No_JEC: { total: 30, libre: 0 }
+      No_JEC: { total: 22, libre: 0 }
     },
     asignaturas: [
-      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 8 },
-      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 10 },
-      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 8 },
-      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 4 }
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 9, No_JEC: 6 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 11, No_JEC: 8 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 6 },
+      { nombre: "Experiencias de Aprendizaje Integradas", JEC: 4, No_JEC: 2 }
     ]
   },
   "multigrado_basica": {
@@ -1694,6 +1722,8 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   };
 
   // 0. Parvularia
+  addSimplePlan("prekinder", "Educación Parvularia - Primer Nivel de Transición (Pre-Kínder)", "PARVULARIA");
+  addSimplePlan("kinder", "Educación Parvularia - Segundo Nivel de Transición (Kínder)", "PARVULARIA");
   addSimplePlan("parvularia", "Educación Parvularia (NT1 y NT2)", "PARVULARIA");
   addSimplePlan("multigrado_parvularia", "Multigrado Parvularia (NT1-NT2)", "PARVULARIA");
   addSimplePlan("combinado_parvularia", "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)", "PARVULARIA");
@@ -1709,7 +1739,6 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
   addSimplePlan("combinado_3_4_basica", "3° y 4° Básico Combinado (1° Ciclo Básica)", "BASICA");
   addSimplePlan("combinado_5_6_basica", "5° y 6° Básico Combinado (2° Ciclo Básica)", "BASICA");
   addSimplePlan("combinado_7_8_basica", "7° y 8° Básico Combinado (3° Ciclo Básica)", "BASICA");
-  addSimplePlan("combinado_parvularia", "Nivel Heterogéneo Parvularia (NT1-NT2 Combinado)", "PARVULARIA");
 
   // 1.2 Aula Multigrado Rural Integrada (Decreto 477/1995)
   addSimplePlan("multigrado_basica", "Aula Multigrado Rural Integrada (1° a 6° Básico)", "MULTIGRADO");
@@ -2028,7 +2057,13 @@ export function obtenerPlanPorCurso(
     }
   }
   // 6. PARVULARIA REGULAR
-  else if ((c.includes('prekinder') || c.includes('kinder') || c.includes('nt1') || c.includes('nt2') || c.includes('parvular')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
+  else if ((c.includes('prekinder') || c.includes('pre-kinder') || c.includes('pre-k') || c.includes('pk') || c.includes('nt1') || c.includes('primer nivel de transicion')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
+    grupo = "Educación Parvularia - Primer Nivel de Transición (Pre-Kínder)";
+  }
+  else if ((c.includes('kinder') || c.includes('nt2') || c.includes('segundo nivel de transicion')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
+    grupo = "Educación Parvularia - Segundo Nivel de Transición (Kínder)";
+  }
+  else if (c.includes('parvular') && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
     grupo = 'Educación Parvularia (NT1 y NT2)';
   }
   // 7. BÁSICA Y MEDIA REGULAR

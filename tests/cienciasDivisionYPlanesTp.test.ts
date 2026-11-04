@@ -115,7 +115,7 @@ describe('Auditoría y Validación: Catálogo de Electivos de Formación Diferen
   });
 });
 
-describe('Auditoría y Validación: Educación Parvularia en Aula Combinada y Multigrado (Decreto Supremo 306/2007)', () => {
+describe('Auditoría y Validación: Educación Parvularia en Aula Combinada y Regular (Decreto Supremo 306/2007)', () => {
   it('un curso combinado de párvulos en JEC carga 38 horas totales oficiales (32h obligatorias + 6h libre disposición)', () => {
     const planCombJec = obtenerPlanPorCurso('Nivel Heterogéneo NT1-NT2 Combinado', 'JEC');
     expect(planCombJec).toBeDefined();
@@ -130,30 +130,38 @@ describe('Auditoría y Validación: Educación Parvularia en Aula Combinada y Mu
     expect(sumHoras).toBe(32);
   });
 
-  it('un curso combinado de párvulos en No JEC carga 30 horas totales oficiales de régimen escolar regular', () => {
+  it('un curso combinado de párvulos en No JEC carga 22 horas totales oficiales de régimen escolar regular', () => {
     const planCombNoJec = obtenerPlanPorCurso('Nivel Heterogéneo NT1-NT2 Combinado', 'No JEC');
     expect(planCombNoJec).toBeDefined();
-    expect(planCombNoJec?.totalHorasPlan).toBe(30);
-    expect(planCombNoJec?.horasObligatorias).toBe(30);
+    expect(planCombNoJec?.totalHorasPlan).toBe(22);
+    expect(planCombNoJec?.horasObligatorias).toBe(22);
     expect(planCombNoJec?.horasLibreDisposicion).toBe(0);
 
     const sumHoras = planCombNoJec?.asignaturasBase.reduce((s, a) => s + a.horasSugeridas, 0);
-    expect(sumHoras).toBe(30);
+    expect(sumHoras).toBe(22);
   });
 
-  it('cursos multigrado parvularia y niveles regulares (Prekínder y Kínder) cargan 38h con JEC y 30h sin JEC', () => {
+  it('cursos multigrado parvularia y niveles regulares (Prekínder 22h y Kínder 20h sin JEC, y 38h con JEC)', () => {
     const planMultiJec = obtenerPlanPorCurso('Multigrado Parvularia (NT1-NT2)', 'JEC');
     expect(planMultiJec?.totalHorasPlan).toBe(38);
     expect(planMultiJec?.horasLibreDisposicion).toBe(6);
 
     const planMultiNoJec = obtenerPlanPorCurso('Multigrado Parvularia (NT1-NT2)', 'No JEC');
-    expect(planMultiNoJec?.totalHorasPlan).toBe(30);
+    expect(planMultiNoJec?.totalHorasPlan).toBe(22);
 
     const planKinderJec = obtenerPlanPorCurso('Kínder B', 'JEC');
     expect(planKinderJec?.totalHorasPlan).toBe(38);
+    expect(planKinderJec?.horasLibreDisposicion).toBe(6);
+
+    const planPrekinderJec = obtenerPlanPorCurso('Pre-Kínder A', 'JEC');
+    expect(planPrekinderJec?.totalHorasPlan).toBe(38);
+    expect(planPrekinderJec?.horasLibreDisposicion).toBe(6);
 
     const planPrekinderNoJec = obtenerPlanPorCurso('Pre-Kínder A', 'No JEC');
-    expect(planPrekinderNoJec?.totalHorasPlan).toBe(30);
+    expect(planPrekinderNoJec?.totalHorasPlan).toBe(22);
+
+    const planKinderNoJec = obtenerPlanPorCurso('Kínder A', 'No JEC');
+    expect(planKinderNoJec?.totalHorasPlan).toBe(20);
   });
 
   it('normalizarNombreAsignatura reconoce adecuadamente los ámbitos de Educación Parvularia', () => {

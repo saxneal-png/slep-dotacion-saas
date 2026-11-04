@@ -803,6 +803,29 @@ export async function obtenerPlanEstudioPorNivelYRegimen(
   });
   if (matchExacto) return matchExacto;
 
+  // 1.5 Reconocimiento específico de Parvularia (Pre-Kínder vs Kínder)
+  const esPreKinder = /pre[- ]?k|nt1|primer nivel/i.test(nivelNorm);
+  const esKinder = /k[ií]nder|nt2|segundo nivel/i.test(nivelNorm) && !esPreKinder;
+
+  if (esPreKinder) {
+    const matchPre = todos.find(p => {
+      const pn = p.nivel.toLowerCase();
+      if (!(/pre[- ]?k|nt1|primer nivel/i.test(pn))) return false;
+      if (!regNorm) return true;
+      return regNorm.includes('no') === p.regimen.toLowerCase().includes('no');
+    });
+    if (matchPre) return matchPre;
+  } else if (esKinder) {
+    const matchKin = todos.find(p => {
+      const pn = p.nivel.toLowerCase();
+      if (/pre[- ]?k|nt1|primer nivel/i.test(pn)) return false;
+      if (!(/k[ií]nder|nt2|segundo nivel/i.test(pn))) return false;
+      if (!regNorm) return true;
+      return regNorm.includes('no') === p.regimen.toLowerCase().includes('no');
+    });
+    if (matchKin) return matchKin;
+  }
+
   // 2. Coincidencia flexible de nivel
   const matchParcial = todos.find(p => {
     const pNivelNorm = p.nivel.toLowerCase();

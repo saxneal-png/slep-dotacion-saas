@@ -58,10 +58,10 @@ describe('Planes de Estudio EPJA (Educación de Adultos - Decreto Supremo N° 10
 });
 
 describe('Planes de Estudio Cursos Multigrado y Combinados', () => {
-  it('resuelve plan de estudio para Multigrado Parvularia NT1-NT2 (38 HA JEC / 30 HA No JEC)', () => {
+  it('resuelve plan de estudio para Multigrado Parvularia NT1-NT2 (38 HA JEC / 22 HA No JEC)', () => {
     const planParv = obtenerPlanPorCurso('Multigrado NT1-NT2', 'No JEC');
     expect(planParv).toBeDefined();
-    expect(planParv?.totalHorasPlan).toBe(30);
+    expect(planParv?.totalHorasPlan).toBe(22);
 
     const planParvJec = obtenerPlanPorCurso('Multigrado NT1-NT2', 'JEC');
     expect(planParvJec).toBeDefined();

@@ -137,4 +137,22 @@ describe('Integración del Analizador de Dotación con Planes de Estudio en Base
     expect(homologado.asignaturaOficial).toBe('Manejo de Viñedos y Cepa País');
     expect(homologado.confianza).toBe('ALTA');
   });
+
+  it('resuelve adecuadamente Pre-Kínder (22h No JEC) y Kínder (20h No JEC) diferenciados', () => {
+    const planPkNoJec = buscarPlanEstudioAnalizador('Pre-Kínder', 'No JEC');
+    expect(planPkNoJec).toBeDefined();
+    expect(planPkNoJec?.totalHorasPlan).toBe(22);
+    expect(planPkNoJec?.totalHorasSemanalesObligatorias).toBe(22);
+
+    const planKinderNoJec = buscarPlanEstudioAnalizador('Kínder', 'No JEC');
+    expect(planKinderNoJec).toBeDefined();
+    expect(planKinderNoJec?.totalHorasPlan).toBe(20);
+    expect(planKinderNoJec?.totalHorasSemanalesObligatorias).toBe(20);
+
+    const planPkJec = buscarPlanEstudioAnalizador('Pre-Kínder', 'JEC');
+    expect(planPkJec?.totalHorasPlan).toBe(38);
+
+    const planKinderJec = buscarPlanEstudioAnalizador('Kínder', 'JEC');
+    expect(planKinderJec?.totalHorasPlan).toBe(38);
+  });
 });

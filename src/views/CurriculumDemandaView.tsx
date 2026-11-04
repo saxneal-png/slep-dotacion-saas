@@ -259,7 +259,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     )
   );
   const planActivo = cursoActivo ? obtenerPlanPorCurso(cursoActivo.nivel, cursoActivo.regimen, cursoActivo.especialidadTp) : null;
-  const horasPlanCurso = planActivo ? planActivo.totalHorasPlan : (esCursoTp ? 42 : (cursoActivo?.regimen === 'JEC' ? 38 : 30));
+  const horasPlanCurso = planActivo ? planActivo.totalHorasPlan : (
+    esCursoTp ? 42 : (
+      cursoActivo?.regimen === 'JEC' ? 38 : (
+        cursoActivo && /k[ií]nder|nt[12]|parvul/i.test(cursoActivo.nivel)
+          ? (/pre[- ]?k|nt1|primer/i.test(cursoActivo.nivel) ? 22 : 20)
+          : 30
+      )
+    )
+  );
 
   // Asignaciones transversales / institucionales (sin curso asociado)
   const asignacionesTransversales = useMemo(() => {

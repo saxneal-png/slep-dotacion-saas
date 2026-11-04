@@ -99,11 +99,11 @@ describe('Normativa Curricular: Unificación Plan Común HC/TP y Cursos Combinad
       expect(planComb78NoJec?.horasLibreDisposicion).toBe(2);
     });
 
-    it('resuelve Nivel Heterogéneo Parvularia NT1-NT2 Combinado (38h JEC / 30h No JEC)', () => {
+    it('resuelve Nivel Heterogéneo Parvularia NT1-NT2 Combinado (38h JEC / 22h No JEC)', () => {
       const planParv = obtenerPlanPorCurso('Nivel Heterogéneo NT1-NT2 Combinado', 'No JEC');
       expect(planParv).toBeDefined();
       expect(planParv?.nivel).toContain('Nivel Heterogéneo Parvularia');
-      expect(planParv?.totalHorasPlan).toBe(30);
+      expect(planParv?.totalHorasPlan).toBe(22);
       expect(planParv?.categoria).toBe('PARVULARIA');
 
       const planParvJec = obtenerPlanPorCurso('Nivel Heterogéneo NT1-NT2 Combinado', 'JEC');

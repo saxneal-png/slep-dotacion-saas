@@ -76,6 +76,28 @@ export function buscarPlanEstudioAnalizador(
     });
     if (matchExacto) return matchExacto;
 
+    // 1.1.b Reconocimiento para Educación Parvularia (Pre-Kínder y Kínder)
+    const esPreK = /pre[- ]?k|nt1|primer nivel/i.test(targetNorm);
+    const esK = /k[ií]nder|nt2|segundo nivel/i.test(targetNorm) && !esPreK;
+    if (esPreK) {
+      const matchPre = planesEstudioCache.find(p => {
+        const pn = normStr(p.nivel);
+        if (!(/pre[- ]?k|nt1|primer nivel/i.test(pn))) return false;
+        if (!regimen) return true;
+        return normStr(p.regimen).includes('no') === reqNoJec;
+      });
+      if (matchPre) return matchPre;
+    } else if (esK) {
+      const matchKin = planesEstudioCache.find(p => {
+        const pn = normStr(p.nivel);
+        if (/pre[- ]?k|nt1|primer nivel/i.test(pn)) return false;
+        if (!(/k[ií]nder|nt2|segundo nivel/i.test(pn))) return false;
+        if (!regimen) return true;
+        return normStr(p.regimen).includes('no') === reqNoJec;
+      });
+      if (matchKin) return matchKin;
+    }
+
     // 1.2 Reconocimiento especial para EPJA 2024 (Decreto 10/2022)
     if (targetNorm.includes('epja') || targetNorm.includes('adult') || targetNorm.includes('nivel')) {
       if (targetNorm.includes('basica') || targetNorm.includes('basic')) {
