@@ -1399,7 +1399,8 @@ export class SupabaseDotacionService {
     const { guardarDocentesBatch } = await import('../database/repositories/docentesRepo');
     const { guardarAsignacionesBatch } = await import('../database/repositories/asignacionesRepo');
     const { guardarAsistentesBatch } = await import('../database/repositories/asistentesRepo');
-    const { persistDb } = await import('../database/dbCore');
+    const { getDb, persistDb } = await import('../database/dbCore');
+    const db = await getDb();
 
     // 1. Sincronizar lista de colegios eliminados para mantener consistencia inter-usuarios
     let eliminadosRemotos: string[] = [];
@@ -1435,6 +1436,16 @@ export class SupabaseDotacionService {
       }
     }
 
+    // Purga de RBDs eliminados de la base local SQLite
+    for (const delRbd of eliminadosSet) {
+      db.run('DELETE FROM asignaciones_horarias WHERE rbd = ?', [delRbd]);
+      db.run('DELETE FROM docentes WHERE rbd = ?', [delRbd]);
+      db.run('DELETE FROM cursos_sae WHERE rbd = ?', [delRbd]);
+      db.run('DELETE FROM asistentes_educacion WHERE rbd = ?', [delRbd]);
+      db.run('DELETE FROM salas_infraestructura WHERE rbd = ?', [delRbd]);
+      db.run('DELETE FROM establecimientos WHERE rbd = ?', [delRbd]);
+    }
+
     let salasCount = 0;
     if (salasRows.length > 0) {
       for (const row of salasRows) {
@@ -1447,19 +1458,43 @@ export class SupabaseDotacionService {
 
     let cursosCount = 0;
     if (cursosRows.length > 0) {
+      const rbdsConCursosRemotos = new Set<string>();
+      const idsCursosRemotosPorRbd = new Map<string, string[]>();
       for (const row of cursosRows) {
         const rbdClean = String(row.rbd || '').trim();
         if (eliminadosSet.has(rbdClean)) continue;
+        rbdsConCursosRemotos.add(rbdClean);
+        const list = idsCursosRemotosPorRbd.get(rbdClean) || [];
+        if (row.id) list.push(row.id);
+        idsCursosRemotosPorRbd.set(rbdClean, list);
         await guardarCurso(mapCursoFromDb(row), true);
         cursosCount++;
+      }
+      for (const [rbdKey, ids] of idsCursosRemotosPorRbd.entries()) {
+        if (ids.length > 0) {
+          const ph = ids.map(() => '?').join(',');
+          db.run(`DELETE FROM cursos_sae WHERE rbd = ? AND periodo = ? AND id NOT IN (${ph})`, [rbdKey, periodo, ...ids]);
+        }
       }
     }
 
     let docCount = 0;
     if (docRows.length > 0) {
-      const docentes = docRows
-        .filter(r => !eliminadosSet.has(String(r.rbd || '').trim()))
-        .map(mapDocenteFromDb);
+      const rowsValidos = docRows.filter(r => !eliminadosSet.has(String(r.rbd || '').trim()));
+      const idsPorRbd = new Map<string, string[]>();
+      for (const r of rowsValidos) {
+        const rbdKey = String(r.rbd || '').trim();
+        const list = idsPorRbd.get(rbdKey) || [];
+        if (r.id) list.push(r.id);
+        idsPorRbd.set(rbdKey, list);
+      }
+      for (const [rbdKey, ids] of idsPorRbd.entries()) {
+        if (ids.length > 0) {
+          const ph = ids.map(() => '?').join(',');
+          db.run(`DELETE FROM docentes WHERE rbd = ? AND periodo = ? AND id NOT IN (${ph})`, [rbdKey, periodo, ...ids]);
+        }
+      }
+      const docentes = rowsValidos.map(mapDocenteFromDb);
       if (docentes.length > 0) {
         await guardarDocentesBatch(docentes);
         docCount = docentes.length;
@@ -1468,9 +1503,21 @@ export class SupabaseDotacionService {
 
     let asigCount = 0;
     if (asigRows.length > 0) {
-      const asignaciones = asigRows
-        .filter(r => !eliminadosSet.has(String(r.rbd || '').trim()))
-        .map(mapAsignacionFromDb);
+      const rowsValidos = asigRows.filter(r => !eliminadosSet.has(String(r.rbd || '').trim()));
+      const idsPorRbd = new Map<string, string[]>();
+      for (const r of rowsValidos) {
+        const rbdKey = String(r.rbd || '').trim();
+        const list = idsPorRbd.get(rbdKey) || [];
+        if (r.id) list.push(r.id);
+        idsPorRbd.set(rbdKey, list);
+      }
+      for (const [rbdKey, ids] of idsPorRbd.entries()) {
+        if (ids.length > 0) {
+          const ph = ids.map(() => '?').join(',');
+          db.run(`DELETE FROM asignaciones_horarias WHERE rbd = ? AND periodo = ? AND id NOT IN (${ph})`, [rbdKey, periodo, ...ids]);
+        }
+      }
+      const asignaciones = rowsValidos.map(mapAsignacionFromDb);
       if (asignaciones.length > 0) {
         await guardarAsignacionesBatch(asignaciones);
         asigCount = asignaciones.length;
@@ -1479,9 +1526,21 @@ export class SupabaseDotacionService {
 
     let astCount = 0;
     if (astRows.length > 0) {
-      const asistentes = astRows
-        .filter(r => !eliminadosSet.has(String(r.rbd || '').trim()))
-        .map(mapAsistenteFromDb);
+      const rowsValidos = astRows.filter(r => !eliminadosSet.has(String(r.rbd || '').trim()));
+      const idsPorRbd = new Map<string, string[]>();
+      for (const r of rowsValidos) {
+        const rbdKey = String(r.rbd || '').trim();
+        const list = idsPorRbd.get(rbdKey) || [];
+        if (r.id) list.push(r.id);
+        idsPorRbd.set(rbdKey, list);
+      }
+      for (const [rbdKey, ids] of idsPorRbd.entries()) {
+        if (ids.length > 0) {
+          const ph = ids.map(() => '?').join(',');
+          db.run(`DELETE FROM asistentes_educacion WHERE rbd = ? AND periodo = ? AND id NOT IN (${ph})`, [rbdKey, periodo, ...ids]);
+        }
+      }
+      const asistentes = rowsValidos.map(mapAsistenteFromDb);
       if (asistentes.length > 0) {
         await guardarAsistentesBatch(asistentes, undefined, periodo, false);
         astCount = asistentes.length;

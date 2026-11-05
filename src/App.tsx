@@ -359,12 +359,32 @@ export const App: React.FC = () => {
           // 1. Si es Director de Establecimiento, hidratar única y exclusivamente su escuela asignada
           if (esDirector && userRbd) {
             await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(userRbd, p);
+            allSalas = await listarTodasLasSalas();
+            allCursos = await listarTodosLosCursos(p);
+            allDocs = await listarTodosLosDocentesTerritorio(p);
+            allAsigs = await listarTodasLasAsignaciones(p);
+            allAsist = await listarTodosLosAsistentesTerritorio(p);
+            setTodasLasSalas(allSalas);
+            setTodosLosCursos(allCursos);
+            setTodosLosDocentes(allDocs);
+            setTodasLasAsignaciones(allAsigs);
+            setTodosLosAsistentes(allAsist);
           } else if (rolNormal === 'asesor_uatp') {
             // 2. Si es Asesor UATP, hidratar únicamente las escuelas de su cartera
             const permitidos = session ? colegiosVisibles(session.usuario, listEst, usuariosSistema) : [];
             for (const est of permitidos) {
               await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(est.rbd, p);
             }
+            allSalas = await listarTodasLasSalas();
+            allCursos = await listarTodosLosCursos(p);
+            allDocs = await listarTodosLosDocentesTerritorio(p);
+            allAsigs = await listarTodasLasAsignaciones(p);
+            allAsist = await listarTodosLosAsistentesTerritorio(p);
+            setTodasLasSalas(allSalas);
+            setTodosLosCursos(allCursos);
+            setTodosLosDocentes(allDocs);
+            setTodasLasAsignaciones(allAsigs);
+            setTodosLosAsistentes(allAsist);
           } else {
             // 3. Para Super Usuario / Admin: verificar si ya hay datos en SQLite local (IndexedDB)
             // y controlar el intervalo para no saturar la transferencia de la base de datos en cada recarga
@@ -471,6 +491,13 @@ export const App: React.FC = () => {
           setDocentes(d);
           setAsignaciones(a);
           setAsistentes(ast);
+
+          // Sincronizar en memoria los arreglos territoriales para que Consolidado y Estadísticas reflejen al instante los cambios de esta escuela
+          setTodasLasSalas(prev => [...prev.filter(x => x.rbd !== cleanRbd), ...s]);
+          setTodosLosCursos(prev => [...prev.filter(x => x.rbd !== cleanRbd), ...c]);
+          setTodosLosDocentes(prev => [...prev.filter(x => x.rbd !== cleanRbd), ...d]);
+          setTodasLasAsignaciones(prev => [...prev.filter(x => x.rbd !== cleanRbd), ...a]);
+          setTodosLosAsistentes(prev => [...prev.filter(x => x.rbd !== cleanRbd), ...ast]);
 
           setEstadoSyncNube('updated_remotely');
           setTimeout(() => setEstadoSyncNube('synced'), 3500);
