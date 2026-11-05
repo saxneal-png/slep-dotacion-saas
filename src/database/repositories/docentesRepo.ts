@@ -206,7 +206,7 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
   const docPeriodo = d.periodo || 2027;
   const runNorm = normalizarRut(d.run);
   const cleanRun = limpiarRutParaId(d.run);
-  d.run = runNorm || d.run;
+  d.run = d.run || runNorm;
   
   // Aislamiento estricto por periodo:
   // 1. Si d.id ya existe en este rbd y periodo, respetar estrictamente ese id para mantener FKs
@@ -373,7 +373,7 @@ export async function guardarDocentesBatch(
       const docPeriodo = d.periodo || 2027;
       const runNorm = normalizarRut(d.run);
       const cleanRun = limpiarRutParaId(d.run);
-      d.run = runNorm || d.run;
+      d.run = d.run || runNorm;
 
       let docId: string = '';
       if (d.id) {
