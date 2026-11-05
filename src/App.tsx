@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/Header';
+import { LoadingAnimation } from './components/LoadingAnimation';
 const SchoolNavigatorModal = React.lazy(() => import('./components/SchoolNavigatorModal').then(m => ({ default: m.SchoolNavigatorModal })));
 const SaveBackupModal = React.lazy(() => import('./components/SaveBackupModal').then(m => ({ default: m.SaveBackupModal })));
 const DotacionCopilotDrawer = React.lazy(() => import('./components/DotacionCopilotDrawer').then(m => ({ default: m.DotacionCopilotDrawer })));
@@ -979,14 +980,7 @@ export const App: React.FC = () => {
   }, [colegios, session, usuariosSistema]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-        <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-sm font-semibold tracking-wide text-slate-300">
-          Cargando Motor Core MINEDUC & Base de Datos Offline...
-        </p>
-      </div>
-    );
+    return <LoadingAnimation variant="fullscreen" />;
   }
 
   return (
@@ -1075,12 +1069,7 @@ export const App: React.FC = () => {
       {/* Contenedor Principal de Vistas */}
       <main className="flex-1 max-w-[1920px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-3 sm:py-5">
         <React.Suspense
-          fallback={
-            <div className="flex flex-col items-center justify-center min-h-[400px] py-16 space-y-4 animate-in fade-in">
-              <div className="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-600 rounded-full animate-spin" />
-              <p className="text-sm font-semibold text-slate-500">Cargando módulo...</p>
-            </div>
-          }
+          fallback={<LoadingAnimation variant="inline" />}
         >
         {vistaActiva === 'colegios_asesorados' && (
           <ColegiosAsesoradosView

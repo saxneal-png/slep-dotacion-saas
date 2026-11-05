@@ -311,3 +311,130 @@ html[data-density="compact"] table td {
   padding-bottom: 0.45rem !important;
 }
 
+
+/* ==========================================================================
+   ANIMACIÓN DE CARGA DIDÁCTICA (LoadingAnimation.tsx)
+   ========================================================================== */
+.slep-loader svg * {
+  transform-box: view-box;
+}
+
+/* Salas que se iluminan en secuencia (cursos recibiendo dotación) */
+.slep-load-window {
+  fill: #334155;
+  animation: slep-load-window 3.6s ease-in-out infinite;
+}
+@keyframes slep-load-window {
+  0%, 8%    { fill: #334155; }
+  18%, 70%  { fill: #FCD34D; filter: drop-shadow(0 0 3px rgba(252, 211, 77, 0.8)); }
+  85%, 100% { fill: #334155; }
+}
+
+/* Estudiantes caminando hacia la puerta */
+.slep-load-student {
+  opacity: 0;
+  animation: slep-load-walk 4.2s linear infinite;
+}
+@keyframes slep-load-walk {
+  0%   { transform: translateX(8px);   opacity: 0; }
+  10%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateX(118px); opacity: 0; }
+}
+.slep-load-bob {
+  animation: slep-load-bob 0.42s ease-in-out infinite alternate;
+}
+@keyframes slep-load-bob {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-1.6px); }
+}
+
+/* Reloj: 3/4 de vuelta = 45 minutos (hora pedagógica) */
+.slep-load-clock-hand {
+  transform-origin: 120px 48px;
+  animation: slep-load-clock 3s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+@keyframes slep-load-clock {
+  0%       { transform: rotate(0deg); }
+  80%,100% { transform: rotate(270deg); }
+}
+
+/* Bandera flameando */
+.slep-load-flag {
+  transform-origin: 120px 8px;
+  animation: slep-load-flag 1.2s ease-in-out infinite alternate;
+}
+@keyframes slep-load-flag {
+  from { transform: skewY(-4deg) scaleX(1); }
+  to   { transform: skewY(4deg) scaleX(0.92); }
+}
+
+/* Lápiz escribiendo */
+.slep-load-write {
+  stroke-dasharray: 26;
+  animation: slep-load-write 2.4s ease-in-out infinite;
+}
+@keyframes slep-load-write {
+  0%       { stroke-dashoffset: 26; }
+  60%,100% { stroke-dashoffset: 0; }
+}
+
+/* Órbita de íconos educativos */
+.slep-load-orbit {
+  animation: slep-load-spin 18s linear infinite;
+}
+.slep-load-counter-orbit {
+  animation: slep-load-spin 18s linear infinite reverse;
+}
+@keyframes slep-load-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Barra de progreso indeterminada */
+.slep-load-bar {
+  animation: slep-load-bar 1.6s ease-in-out infinite;
+}
+@keyframes slep-load-bar {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(310%); }
+}
+
+/* Texto que aparece suavemente */
+.slep-load-fade {
+  animation: slep-load-fade 0.5s ease-out both;
+}
+@keyframes slep-load-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Puntos suspensivos */
+.slep-load-dots span {
+  animation: slep-load-dot 1.2s infinite;
+  opacity: 0;
+}
+.slep-load-dots span:nth-child(2) { animation-delay: 0.2s; }
+.slep-load-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes slep-load-dot {
+  0%, 20%  { opacity: 0; }
+  50%      { opacity: 1; }
+  100%     { opacity: 0; }
+}
+
+/* Pulso suave */
+.slep-load-pulse {
+  animation: slep-load-pulse 2.4s ease-in-out infinite;
+}
+@keyframes slep-load-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slep-loader *,
+  .slep-loader *::before,
+  .slep-loader *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
