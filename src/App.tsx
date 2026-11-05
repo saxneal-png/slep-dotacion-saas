@@ -131,6 +131,19 @@ export const App: React.FC = () => {
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
   const [guardandoEnNube, setGuardandoEnNube] = useState(false);
   const [workspaceTabActiva, setWorkspaceTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
+  const [estadoSyncNube, setEstadoSyncNube] = useState<'synced' | 'checking' | 'saving' | 'updated_remotely' | 'offline' | 'error'>('synced');
+  const [ultimaHoraSyncNube, setUltimaHoraSyncNube] = useState<string>('');
+
+  useEffect(() => {
+    const handleOnline = () => setEstadoSyncNube('synced');
+    const handleOffline = () => setEstadoSyncNube('offline');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const handleGuardarCambiosEnNube = async (apartadoEspecifico?: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general') => {
     if (!colegioActivo) {
@@ -143,6 +156,7 @@ export const App: React.FC = () => {
       return;
     }
     setGuardandoEnNube(true);
+    setEstadoSyncNube('saving');
 
     const targetApartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general' =
       apartadoEspecifico ||
@@ -181,12 +195,15 @@ export const App: React.FC = () => {
         apartadosTarget
       );
       notificarMutacionLocalEmitida(targetApartado);
+      setEstadoSyncNube('synced');
+      setUltimaHoraSyncNube(new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }));
       mostrarMensaje(
         `✓ Cambios guardados (${labelApartado}) para ${colegioActivo.nombre} (${periodoActivo}): ${res.docentesSincronizados} docentes, ${res.cursosSincronizados} cursos, ${res.asignacionesSincronizadas} asignaciones y ${res.asistentesSincronizados} asistentes sincronizados en Supabase sin tocar otros apartados.`,
         'success'
       );
     } catch (err: any) {
       console.error('Error sincronizando escuela con Supabase:', err);
+      setEstadoSyncNube('error');
       mostrarMensaje(`Error guardando en la nube: ${err.message || err}`, 'error');
     } finally {
       setGuardandoEnNube(false);
@@ -230,6 +247,7 @@ export const App: React.FC = () => {
       return;
     }
     setSincronizandoNube(true);
+    setEstadoSyncNube('checking');
 
     let apartadosTarget: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'> | undefined;
     if (apartadoEspecifico === 'docentes') apartadosTarget = ['docentes', 'asignaciones'];
@@ -243,19 +261,25 @@ export const App: React.FC = () => {
       const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(
         colegioActivo.rbd,
         periodoActivo,
-        apartadosTarget
+        apartadosTarget,
+        true // forceSync manual
       );
+      setUltimaHoraSyncNube(new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }));
       if (res.hayDatosRemotos) {
         await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
+        setEstadoSyncNube('updated_remotely');
+        setTimeout(() => setEstadoSyncNube('synced'), 3500);
         mostrarMensaje(
           `✓ Datos sincronizados desde Supabase para ${colegioActivo.nombre}: ${res.docentesDescargados} docentes, ${res.cursosDescargados} cursos, ${res.asignacionesDescargadas} asignaciones y ${res.asistentesDescargados} asistentes cargados en tu sesión.`,
           'success'
         );
       } else {
-        mostrarMensaje(`No se encontraron registros adicionales en Supabase para ${colegioActivo.nombre} (${periodoActivo}).`, 'success');
+        setEstadoSyncNube('synced');
+        mostrarMensaje(`✓ Tu copia local de ${colegioActivo.nombre} (${periodoActivo}) ya está exactamente al día con la nube.`, 'success');
       }
     } catch (err: any) {
       console.error('Error al sincronizar desde Supabase:', err);
+      setEstadoSyncNube('error');
       mostrarMensaje(`Error al refrescar desde Supabase: ${err.message || err}`, 'error');
     } finally {
       setSincronizandoNube(false);
@@ -422,9 +446,17 @@ export const App: React.FC = () => {
 
     // 2. Stale-While-Revalidate: Reconciliar en segundo plano con Supabase para absorber cambios concurrentes
     if (isSupabaseEnabled() && autoSyncCloud) {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setEstadoSyncNube('offline');
+        return;
+      }
+      setEstadoSyncNube('checking');
       try {
         const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(cleanRbd, p);
         if (currentReqId !== loadRequestIdRef.current) return;
+        const horaNow = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+        setUltimaHoraSyncNube(horaNow);
+
         if (res.hayDatosRemotos) {
           s = await listarSalas(cleanRbd);
           c = await listarCursos(cleanRbd, p);
@@ -438,9 +470,15 @@ export const App: React.FC = () => {
           setDocentes(d);
           setAsignaciones(a);
           setAsistentes(ast);
+
+          setEstadoSyncNube('updated_remotely');
+          setTimeout(() => setEstadoSyncNube('synced'), 3500);
+        } else {
+          setEstadoSyncNube('synced');
         }
       } catch (err) {
         console.warn('[cargarDatosColegio] Aviso consultando Supabase:', err);
+        setEstadoSyncNube('error');
       }
     }
   };
@@ -1021,6 +1059,8 @@ export const App: React.FC = () => {
         guardandoEnNube={guardandoEnNube}
         sincronizandoNube={sincronizandoNube}
         onRefrescarNube={handleRefrescarDesdeNube}
+        estadoSincronizacionNube={estadoSyncNube}
+        ultimaSincronizacionNube={ultimaHoraSyncNube}
       />
 
       {/* Toast Notificación */}

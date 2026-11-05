@@ -4,7 +4,7 @@ import {
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
   Database, Search, Sparkles, BarChart3, CheckCircle2, CloudUpload, RefreshCw,
   UserCheck, Settings, Palette, Moon, Sun, Leaf, Eye, Menu, X, Globe,
-  LogOut, ShieldAlert, KeyRound, Loader2
+  LogOut, ShieldAlert, KeyRound, Loader2, CloudOff, Cloud
 } from 'lucide-react';
 import { Establecimiento } from '../types';
 import { AuthSession } from '../types/authTypes';
@@ -38,6 +38,8 @@ interface HeaderProps {
   guardandoEnNube?: boolean;
   onRefrescarNube?: (apartado?: any) => Promise<void>;
   sincronizandoNube?: boolean;
+  estadoSincronizacionNube?: 'synced' | 'checking' | 'saving' | 'updated_remotely' | 'offline' | 'error';
+  ultimaSincronizacionNube?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -64,7 +66,9 @@ export const Header: React.FC<HeaderProps> = ({
   onGuardarCambiosEnNube,
   guardandoEnNube = false,
   onRefrescarNube,
-  sincronizandoNube = false
+  sincronizandoNube = false,
+  estadoSincronizacionNube = 'synced',
+  ultimaSincronizacionNube = ''
 }) => {
   const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
   const [toolsOpen, setToolsOpen]       = useState(false);
@@ -269,6 +273,67 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-[9px] font-black text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded shrink-0">
                   {periodoActivo}
                 </span>
+              </div>
+            )}
+
+            {/* Micro-Badge Profesional de Estado de Sincronización en la Nube */}
+            {colegioActivo && (
+              <div
+                className={`hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border transition-all select-none shadow-sm ${
+                  estadoSincronizacionNube === 'checking'
+                    ? 'bg-amber-500/10 border-amber-400/30 text-amber-300'
+                    : estadoSincronizacionNube === 'saving'
+                    ? 'bg-teal-500/15 border-teal-400/40 text-teal-200 animate-pulse'
+                    : estadoSincronizacionNube === 'updated_remotely'
+                    ? 'bg-sky-500/20 border-sky-400 text-sky-200 animate-pulse'
+                    : estadoSincronizacionNube === 'offline'
+                    ? 'bg-slate-800/80 border-slate-700 text-slate-400'
+                    : estadoSincronizacionNube === 'error'
+                    ? 'bg-red-500/10 border-red-400/30 text-red-300'
+                    : 'bg-emerald-500/10 border-emerald-400/25 text-emerald-300'
+                }`}
+                title={
+                  estadoSincronizacionNube === 'checking'
+                    ? 'Verificando novedades en Supabase en segundo plano...'
+                    : estadoSincronizacionNube === 'saving'
+                    ? 'Guardando cambios del colegio en Supabase PostgreSQL...'
+                    : estadoSincronizacionNube === 'updated_remotely'
+                    ? '¡Datos actualizados desde la nube! Se aplicaron cambios recientes de otro usuario.'
+                    : estadoSincronizacionNube === 'offline'
+                    ? 'Modo sin conexión: Operando de forma segura en memoria local (SQLite).'
+                    : `Copia local al día con Supabase${ultimaSincronizacionNube ? ` (Última comprobación: ${ultimaSincronizacionNube})` : ''}`
+                }
+              >
+                {estadoSincronizacionNube === 'checking' ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin text-amber-400 shrink-0" />
+                    <span className="hidden xl:inline text-amber-300">Comprobando</span>
+                  </>
+                ) : estadoSincronizacionNube === 'saving' ? (
+                  <>
+                    <CloudUpload className="w-3 h-3 animate-bounce text-teal-300 shrink-0" />
+                    <span className="hidden xl:inline text-teal-200">Guardando</span>
+                  </>
+                ) : estadoSincronizacionNube === 'updated_remotely' ? (
+                  <>
+                    <CheckCircle2 className="w-3 h-3 text-sky-300 shrink-0" />
+                    <span className="hidden xl:inline text-sky-200">¡Actualizado!</span>
+                  </>
+                ) : estadoSincronizacionNube === 'offline' ? (
+                  <>
+                    <CloudOff className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="hidden xl:inline text-slate-400">Modo local</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <Cloud className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span className="hidden xl:inline text-emerald-300">Al día</span>
+                  </>
+                )}
               </div>
             )}
 

@@ -993,6 +993,15 @@ export class SupabaseDotacionService {
       result.asistentesSincronizados = asistentes.length;
     }
 
+    // Actualizar updated_at del establecimiento para notificar a otras sesiones de la modificación
+    const nowIso = new Date().toISOString();
+    try {
+      await supabase.from('establecimientos').update({ updated_at: nowIso }).eq('rbd', cleanRbd);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`slep_last_sync_${cleanRbd}_${periodo}`, nowIso);
+      }
+    } catch (_) {}
+
     return result;
   }
 
@@ -1065,6 +1074,15 @@ export class SupabaseDotacionService {
       await this.guardarAsistentesBatch(asistentes.map(ast => ({ ...ast, rbd: cleanRbd, periodo })));
     }
 
+    // Actualizar updated_at del establecimiento para notificar a otras sesiones
+    const nowIso = new Date().toISOString();
+    try {
+      await supabase.from('establecimientos').update({ updated_at: nowIso }).eq('rbd', cleanRbd);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`slep_last_sync_${cleanRbd}_${periodo}`, nowIso);
+      }
+    } catch (_) {}
+
     return {
       establecimientoActualizado: Boolean(est),
       salasSincronizadas: salas.length,
@@ -1080,13 +1098,16 @@ export class SupabaseDotacionService {
    * e hidrata de forma atómica la base de datos local SQLite (IndexedDB).
    * Opcionalmente permite filtrar solo apartados específicos para no sobrescribir
    * el trabajo local en curso de otras pestañas.
+   * Soporta Conditional Fetching (forceSync = false) para no transferir datos si la copia local ya está al día.
    */
   static async descargarEIntegrarColegioDesdeSupabase(
     rbd: string,
     periodo: number = 2027,
-    apartados?: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'>
+    apartados?: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'>,
+    forceSync: boolean = false
   ): Promise<{
     hayDatosRemotos: boolean;
+    sinCambiosRemotos?: boolean;
     establecimientoActualizado: boolean;
     salasDescargadas: number;
     cursosDescargados: number;
@@ -1097,6 +1118,7 @@ export class SupabaseDotacionService {
     if (!isSupabaseEnabled()) {
       return {
         hayDatosRemotos: false,
+        sinCambiosRemotos: true,
         establecimientoActualizado: false,
         salasDescargadas: 0,
         cursosDescargados: 0,
@@ -1114,6 +1136,7 @@ export class SupabaseDotacionService {
       console.log(`[SupabaseDotacionService] Omitiendo descarga de colegio eliminado: ${cleanRbd}`);
       return {
         hayDatosRemotos: false,
+        sinCambiosRemotos: true,
         establecimientoActualizado: false,
         salasDescargadas: 0,
         cursosDescargados: 0,
@@ -1124,6 +1147,41 @@ export class SupabaseDotacionService {
     }
 
     const incluyeTodos = !apartados || apartados.length === 0;
+
+    // Conditional Fetching de Alto Rendimiento:
+    // Si no se fuerza la descarga y se solicita el colegio completo, verificar si updated_at cambió en la nube
+    if (!forceSync && incluyeTodos) {
+      try {
+        const { data: checkRow } = await supabase
+          .from('establecimientos')
+          .select('updated_at')
+          .eq('rbd', cleanRbd)
+          .maybeSingle();
+
+        const localSyncKey = `slep_last_sync_${cleanRbd}_${periodo}`;
+        const lastLocalSync = typeof window !== 'undefined' ? localStorage.getItem(localSyncKey) : null;
+
+        if (checkRow?.updated_at && lastLocalSync) {
+          const remoteTime = new Date(checkRow.updated_at).getTime();
+          const localTime = new Date(lastLocalSync).getTime();
+          if (localTime >= remoteTime) {
+            return {
+              hayDatosRemotos: false,
+              sinCambiosRemotos: true,
+              establecimientoActualizado: false,
+              salasDescargadas: 0,
+              cursosDescargados: 0,
+              docentesDescargados: 0,
+              asignacionesDescargadas: 0,
+              asistentesDescargados: 0
+            };
+          }
+        }
+      } catch (errCheck) {
+        console.warn('[descargarEIntegrarColegioDesdeSupabase] Fallback chequeo condicional:', errCheck);
+      }
+    }
+
     const fetchEst = incluyeTodos || apartados.includes('establecimiento');
     const fetchSalas = incluyeTodos || apartados.includes('salas');
     const fetchCursos = incluyeTodos || apartados.includes('cursos');
@@ -1261,6 +1319,11 @@ export class SupabaseDotacionService {
 
     // Persistir estado consolidado en IndexedDB
     await persistDb(true);
+
+    if (typeof window !== 'undefined') {
+      const remoteIso = estRes.data?.updated_at || new Date().toISOString();
+      localStorage.setItem(`slep_last_sync_${cleanRbd}_${periodo}`, remoteIso);
+    }
 
     return {
       hayDatosRemotos: true,
