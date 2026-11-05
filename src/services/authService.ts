@@ -177,6 +177,20 @@ export class AuthService {
     return usuariosNuevos;
   }
 
+  /**
+   * Obtiene de forma síncrona/instantánea los usuarios guardados en caché local (localStorage).
+   * Permite renderizado optimista sin esperar la respuesta de red de Supabase.
+   */
+  public static getUsuariosLocal(): UsuarioSistema[] {
+    const raw = localStorage.getItem(STORAGE_USERS_KEY);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw) as UsuarioSistema[];
+    } catch {
+      return [];
+    }
+  }
+
   public static async getUsuarios(): Promise<UsuarioSistema[]> {
     let usuarios = await this.inicializarUsuariosSiNoExisten();
 

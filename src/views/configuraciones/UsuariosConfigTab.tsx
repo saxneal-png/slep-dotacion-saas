@@ -38,7 +38,9 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
   const puedeEliminar = can('usuarios.eliminar');
   const rolesAsignables = rolActor ? rolesAsignablesPor(rolActor) : [];
 
-  const [usuarios, setUsuarios] = useState<UsuarioSistema[]>([]);
+  const [usuarios, setUsuarios] = useState<UsuarioSistema[]>(() => AuthService.getUsuariosLocal());
+  const [cargando, setCargando] = useState<boolean>(() => AuthService.getUsuariosLocal().length === 0);
+  const [busquedaUsuario, setBusquedaUsuario] = useState('');
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalResetAbierto, setModalResetAbierto] = useState(false);
   const [usuarioReset, setUsuarioReset] = useState<UsuarioSistema | null>(null);
@@ -66,9 +68,15 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
 
   const cargarLista = async () => {
     try {
-      setUsuarios(await AuthService.getUsuarios());
+      if (AuthService.getUsuariosLocal().length === 0) {
+        setCargando(true);
+      }
+      const lista = await AuthService.getUsuarios();
+      setUsuarios(lista);
     } catch (e) {
-      console.error(e);
+      console.error('[UsuariosConfigTab] Error cargando usuarios:', e);
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -326,7 +334,25 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
     }
   };
 
-  const usuariosVisibles = filtroRol === 'todos' ? usuarios : usuarios.filter(u => normalizarRol(u.role) === filtroRol);
+  const usuariosVisibles = useMemo(() => {
+    const q = busquedaUsuario.trim().toLowerCase();
+    return usuarios.filter(u => {
+      if (filtroRol !== 'todos' && normalizarRol(u.role) !== filtroRol) {
+        return false;
+      }
+      if (q) {
+        const matchUser = (u.username || '').toLowerCase().includes(q);
+        const matchNombre = (u.nombreCompleto || '').toLowerCase().includes(q);
+        const matchEmail = (u.email || '').toLowerCase().includes(q);
+        const matchCargo = (u.cargo || '').toLowerCase().includes(q);
+        const matchRbd = (u.rbdAsignado || '').includes(q);
+        if (!matchUser && !matchNombre && !matchEmail && !matchCargo && !matchRbd) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [usuarios, filtroRol, busquedaUsuario]);
 
   return (
     <div className="space-y-6">
@@ -340,15 +366,39 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
             Crea, edita y administra credenciales, contraseñas, roles y alcance territorial (cartera, equipo o establecimiento).
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Búsqueda rápida */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              value={busquedaUsuario}
+              onChange={e => setBusquedaUsuario(e.target.value)}
+              placeholder="Buscar por nombre, correo o RBD..."
+              className="pl-8 pr-3 py-1.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-52 sm:w-60"
+            />
+          </div>
+
           <select
             value={filtroRol}
             onChange={e => setFiltroRol(e.target.value as any)}
             className="px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white"
           >
-            <option value="todos">Todos los roles</option>
-            {ROLES_DEFINICIONES.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+            <option value="todos">Todos los roles ({usuarios.length})</option>
+            {ROLES_DEFINICIONES.map(r => {
+              const count = usuarios.filter(u => normalizarRol(u.role) === r.id).length;
+              return <option key={r.id} value={r.id}>{r.nombre} ({count})</option>;
+            })}
           </select>
+
+          <button
+            onClick={() => { setCargando(true); cargarLista(); }}
+            disabled={cargando}
+            className="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl border border-slate-700 transition"
+            title="Recargar usuarios desde la nube"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${cargando ? 'animate-spin text-blue-400' : ''}`} />
+          </button>
           {puedeEditar && (
             <>
               <button
@@ -395,6 +445,42 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 font-medium">
+            {cargando && usuariosVisibles.length === 0 && (
+              <tr>
+                <td colSpan={6} className="text-center py-12 text-slate-400">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
+                    <p className="text-sm font-semibold text-slate-200">Cargando catálogo de usuarios ({usuarios.length > 0 ? usuarios.length : '100+'} registros)...</p>
+                    <p className="text-xs text-slate-500">Sincronizando con Supabase y SQLite local</p>
+                  </div>
+                </td>
+              </tr>
+            )}
+
+            {!cargando && usuariosVisibles.length === 0 && (
+              <tr>
+                <td colSpan={6} className="text-center py-12 text-slate-400">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <Users className="w-8 h-8 text-slate-600" />
+                    <p className="text-sm font-semibold text-slate-300">No se encontraron usuarios</p>
+                    <p className="text-xs text-slate-500">
+                      {busquedaUsuario || filtroRol !== 'todos'
+                        ? 'Prueba modificando el texto de búsqueda o el filtro de rol.'
+                        : 'No hay usuarios registrados en el sistema.'}
+                    </p>
+                    {(busquedaUsuario || filtroRol !== 'todos') && (
+                      <button
+                        onClick={() => { setBusquedaUsuario(''); setFiltroRol('todos'); }}
+                        className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline"
+                      >
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+
             {usuariosVisibles.map(u => {
               const def = getDefinicionRol(normalizarRol(u.role));
               const oficial = (u.email || '').toLowerCase() === SUPER_EMAIL;
