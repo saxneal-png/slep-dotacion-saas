@@ -238,6 +238,7 @@ export function auditarCargaDocenteIntegral(
         (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
     );
     if (!tieneCurso || esTrabajoNoAula) return false;
+    if (isPieDoc) return true; // Docente diferencial frente a curso = hora lectiva aula (45 min)
     return Boolean(a.esProporcionDocente);
   });
 

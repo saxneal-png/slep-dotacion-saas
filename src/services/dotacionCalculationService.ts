@@ -422,6 +422,7 @@ export function calcularDiagnosticoColegio(
         (a.asignatura && /colaborativo|art\.?\s*86|cl[iÃ­]nico/i.test(a.asignatura))
       );
       if (!tieneCurso || esTrabajoNoAula) return false;
+      if (isPieDoc) return true; // Docente diferencial frente a curso = hora lectiva aula (45 min)
       return Boolean(a.esProporcionDocente);
     });
     const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
@@ -562,7 +563,9 @@ export function calcularDiagnosticoColegio(
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
 
     const horasSepSinAsignarDoc = Math.max(0, contratoSepDoc - reqSepDoc);
-    const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - pieCronologicas);
+    // Docente diferencial: sus horas lectivas frente a curso (con proporción Ley 20.903) también consumen contrato PIE
+    const pieLectivoReqDoc = isPieDoc ? (auditDoc.req65_35 + auditDoc.req60_40) : 0;
+    const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - pieCronologicas - pieLectivoReqDoc);
     const horasSubvGenSinAsignarDoc = Math.max(0, subTotalDoc - reqSubvDoc);
 
     return {
@@ -1049,6 +1052,7 @@ export function obtenerDocentesConsolidadosTerritorio(
           (a.asignatura && /colaborativo|art\.?\s*86|cl[iÃ­]nico/i.test(a.asignatura))
         );
         if (!tieneCurso || esTrabajoNoAula) return false;
+        if (isPieDoc) return true; // Docente diferencial frente a curso = hora lectiva aula (45 min)
         return Boolean(a.esProporcionDocente);
       });
       const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
@@ -1278,7 +1282,7 @@ export function obtenerDocentesConsolidadosTerritorio(
         horasReduccionArticulo69: auditMulti.horasReduccionArticulo69 || calculo.horasReduccionArticulo69 || 0,
         minutosReduccionArticulo69: auditMulti.minutosReduccionArticulo69 || calculo.minutosReduccionArticulo69 || 0,
         horasSepSinAsignar: Math.max(0, contratoSepDoc - (cronSepTotal + sumFuncionesNoAulaSep + hTallerSepDoc)),
-        horasPieSinAsignar: Math.max(0, contratoPieDoc - (cronApoyoPie + sumFuncionesNoAulaPie + hColabDoc + hCoordPie)),
+        horasPieSinAsignar: Math.max(0, contratoPieDoc - (cronApoyoPie + sumFuncionesNoAulaPie + hColabDoc + hCoordPie) - (isPieDoc ? (auditMulti.req65_35 + auditMulti.req60_40) : 0)),
         horasSubvGeneralSinAsignar: Math.max(0, subTotalDoc - (auditMulti.req65_35 + auditMulti.req60_40 + sumFuncionesNoAulaSubvGen))
       });
     }

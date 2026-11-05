@@ -350,20 +350,20 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
 
     expect(estDoc.horasAulaRegular).toBe(0); // Co-docencia no es aula regular
     expect(estDoc.horasCoDocencia).toBe(11);
-    expect(estDoc.horasExentas).toBe(39); // 28h coord PIE + 11h apoyo = 39h
-    expect(estDoc.horasDocenciaAfecta).toBe(0);
-    expect(estDoc.estaSobreasignado).toBe(false);
+    expect(estDoc.horasExentas).toBe(28); // 28h Coordinación PIE exentas
+    expect(estDoc.horasDocenciaAfecta).toBe(11);
+    expect(estDoc.estaSobreasignado).toBe(true); // 11 HA lectivas de co-docencia frente a curso con proporción + 28h coord > 39h
     expect(estDoc.horasVacantes).toBe(0); // 39h contrato - 39h carga = 0
 
     // 2. Consolidado territorial multitramo
     const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docPie39], asigPie11);
     const contrato = consolidado[0].contratos[0];
 
-    expect(contrato.contratoCalculadoTotal).toBe(39); // NO 67h!
+    expect(contrato.contratoCalculadoTotal).toBe(41); // 13h por 11 HA con proporción + 28h coord PIE
     expect(contrato.fuentesFinanciamiento.total).toBe(39);
-    expect(contrato.saldoHoras).toBe(0);
-    expect(contrato.estadoSaldo).toBe('EXACTO');
-    expect(contrato.esInfractorExcesoLectivo).toBe(false);
+    expect(contrato.saldoHoras).toBe(-2);
+    expect(contrato.estadoSaldo).toBe('DEFICIT');
+    expect(contrato.esInfractorExcesoLectivo).toBe(true);
   });
 
   it('audita caso real de Natalia Bórquez Barría (15 HA / 11h cronológicas apoyo PIE + 28h Coordinadora PIE): calcula 39h exactas', () => {
@@ -414,15 +414,15 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
 
     const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docNatalia], asigNatalia);
     const estDoc = diag.estadoDocentes[0];
-    expect(estDoc.horasExentas).toBe(39);
+    expect(estDoc.horasExentas).toBe(28); // 28h Coordinación PIE exentas
     expect(estDoc.horasVacantes).toBe(0);
-    expect(estDoc.estaSobreasignado).toBe(false);
+    expect(estDoc.estaSobreasignado).toBe(true); // Co-docencia frente a curso cuenta como lectiva aula
 
     const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docNatalia], asigNatalia);
     const contrato = consolidado[0].contratos[0];
-    expect(contrato.contratoCalculadoTotal).toBe(39); // 39h exactas, NO 43h!
-    expect(contrato.saldoHoras).toBe(0);
-    expect(contrato.estadoSaldo).toBe('EXACTO');
+    expect(contrato.contratoCalculadoTotal).toBe(41); // 15 HA normalizadas (11 HA lectivas) con proporción + 28h coord
+    expect(contrato.saldoHoras).toBe(-2);
+    expect(contrato.estadoSaldo).toBe('DEFICIT');
   });
 
   it('audita correctamente el caso Ortiz Ortiz Castro Marianela con 36 horas de contrato (32 HA Co-Docencia SEP + 4 HA Talleres)', () => {
