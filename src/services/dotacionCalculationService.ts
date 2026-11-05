@@ -465,26 +465,29 @@ export function calcularDiagnosticoColegio(
       );
     }
 
-    // Auditoría Financiera: El Plan de Estudio y talleres JEC deben financiarse exclusivamente con Subvención General
-    const pedCurricular65 = asigsAulaRegular
+    // Auditoría Financiera: El Plan de Estudio titular debe financiarse con Subvención General.
+    // Para docentes de aula regular, las horas de co-docencia frente a curso pueden ser financiadas con cualquier subvención (Subv. General, SEP o PIE), por lo que NO deben imputarse como requerimiento forzoso de Subvención General ni marcar improcedencia.
+    const asigsCurricularesTitulares = docenteAsigs.filter(a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a));
+    const pedCurricular65 = asigsCurricularesTitulares
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (est.porcentajePrioritarios < 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
-    const pedCurricular60 = asigsAulaRegular
+    const pedCurricular60 = asigsCurricularesTitulares
       .filter(a => {
         const c = cursos.find(x => x.id === a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (est.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-    const reqSubvDoc = buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40') + sumFuncionesNoAulaSubvGen;
+    const pedTitularTotal = pedCurricular65 + pedCurricular60;
+    const reqSubvDoc = (pedTitularTotal > 0 ? (buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40')) : 0) + sumFuncionesNoAulaSubvGen;
     const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
-    if (reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0) {
+    if (reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedTitularTotal > 0) {
       const defSub = reqSubvDoc - subTotalDoc;
       sobreasignacionesAlertas.push(
-        `ALERTA FINANCIERA: ${doc.nombres} ${doc.apellidos} (${doc.run}): Imparte ${pedAulaRegular} HA de Plan de Estudio / JEC que exigen ${reqSubvDoc}h de Subvención General, pero solo tiene ${subTotalDoc}h de Subv. General (Déficit de ${defSub}h pagadas improcedentemente con fondos SEP o PIE).`
+        `ALERTA FINANCIERA: ${doc.nombres} ${doc.apellidos} (${doc.run}): Imparte ${pedTitularTotal} HA de Plan de Estudio titular que exigen ${reqSubvDoc}h de Subvención General, pero solo tiene ${subTotalDoc}h de Subv. General (Déficit de ${defSub}h cubiertas improcedentemente con fondos SEP o PIE).`
       );
     }
 
@@ -1080,22 +1083,24 @@ export function obtenerDocentesConsolidadosTerritorio(
       totalTrabajoColaborativo += (hColabDoc || pedTrabajoColab);
       totalInstitucionalesNoAula += hInstNoAula;
 
-      // Auditoría Financiera: Restricción de financiamiento de Plan de Estudio y JEC con SEP/PIE
-      const pedCurricular65 = asigsAulaRegular
+      // Auditoría Financiera: Restricción de financiamiento de Plan de Estudio con SEP/PIE
+      // Las horas de co-docencia de docentes de aula regular pueden financiarse con cualquier subvención (Subv. General, SEP o PIE).
+      const asigsCurricularesTitulares = asigsColegio.filter(a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a));
+      const pedCurricular65 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursosColegio.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
-      const pedCurricular60 = asigsAulaRegular
+      const pedCurricular60 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursosColegio.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-      const horasAulaPlanEstudioYJec = pedAulaRegular;
-      const contratoReqSubvencionGeneral = buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40') + sumFuncionesNoAulaSubvGen;
+      const horasAulaPlanEstudioYJec = pedCurricular65 + pedCurricular60;
+      const contratoReqSubvencionGeneral = (horasAulaPlanEstudioYJec > 0 ? (buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40')) : 0) + sumFuncionesNoAulaSubvGen;
       const subvencionGeneralContratoTotal = subTit + subCon;
       const sepPieContratoTotal = sepTit + sepCon + pieTit + pieCon;
 
@@ -1106,7 +1111,7 @@ export function obtenerDocentesConsolidadosTerritorio(
       if (contratoReqSubvencionGeneral > subvencionGeneralContratoTotal && sepPieContratoTotal > 0 && horasAulaPlanEstudioYJec > 0) {
         deficitSubvencionGeneral = contratoReqSubvencionGeneral - subvencionGeneralContratoTotal;
         esImprocedenteFinanciamientoSepPie = true;
-        alertaFinanciamientoSepPie = `Improcedencia Financiera: El docente imparte ${horasAulaPlanEstudioYJec} HA de Plan de Estudio / JEC que exigen ${contratoReqSubvencionGeneral}h de Subvención General, pero su contrato solo dispone de ${subvencionGeneralContratoTotal}h de Subv. General (Déficit: ${deficitSubvencionGeneral}h cubiertas improcedentemente con fondos SEP o PIE).`;
+        alertaFinanciamientoSepPie = `Improcedencia Financiera: El docente imparte ${horasAulaPlanEstudioYJec} HA de Plan de Estudio titular que exigen ${contratoReqSubvencionGeneral}h de Subvención General, pero su contrato solo dispone de ${subvencionGeneralContratoTotal}h de Subv. General (Déficit: ${deficitSubvencionGeneral}h cubiertas improcedentemente con fondos SEP o PIE).`;
       }
 
       const maxPermitidasDoc = (isPieDoc && auditMulti.minutosLimitePermitido === 0 && horasDocenciaNeta > 0)

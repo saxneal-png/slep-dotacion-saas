@@ -734,4 +734,95 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
     expect(contrato.saldoHoras).toBe(28);
     expect(contrato.estadoSaldo).toBe('HOLGURA');
   });
+
+  it('Docente de Aula regular con contrato SEP o PIE realizando Co-Docencia no debe marcar improcedencia financiera', () => {
+    // Docente de aula regular con contrato SEP (o PIE) que realiza Co-Docencia frente a curso
+    const docAulaCoDocencia: Docente = {
+      id: 'doc-aula-codocente',
+      rbd: '9999',
+      run: '17.890.123-4',
+      nombres: 'Francisca',
+      apellidos: 'Morales Alarcón',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 20,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 20,
+      horasPieTitular: 0,
+      horasPieContrata: 0
+    };
+
+    const asigCoDocente: AsignacionHoraria[] = [
+      {
+        id: 'asig-codoc-1',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-aula-codocente',
+        asignatura: 'Co-docencia Lenguaje',
+        horasPedagogicasAula: 12,
+        esCoDocencia: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      }
+    ];
+
+    // Diagnóstico por colegio
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docAulaCoDocencia], asigCoDocente);
+    const estDoc = diag.estadoDocentes[0];
+
+    // NO debe haber alertas de improcedencia financiera por Subvención General
+    const alertasFinancieras = diag.balanzaGeneral.sobreasignacionesAlertas.filter(a => a.includes('ALERTA FINANCIERA') && a.includes('Francisca'));
+    expect(alertasFinancieras).toHaveLength(0);
+
+    // Consolidado territorial
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docAulaCoDocencia], asigCoDocente, cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.esImprocedenteFinanciamientoSepPie).toBe(false);
+    expect(contrato.deficitSubvencionGeneral).toBe(0);
+    expect(contrato.alertaFinanciamientoSepPie).toBe('');
+  });
+
+  it('Docente de Aula regular con contrato SEP realizando docencia titular de Plan de Estudio SÍ debe marcar improcedencia financiera', () => {
+    // Docente de aula regular con contrato SEP que imparte docencia titular del Plan de Estudio
+    const docAulaTitularSep: Docente = {
+      id: 'doc-aula-titular-sep',
+      rbd: '9999',
+      run: '18.999.888-7',
+      nombres: 'Patricio',
+      apellidos: 'Garrido Soto',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 20,
+      horasSubvencionGeneralTitular: 0,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 20,
+      horasPieTitular: 0,
+      horasPieContrata: 0
+    };
+
+    const asigTitular: AsignacionHoraria[] = [
+      {
+        id: 'asig-titular-mat',
+        rbd: '9999',
+        cursoId: 'curso-5b',
+        docenteId: 'doc-aula-titular-sep',
+        asignatura: 'Matemática',
+        horasPedagogicasAula: 12,
+        esCoDocencia: false
+      }
+    ];
+
+    const diag = calcularDiagnosticoColegio(colegio, salas, cursos, [docAulaTitularSep], asigTitular);
+    const alertasFinancieras = diag.balanzaGeneral.sobreasignacionesAlertas.filter(a => a.includes('ALERTA FINANCIERA') && a.includes('Patricio'));
+    expect(alertasFinancieras.length).toBeGreaterThan(0);
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docAulaTitularSep], asigTitular, cursos);
+    const contrato = consolidado[0].contratos[0];
+
+    expect(contrato.esImprocedenteFinanciamientoSepPie).toBe(true);
+    expect(contrato.deficitSubvencionGeneral).toBeGreaterThan(0);
+  });
 });

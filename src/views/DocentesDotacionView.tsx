@@ -351,22 +351,25 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
       const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
-      const pedCurricular65 = asigsAulaRegular
+      // Las horas de co-docencia de docentes de aula regular pueden ser financiadas con cualquier subvención (Subv. General, SEP o PIE).
+      const asigsCurricularesTitulares = asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a));
+      const pedCurricular65 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-      const pedCurricular60 = asigsAulaRegular
+      const pedCurricular60 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
-      const reqSubvDoc = buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40') + sumFuncionesNoAulaSubvGen;
-      const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedAulaRegular > 0;
+      const pedTitularTotal = pedCurricular65 + pedCurricular60;
+      const reqSubvDoc = (pedTitularTotal > 0 ? (buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40')) : 0) + sumFuncionesNoAulaSubvGen;
+      const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedTitularTotal > 0;
       const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
 
       return {
