@@ -25,7 +25,8 @@ import {
   calcularAuditoriaDocenteMultitramo,
   esNivelParvulario,
   calcularDotacionParvulariaCurso,
-  CATALOGO_BCEP_PARVULARIA
+  CATALOGO_BCEP_PARVULARIA,
+  resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
 
@@ -411,7 +412,23 @@ export function calcularDisponibilidadCurso(
   
   // Asignaciones que no coincidieron con ninguna asignatura obligatoria/base del plan son consideradas JEC/Libre Disposición
   const asigsLibres = asigsCurso.filter(a => {
-    const esOficial = /taller de literatura|taller laboral/i.test(a.asignatura);
+    // Si la asignación tiene código/ámbito canónico o es oficial de profundización HC / Electivo, NUNCA es Libre Disposición
+    const infoCanonica = resolverCodigoYAmbitoAsignatura(a.asignatura, {
+      nivelCurso: curso.nivel,
+      esJec: a.esTallerJec,
+      esTallerSep: a.esTallerSep,
+      esTrabajoColaborativo: a.esTrabajoColaborativo,
+      esDiferenciadoCompartido: a.esDiferenciadoCompartido
+    });
+
+    if (infoCanonica.ambito === 'DIFERENCIADA_HC' || infoCanonica.ambito === 'PLAN_COMUN_ELECTIVO' || infoCanonica.ambito === 'PLAN_COMUN') {
+      return false;
+    }
+    if (a.ambitoCurricular === 'DIFERENCIADA_HC' || a.ambitoCurricular === 'PLAN_COMUN_ELECTIVO' || a.ambitoCurricular === 'PLAN_COMUN') {
+      return false;
+    }
+
+    const esOficial = /taller de literatura|taller laboral/i.test(a.asignatura) || esAsignaturaProfundizacionHc(a.asignatura);
     if (!esOficial && (a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))) return true;
     const coincideConBase = infoPlan.asignaturas.some(asigPlan => sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre));
     return !coincideConBase;
@@ -425,13 +442,21 @@ export function calcularDisponibilidadCurso(
   let totalCompensadoLibre = 0;
 
   const todas: DisponibilidadAsignatura[] = infoPlan.asignaturas.map(asigPlan => {
-    const esAsigPlanTallerOficial = /taller de literatura|taller laboral/i.test(asigPlan.nombre);
+    const esAsigPlanTallerOficial = /taller de literatura|taller laboral/i.test(asigPlan.nombre) || esAsignaturaProfundizacionHc(asigPlan.nombre);
     const horasAsig = asigsCurso
       .filter(a => {
-        // Un taller JEC, taller SEP o libre disposición NUNCA debe descontar horas del plan regular (salvo asignaturas oficiales como Taller de Literatura)
-        if (a.esTallerJec && !esAsigPlanTallerOficial) return false;
+        // Un taller JEC, taller SEP o libre disposición NUNCA debe descontar horas del plan regular (salvo asignaturas oficiales como Taller de Literatura o electivos)
+        const infoCanonicaA = resolverCodigoYAmbitoAsignatura(a.asignatura, {
+          nivelCurso: curso.nivel,
+          esJec: a.esTallerJec,
+          esTallerSep: a.esTallerSep,
+          esTrabajoColaborativo: a.esTrabajoColaborativo
+        });
+        const esMateriaOficial = infoCanonicaA.esOficial && (infoCanonicaA.ambito === 'DIFERENCIADA_HC' || infoCanonicaA.ambito === 'PLAN_COMUN' || infoCanonicaA.ambito === 'PLAN_COMUN_ELECTIVO');
+
+        if (a.esTallerJec && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
         if (a.esTallerSep) return false;
-        if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigPlanTallerOficial) return false;
+        if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
         return sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
@@ -608,7 +633,20 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
 
   // Verificar si la asignatura actual coincide con alguna del plan
   const asigEnPlan = infoPlan.asignaturas.find(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura));
-  const esLibreDisposicion = !esPie && !esCoDoc && (
+  const infoCanonicaFila = resolverCodigoYAmbitoAsignatura(a.asignatura, {
+    nivelCurso: cursoActual?.nivel,
+    esJec: a.esTallerJec,
+    esTallerSep: a.esTallerSep,
+    esTrabajoColaborativo: a.esTrabajoColaborativo,
+    esDiferenciadoCompartido: a.esDiferenciadoCompartido
+  });
+  const esOficialProfundizacionOPlan = infoCanonicaFila.esOficial && (
+    infoCanonicaFila.ambito === 'DIFERENCIADA_HC' ||
+    infoCanonicaFila.ambito === 'PLAN_COMUN' ||
+    infoCanonicaFila.ambito === 'PLAN_COMUN_ELECTIVO'
+  );
+
+  const esLibreDisposicion = !esPie && !esCoDoc && !esOficialProfundizacionOPlan && (
     a.esTallerJec || 
     /taller|jec|libre/i.test(a.asignatura) || 
     (!asigEnPlan && a.cursoId !== 'TRANSVERSAL')
@@ -731,9 +769,12 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   } else if (matchProf) {
                     setEditandoManual(false);
                     if (onGuardarAsignacion) {
+                      const resCod = resolverCodigoYAmbitoAsignatura(sel, { nivelCurso: cursoActual?.nivel });
                       await onGuardarAsignacion({ 
                         ...a, 
                         asignatura: sel, 
+                        codigoAsignatura: resCod.codigo,
+                        ambitoCurricular: resCod.ambito,
                         horasPedagogicasAula: a.horasPedagogicasAula === 6 ? a.horasPedagogicasAula : 6, 
                         esTallerJec: false 
                       });
@@ -741,9 +782,12 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   } else if (matchComunElec) {
                     setEditandoManual(false);
                     if (onGuardarAsignacion) {
+                      const resCod = resolverCodigoYAmbitoAsignatura(sel, { nivelCurso: cursoActual?.nivel });
                       await onGuardarAsignacion({ 
                         ...a, 
                         asignatura: sel, 
+                        codigoAsignatura: resCod.codigo,
+                        ambitoCurricular: resCod.ambito,
                         horasPedagogicasAula: a.horasPedagogicasAula === 2 ? a.horasPedagogicasAula : 2, 
                         esTallerJec: false 
                       });
@@ -751,7 +795,14 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   } else {
                     setEditandoManual(false);
                     if (onGuardarAsignacion) {
-                      await onGuardarAsignacion({ ...a, asignatura: sel, esTallerJec: false });
+                      const resCod = resolverCodigoYAmbitoAsignatura(sel, { nivelCurso: cursoActual?.nivel });
+                      await onGuardarAsignacion({ 
+                        ...a, 
+                        asignatura: sel, 
+                        codigoAsignatura: resCod.codigo,
+                        ambitoCurricular: resCod.ambito,
+                        esTallerJec: false 
+                      });
                     }
                   }
                 }}
@@ -1238,6 +1289,13 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       return;
     }
 
+    const resCod = resolverCodigoYAmbitoAsignatura(nombreFinal, {
+      nivelCurso: cursoSeleccionado?.nivel,
+      esJec,
+      esTallerSep: regEsTallerSep,
+      esDiferenciadoCompartido: regCompartir && regCursosCompartidos.length > 0
+    });
+
     const newAsig: AsignacionHoraria = {
       id: `asig-${Date.now()}`,
       rbd: colegio.rbd,
@@ -1245,8 +1303,10 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       cursoId: regCursoId,
       docenteId: docente.id,
       asignatura: nombreFinal,
+      codigoAsignatura: resCod.codigo,
+      ambitoCurricular: resCod.ambito,
       horasPedagogicasAula: Number(regHoras),
-      esTallerJec: esJec,
+      esTallerJec: resCod.ambito === 'LIBRE_DISPOSICION_JEC' || (esJec && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO'),
       esTallerSep: regEsTallerSep,
       esProporcionDocente: regCursoId !== 'TRANSVERSAL',
       cursosCompartidosIds: regCompartir && regCursosCompartidos.length > 0 ? regCursosCompartidos : undefined,

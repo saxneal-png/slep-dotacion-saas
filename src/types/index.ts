@@ -228,6 +228,8 @@ export interface AsignacionHoraria {
   tipoApoyo?: string;
   cursosCompartidosIds?: string[]; // IDs de cursos con los que se imparte en paralelo la asignatura electiva/diferenciada (ej: 3° Medio HC A y 3° Medio HC B)
   esDiferenciadoCompartido?: boolean; // Marca si la asignatura corresponde a Formación Diferenciada compartida en paralelo
+  codigoAsignatura?: string; // Código Canónico de Asignatura (CCA) ej: DIF-HC-A-LENG-1, PC-MED34-CIUD
+  ambitoCurricular?: 'PLAN_COMUN' | 'PLAN_COMUN_ELECTIVO' | 'DIFERENCIADA_HC' | 'DIFERENCIADA_TP' | 'DIFERENCIADA_ART' | 'LIBRE_DISPOSICION_JEC' | 'ADICIONAL_EXTRA' | 'PERSONALIZADA';
 }
 
 export interface BalanzaHorariaColegio {

@@ -48,7 +48,7 @@ export async function purgarAsignacionesPlanComunElectivoInvalidas(dbParam?: any
 export async function listarAsignaciones(rbd: string, periodo: number = 2027): Promise<AsignacionHoraria[]> {
   const db = await getDb();
   await purgarAsignacionesPlanComunElectivoInvalidas(db);
-  const res = db.exec("SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))", [rbd, periodo, periodo]);
+  const res = db.exec("SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido, codigo_asignatura, ambito_curricular FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))", [rbd, periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
     let cursosCompartidosIds: string[] | undefined = undefined;
@@ -77,14 +77,16 @@ export async function listarAsignaciones(rbd: string, periodo: number = 2027): P
       esAgrupacionFlexible: Boolean(row[16]),
       esTrabajoColaborativo: Boolean(row[17]),
       cursosCompartidosIds,
-      esDiferenciadoCompartido: Boolean(row[19]) || Boolean(cursosCompartidosIds && cursosCompartidosIds.length > 0)
+      esDiferenciadoCompartido: Boolean(row[19]) || Boolean(cursosCompartidosIds && cursosCompartidosIds.length > 0),
+      codigoAsignatura: row[20] ? String(row[20]) : undefined,
+      ambitoCurricular: row[21] ? (String(row[21]) as any) : undefined
     };
   });
 }
 
 export async function listarTodasLasAsignaciones(periodo: number = 2027): Promise<AsignacionHoraria[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido FROM asignaciones_horarias WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))", [periodo, periodo]);
+  const res = db.exec("SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido, codigo_asignatura, ambito_curricular FROM asignaciones_horarias WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))", [periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
     let cursosCompartidosIds: string[] | undefined = undefined;
@@ -113,7 +115,9 @@ export async function listarTodasLasAsignaciones(periodo: number = 2027): Promis
       esAgrupacionFlexible: Boolean(row[16]),
       esTrabajoColaborativo: Boolean(row[17]),
       cursosCompartidosIds,
-      esDiferenciadoCompartido: Boolean(row[19]) || Boolean(cursosCompartidosIds && cursosCompartidosIds.length > 0)
+      esDiferenciadoCompartido: Boolean(row[19]) || Boolean(cursosCompartidosIds && cursosCompartidosIds.length > 0),
+      codigoAsignatura: row[20] ? String(row[20]) : undefined,
+      ambitoCurricular: row[21] ? (String(row[21]) as any) : undefined
     };
   });
 }
@@ -131,9 +135,9 @@ export async function guardarAsignacion(a: AsignacionHoraria, skipCloudSync: boo
       id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec,
       asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo,
       periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo,
-      cursos_compartidos_json, es_diferenciado_compartido
+      cursos_compartidos_json, es_diferenciado_compartido, codigo_asignatura, ambito_curricular
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rbd=excluded.rbd, curso_id=excluded.curso_id, docente_id=excluded.docente_id,
       co_docente_id=excluded.co_docente_id, tiene_co_docente=excluded.tiene_co_docente,
@@ -148,13 +152,16 @@ export async function guardarAsignacion(a: AsignacionHoraria, skipCloudSync: boo
       es_agrupacion_flexible=excluded.es_agrupacion_flexible,
       es_trabajo_colaborativo=excluded.es_trabajo_colaborativo,
       cursos_compartidos_json=excluded.cursos_compartidos_json,
-      es_diferenciado_compartido=excluded.es_diferenciado_compartido;
+      es_diferenciado_compartido=excluded.es_diferenciado_compartido,
+      codigo_asignatura=excluded.codigo_asignatura,
+      ambito_curricular=excluded.ambito_curricular;
   `, [
     a.id, a.rbd, a.cursoId, a.docenteId, a.coDocenteId || null, a.tieneCoDocente ? 1 : 0, a.esTallerJec ? 1 : 0,
     a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie || 0, a.horasColaborativas || 0, a.tipoApoyo || null,
     asigPeriodo, a.esTallerSep ? 1 : 0, a.esProporcionDocente ? 1 : 0, a.esCoDocencia ? 1 : 0, a.esAgrupacionFlexible ? 1 : 0,
     a.esTrabajoColaborativo ? 1 : 0,
-    cursosCompartidosJson, esDiferenciado
+    cursosCompartidosJson, esDiferenciado,
+    a.codigoAsignatura || null, a.ambitoCurricular || null
   ]);
   persistDb();
   if (!skipCloudSync) {
@@ -166,7 +173,7 @@ export async function guardarAsignacion(a: AsignacionHoraria, skipCloudSync: boo
 
 export async function listarAsignacionesPorDocente(docenteId: string, rbd?: string, periodo: number = 2027): Promise<AsignacionHoraria[]> {
   const db = await getDb();
-  let sql = "SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido FROM asignaciones_horarias WHERE (docente_id = ? OR co_docente_id = ?) AND (periodo = ? OR (periodo IS NULL AND ? = 2027))";
+  let sql = "SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido, codigo_asignatura, ambito_curricular FROM asignaciones_horarias WHERE (docente_id = ? OR co_docente_id = ?) AND (periodo = ? OR (periodo IS NULL AND ? = 2027))";
   const params: any[] = [docenteId, docenteId, periodo, periodo];
   if (rbd) {
     sql += " AND rbd = ?";
@@ -201,7 +208,9 @@ export async function listarAsignacionesPorDocente(docenteId: string, rbd?: stri
       esAgrupacionFlexible: Boolean(row[16]),
       esTrabajoColaborativo: Boolean(row[17]),
       cursosCompartidosIds,
-      esDiferenciadoCompartido: Boolean(row[19]) || Boolean(cursosCompartidosIds && cursosCompartidosIds.length > 0)
+      esDiferenciadoCompartido: Boolean(row[19]) || Boolean(cursosCompartidosIds && cursosCompartidosIds.length > 0),
+      codigoAsignatura: row[20] ? String(row[20]) : undefined,
+      ambitoCurricular: row[21] ? (String(row[21]) as any) : undefined
     };
   });
 }
@@ -222,9 +231,9 @@ export async function guardarAsignacionesBatch(asignaciones: AsignacionHoraria[]
           id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec,
           asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo,
           periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo,
-          cursos_compartidos_json, es_diferenciado_compartido
+          cursos_compartidos_json, es_diferenciado_compartido, codigo_asignatura, ambito_curricular
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           rbd=excluded.rbd, curso_id=excluded.curso_id, docente_id=excluded.docente_id,
           co_docente_id=excluded.co_docente_id, tiene_co_docente=excluded.tiene_co_docente,
@@ -239,13 +248,16 @@ export async function guardarAsignacionesBatch(asignaciones: AsignacionHoraria[]
           es_agrupacion_flexible=excluded.es_agrupacion_flexible,
           es_trabajo_colaborativo=excluded.es_trabajo_colaborativo,
           cursos_compartidos_json=excluded.cursos_compartidos_json,
-          es_diferenciado_compartido=excluded.es_diferenciado_compartido;
+          es_diferenciado_compartido=excluded.es_diferenciado_compartido,
+          codigo_asignatura=excluded.codigo_asignatura,
+          ambito_curricular=excluded.ambito_curricular;
       `, [
         a.id, a.rbd, a.cursoId, a.docenteId, a.coDocenteId || null, a.tieneCoDocente ? 1 : 0, a.esTallerJec ? 1 : 0,
         a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie || 0, a.horasColaborativas || 0, a.tipoApoyo || null,
         asigPeriodo, a.esTallerSep ? 1 : 0, a.esProporcionDocente ? 1 : 0, a.esCoDocencia ? 1 : 0, a.esAgrupacionFlexible ? 1 : 0,
         a.esTrabajoColaborativo ? 1 : 0,
-        cursosCompartidosJson, esDiferenciado
+        cursosCompartidosJson, esDiferenciado,
+        a.codigoAsignatura || null, a.ambitoCurricular || null
       ]);
     }
     db.run("COMMIT;");

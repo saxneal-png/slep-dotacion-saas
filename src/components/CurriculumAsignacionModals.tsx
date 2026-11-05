@@ -6,7 +6,8 @@ import {
   AsignaturaPlan,
   CATALOGO_PROFUNDIZACION_HC_27,
   CATALOGO_PLAN_COMUN_ELECTIVO_3_4,
-  esNivelParvulario
+  esNivelParvulario,
+  resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
 
 export const TIPOS_APOYO_PIE = [
@@ -107,6 +108,14 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
     const esSep = tipoFuncion === 'TALLER_SEP';
     const esColab = tipoFuncion === 'TRABAJO_COLABORATIVO';
 
+    const infoCanonica = resolverCodigoYAmbitoAsignatura(asignatura.trim(), {
+      nivelCurso: cursoActivo?.nivel,
+      esJec,
+      esTallerSep: esSep,
+      esTrabajoColaborativo: esColab,
+      esDiferenciadoCompartido: compartirElectivo && cursosCompartidos.length > 0
+    });
+
     const asig: AsignacionHoraria = {
       id: editandoAsig ? editandoAsig.id : `asig-doc-${Date.now()}`,
       rbd: colegio.rbd,
@@ -114,9 +123,11 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
       cursoId: esModoTransversal ? 'TRANSVERSAL' : (cursoActivo ? cursoActivo.id : 'TRANSVERSAL'),
       docenteId,
       asignatura: asignatura.trim(),
+      codigoAsignatura: infoCanonica.codigo,
+      ambitoCurricular: infoCanonica.ambito,
       horasPedagogicasAula: Number(horas),
       esCoDocencia: false,
-      esTallerJec: esJec && !esModoTransversal,
+      esTallerJec: (infoCanonica.ambito === 'LIBRE_DISPOSICION_JEC' || (esJec && infoCanonica.ambito !== 'DIFERENCIADA_HC' && infoCanonica.ambito !== 'PLAN_COMUN' && infoCanonica.ambito !== 'PLAN_COMUN_ELECTIVO')) && !esModoTransversal,
       esTallerSep: esSep,
       esTrabajoColaborativo: esColab,
       tipoApoyo: esColab ? 'TRABAJO_COLABORATIVO' : (esSep ? 'TALLER_SEP' : (esJec ? 'TALLER_JEC' : 'AULA_REGULAR')),

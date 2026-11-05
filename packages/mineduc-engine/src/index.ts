@@ -9,3 +9,4 @@ export * from './capacidadSae';
 export * from './modalidades';
 export * from './calculoAsistentes';
 export * from './calculoParvularia';
+export * from './catalogoCodigosAsignaturas';

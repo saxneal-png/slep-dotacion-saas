@@ -24,7 +24,8 @@ import {
   esModalidadLaboral,
   esModalidadTp,
   esNivelParvulario,
-  calcularDotacionParvulariaCurso
+  calcularDotacionParvulariaCurso,
+  resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
 import {
   ModalAsignarDocencia,
@@ -1669,7 +1670,22 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       {planActivo.horasLibreDisposicion > 0 && (
                         (() => {
                           const horasTalleresJec = asignacionesPlanRegularCurso
-                            .filter(a => a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))
+                            .filter(a => {
+                              const infoCan = resolverCodigoYAmbitoAsignatura(a.asignatura, {
+                                nivelCurso: cursoActivo?.nivel,
+                                esJec: a.esTallerJec,
+                                esTallerSep: a.esTallerSep,
+                                esTrabajoColaborativo: a.esTrabajoColaborativo,
+                                esDiferenciadoCompartido: a.esDiferenciadoCompartido
+                              });
+                              if (infoCan.ambito === 'DIFERENCIADA_HC' || infoCan.ambito === 'PLAN_COMUN' || infoCan.ambito === 'PLAN_COMUN_ELECTIVO') {
+                                return false;
+                              }
+                              if (a.ambitoCurricular === 'DIFERENCIADA_HC' || a.ambitoCurricular === 'PLAN_COMUN' || a.ambitoCurricular === 'PLAN_COMUN_ELECTIVO') {
+                                return false;
+                              }
+                              return a.esTallerJec || /taller|jec|libre/i.test(a.asignatura);
+                            })
                             .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
                           // Calcular excedente de asignaturas base absorbido legítimamente por Libre Disposición JEC (ej: Orientación de 0.5 a 1 o 2 HA)
@@ -1677,6 +1693,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           for (const asigBase of planActivo.asignaturasBase) {
                             const esTallerOficial = /taller de literatura|taller laboral/i.test(asigBase.nombre);
                             const asigsDeEstaMateria = asignacionesPlanRegularCurso.filter(a => {
+                              const infoCan = resolverCodigoYAmbitoAsignatura(a.asignatura, {
+                                nivelCurso: cursoActivo?.nivel,
+                                esJec: a.esTallerJec
+                              });
+                              if (infoCan.ambito === 'DIFERENCIADA_HC') return false;
                               if (a.esTallerJec && !esTallerOficial) return false;
                               if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esTallerOficial) return false;
                               return a.asignatura.toLowerCase().includes(asigBase.nombre.toLowerCase()) || asigBase.nombre.toLowerCase().includes(a.asignatura.toLowerCase());
