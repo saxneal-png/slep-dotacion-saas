@@ -3,6 +3,15 @@
  */
 
 /**
+ * Limpia un RUT eliminando puntos, guiones y espacios, dejando solo números y letra K mayúscula
+ * para su uso seguro en claves e identificadores determinísticos (ej: 123456789 o 12345678K).
+ */
+export function limpiarRutParaId(val: any): string {
+  if (!val) return '';
+  return String(val).toUpperCase().replace(/[^0-9K]/g, '');
+}
+
+/**
  * Limpia y normaliza un RUT a su formato canónico sin puntos y con guion (ej: 12345678-9 o 12345678-K).
  */
 export function normalizarRut(val: any): string {

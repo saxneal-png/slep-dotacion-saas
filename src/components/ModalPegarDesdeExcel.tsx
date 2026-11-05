@@ -145,24 +145,27 @@ export const ModalPegarDesdeExcel: React.FC<ModalPegarDesdeExcelProps> = ({
       setGuardando(true);
 
       if (tipo === 'DOCENTES') {
-        const payloadDocentes: Docente[] = registros.map(r => ({
-          id: `doc_${rbd}_${r.run.replace(/[^0-9kK]/g, '')}_${Date.now()}`,
-          rbd,
-          periodo: periodoActivo,
-          run: r.run,
-          nombres: r.nombres,
-          apellidos: r.apellidos,
-          estamento: (r.cargoOEstamento as EstamentoDocente) || 'DOCENTE_AULA',
-          calidadJuridica: 'TITULAR',
-          horasContrato: r.horasContrato,
-          horasSubvencionGeneralTitular: r.horasSubvGral || (r.horasSep === 0 && r.horasPie === 0 ? r.horasContrato : 0),
-          horasSubvencionGeneralContrata: 0,
-          horasSepTitular: r.horasSep,
-          horasSepContrata: 0,
-          horasPieTitular: r.horasPie,
-          horasPieContrata: 0,
-          activo: true
-        }));
+        const payloadDocentes: Docente[] = registros.map(r => {
+          const cleanRun = r.run.replace(/[^0-9kK]/g, '').toUpperCase();
+          return {
+            id: `doc_${rbd}_${periodoActivo}_${cleanRun}`,
+            rbd,
+            periodo: periodoActivo,
+            run: r.run,
+            nombres: r.nombres,
+            apellidos: r.apellidos,
+            estamento: (r.cargoOEstamento as EstamentoDocente) || 'DOCENTE_AULA',
+            calidadJuridica: 'TITULAR',
+            horasContrato: r.horasContrato,
+            horasSubvencionGeneralTitular: r.horasSubvGral || (r.horasSep === 0 && r.horasPie === 0 ? r.horasContrato : 0),
+            horasSubvencionGeneralContrata: 0,
+            horasSepTitular: r.horasSep,
+            horasSepContrata: 0,
+            horasPieTitular: r.horasPie,
+            horasPieContrata: 0,
+            activo: true
+          };
+        });
         await onGuardarBatch(payloadDocentes);
       } else {
         const payloadAsistentes: AsistenteEducacion[] = registros.map(r => {

@@ -1,6 +1,7 @@
 import { Docente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
+import { normalizarRut, limpiarRutParaId } from '../../utils/rutUtils';
 
 export async function listarDocentes(rbd: string, periodo: number = 2027): Promise<Docente[]> {
   const db = await getDb();
@@ -203,6 +204,9 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): 
 export async function guardarDocente(d: Docente, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   const docPeriodo = d.periodo || 2027;
+  const runNorm = normalizarRut(d.run);
+  const cleanRun = limpiarRutParaId(d.run);
+  d.run = runNorm || d.run;
   
   // Aislamiento estricto por periodo:
   // 1. Si d.id ya existe en este rbd y periodo, respetar estrictamente ese id para mantener FKs
@@ -217,11 +221,14 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
     }
   }
 
-  // 2. Si no se encontró por ID directo, buscar por RUN normalizado en este (rbd, periodo)
+  // 2. Si no se encontró por ID directo, buscar por RUN (normalizado o limpio) en este (rbd, periodo)
   if (!docId) {
     const existingByRun = db.exec(
-      "SELECT id FROM docentes WHERE rbd = ? AND run = ? AND periodo = ?", 
-      [d.rbd, d.run, docPeriodo]
+      `SELECT id FROM docentes 
+       WHERE rbd = ? AND periodo = ? 
+         AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?)
+       LIMIT 1`, 
+      [d.rbd, docPeriodo, runNorm, d.run, cleanRun]
     );
     if (existingByRun.length && existingByRun[0].values.length) {
       docId = String(existingByRun[0].values[0][0]);
@@ -231,11 +238,11 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
       if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
         docId = d.id;
       } else {
-        const cleanRun = d.run.replace(/[^0-9kK]/g, '');
         docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
       }
     }
   }
+  d.id = docId;
 
   let subvGenTitular = Number(d.horasSubvencionGeneralTitular || 0);
   let subvGenContrata = Number(d.horasSubvencionGeneralContrata || 0);
@@ -364,22 +371,41 @@ export async function guardarDocentesBatch(
   try {
     for (const d of docentes) {
       const docPeriodo = d.periodo || 2027;
-      const existing = db.exec(
-        "SELECT id FROM docentes WHERE rbd = ? AND run = ? AND periodo = ?", 
-        [d.rbd, d.run, docPeriodo]
-      );
-      let docId: string;
-      if (existing.length && existing[0].values.length) {
-        docId = String(existing[0].values[0][0]);
-      } else {
-        const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
-        if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
+      const runNorm = normalizarRut(d.run);
+      const cleanRun = limpiarRutParaId(d.run);
+      d.run = runNorm || d.run;
+
+      let docId: string = '';
+      if (d.id) {
+        const existingById = db.exec(
+          "SELECT id FROM docentes WHERE id = ? AND rbd = ? AND periodo = ?",
+          [d.id, d.rbd, docPeriodo]
+        );
+        if (existingById.length && existingById[0].values.length) {
           docId = d.id;
-        } else {
-          const cleanRun = d.run.replace(/[^0-9kK]/g, '');
-          docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
         }
       }
+
+      if (!docId) {
+        const existing = db.exec(
+          `SELECT id FROM docentes 
+           WHERE rbd = ? AND periodo = ? 
+             AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?)
+           LIMIT 1`, 
+          [d.rbd, docPeriodo, runNorm, d.run, cleanRun]
+        );
+        if (existing.length && existing[0].values.length) {
+          docId = String(existing[0].values[0][0]);
+        } else {
+          const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
+          if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
+            docId = d.id;
+          } else {
+            docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
+          }
+        }
+      }
+      d.id = docId;
 
       let subvGenTitular = Number(d.horasSubvencionGeneralTitular || 0);
       let subvGenContrata = Number(d.horasSubvencionGeneralContrata || 0);

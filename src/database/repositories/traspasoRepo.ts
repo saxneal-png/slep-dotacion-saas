@@ -16,6 +16,7 @@ import { guardarAsistentesBatch } from './asistentesRepo';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
 import { homologarAsignaturaPorRegla } from '../../services/analizador/homologationService';
 import type { AsistenteAnalizadoRecord } from '../../services/analizador/asistentesClassifier';
+import { normalizarRut, limpiarRutParaId } from '../../utils/rutUtils';
 
 export async function ejecutarTraspasoDotacionAnalizador(
   config: TraspasoConfig,
@@ -163,7 +164,8 @@ export async function ejecutarTraspasoDotacionAnalizador(
     const docenteMap = new Map<string, Docente>();
     for (const tl of filteredTeacherLoads) {
       const effectiveRbd = targetOverride || tl.rbd;
-      const cleanRun = (tl.rut || '').trim().replace(/[^0-9kK]/g, '') || `TEMP_${tl.teacher_name.replace(/[^A-Za-z0-9]/g, '').slice(0, 10)}`;
+      const cleanRun = limpiarRutParaId(tl.rut) || `TEMP_${tl.teacher_name.replace(/[^A-Za-z0-9]/g, '').slice(0, 10)}`;
+      const normRun = normalizarRut(tl.rut) || cleanRun;
       const key = `${effectiveRbd}_${cleanRun}`;
 
       if (tl.is_over_legal_limit || tl.horas_contrato > 44) {
@@ -304,7 +306,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
         id: docId,
         rbd: effectiveRbd,
         periodo,
-        run: tl.rut || cleanRun,
+        run: normRun,
         nombres,
         apellidos,
         calidadJuridica: 'TITULAR',
@@ -327,9 +329,7 @@ export async function ejecutarTraspasoDotacionAnalizador(
       docentesGuardados++;
 
       // 5. Crear Asignaciones Horarias con la asignatura oficial homologada
-      let asigIndex = 0;
       for (const asig of asignacionesAProcesar) {
-        asigIndex++;
         const cursoStr = asig.cursoStr;
         const cursoKey = `${effectiveRbd}_${cursoStr}`.toUpperCase();
         let curso = cursoMap.get(cursoKey);
@@ -344,30 +344,12 @@ export async function ejecutarTraspasoDotacionAnalizador(
         }
 
         if (!curso) {
-          const anySchoolCourse = Array.from(cursoMap.values()).find(c => c.rbd === effectiveRbd);
-          if (anySchoolCourse) {
-            curso = anySchoolCourse;
-          } else {
-            const defaultCursoId = `curso_${effectiveRbd}_${periodo}_1_Basico_A`;
-            curso = {
-              id: defaultCursoId,
-              rbd: effectiveRbd,
-              periodo,
-              nivel: '1° Básico',
-              letra: 'A',
-              regimen: 'JEC',
-              cupoSae: 35,
-              matriculaProyectada: 30,
-              alumnosNeet: 5,
-              alumnosNeep: 2,
-            };
-            cursosBatch.push(curso);
-            cursoMap.set(`${effectiveRbd}_1° BÁSICO_A`.toUpperCase(), curso);
-            cursosCreados++;
-          }
+          alertas.push(`Asignatura "${asig.asigOficial}" (${asig.horas} HA) de ${tl.teacher_name} no pudo asociarse porque no se encontró el curso "${cursoStr}" en el colegio.`);
+          continue;
         }
 
-        const asigId = `asig_${effectiveRbd}_${periodo}_${cleanRun}_${curso.id}_${asigIndex}`;
+        const canonAsig = asig.asigOficial.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 30);
+        const asigId = `asig_${effectiveRbd}_${periodo}_${cleanRun}_${curso.id}_${canonAsig}`;
 
         const asigObj: AsignacionHoraria = {
           id: asigId,

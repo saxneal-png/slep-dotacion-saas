@@ -30,6 +30,7 @@ import { ImportarEstablecimientoModal } from '../components/ImportarEstablecimie
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
 import { CentroDescargasModal } from '../components/CentroDescargasModal';
 import { ProgresoDotacionBar } from '../components/ProgresoDotacionBar';
+import { ModalAuditoriaIntegridad } from '../components/ModalAuditoriaIntegridad';
 import { PermisosRol } from '../types/authTypes';
 
 export interface ColegioWorkspaceViewProps {
@@ -140,6 +141,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [modalImportarEstablecimientoAbierto, setModalImportarEstablecimientoAbierto] = useState(false);
   const [modalGdpAbierto, setModalGdpAbierto] = useState(false);
   const [modalCentroDescargasAbierto, setModalCentroDescargasAbierto] = useState(false);
+  const [modalIntegridadAbierto, setModalIntegridadAbierto] = useState(false);
   const [menuAvanzadoAbierto, setMenuAvanzadoAbierto] = useState(false);
   const [kpisExpandidos, setKpisExpandidos] = useState<boolean>(() => {
     if (typeof window !== 'undefined' && window.innerHeight <= 864) return false;
@@ -325,6 +327,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
                 <span>Guardar {tabActiva === 'balanza' ? 'Todo' : tabs.find(t => t.id === tabActiva)?.label.split(' ')[0]}</span>
               </button>
             )}
+
+            {/* Botón Auditoría & Reparación de Integridad */}
+            <button
+              type="button"
+              onClick={() => setModalIntegridadAbierto(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
+              title="Auditar integridad, detectar y reparar asignaciones duplicadas, huérfanas o docentes clonados"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden sm:inline">Reparar Integridad</span>
+            </button>
 
             <button
               type="button"
@@ -854,6 +867,17 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         periodoActivo={periodoActivo}
         onAbrirGdpModal={() => setModalGdpAbierto(true)}
         onExportarFichaSlep={onExportarDotacionColegio ? () => onExportarDotacionColegio(colegio, periodoActivo) : undefined}
+      />
+
+      {/* Modal de Auditoría y Reparación de Integridad Escolar */}
+      <ModalAuditoriaIntegridad
+        isOpen={modalIntegridadAbierto}
+        onClose={() => setModalIntegridadAbierto(false)}
+        colegio={colegio}
+        periodoActivo={periodoActivo}
+        onReparacionCompletada={() => {
+          if (onRefreshData) onRefreshData();
+        }}
       />
     </div>
   );

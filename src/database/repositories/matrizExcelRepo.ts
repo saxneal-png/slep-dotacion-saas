@@ -4,6 +4,7 @@ import { listarCursos, guardarCursosBatch } from './cursosRepo';
 import { guardarDocentesBatch } from './docentesRepo';
 import { guardarAsignacionesBatch } from './asignacionesRepo';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
+import { normalizarRut, limpiarRutParaId } from '../../utils/rutUtils';
 
 export async function guardarMatrizExcelEnDb(
   result: MatrizExcelParseResult,
@@ -92,11 +93,14 @@ export async function guardarMatrizExcelEnDb(
       horasUtp = d.horasContrato;
     }
 
+    const runLimpio = limpiarRutParaId(d.run);
+    const runNorm = normalizarRut(d.run) || d.run;
+
     const docObj: Docente = {
-      id: `doc_${rbdDestino}_${periodoDestino}_${d.run}`,
+      id: `doc_${rbdDestino}_${periodoDestino}_${runLimpio}`,
       rbd: rbdDestino,
       periodo: periodoDestino,
-      run: d.run,
+      run: runNorm,
       nombres: d.nombres,
       apellidos: d.apellidos,
       calidadJuridica,
@@ -117,6 +121,8 @@ export async function guardarMatrizExcelEnDb(
 
     docentesBatch.push(docObj);
     docenteMap.set(d.run, docObj);
+    if (runNorm) docenteMap.set(runNorm, docObj);
+    if (runLimpio) docenteMap.set(runLimpio, docObj);
     docentesGuardados++;
   }
 
@@ -128,7 +134,8 @@ export async function guardarMatrizExcelEnDb(
   const asignacionesBatch: AsignacionHoraria[] = [];
 
   for (const d of result.docentes) {
-    const doc = docenteMap.get(d.run);
+    const runLimpio = limpiarRutParaId(d.run);
+    const doc = docenteMap.get(d.run) || (runLimpio ? docenteMap.get(runLimpio) : undefined);
     if (!doc) continue;
 
     for (const a of d.asignaciones) {
@@ -136,7 +143,8 @@ export async function guardarMatrizExcelEnDb(
       const curso = cursoMap.get(key);
       if (!curso) continue;
 
-      const asigId = `asig_${rbdDestino}_${periodoDestino}_${d.run}_${curso.id}_${a.asignatura}`.replace(/[\s°]/g, '_');
+      const canonAsig = a.asignatura.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 30);
+      const asigId = `asig_${rbdDestino}_${periodoDestino}_${runLimpio}_${curso.id}_${canonAsig}`;
       const asigObj: AsignacionHoraria = {
         id: asigId,
         rbd: rbdDestino,
