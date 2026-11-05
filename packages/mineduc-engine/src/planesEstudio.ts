@@ -1347,10 +1347,10 @@ export const DATA_PLANES_ESTUDIO_MINEDUC = {
     },
     asignaturas: [
       ...PLAN_COMUN_GENERAL_TP_ASIGNATURAS,
-      { nombre: "Módulo mención: Almacenamiento y control de inventarios", JEC: 6, No_JEC: 6 },
-      { nombre: "Módulo mención: Procesamiento de pedidos y distribución", JEC: 6, No_JEC: 6 },
-      { nombre: "Módulo mención: Operaciones de importación y exportación", JEC: 4, No_JEC: 4 },
-      { nombre: "Módulo mención: Legislación laboral aplicada", JEC: 4, No_JEC: 4 },
+      { nombre: "Módulo mención: Operaciones de almacenamiento", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Operaciones de bodega", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Logística y distribución", JEC: 6, No_JEC: 6 },
+      { nombre: "Módulo mención: Seguridad en bodegas", JEC: 2, No_JEC: 2 },
       { nombre: "Módulo común: Emprendimiento y empleabilidad", JEC: 2, No_JEC: 2 }
     ]
   },

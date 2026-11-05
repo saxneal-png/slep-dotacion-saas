@@ -98,7 +98,7 @@ describe('Planes y Programas MINEDUC', () => {
     const planLog = obtenerPlanPorCurso('4° Medio TP B', 'JEC', 'Administración Logística');
     expect(planLog).toBeDefined();
     expect(planLog?.nivel).toContain('Logística');
-    expect(planLog?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('inventarios'))).toBe(true);
+    expect(planLog?.asignaturasBase.some(a => a.nombre.toLowerCase().includes('operaciones de almacenamiento'))).toBe(true);
 
     const planAuto = obtenerPlanPorCurso('3° Medio A', 'JEC', 'Mecánica Automotriz');
     expect(planAuto).toBeDefined();
