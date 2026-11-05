@@ -1,6 +1,65 @@
 import { AsignacionHoraria } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
+import { resolverCodigoYAmbitoAsignatura } from '@slep/mineduc-engine';
+
+/**
+ * Normaliza y retro-mapea asignaciones históricas que no tengan código_asignatura o ambito_curricular,
+ * y corrige automáticamente falsos positivos de 'es_taller_jec' en asignaturas oficiales como Taller de Literatura.
+ */
+export async function autoIndexarAsignacionesHistoricas(dbParam?: any): Promise<number> {
+  const db = dbParam || await getDb();
+  try {
+    const res = db.exec(`
+      SELECT a.id, a.asignatura, a.es_taller_jec, a.es_taller_sep, a.es_trabajo_colaborativo, 
+             a.es_diferenciado_compartido, c.nivel, a.codigo_asignatura, a.ambito_curricular
+      FROM asignaciones_horarias a
+      LEFT JOIN cursos_sae c ON a.curso_id = c.id
+      WHERE a.codigo_asignatura IS NULL 
+         OR a.ambito_curricular IS NULL 
+         OR (LOWER(a.asignatura) LIKE '%taller de literatura%' AND a.es_taller_jec = 1)
+    `);
+
+    if (!res.length || !res[0].values.length) return 0;
+
+    let actualizadas = 0;
+    for (const row of res[0].values) {
+      const id = String(row[0]);
+      const asignatura = String(row[1] || '');
+      const esTallerJecActual = Boolean(row[2]);
+      const esTallerSep = Boolean(row[3]);
+      const esTrabajoColaborativo = Boolean(row[4]);
+      const esDiferenciadoCompartido = Boolean(row[5]);
+      const nivel = row[6] ? String(row[6]) : undefined;
+
+      const resCod = resolverCodigoYAmbitoAsignatura(asignatura, {
+        nivelCurso: nivel,
+        esJec: esTallerJecActual,
+        esTallerSep,
+        esTrabajoColaborativo,
+        esDiferenciadoCompartido
+      });
+
+      const nuevoEsTallerJec = resCod.ambito === 'LIBRE_DISPOSICION_JEC' 
+        ? 1 
+        : (esTallerJecActual && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO' ? 1 : 0);
+
+      db.run(
+        "UPDATE asignaciones_horarias SET codigo_asignatura = ?, ambito_curricular = ?, es_taller_jec = ? WHERE id = ?",
+        [resCod.codigo, resCod.ambito, nuevoEsTallerJec, id]
+      );
+      actualizadas++;
+    }
+
+    if (actualizadas > 0) {
+      persistDb();
+    }
+    return actualizadas;
+  } catch (err) {
+    console.warn('[autoIndexarAsignacionesHistoricas] Error:', err);
+    return 0;
+  }
+}
 
 /**
  * Purga automática: Elimina asignaciones residuales de "Plan Común Electivo"
@@ -48,6 +107,7 @@ export async function purgarAsignacionesPlanComunElectivoInvalidas(dbParam?: any
 export async function listarAsignaciones(rbd: string, periodo: number = 2027): Promise<AsignacionHoraria[]> {
   const db = await getDb();
   await purgarAsignacionesPlanComunElectivoInvalidas(db);
+  await autoIndexarAsignacionesHistoricas(db);
   const res = db.exec("SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido, codigo_asignatura, ambito_curricular FROM asignaciones_horarias WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))", [rbd, periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {

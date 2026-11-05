@@ -356,7 +356,9 @@ export function mapAsignacionToDb(asig: AsignacionHoraria) {
     es_co_docencia: Boolean(asig.esCoDocencia),
     es_agrupacion_flexible: Boolean(asig.esAgrupacionFlexible),
     cursos_compartidos_json: asig.cursosCompartidosIds ? JSON.stringify(asig.cursosCompartidosIds) : '[]',
-    es_diferenciado_compartido: Boolean(asig.esDiferenciadoCompartido)
+    es_diferenciado_compartido: Boolean(asig.esDiferenciadoCompartido),
+    codigo_asignatura: asig.codigoAsignatura || null,
+    ambito_curricular: asig.ambitoCurricular || null
   };
 }
 
@@ -388,7 +390,9 @@ export function mapAsignacionFromDb(row: any): AsignacionHoraria {
     esCoDocencia: Boolean(row.es_co_docencia),
     esAgrupacionFlexible: Boolean(row.es_agrupacion_flexible),
     cursosCompartidosIds: compartidos,
-    esDiferenciadoCompartido: Boolean(row.es_diferenciado_compartido)
+    esDiferenciadoCompartido: Boolean(row.es_diferenciado_compartido),
+    codigoAsignatura: row.codigo_asignatura || undefined,
+    ambitoCurricular: row.ambito_curricular || undefined
   };
 }
 
