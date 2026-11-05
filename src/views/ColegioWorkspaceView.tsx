@@ -73,6 +73,7 @@ export interface ColegioWorkspaceViewProps {
   guardandoEnNube?: boolean;
   sincronizandoNube?: boolean;
   usuarioActual?: { id: string; nombreCompleto: string; email?: string; role: string } | null;
+  onTabChange?: (tab: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas') => void;
 }
 
 export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
@@ -115,13 +116,20 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onRefrescarApartadoNube,
   guardandoEnNube = false,
   sincronizandoNube = false,
-  usuarioActual
+  usuarioActual,
+  onTabChange
 }) => {
-  const [tabActiva, setTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>(initialTab || 'balanza');
+  const [tabActiva, setTabActivaState] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>(initialTab || 'balanza');
+
+  const setTabActiva = (tab: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas') => {
+    setTabActivaState(tab);
+    onTabChange?.(tab);
+  };
 
   React.useEffect(() => {
     if (initialTab) {
-      setTabActiva(initialTab);
+      setTabActivaState(initialTab);
+      onTabChange?.(initialTab);
     }
   }, [initialTab, colegio.rbd]);
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);

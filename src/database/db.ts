@@ -30,6 +30,7 @@ export {
   listarSalas,
   listarTodasLasSalas,
   guardarSala,
+  guardarSalasBatch,
   eliminarSala
 } from './repositories/salasRepo';
 
@@ -37,6 +38,7 @@ export {
   listarCursos,
   listarTodosLosCursos,
   guardarCurso,
+  guardarCursosBatch,
   eliminarCurso
 } from './repositories/cursosRepo';
 

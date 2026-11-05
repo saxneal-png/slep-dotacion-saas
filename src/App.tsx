@@ -75,6 +75,7 @@ import {
 import { checkAndSeedInitialData } from './database/seedData';
 import { SupabaseDotacionService } from './services/supabaseDotacionService';
 import { isSupabaseEnabled } from './services/supabaseClient';
+import { notificarMutacionLocalEmitida } from './services/colaboracionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota } from './services/configuracionGeneralService';
 import { RolesPermisosService } from './services/rolesPermisosService';
@@ -129,6 +130,7 @@ export const App: React.FC = () => {
   });
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
   const [guardandoEnNube, setGuardandoEnNube] = useState(false);
+  const [workspaceTabActiva, setWorkspaceTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
 
   const handleGuardarCambiosEnNube = async (apartadoEspecifico?: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general') => {
     if (!colegioActivo) {
@@ -142,22 +144,28 @@ export const App: React.FC = () => {
     }
     setGuardandoEnNube(true);
 
+    const targetApartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general' =
+      apartadoEspecifico ||
+      (vistaActiva === 'workflow'
+        ? (workspaceTabActiva === 'balanza' ? 'general' : workspaceTabActiva)
+        : 'general');
+
     let apartadosTarget: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'>;
     let labelApartado = 'completa';
 
-    if (apartadoEspecifico === 'docentes') {
+    if (targetApartado === 'docentes') {
       apartadosTarget = ['docentes', 'asignaciones'];
       labelApartado = 'de Docentes y Asignaciones';
-    } else if (apartadoEspecifico === 'asistentes') {
+    } else if (targetApartado === 'asistentes') {
       apartadosTarget = ['asistentes'];
       labelApartado = 'de Asistentes de la Educación';
-    } else if (apartadoEspecifico === 'cursos') {
+    } else if (targetApartado === 'cursos') {
       apartadosTarget = ['cursos'];
       labelApartado = 'de Cursos y Demanda';
-    } else if (apartadoEspecifico === 'salas') {
+    } else if (targetApartado === 'salas') {
       apartadosTarget = ['salas'];
       labelApartado = 'de Salas e Infraestructura';
-    } else if (apartadoEspecifico === 'pie') {
+    } else if (targetApartado === 'pie') {
       apartadosTarget = ['cursos', 'docentes', 'asignaciones', 'asistentes'];
       labelApartado = 'de Programa de Integración Escolar (PIE)';
     } else {
@@ -172,6 +180,7 @@ export const App: React.FC = () => {
         periodoActivo,
         apartadosTarget
       );
+      notificarMutacionLocalEmitida(targetApartado);
       mostrarMensaje(
         `✓ Cambios guardados (${labelApartado}) para ${colegioActivo.nombre} (${periodoActivo}): ${res.docentesSincronizados} docentes, ${res.cursosSincronizados} cursos, ${res.asignacionesSincronizadas} asignaciones y ${res.asistentesSincronizados} asistentes sincronizados en Supabase sin tocar otros apartados.`,
         'success'
@@ -393,18 +402,26 @@ export const App: React.FC = () => {
     }
   };
 
-  const cargarDatosColegio = async (rbd: string, p: number = periodoActivo, autoSyncCloud: boolean = false) => {
+  const cargarDatosColegio = async (rbd: string, p: number = periodoActivo, autoSyncCloud: boolean = true) => {
     const currentReqId = ++loadRequestIdRef.current;
     const cleanRbd = rbd.trim();
 
+    // 1. Carga inmediata desde SQLite local (Renderizado instantáneo <15ms)
     let s = await listarSalas(cleanRbd);
     let c = await listarCursos(cleanRbd, p);
     let d = await listarDocentes(cleanRbd, p);
     let a = await listarAsignaciones(cleanRbd, p);
     let ast = await listarAsistentes(cleanRbd, p);
 
-    // Si localmente está en blanco o falta el estamento docente o se solicita autoSyncCloud, intentar hidratar desde Supabase
-    if (autoSyncCloud || (c.length === 0 && d.length === 0 && ast.length === 0) || (d.length === 0 && (c.length > 0 || ast.length > 0))) {
+    if (currentReqId !== loadRequestIdRef.current) return;
+    setSalas(s);
+    setCursos(c);
+    setDocentes(d);
+    setAsignaciones(a);
+    setAsistentes(ast);
+
+    // 2. Stale-While-Revalidate: Reconciliar en segundo plano con Supabase para absorber cambios concurrentes
+    if (isSupabaseEnabled() && autoSyncCloud) {
       try {
         const res = await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(cleanRbd, p);
         if (currentReqId !== loadRequestIdRef.current) return;
@@ -414,20 +431,18 @@ export const App: React.FC = () => {
           d = await listarDocentes(cleanRbd, p);
           a = await listarAsignaciones(cleanRbd, p);
           ast = await listarAsistentes(cleanRbd, p);
+
+          if (currentReqId !== loadRequestIdRef.current) return;
+          setSalas(s);
+          setCursos(c);
+          setDocentes(d);
+          setAsignaciones(a);
+          setAsistentes(ast);
         }
       } catch (err) {
         console.warn('[cargarDatosColegio] Aviso consultando Supabase:', err);
       }
     }
-
-    // Token Anti-Race Condition: Abortar si otra petición más reciente fue iniciada
-    if (currentReqId !== loadRequestIdRef.current) return;
-
-    setSalas(s);
-    setCursos(c);
-    setDocentes(d);
-    setAsignaciones(a);
-    setAsistentes(ast);
   };
 
   const handleTogglePeriodo = async (nuevoPeriodo: number) => {
@@ -1131,6 +1146,7 @@ export const App: React.FC = () => {
               guardandoEnNube={guardandoEnNube}
               sincronizandoNube={sincronizandoNube}
               usuarioActual={session?.usuario}
+              onTabChange={setWorkspaceTabActiva}
             />
           ) : (
             <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-center max-w-md mx-auto my-12 animate-in fade-in">

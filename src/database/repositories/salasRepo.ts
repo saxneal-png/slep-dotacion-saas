@@ -49,6 +49,33 @@ export async function guardarSala(s: SalaInfraestructura, skipCloudSync: boolean
   }
 }
 
+export async function guardarSalasBatch(salas: SalaInfraestructura[], skipCloudSync: boolean = false): Promise<void> {
+  if (!salas.length) return;
+  const db = await getDb();
+  db.run("BEGIN TRANSACTION;");
+  try {
+    for (const s of salas) {
+      db.run(`
+        INSERT INTO salas_infraestructura (id, rbd, pabellon, nombre_sala, superficie_m2, tipo, aforo_maximo)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          pabellon=excluded.pabellon, nombre_sala=excluded.nombre_sala,
+          superficie_m2=excluded.superficie_m2, tipo=excluded.tipo, aforo_maximo=excluded.aforo_maximo;
+      `, [s.id, s.rbd, s.pabellon || null, s.nombreSala, s.superficieM2, s.tipo, s.aforoMaximo]);
+    }
+    db.run("COMMIT;");
+    persistDb();
+  } catch (err) {
+    db.run("ROLLBACK;");
+    throw err;
+  }
+  if (!skipCloudSync) {
+    for (const s of salas) {
+      SupabaseDotacionService.guardarSala(s).catch(() => {});
+    }
+  }
+}
+
 export async function eliminarSala(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM salas_infraestructura WHERE id = ?", [id]);

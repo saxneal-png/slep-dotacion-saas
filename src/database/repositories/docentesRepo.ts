@@ -232,7 +232,7 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
         docId = d.id;
       } else {
         const cleanRun = d.run.replace(/[^0-9kK]/g, '');
-        docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}_${Date.now()}`;
+        docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
       }
     }
   }
@@ -377,7 +377,7 @@ export async function guardarDocentesBatch(
           docId = d.id;
         } else {
           const cleanRun = d.run.replace(/[^0-9kK]/g, '');
-          docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}_${Date.now()}`;
+          docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
         }
       }
 

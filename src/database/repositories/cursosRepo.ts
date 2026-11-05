@@ -137,6 +137,71 @@ export async function guardarCurso(c: CursoSae, skipCloudSync: boolean = false):
   }
 }
 
+export async function guardarCursosBatch(cursos: CursoSae[], skipCloudSync: boolean = false): Promise<void> {
+  if (!cursos.length) return;
+  const db = await getDb();
+  db.run("BEGIN TRANSACTION;");
+  try {
+    for (const c of cursos) {
+      const talleresJson = c.talleresJec && c.talleresJec.length ? JSON.stringify(c.talleresJec) : null;
+      const gradosJson = c.gradosCombinados && c.gradosCombinados.length ? JSON.stringify(c.gradosCombinados) : null;
+      const cursoPeriodo = c.periodo || 2027;
+      const regProp = c.regimenProporcion || '65_35';
+      const esMulti = c.esMultigrado ? 1 : 0;
+      const esComb = c.esCombinado ? 1 : 0;
+      const tipoMod = c.tipoModalidad || (c.esMultigrado ? 'MULTIGRADO' : c.esCombinado ? 'COMBINADO' : 'REGULAR');
+      db.run(`
+        INSERT INTO cursos_sae (id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          rbd=excluded.rbd, nivel=excluded.nivel, letra=excluded.letra, regimen=excluded.regimen,
+          sala_id=excluded.sala_id, cupo_sae=excluded.cupo_sae,
+          matricula_proyectada=excluded.matricula_proyectada,
+          alumnos_neet=excluded.alumnos_neet, alumnos_neep=excluded.alumnos_neep,
+          talleres_jec_json=excluded.talleres_jec_json,
+          periodo=excluded.periodo,
+          regimen_proporcion=excluded.regimen_proporcion,
+          es_multigrado=excluded.es_multigrado,
+          es_combinado=excluded.es_combinado,
+          tipo_modalidad=excluded.tipo_modalidad,
+          grados_combinados_json=excluded.grados_combinados_json,
+          especialidad_tp=excluded.especialidad_tp,
+          plan_estudio_id=excluded.plan_estudio_id;
+      `, [
+        c.id,
+        c.rbd,
+        c.nivel,
+        c.letra,
+        c.regimen,
+        c.salaId || null,
+        c.cupoSae || 0,
+        c.matriculaProyectada || 0,
+        c.alumnosNeet || 0,
+        c.alumnosNeep || 0,
+        talleresJson,
+        cursoPeriodo,
+        regProp,
+        esMulti,
+        esComb,
+        tipoMod,
+        gradosJson,
+        c.especialidadTp || null,
+        c.planEstudioId || null
+      ]);
+    }
+    db.run("COMMIT;");
+    persistDb();
+  } catch (err) {
+    db.run("ROLLBACK;");
+    throw err;
+  }
+  if (!skipCloudSync) {
+    SupabaseDotacionService.guardarCursosBatch(cursos).catch(err =>
+      console.warn('[cursosRepo] Aviso sincronizando lote con Supabase:', err)
+    );
+  }
+}
+
 export async function eliminarCurso(id: string): Promise<void> {
   const db = await getDb();
   db.run("DELETE FROM cursos_sae WHERE id = ?", [id]);

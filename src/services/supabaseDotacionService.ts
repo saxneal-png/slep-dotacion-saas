@@ -1163,12 +1163,13 @@ export class SupabaseDotacionService {
 
     // 2. Importar repositorios locales
     const { guardarEstablecimiento } = await import('../database/repositories/establecimientosRepo');
-    const { guardarSala } = await import('../database/repositories/salasRepo');
-    const { guardarCurso } = await import('../database/repositories/cursosRepo');
-    const { guardarDocente } = await import('../database/repositories/docentesRepo');
-    const { guardarAsignacion } = await import('../database/repositories/asignacionesRepo');
+    const { guardarSalasBatch } = await import('../database/repositories/salasRepo');
+    const { guardarCursosBatch } = await import('../database/repositories/cursosRepo');
+    const { guardarDocentesBatch } = await import('../database/repositories/docentesRepo');
+    const { guardarAsignacionesBatch } = await import('../database/repositories/asignacionesRepo');
     const { guardarAsistentesBatch } = await import('../database/repositories/asistentesRepo');
-    const { persistDb } = await import('../database/dbCore');
+    const { getDb, persistDb } = await import('../database/dbCore');
+    const db = await getDb();
 
     // 3. Integrar Establecimiento (skipCloudSync = true para evitar bucles de re-subida)
     let estActualizado = false;
@@ -1178,52 +1179,84 @@ export class SupabaseDotacionService {
       estActualizado = true;
     }
 
-    // 4. Integrar Salas
+    // 4. Integrar Salas con Diff & Prune (eliminar de SQLite salas que ya no existan en Supabase)
     let salasCount = 0;
-    if (fetchSalas && salasData.length > 0) {
-      for (const row of salasData) {
-        const s = mapSalaFromDb(row);
-        await guardarSala(s, true);
-        salasCount++;
+    if (fetchSalas) {
+      const remoteSalaIds = salasData.map(r => r.id).filter(Boolean);
+      if (remoteSalaIds.length > 0) {
+        const placeholders = remoteSalaIds.map(() => '?').join(',');
+        db.run(`DELETE FROM salas_infraestructura WHERE rbd = ? AND id NOT IN (${placeholders})`, [cleanRbd, ...remoteSalaIds]);
+      } else {
+        db.run('DELETE FROM salas_infraestructura WHERE rbd = ?', [cleanRbd]);
+      }
+      if (salasData.length > 0) {
+        const salasObj = salasData.map(mapSalaFromDb);
+        await guardarSalasBatch(salasObj, true);
+        salasCount = salasObj.length;
       }
     }
 
-    // 5. Integrar Cursos
+    // 5. Integrar Cursos con Diff & Prune (eliminar de SQLite cursos que ya no existan en Supabase)
     let cursosCount = 0;
-    if (fetchCursos && cursosData.length > 0) {
-      for (const row of cursosData) {
-        const c = mapCursoFromDb(row);
-        await guardarCurso(c, true);
-        cursosCount++;
+    if (fetchCursos) {
+      const remoteCursoIds = cursosData.map(r => r.id).filter(Boolean);
+      if (remoteCursoIds.length > 0) {
+        const placeholders = remoteCursoIds.map(() => '?').join(',');
+        db.run(`DELETE FROM cursos_sae WHERE rbd = ? AND periodo = ? AND id NOT IN (${placeholders})`, [cleanRbd, periodo, ...remoteCursoIds]);
+      } else {
+        db.run('DELETE FROM cursos_sae WHERE rbd = ? AND periodo = ?', [cleanRbd, periodo]);
+      }
+      if (cursosData.length > 0) {
+        const cursosObj = cursosData.map(mapCursoFromDb);
+        await guardarCursosBatch(cursosObj, true);
+        cursosCount = cursosObj.length;
       }
     }
 
-    // 6. Integrar Docentes
+    // 6. Integrar Docentes con Diff & Prune (eliminar de SQLite docentes que ya no existan en Supabase)
     let docCount = 0;
-    if (fetchDoc && docData.length > 0) {
-      for (const row of docData) {
-        const d = mapDocenteFromDb(row);
-        await guardarDocente(d, true);
-        docCount++;
+    if (fetchDoc) {
+      const remoteDocIds = docData.map(r => r.id).filter(Boolean);
+      if (remoteDocIds.length > 0) {
+        const placeholders = remoteDocIds.map(() => '?').join(',');
+        db.run(`DELETE FROM docentes WHERE rbd = ? AND periodo = ? AND id NOT IN (${placeholders})`, [cleanRbd, periodo, ...remoteDocIds]);
+      } else {
+        db.run('DELETE FROM docentes WHERE rbd = ? AND periodo = ?', [cleanRbd, periodo]);
+      }
+      if (docData.length > 0) {
+        const docentesObj = docData.map(mapDocenteFromDb);
+        await guardarDocentesBatch(docentesObj, true);
+        docCount = docentesObj.length;
       }
     }
 
-    // 7. Integrar Asignaciones
+    // 7. Integrar Asignaciones con Diff & Prune (eliminar de SQLite asignaciones que ya no existan en Supabase)
     let asigCount = 0;
-    if (fetchAsig && asigData.length > 0) {
-      for (const row of asigData) {
-        const a = mapAsignacionFromDb(row);
-        await guardarAsignacion(a, true);
-        asigCount++;
+    if (fetchAsig) {
+      const remoteAsigIds = asigData.map(r => r.id).filter(Boolean);
+      if (remoteAsigIds.length > 0) {
+        const placeholders = remoteAsigIds.map(() => '?').join(',');
+        db.run(`DELETE FROM asignaciones_horarias WHERE rbd = ? AND periodo = ? AND id NOT IN (${placeholders})`, [cleanRbd, periodo, ...remoteAsigIds]);
+      } else {
+        db.run('DELETE FROM asignaciones_horarias WHERE rbd = ? AND periodo = ?', [cleanRbd, periodo]);
+      }
+      if (asigData.length > 0) {
+        const asigsObj = asigData.map(mapAsignacionFromDb);
+        await guardarAsignacionesBatch(asigsObj, true);
+        asigCount = asigsObj.length;
       }
     }
 
-    // 8. Integrar Asistentes
+    // 8. Integrar Asistentes (con reemplazar = true que ya ejecuta su propia purga)
     let astCount = 0;
-    if (fetchAst && astData.length > 0) {
-      const asistentesObj = astData.map(mapAsistenteFromDb);
-      await guardarAsistentesBatch(asistentesObj, cleanRbd, periodo, true);
-      astCount = asistentesObj.length;
+    if (fetchAst) {
+      if (astData.length > 0) {
+        const asistentesObj = astData.map(mapAsistenteFromDb);
+        await guardarAsistentesBatch(asistentesObj, cleanRbd, periodo, true);
+        astCount = asistentesObj.length;
+      } else {
+        db.run('DELETE FROM asistentes_educacion WHERE rbd = ? AND periodo = ?', [cleanRbd, periodo]);
+      }
     }
 
     // Persistir estado consolidado en IndexedDB

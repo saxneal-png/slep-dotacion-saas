@@ -1,8 +1,8 @@
 import { persistDb } from '../dbCore';
 import { MatrizExcelParseResult, CursoSae, Docente, AsignacionHoraria } from '../../types';
-import { listarCursos, guardarCurso } from './cursosRepo';
-import { guardarDocente } from './docentesRepo';
-import { guardarAsignacion } from './asignacionesRepo';
+import { listarCursos, guardarCursosBatch } from './cursosRepo';
+import { guardarDocentesBatch } from './docentesRepo';
+import { guardarAsignacionesBatch } from './asignacionesRepo';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../../data/slepSchoolsCatalog';
 
 export async function guardarMatrizExcelEnDb(
@@ -19,6 +19,7 @@ export async function guardarMatrizExcelEnDb(
     cursoMap.set(key, c);
   }
 
+  const nuevosCursosBatch: CursoSae[] = [];
   for (const cDet of result.cursos) {
     const key = `${cDet.nivel}_${cDet.letra}`.toUpperCase();
     if (!cursoMap.has(key)) {
@@ -35,14 +36,19 @@ export async function guardarMatrizExcelEnDb(
         alumnosNeet: 5,
         alumnosNeep: 2
       };
-      await guardarCurso(nuevoCurso);
+      nuevosCursosBatch.push(nuevoCurso);
       cursoMap.set(key, nuevoCurso);
       cursosNuevos++;
     }
   }
 
+  if (nuevosCursosBatch.length > 0) {
+    await guardarCursosBatch(nuevosCursosBatch);
+  }
+
   let docentesGuardados = 0;
   const docenteMap = new Map<string, Docente>();
+  const docentesBatch: Docente[] = [];
 
   const catalogoSchool = SLEP_VALLE_DIGUILLIN_SCHOOLS.find(s => s.rbd === rbdDestino);
   const directorCatalogNorm = (catalogoSchool?.director || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
@@ -109,12 +115,18 @@ export async function guardarMatrizExcelEnDb(
       horasAula: totalHorasAula
     };
 
-    await guardarDocente(docObj);
+    docentesBatch.push(docObj);
     docenteMap.set(d.run, docObj);
     docentesGuardados++;
   }
 
+  if (docentesBatch.length > 0) {
+    await guardarDocentesBatch(docentesBatch);
+  }
+
   let asignacionesGuardadas = 0;
+  const asignacionesBatch: AsignacionHoraria[] = [];
+
   for (const d of result.docentes) {
     const doc = docenteMap.get(d.run);
     if (!doc) continue;
@@ -135,9 +147,13 @@ export async function guardarMatrizExcelEnDb(
         horasPedagogicasAula: a.horasPedagogicasAula,
         esTallerJec: a.esTallerJec
       };
-      await guardarAsignacion(asigObj);
+      asignacionesBatch.push(asigObj);
       asignacionesGuardadas++;
     }
+  }
+
+  if (asignacionesBatch.length > 0) {
+    await guardarAsignacionesBatch(asignacionesBatch);
   }
 
   await persistDb(true);

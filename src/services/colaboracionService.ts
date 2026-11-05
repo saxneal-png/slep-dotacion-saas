@@ -10,6 +10,7 @@ export interface PresenciaUsuario {
   apartadoActivo: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas' | string;
   rbd: string;
   timestamp: number;
+  esMismoPerfil?: boolean;
 }
 
 export interface CambioRemotoNotificacion {
@@ -20,12 +21,36 @@ export interface CambioRemotoNotificacion {
   timestamp: number;
 }
 
+// Ventana de gracia para suprimir ecos locales (mutaciones emitidas por la sesión actual)
+const ultimasMutacionesLocales: Record<string, number> = {};
+
+export function notificarMutacionLocalEmitida(apartado: string) {
+  const now = Date.now();
+  ultimasMutacionesLocales[apartado] = now;
+  ultimasMutacionesLocales['general'] = now;
+}
+
+function getClientSessionId(): string {
+  if (typeof window === 'undefined') return 'server';
+  try {
+    let sid = sessionStorage.getItem('slep_client_session_id');
+    if (!sid) {
+      sid = 'session_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+      sessionStorage.setItem('slep_client_session_id', sid);
+    }
+    return sid;
+  } catch {
+    return 'session_' + Math.random().toString(36).substring(2, 9);
+  }
+}
+
 /**
  * Hook de colaboración concurrente en tiempo real para un establecimiento escolar.
  * Permite:
- * 1. Monitorear presencia activa de otros usuarios en el mismo colegio y en qué apartado están trabajando.
- * 2. Recibir notificaciones inmediatas vía Supabase Realtime si otro usuario guardó cambios en algún apartado.
- * 3. Notificar al usuario para refrescar selectivamente sin sobrescribir su propio trabajo en curso.
+ * 1. Monitorear presencia activa de otros usuarios (o de la misma cuenta en otro dispositivo/pestaña) y en qué apartado están trabajando.
+ * 2. Recibir notificaciones inmediatas vía Supabase Realtime si otro dispositivo guardó cambios en algún apartado.
+ * 3. Suprimir auto-ecos locales generados por las acciones del propio dispositivo.
+ * 4. Notificar al usuario para refrescar selectivamente sin sobrescribir su propio trabajo en curso.
  */
 export function useColaboracionColegio({
   rbd,
@@ -49,6 +74,7 @@ export function useColaboracionColegio({
   const channelRef = useRef<RealtimeChannel | null>(null);
   const ultimoTrackRef = useRef<{ apartado: string; rbd: string; usuarioId: string } | null>(null);
   const timerDebounceRef = useRef<any>(null);
+  const clientSessionIdRef = useRef<string>(getClientSessionId());
 
   const cleanRbd = rbd ? rbd.trim() : '';
 
@@ -58,11 +84,13 @@ export function useColaboracionColegio({
       return;
     }
 
+    const sessionId = clientSessionIdRef.current;
+    const presenceKey = `${usuarioActual.id}__${sessionId}`;
     const channelName = `colegio_colaboracion_${cleanRbd}_${periodo}`;
     const channel = supabase.channel(channelName, {
       config: {
         presence: {
-          key: usuarioActual.id
+          key: presenceKey
         }
       }
     });
@@ -73,23 +101,30 @@ export function useColaboracionColegio({
       const state = channel.presenceState();
       const lista: PresenciaUsuario[] = [];
       Object.entries(state).forEach(([key, items]) => {
-        if (key === usuarioActual.id) return; // excluir a uno mismo
+        if (key === presenceKey) return; // excluir únicamente a ESTA pestaña/dispositivo
         (items as any[]).forEach(item => {
+          if (item.sessionId === sessionId) return;
+          const esMismoPerfil = item.usuarioId === usuarioActual.id;
+          const nombreAMostrar = esMismoPerfil
+            ? `${item.nombreCompleto || 'Usuario'} (Otro equipo/ventana)`
+            : (item.nombreCompleto || 'Usuario');
+
           lista.push({
             usuarioId: item.usuarioId || key,
-            nombreCompleto: item.nombreCompleto || 'Usuario',
+            nombreCompleto: nombreAMostrar,
             email: item.email,
             role: item.role || 'funcionario',
             apartadoActivo: item.apartadoActivo || 'general',
             rbd: item.rbd || cleanRbd,
-            timestamp: item.timestamp || Date.now()
+            timestamp: item.timestamp || Date.now(),
+            esMismoPerfil
           });
         });
       });
       setUsuariosEnColegio(lista);
     });
 
-    // 2. Escuchar cambios remotos en las tablas de este colegio
+    // 2. Escuchar cambios remotos en las tablas de este colegio suprimiendo auto-ecos locales
     const registrarListener = (
       tabla: 'docentes' | 'asistentes_educacion' | 'cursos_sae' | 'salas_infraestructura' | 'asignaciones_horarias' | 'establecimientos',
       apartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general'
@@ -103,6 +138,16 @@ export function useColaboracionColegio({
           filter: `rbd=eq.${cleanRbd}`
         },
         (payload: any) => {
+          const now = Date.now();
+          // Suprimir si la acción provino de este mismo cliente hace menos de 3.5 segundos
+          const ultimaMutacion = Math.max(
+            ultimasMutacionesLocales[apartado] || 0,
+            ultimasMutacionesLocales['general'] || 0
+          );
+          if (now - ultimaMutacion < 3500) {
+            return;
+          }
+
           const evento = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
           if (onCambioRemotoDetectado) {
             onCambioRemotoDetectado({
@@ -110,7 +155,7 @@ export function useColaboracionColegio({
               evento,
               apartado,
               rbd: cleanRbd,
-              timestamp: Date.now()
+              timestamp: now
             });
           }
         }
@@ -132,6 +177,7 @@ export function useColaboracionColegio({
           usuarioId: usuarioActual.id
         };
         await channel.track({
+          sessionId,
           usuarioId: usuarioActual.id,
           nombreCompleto: usuarioActual.nombreCompleto,
           email: usuarioActual.email,
@@ -176,6 +222,7 @@ export function useColaboracionColegio({
           usuarioId: usuarioActual.id
         };
         channelRef.current.track({
+          sessionId: clientSessionIdRef.current,
           usuarioId: usuarioActual.id,
           nombreCompleto: usuarioActual.nombreCompleto,
           email: usuarioActual.email,
