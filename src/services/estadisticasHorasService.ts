@@ -450,6 +450,8 @@ export function calcularEstadisticasColegio(
 ): EstadisticasColegioHoras {
   const regimenProporcion: '60/40' | '65/35' = colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
 
+  // Índices en memoria O(1)
+  const cursosMap = new Map<string, CursoSae>();
   let totalMatricula = 0;
   let horasAulaDemandadasPlan = 0;
   let horasDemandaPieNormativa = 0;
@@ -457,6 +459,7 @@ export function calcularEstadisticasColegio(
 
   // 1. Demanda de Cursos y PIE
   for (const c of cursos) {
+    cursosMap.set(c.id, c);
     totalMatricula += c.matriculaProyectada || 0;
     const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
     const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen);
@@ -470,6 +473,29 @@ export function calcularEstadisticasColegio(
       const pie = calcularDemandaNormativaPieCurso(cNeet, cNeep, isJec);
       horasDemandaPieNormativa += pie.horasTotalCronologicas;
       horasColaborativasDemandadasPie += pie.horasTrabajoColaborativoCronologicas;
+    }
+  }
+
+  // Pre-agrupar asignaciones por docenteId y coDocenteId en un solo recorrido lineal O(A)
+  const asigsPorDocente = new Map<string, AsignacionHoraria[]>();
+  const coAsigsPorDocente = new Map<string, AsignacionHoraria[]>();
+
+  for (const a of asignaciones) {
+    if (a.docenteId) {
+      let arr = asigsPorDocente.get(a.docenteId);
+      if (!arr) {
+        arr = [];
+        asigsPorDocente.set(a.docenteId, arr);
+      }
+      arr.push(a);
+    }
+    if (a.coDocenteId && a.tieneCoDocente) {
+      let arr = coAsigsPorDocente.get(a.coDocenteId);
+      if (!arr) {
+        arr = [];
+        coAsigsPorDocente.set(a.coDocenteId, arr);
+      }
+      arr.push(a);
     }
   }
 
@@ -567,9 +593,9 @@ export function calcularEstadisticasColegio(
     hCoord += dCoord;
     hTallerSep += dTallerSep;
 
-    // Asignaciones del docente en esta escuela
-    const docAsigs = asignaciones.filter(a => a.docenteId === doc.id);
-    const coDocAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
+    // Asignaciones del docente en esta escuela desde mapa precalculado
+    const docAsigs = asigsPorDocente.get(doc.id) || [];
+    const coDocAsigs = coAsigsPorDocente.get(doc.id) || [];
 
     const asigsRegulares = docAsigs.filter(a => !a.esCoDocencia && !a.esTallerSep && !a.esTrabajoColaborativo && a.tipoApoyo !== 'TRABAJO_COLABORATIVO');
     const asigsCoDoc = [...docAsigs.filter(a => a.esCoDocencia), ...coDocAsigs];
@@ -611,17 +637,17 @@ export function calcularEstadisticasColegio(
 
     const hExentas = dDir + dInsp + dTec + dCoord + sepExentas + pieCronologicas + sumFuncionesNoAulaSubvGen;
 
-    // Separar horas según proporción del curso (60/40 vs 65/35)
+    // Separar horas según proporción del curso (60/40 vs 65/35) usando índice O(1)
     const ha60 = asigsDocenciaEfectiva
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
     const ha65 = asigsDocenciaEfectiva
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
@@ -645,14 +671,14 @@ export function calcularEstadisticasColegio(
     const horasRecreoDoc = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
 
     const asigsSepAula = isPieDoc ? [] : docAsigs.filter(a => a.esTallerSep || a.tipoApoyo === 'TALLER_SEP' || (a.esCoDocencia && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP')));
-    const pedSep65 = asigsSepAula.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-    const pedSep60 = asigsSepAula.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const pedSep65 = asigsSepAula.filter(a => { const c = cursosMap.get(a.cursoId); return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const pedSep60 = asigsSepAula.filter(a => { const c = cursosMap.get(a.cursoId); return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
     const reqSepDoc = (pedSep65 > 0 || pedSep60 > 0)
       ? (buscarContratoMinimoPorTabla(pedSep65, '65_35') + buscarContratoMinimoPorTabla(pedSep60, '60_40') + sumFuncionesNoAulaSep)
       : (dTallerSep + sumFuncionesNoAulaSep);
 
-    const pedCurricular65 = asigsRegulares.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-    const pedCurricular60 = asigsRegulares.filter(a => { const c = cursos.find(x => x.id === a.cursoId); return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const pedCurricular65 = asigsRegulares.filter(a => { const c = cursosMap.get(a.cursoId); return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
+    const pedCurricular60 = asigsRegulares.filter(a => { const c = cursosMap.get(a.cursoId); return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80); }).reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
     const reqSubvDoc = buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40') + dDir + dInsp + dTec + dCoord + sumFuncionesNoAulaSubvGen;
 
     const sepAsignadasDoc = reqSepDoc;
@@ -836,11 +862,52 @@ export function calcularEstadisticasTerritoriales(
   todasLasAsignaciones: AsignacionHoraria[],
   todosLosAsistentes: AsistenteEducacion[] = []
 ): EstadisticasTerritorialesHoras {
+  // Pre-agrupación O(N) por RBD para evitar filtros cuadráticos O(Colegios * N)
+  const cursosPorRbd = new Map<string, CursoSae[]>();
+  for (const c of todosLosCursos) {
+    let arr = cursosPorRbd.get(c.rbd);
+    if (!arr) {
+      arr = [];
+      cursosPorRbd.set(c.rbd, arr);
+    }
+    arr.push(c);
+  }
+
+  const docentesPorRbd = new Map<string, Docente[]>();
+  for (const d of todosLosDocentes) {
+    let arr = docentesPorRbd.get(d.rbd);
+    if (!arr) {
+      arr = [];
+      docentesPorRbd.set(d.rbd, arr);
+    }
+    arr.push(d);
+  }
+
+  const asigsPorRbd = new Map<string, AsignacionHoraria[]>();
+  for (const a of todasLasAsignaciones) {
+    let arr = asigsPorRbd.get(a.rbd);
+    if (!arr) {
+      arr = [];
+      asigsPorRbd.set(a.rbd, arr);
+    }
+    arr.push(a);
+  }
+
+  const asistPorRbd = new Map<string, AsistenteEducacion[]>();
+  for (const ast of todosLosAsistentes) {
+    let arr = asistPorRbd.get(ast.rbd);
+    if (!arr) {
+      arr = [];
+      asistPorRbd.set(ast.rbd, arr);
+    }
+    arr.push(ast);
+  }
+
   const porColegio: EstadisticasColegioHoras[] = colegios.map(col => {
-    const cursosCol = todosLosCursos.filter(c => c.rbd === col.rbd);
-    const docentesCol = todosLosDocentes.filter(d => d.rbd === col.rbd);
-    const asigsCol = todasLasAsignaciones.filter(a => a.rbd === col.rbd);
-    const asistCol = todosLosAsistentes.filter(a => a.rbd === col.rbd);
+    const cursosCol = cursosPorRbd.get(col.rbd) || [];
+    const docentesCol = docentesPorRbd.get(col.rbd) || [];
+    const asigsCol = asigsPorRbd.get(col.rbd) || [];
+    const asistCol = asistPorRbd.get(col.rbd) || [];
     return calcularEstadisticasColegio(col, cursosCol, docentesCol, asigsCol, asistCol);
   });
 

@@ -217,31 +217,82 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
 
   const [filtroTipoDocente, setFiltroTipoDocente] = useState<'todos' | 'multicontrato' | 'exceso'>('todos');
 
-  const consolidacion = consolidarCarteraTerritorial(establecimientos, docentes, diagnosticos);
+  const consolidacion = useMemo(() => {
+    return consolidarCarteraTerritorial(establecimientos, docentes, diagnosticos);
+  }, [establecimientos, docentes, diagnosticos]);
   const { inconsistencias, docentesCompartidos, resumenPorComuna, vacantesCruzadas } = consolidacion;
 
   const totalColegios = establecimientos.length;
-  const totalMatriculaTerritorial = diagnosticos.reduce((s, d) => s + d.balanzaGeneral.totalMatriculaProyectada, 0);
-  const totalCuposSaeTerritorial = diagnosticos.reduce((s, d) => s + d.balanzaGeneral.totalCuposSae, 0);
-  const totalHorasDemandadas = diagnosticos.reduce((s, d) => s + d.balanzaGeneral.horasAulaDemandadasCurriculo, 0);
-  const totalHorasDisponibles = diagnosticos.reduce((s, d) => s + d.balanzaGeneral.horasLectivasDisponibles, 0);
+  const { totalMatriculaTerritorial, totalCuposSaeTerritorial, totalHorasDemandadas, totalHorasDisponibles } = useMemo(() => {
+    let mat = 0;
+    let cupos = 0;
+    let dem = 0;
+    let disp = 0;
+    for (const d of diagnosticos) {
+      mat += d.balanzaGeneral.totalMatriculaProyectada;
+      cupos += d.balanzaGeneral.totalCuposSae;
+      dem += d.balanzaGeneral.horasAulaDemandadasCurriculo;
+      disp += d.balanzaGeneral.horasLectivasDisponibles;
+    }
+    return {
+      totalMatriculaTerritorial: mat,
+      totalCuposSaeTerritorial: cupos,
+      totalHorasDemandadas: dem,
+      totalHorasDisponibles: disp
+    };
+  }, [diagnosticos]);
   const balanceGlobal = totalHorasDisponibles - totalHorasDemandadas;
 
   // Nómina Territorial Consolidada de Docentes por RUN
   const docentesConsolidados = useMemo(() => {
-    return obtenerDocentesConsolidadosTerritorio(establecimientos, docentes, asignaciones);
-  }, [establecimientos, docentes, asignaciones]);
+    return obtenerDocentesConsolidadosTerritorio(establecimientos, docentes, asignaciones, cursos);
+  }, [establecimientos, docentes, asignaciones, cursos]);
 
-  const docentesMultiEscuelaCount = docentesConsolidados.filter(d => d.contratos.length > 1).length;
-  const docentesExceso44hCount = docentesConsolidados.filter(d => d.excedeLimiteSlep).length;
+  const {
+    docentesMultiEscuelaCount,
+    docentesExceso44hCount,
+    totalSubvTitSlep,
+    totalSubvConSlep,
+    totalSepTitSlep,
+    totalSepConSlep,
+    totalPieTitSlep,
+    totalPieConSlep,
+    totalHorasTerritorioSlep
+  } = useMemo(() => {
+    let multi = 0;
+    let exceso = 0;
+    let subTit = 0;
+    let subCon = 0;
+    let sepTit = 0;
+    let sepCon = 0;
+    let pieTit = 0;
+    let pieCon = 0;
+    let totalH = 0;
 
-  const totalSubvTitSlep = docentesConsolidados.reduce((s, d) => s + (d.resumenFinanciamiento.subvencionGeneralTitular || 0), 0);
-  const totalSubvConSlep = docentesConsolidados.reduce((s, d) => s + (d.resumenFinanciamiento.subvencionGeneralContrata || 0), 0);
-  const totalSepTitSlep = docentesConsolidados.reduce((s, d) => s + (d.resumenFinanciamiento.sepTitular || 0), 0);
-  const totalSepConSlep = docentesConsolidados.reduce((s, d) => s + (d.resumenFinanciamiento.sepContrata || 0), 0);
-  const totalPieTitSlep = docentesConsolidados.reduce((s, d) => s + (d.resumenFinanciamiento.pieTitular || 0), 0);
-  const totalPieConSlep = docentesConsolidados.reduce((s, d) => s + (d.resumenFinanciamiento.pieContrata || 0), 0);
-  const totalHorasTerritorioSlep = docentesConsolidados.reduce((s, d) => s + d.horasTotalesSlep, 0);
+    for (const d of docentesConsolidados) {
+      if (d.contratos.length > 1) multi++;
+      if (d.excedeLimiteSlep) exceso++;
+      subTit += (d.resumenFinanciamiento.subvencionGeneralTitular || 0);
+      subCon += (d.resumenFinanciamiento.subvencionGeneralContrata || 0);
+      sepTit += (d.resumenFinanciamiento.sepTitular || 0);
+      sepCon += (d.resumenFinanciamiento.sepContrata || 0);
+      pieTit += (d.resumenFinanciamiento.pieTitular || 0);
+      pieCon += (d.resumenFinanciamiento.pieContrata || 0);
+      totalH += d.horasTotalesSlep;
+    }
+
+    return {
+      docentesMultiEscuelaCount: multi,
+      docentesExceso44hCount: exceso,
+      totalSubvTitSlep: subTit,
+      totalSubvConSlep: subCon,
+      totalSepTitSlep: sepTit,
+      totalSepConSlep: sepCon,
+      totalPieTitSlep: pieTit,
+      totalPieConSlep: pieCon,
+      totalHorasTerritorioSlep: totalH
+    };
+  }, [docentesConsolidados]);
 
   const docentesFiltrados = useMemo(() => {
     let filtrados = docentesConsolidados;
@@ -268,9 +319,20 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
       <div className="bg-[#002B49] text-white p-6 rounded-xl border border-slate-700 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-orange-600/30 border border-orange-500/40 text-orange-400 text-[11px] font-bold">
-              <Layers className="w-3.5 h-3.5" />
-              Consolidador Territorial de Dotación Docente
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-orange-600/30 border border-orange-500/40 text-orange-400 text-[11px] font-bold">
+                <Layers className="w-3.5 h-3.5" />
+                Consolidador Territorial de Dotación Docente
+              </div>
+              <span className={`px-2.5 py-0.5 text-[11px] font-semibold rounded border ${
+                totalColegios < 100 
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              }`}>
+                {totalColegios < 100 
+                  ? `Cartera Asignada: ${totalColegios} colegios` 
+                  : `Red Territorial Global SLEP: ${totalColegios} colegios`}
+              </span>
             </div>
             <h2 className="text-xl font-bold text-white mt-2">
               Matriz Única Territorial - SLEP Valle Diguillín

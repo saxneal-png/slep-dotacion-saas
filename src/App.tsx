@@ -913,38 +913,108 @@ export const App: React.FC = () => {
     }
   };
 
-  // Diagnóstico del colegio activo
+  // Filtrado de colegios segun el alcance del rol (global / equipo / cartera / establecimiento)
+  const colegiosPermitidos = useMemo(() => {
+    if (!session) return colegios;
+    return colegiosVisibles(session.usuario, colegios, usuariosSistema);
+  }, [colegios, session, usuariosSistema]);
+
+  // Colecciones acotadas estrictamente a los colegios visibles/autorizados para el usuario
+  const {
+    cursosScope,
+    docentesScope,
+    asignacionesScope,
+    asistentesScope,
+    salasScope
+  } = useMemo(() => {
+    const rbdsPermitidos = new Set(colegiosPermitidos.map(c => c.rbd));
+    return {
+      cursosScope: todosLosCursos.filter(c => rbdsPermitidos.has(c.rbd)),
+      docentesScope: todosLosDocentes.filter(d => rbdsPermitidos.has(d.rbd)),
+      asignacionesScope: todasLasAsignaciones.filter(a => rbdsPermitidos.has(a.rbd)),
+      asistentesScope: todosLosAsistentes.filter(a => rbdsPermitidos.has(a.rbd)),
+      salasScope: todasLasSalas.filter(s => rbdsPermitidos.has(s.rbd))
+    };
+  }, [colegiosPermitidos, todosLosCursos, todosLosDocentes, todasLasAsignaciones, todosLosAsistentes, todasLasSalas]);
+
+  // Diagnostico del colegio activo
   const diagnosticoColegioActivo = useMemo(() => {
     if (!colegioActivo) return null;
     return calcularDiagnosticoColegio(colegioActivo, salas, cursos, docentes, asignaciones);
   }, [colegioActivo, salas, cursos, docentes, asignaciones]);
 
-  // Diagnósticos de TODOS los colegios con datos 100% reales globales
+  // Diagnosticos de TODOS los colegios con datos 100% reales globales (Pre-agrupados O(N) por RBD)
   const diagnosticosTodosColegios = useMemo<DiagnosticoColegioCompleto[]>(() => {
+    const cursosPorRbd = new Map<string, CursoSae[]>();
+    for (const c of todosLosCursos) {
+      let arr = cursosPorRbd.get(c.rbd);
+      if (!arr) {
+        arr = [];
+        cursosPorRbd.set(c.rbd, arr);
+      }
+      arr.push(c);
+    }
+
+    const docentesPorRbd = new Map<string, Docente[]>();
+    for (const d of todosLosDocentes) {
+      let arr = docentesPorRbd.get(d.rbd);
+      if (!arr) {
+        arr = [];
+        docentesPorRbd.set(d.rbd, arr);
+      }
+      arr.push(d);
+    }
+
+    const salasPorRbd = new Map<string, SalaInfraestructura[]>();
+    for (const s of todasLasSalas) {
+      let arr = salasPorRbd.get(s.rbd);
+      if (!arr) {
+        arr = [];
+        salasPorRbd.set(s.rbd, arr);
+      }
+      arr.push(s);
+    }
+
+    const asigsPorRbd = new Map<string, AsignacionHoraria[]>();
+    for (const a of todasLasAsignaciones) {
+      let arr = asigsPorRbd.get(a.rbd);
+      if (!arr) {
+        arr = [];
+        asigsPorRbd.set(a.rbd, arr);
+      }
+      arr.push(a);
+    }
+
     return colegios.map(est => {
-      const cList = todosLosCursos.filter(c => c.rbd === est.rbd);
-      const dList = todosLosDocentes.filter(d => d.rbd === est.rbd);
-      const sList = todasLasSalas.filter(s => s.rbd === est.rbd);
-      const aList = todasLasAsignaciones.filter(a => a.rbd === est.rbd);
+      const cList = cursosPorRbd.get(est.rbd) || [];
+      const dList = docentesPorRbd.get(est.rbd) || [];
+      const sList = salasPorRbd.get(est.rbd) || [];
+      const aList = asigsPorRbd.get(est.rbd) || [];
       return calcularDiagnosticoColegio(est, sList, cList, dList, aList);
     });
   }, [colegios, todosLosCursos, todosLosDocentes, todasLasSalas, todasLasAsignaciones]);
 
-  // Inconsistencias globales del territorio
+  // Diagnosticos acotados a la cartera/alcance del usuario en sesion (para Consolidado y Estadisticas)
+  const diagnosticosColegiosPermitidos = useMemo<DiagnosticoColegioCompleto[]>(() => {
+    const rbdsPermitidos = new Set(colegiosPermitidos.map(c => c.rbd));
+    return diagnosticosTodosColegios.filter(d => rbdsPermitidos.has(d.establecimiento.rbd));
+  }, [diagnosticosTodosColegios, colegiosPermitidos]);
+
+  // Inconsistencias de la cartera permitida
   const consolidacionMaster = useMemo(() => {
-    return consolidarCarteraTerritorial(colegios, todosLosDocentes, diagnosticosTodosColegios);
-  }, [colegios, todosLosDocentes, diagnosticosTodosColegios]);
+    return consolidarCarteraTerritorial(colegiosPermitidos, docentesScope, diagnosticosColegiosPermitidos);
+  }, [colegiosPermitidos, docentesScope, diagnosticosColegiosPermitidos]);
 
   // Exportar Excel Oficial
   const handleExportarExcel = async () => {
     try {
       const { generarExcelConsolidadoSlep } = await import('./services/excelReportService');
       const bytes = await generarExcelConsolidadoSlep(
-        colegios,
-        todosLosDocentes,
-        diagnosticosTodosColegios,
+        colegiosPermitidos,
+        docentesScope,
+        diagnosticosColegiosPermitidos,
         colegioActivo?.asesorUatp || 'Asesor UATP',
-        todasLasAsignaciones
+        asignacionesScope
       );
       const filename = `Consolidado_Dotacion_SLEP_Valle_Diguillin_${new Date().toISOString().split('T')[0]}.xlsx`;
       const guardado = await guardarArchivoNativoOEnNavegador(
@@ -970,14 +1040,8 @@ export const App: React.FC = () => {
     setAsignaciones([]);
     setAsistentes([]);
     setVistaActiva('colegios_asesorados');
-    mostrarMensaje('Sesión cerrada correctamente.');
+    mostrarMensaje('Sesion cerrada correctamente.');
   };
-
-  // Filtrado de colegios según el alcance del rol (global / equipo / cartera / establecimiento)
-  const colegiosPermitidos = useMemo(() => {
-    if (!session) return colegios;
-    return colegiosVisibles(session.usuario, colegios, usuariosSistema);
-  }, [colegios, session, usuariosSistema]);
 
   if (loading) {
     return <LoadingAnimation variant="fullscreen" />;
@@ -1297,11 +1361,11 @@ export const App: React.FC = () => {
         {vistaActiva === 'consolidador' && (
           <ConsolidadorMasterView
             establecimientos={colegiosPermitidos}
-            docentes={todosLosDocentes}
-            asistentes={todosLosAsistentes}
-            cursos={todosLosCursos}
-            diagnosticos={diagnosticosTodosColegios}
-            asignaciones={todasLasAsignaciones}
+            docentes={docentesScope}
+            asistentes={asistentesScope}
+            cursos={cursosScope}
+            diagnosticos={diagnosticosColegiosPermitidos}
+            asignaciones={asignacionesScope}
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onExportarExcel={handleExportarExcel}
             onRecargarDatos={handleSincronizarCarteraCompletaDesdeNube}
@@ -1313,10 +1377,10 @@ export const App: React.FC = () => {
             colegios={colegiosPermitidos}
             colegioActivo={colegioActivo}
             onSelectColegio={handleSelectColegio}
-            todosLosCursos={todosLosCursos}
-            todosLosDocentes={todosLosDocentes}
-            todasLasAsignaciones={todasLasAsignaciones}
-            todosLosAsistentes={todosLosAsistentes}
+            todosLosCursos={cursosScope}
+            todosLosDocentes={docentesScope}
+            todasLasAsignaciones={asignacionesScope}
+            todosLosAsistentes={asistentesScope}
             asistentesColegioActivo={asistentes}
             periodoActivo={periodoActivo}
             onNavegarColegio={(est) => {

@@ -124,10 +124,21 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
       <div className="bg-[#002B49] text-white p-6 rounded-2xl border border-slate-700 shadow-md">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-orange-600/30 border border-orange-500/40 text-orange-400 text-xs font-bold">
-              <BarChart3 className="w-4 h-4" />
-              <span>Gestión Estratégica de Dotación de Personal</span>
-              <span className="text-slate-400">• Periodo {periodoActivo}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-orange-600/30 border border-orange-500/40 text-orange-400 text-xs font-bold">
+                <BarChart3 className="w-4 h-4" />
+                <span>Gestión Estratégica de Dotación de Personal</span>
+                <span className="text-slate-400">• Periodo {periodoActivo}</span>
+              </div>
+              <span className={`px-2.5 py-1 text-xs font-semibold rounded-lg border ${
+                colegios.length < 100 
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              }`}>
+                {colegios.length < 100 
+                  ? `Cartera Asignada: ${colegios.length} colegios` 
+                  : `Red Territorial Global SLEP: ${colegios.length} colegios`}
+              </span>
             </div>
             <h2 className="text-2xl font-bold text-white mt-2">
               Panoramas & Auditoría de Personal SLEP Valle Diguillín

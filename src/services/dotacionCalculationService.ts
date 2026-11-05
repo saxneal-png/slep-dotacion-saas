@@ -79,6 +79,31 @@ export function calcularDiagnosticoColegio(
   const regimenTabla = est.porcentajePrioritarios >= 80 ? '60_40' : '65_35';
   const regimenProporcion = est.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
 
+  // Mapas e índices O(1) para evitar búsquedas cuadráticas en memoria
+  const cursosMap = new Map<string, CursoSae>(cursos.map(c => [c.id, c]));
+  const docentesMap = new Map<string, Docente>(docentes.map(d => [d.id, d]));
+  const asigsPorDocente = new Map<string, AsignacionHoraria[]>();
+  const coAsigsPorDocente = new Map<string, AsignacionHoraria[]>();
+
+  for (const a of asignaciones) {
+    if (a.docenteId) {
+      let arr = asigsPorDocente.get(a.docenteId);
+      if (!arr) {
+        arr = [];
+        asigsPorDocente.set(a.docenteId, arr);
+      }
+      arr.push(a);
+    }
+    if (a.coDocenteId && a.tieneCoDocente) {
+      let arr = coAsigsPorDocente.get(a.coDocenteId);
+      if (!arr) {
+        arr = [];
+        coAsigsPorDocente.set(a.coDocenteId, arr);
+      }
+      arr.push(a);
+    }
+  }
+
   // 1. Capacidad Física de Salas y Cruce SAE
   const evaluacionesSalasSae: ReturnType<typeof evaluarCapacidadSaeYInfraestructura>[] = [];
   const alertasInfraestructura: string[] = [];
@@ -199,7 +224,7 @@ export function calcularDiagnosticoColegio(
         a => a.cursoId === c.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
       );
       if (asigTitular) {
-        const docTitular = docentes.find(d => d.id === asigTitular.docenteId);
+        const docTitular = docentesMap.get(asigTitular.docenteId);
         if (docTitular) {
           titularesMap.set(c.id, {
             horasContrato: docTitular.horasContrato,
@@ -230,7 +255,7 @@ export function calcularDiagnosticoColegio(
       }
       if (d.requiereTecnicoParvuloDto315) {
         diagnosticoParvulariaAlertas.push(
-          `COEFICIENTE TÉCNICO (DTO 315/2010): ${d.nivel} ${d.letra || ''}: Matrícula (${cursos.find(c => c.id === d.cursoId)?.matriculaProyectada || 0} alumnos) > 15 requiere 1 Técnico en Educación Parvularia (TEP).`
+          `COEFICIENTE TÉCNICO (DTO 315/2010): ${d.nivel} ${d.letra || ''}: Matrícula (${cursosMap.get(d.cursoId || '')?.matriculaProyectada || 0} alumnos) > 15 requiere 1 Técnico en Educación Parvularia (TEP).`
         );
       }
     }
@@ -278,7 +303,7 @@ export function calcularDiagnosticoColegio(
     const esInspectorGeneral = Boolean(doc.cargoInstitucional && /inspector/i.test(doc.cargoInstitucional));
     const esJefeUtp = Boolean(doc.cargoInstitucional && /utp|tecnico pedag/i.test(doc.cargoInstitucional)) || doc.estamento === 'TECNICO_PEDAGOGICO';
 
-    const docenteAsigs = asignaciones.filter(a => a.docenteId === doc.id);
+    const docenteAsigs = asigsPorDocente.get(doc.id) || [];
     if (hDirEfectivo === 0 && (esDirectorPorNombre || esCargoDirector) && docenteAsigs.length === 0) {
       hDirEfectivo = doc.horasContrato;
     } else if (hInspEfectivo === 0 && esInspectorGeneral && docenteAsigs.length === 0) {
@@ -293,7 +318,7 @@ export function calcularDiagnosticoColegio(
     horasCoordinacionTotales += hCoordEfectivo;
 
     // Clasificar asignaciones del docente en este establecimiento
-    const coDocenteAsigs = asignaciones.filter(a => a.coDocenteId === doc.id && a.tieneCoDocente);
+    const coDocenteAsigs = coAsigsPorDocente.get(doc.id) || [];
 
     const asigsCoDocencia = [
       ...docenteAsigs.filter(a => a.esCoDocencia || a.esCoDocenciaParvularia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'),
@@ -425,14 +450,14 @@ export function calcularDiagnosticoColegio(
     // Separar horas de docencia efectiva según régimen del curso (60/40 vs 65/35) para cálculo independiente
     const ped60 = asigsDocenciaAulaEfectiva
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (est.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
     const ped65 = asigsDocenciaAulaEfectiva
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (est.porcentajePrioritarios < 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
@@ -470,13 +495,13 @@ export function calcularDiagnosticoColegio(
     const asigsCurricularesTitulares = docenteAsigs.filter(a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a));
     const pedCurricular65 = asigsCurricularesTitulares
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (est.porcentajePrioritarios < 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
     const pedCurricular60 = asigsCurricularesTitulares
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (est.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
@@ -498,13 +523,13 @@ export function calcularDiagnosticoColegio(
     ];
     const pedSep65 = asigsSepAula
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion !== '60_40' : (est.porcentajePrioritarios < 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
     const pedSep60 = asigsSepAula
       .filter(a => {
-        const c = cursos.find(x => x.id === a.cursoId);
+        const c = cursosMap.get(a.cursoId);
         return c ? c.regimenProporcion === '60_40' : (est.porcentajePrioritarios >= 80);
       })
       .reduce((s, a) => s + a.horasPedagogicasAula, 0);
@@ -566,7 +591,7 @@ export function calcularDiagnosticoColegio(
       asignadoPorAsignatura[asig.asignatura] = { horas: 0, docentes: [] };
     }
     asignadoPorAsignatura[asig.asignatura].horas += asig.horasPedagogicasAula;
-    const doc = docentes.find(d => d.id === asig.docenteId);
+    const doc = docentesMap.get(asig.docenteId);
     if (doc) {
       const nombreD = `${doc.nombres} ${doc.apellidos}`;
       if (!asignadoPorAsignatura[asig.asignatura].docentes.includes(nombreD)) {
@@ -658,6 +683,7 @@ export function consolidarCarteraTerritorial(
 } {
   const inconsistencias: InconsistenciaTerritorial[] = [];
   const docentesCompartidos: DocenteCompartidoTerritorial[] = [];
+  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
 
   // 1. Auditoría Territorial: Multicontratos Legales vs. Infracción por Sobrecarga (>44h)
   const docentesPorRun: { [run: string]: Docente[] } = {};
@@ -674,12 +700,12 @@ export function consolidarCarteraTerritorial(
     if (list.length > 1) {
       const horasTotales = list.reduce((sum, doc) => sum + doc.horasContrato, 0);
       const nombresColegios = list.map(doc => {
-        const est = establecimientos.find(e => e.rbd === doc.rbd);
+        const est = estMap.get(doc.rbd);
         return est ? `${est.nombre} (${doc.horasContrato}h)` : `RBD ${doc.rbd} (${doc.horasContrato}h)`;
       });
 
       const colegiosDetalle = list.map(doc => {
-        const est = establecimientos.find(e => e.rbd === doc.rbd);
+        const est = estMap.get(doc.rbd);
         return {
           colegio: est ? est.nombre : `RBD ${doc.rbd}`,
           rbd: doc.rbd,
@@ -809,6 +835,33 @@ export function obtenerDocentesConsolidadosTerritorio(
   asignaciones: AsignacionHoraria[],
   cursos: CursoSae[] = []
 ): DocenteConsolidadoTerritorial[] {
+  // Pre-indexacion O(1)
+  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
+  const cursosMap = new Map<string, CursoSae>(cursos.map(c => [c.id, c]));
+
+  // Indexar asignaciones por [rbd + "_" + docenteId]
+  const asigsPorColegioDocente = new Map<string, AsignacionHoraria[]>();
+  for (const a of asignaciones) {
+    if (a.docenteId) {
+      const k1 = a.rbd + "_" + a.docenteId;
+      let arr1 = asigsPorColegioDocente.get(k1);
+      if (!arr1) {
+        arr1 = [];
+        asigsPorColegioDocente.set(k1, arr1);
+      }
+      arr1.push(a);
+    }
+    if (a.coDocenteId && a.tieneCoDocente && a.coDocenteId !== a.docenteId) {
+      const k2 = a.rbd + "_" + a.coDocenteId;
+      let arr2 = asigsPorColegioDocente.get(k2);
+      if (!arr2) {
+        arr2 = [];
+        asigsPorColegioDocente.set(k2, arr2);
+      }
+      arr2.push(a);
+    }
+  }
+
   // Agrupar por RUN
   const porRun: { [run: string]: Docente[] } = {};
   for (const d of docentes) {
@@ -842,7 +895,7 @@ export function obtenerDocentesConsolidadosTerritorio(
     let totalPieContrata = 0;
 
     for (const doc of listaDocentes) {
-      const colegio = establecimientos.find(e => e.rbd === doc.rbd) || {
+      const colegio = estMap.get(doc.rbd) || {
         id: `est-${doc.rbd}`,
         rbd: doc.rbd,
         nombre: `Establecimiento RBD ${doc.rbd}`,
@@ -851,9 +904,7 @@ export function obtenerDocentesConsolidadosTerritorio(
         porcentajePrioritarios: 70
       };
 
-      const asigsColegio = asignaciones.filter(
-        a => a.rbd === doc.rbd && (a.docenteId === doc.id || (a.coDocenteId === doc.id && a.tieneCoDocente))
-      );
+      const asigsColegio = asigsPorColegioDocente.get(doc.rbd + "_" + doc.id) || [];
 
       const asigsCoDocencia = asigsColegio.filter(
         a => (a.coDocenteId === doc.id && a.tieneCoDocente) || (a.docenteId === doc.id && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'))
@@ -1045,14 +1096,14 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       const horasAula65_35 = asigsDocenciaAulaEfectiva
         .filter(a => {
-          const c = cursosColegio.find(x => x.id === a.cursoId);
+          const c = cursosMap.get(a.cursoId) || cursosColegio.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
       const horasAula60_40 = asigsDocenciaAulaEfectiva
         .filter(a => {
-          const c = cursosColegio.find(x => x.id === a.cursoId);
+          const c = cursosMap.get(a.cursoId) || cursosColegio.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
@@ -1088,13 +1139,13 @@ export function obtenerDocentesConsolidadosTerritorio(
       const asigsCurricularesTitulares = asigsColegio.filter(a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a));
       const pedCurricular65 = asigsCurricularesTitulares
         .filter(a => {
-          const c = cursosColegio.find(x => x.id === a.cursoId);
+          const c = cursosMap.get(a.cursoId) || cursosColegio.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
       const pedCurricular60 = asigsCurricularesTitulares
         .filter(a => {
-          const c = cursosColegio.find(x => x.id === a.cursoId);
+          const c = cursosMap.get(a.cursoId) || cursosColegio.find(x => x.id === a.cursoId);
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
