@@ -255,6 +255,15 @@ export interface InputEducadoraTitular {
   aplicaArticulo69?: boolean;
 }
 
+export interface InputAsignacionesRealesParvularia {
+  /** Horas cronológicas o minutos ya asignados a la Educadora Titular en este curso */
+  minutosAsignadosTitular?: number;
+  horasAsignadasTitular?: number;
+  /** Horas cronológicas o minutos ya asignados a la 2da Educadora / Co-docente en este curso */
+  minutosAsignadosSegundaEducadora?: number;
+  horasAsignadasSegundaEducadora?: number;
+}
+
 export interface ResultadoDotacionParvulariaCurso {
   cursoId?: string;
   nivel: string;
@@ -277,6 +286,19 @@ export interface ResultadoDotacionParvulariaCurso {
   cantidadTecnicosSugeridos: number;
   esCursoCombinado: boolean;
   advertenciasNormativas: string[];
+
+  // Métricas en tiempo real según asignaciones cargadas
+  minutosAsignadosTitular: number;
+  minutosAsignadosTitularTexto: string;
+  minutosAsignadosSegundaEducadora: number;
+  minutosAsignadosSegundaTexto: string;
+  minutosCubiertosTotales: number;
+  minutosCubiertosTotalesTexto: string;
+  porcentajeCoberturaPermanencia: number;
+  minutosDeficitRestante: number;
+  minutosDeficitRestanteTexto: string;
+  horasContratoSegundaEducadoraRestante: number;
+  coberturaCompletaPermanencia: boolean;
 }
 
 /**
@@ -286,7 +308,8 @@ export interface ResultadoDotacionParvulariaCurso {
 export function calcularDotacionParvulariaCurso(
   curso: InputCursoParvularia,
   porcentajePrioritariosColegio: number,
-  educadoraTitular?: InputEducadoraTitular | null
+  educadoraTitular?: InputEducadoraTitular | null,
+  asignacionesReales?: InputAsignacionesRealesParvularia | null
 ): ResultadoDotacionParvulariaCurso {
   // 1. Determinar Régimen Normativo:
   // En NT1 y NT2, colegios con >= 60% prioritarios pasan obligatoriamente a régimen 60/40 (Ley 20.903)
@@ -347,11 +370,11 @@ export function calcularDotacionParvulariaCurso(
     advertencias.push("El curso no cuenta con Educadora Titular asignada.");
   }
 
-  // 4. Calcular Déficit de Atención Directa
+  // 4. Calcular Déficit de Atención Directa Teórico (Base Contrato)
   const minutosDeficit = Math.max(0, permanenciaMinutos - minutosAulaTitular);
   const segundaEducadoraRequerida = minutosDeficit > 0;
 
-  // 5. Ceil Matching para Segunda Educadora (Co-docente)
+  // 5. Ceil Matching para Segunda Educadora (Co-docente) Teórica
   let horasContratoSegunda = 0;
   let minutosAulaSegunda = 0;
   let superavitMinutosAula = 0;
@@ -367,7 +390,40 @@ export function calcularDotacionParvulariaCurso(
     );
   }
 
-  // 6. Coeficiente Técnico de Asistentes (DTO 315 / DTO 100)
+  // 6. Cómputo en Tiempo Real según Asignaciones Efectivas
+  const minsAsigTitular = asignacionesReales?.minutosAsignadosTitular !== undefined
+    ? asignacionesReales.minutosAsignadosTitular
+    : (asignacionesReales?.horasAsignadasTitular !== undefined ? Math.round(asignacionesReales.horasAsignadasTitular * 60) : 0);
+
+  const minsAsigSegunda = asignacionesReales?.minutosAsignadosSegundaEducadora !== undefined
+    ? asignacionesReales.minutosAsignadosSegundaEducadora
+    : (asignacionesReales?.horasAsignadasSegundaEducadora !== undefined ? Math.round(asignacionesReales.horasAsignadasSegundaEducadora * 60) : 0);
+
+  const minutosCubiertosTotales = minsAsigTitular + minsAsigSegunda;
+  const porcentajeCoberturaPermanencia = permanenciaMinutos > 0
+    ? Math.min(100, Math.round((minutosCubiertosTotales / permanenciaMinutos) * 100))
+    : 0;
+
+  const minutosDeficitRestante = Math.max(0, permanenciaMinutos - minutosCubiertosTotales);
+  const coberturaCompletaPermanencia = minutosDeficitRestante === 0;
+
+  let horasContratoSegundaRestante = 0;
+  if (minutosDeficitRestante > 0) {
+    // Si la titular aún no completa sus horas disponibles de aula, la 2da educadora cubre lo que exceda el tope de la titular
+    // o el déficit restante inmediato si ya se asignaron horas
+    const remanenteTitularPorAsignar = Math.max(0, minutosAulaTitular - minsAsigTitular);
+    const deficitNoCubriblePorTitular = Math.max(0, minutosDeficitRestante - remanenteTitularPorAsignar);
+    
+    // Si la titular ya cubrió su tope o se evalúa el déficit que debe suplir la 2da educadora
+    const minsParaSegunda = Math.max(0, deficitNoCubriblePorTitular - minsAsigSegunda);
+    if (minsParaSegunda > 0) {
+      horasContratoSegundaRestante = buscarContratoMinimoParvulariaPorMinutos(minsParaSegunda, regimenNormativo).horasContrato;
+    } else if (minsAsigSegunda === 0 && minutosDeficit > 0) {
+      horasContratoSegundaRestante = horasContratoSegunda;
+    }
+  }
+
+  // 7. Coeficiente Técnico de Asistentes (DTO 315 / DTO 100)
   const requiereTecnicoParvuloDto315 = (curso.matriculaProyectada || 0) > CONSTANTES_PARVULARIA.UMBRAL_MATRICULA_TEP_DTO315;
   const cantidadTecnicosSugeridos = requiereTecnicoParvuloDto315 ? 1 : 0;
 
@@ -402,7 +458,20 @@ export function calcularDotacionParvulariaCurso(
     requiereTecnicoParvuloDto315,
     cantidadTecnicosSugeridos,
     esCursoCombinado: Boolean(curso.esCombinado),
-    advertenciasNormativas: advertencias
+    advertenciasNormativas: advertencias,
+
+    // Métricas dinámicas en tiempo real
+    minutosAsignadosTitular: minsAsigTitular,
+    minutosAsignadosTitularTexto: formatearMinutosAHHMM(minsAsigTitular),
+    minutosAsignadosSegundaEducadora: minsAsigSegunda,
+    minutosAsignadosSegundaTexto: formatearMinutosAHHMM(minsAsigSegunda),
+    minutosCubiertosTotales,
+    minutosCubiertosTotalesTexto: formatearMinutosAHHMM(minutosCubiertosTotales),
+    porcentajeCoberturaPermanencia,
+    minutosDeficitRestante,
+    minutosDeficitRestanteTexto: formatearMinutosAHHMM(minutosDeficitRestante),
+    horasContratoSegundaEducadoraRestante: horasContratoSegundaRestante,
+    coberturaCompletaPermanencia
   };
 }
 
@@ -431,7 +500,8 @@ export interface ConsolidadoDotacionParvulariaColegio {
 export function consolidarDotacionParvulariaEstablecimiento(
   cursos: InputCursoParvularia[],
   porcentajePrioritariosColegio: number,
-  titularesPorCurso?: Map<string, InputEducadoraTitular>
+  titularesPorCurso?: Map<string, InputEducadoraTitular>,
+  asignacionesPorCurso?: Map<string, InputAsignacionesRealesParvularia>
 ): ConsolidadoDotacionParvulariaColegio {
   const cursosParvularios = cursos.filter(c => esNivelParvulario(c.nivel));
   const regimenPredominante = determinarRegimenNormativo(porcentajePrioritariosColegio, true);
@@ -448,7 +518,8 @@ export function consolidarDotacionParvulariaEstablecimiento(
 
   for (const c of cursosParvularios) {
     const titular = (c.id && titularesPorCurso) ? titularesPorCurso.get(c.id) : undefined;
-    const diag = calcularDotacionParvulariaCurso(c, porcentajePrioritariosColegio, titular);
+    const asigReal = (c.id && asignacionesPorCurso) ? asignacionesPorCurso.get(c.id) : undefined;
+    const diag = calcularDotacionParvulariaCurso(c, porcentajePrioritariosColegio, titular, asigReal);
 
     diagnosticoCursos.push(diag);
     totalMatricula += c.matriculaProyectada || 0;

@@ -234,6 +234,29 @@ export function calcularDiagnosticoColegio(
       }
     }
 
+    // Mapa de asignaciones reales por curso para calculo dinamico de cobertura y deficit
+    const asignacionesPorCurso = new Map<string, { horasAsignadasTitular?: number; horasAsignadasSegundaEducadora?: number }>();
+    for (const c of cursosParvularios) {
+      const asigsC = asignaciones.filter(a => a.cursoId === c.id);
+      let hTitular = 0;
+      let hSegunda = 0;
+      const asigTitular = asigsC.find(a => !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo);
+      const titularDocId = asigTitular?.docenteId;
+
+      asigsC.forEach(a => {
+        const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+        if (a.esCoDocenciaParvularia || a.esCoDocencia || (titularDocId && a.docenteId !== titularDocId)) {
+          hSegunda += h;
+        } else {
+          hTitular += h;
+        }
+      });
+      asignacionesPorCurso.set(c.id, {
+        horasAsignadasTitular: hTitular,
+        horasAsignadasSegundaEducadora: hSegunda
+      });
+    }
+
     consolidadoParvularia = consolidarDotacionParvulariaEstablecimiento(
       cursosParvularios.map(c => ({
         id: c.id,
@@ -244,7 +267,8 @@ export function calcularDiagnosticoColegio(
         esCombinado: c.esCombinado
       })),
       est.porcentajePrioritarios,
-      titularesMap
+      titularesMap,
+      asignacionesPorCurso
     );
 
     for (const d of consolidadoParvularia.diagnosticoCursos) {
@@ -563,7 +587,7 @@ export function calcularDiagnosticoColegio(
     const horasVacantesFuncionario = Math.max(0, doc.horasContrato - cargaTotalTrabajo);
 
     const horasSepSinAsignarDoc = Math.max(0, contratoSepDoc - reqSepDoc);
-    // Docente diferencial: sus horas lectivas frente a curso (con proporción Ley 20.903) también consumen contrato PIE
+    // Docente diferencial: sus horas lectivas frente a curso (con proporciï¿½n Ley 20.903) tambiï¿½n consumen contrato PIE
     const pieLectivoReqDoc = isPieDoc ? (auditDoc.req65_35 + auditDoc.req60_40) : 0;
     const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - pieCronologicas - pieLectivoReqDoc);
     const horasSubvGenSinAsignarDoc = Math.max(0, subTotalDoc - reqSubvDoc);

@@ -25,6 +25,7 @@ import {
   calcularAuditoriaDocenteMultitramo,
   esNivelParvulario,
   calcularDotacionParvulariaCurso,
+  buscarContratoMinimoParvulariaPorMinutos,
   CATALOGO_BCEP_PARVULARIA,
   resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
@@ -2159,6 +2160,24 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
   const dotacionParvulariaCursoActivo = useMemo(() => {
     if (!cursoParvularioActivo) return null;
+
+    // Calcular las asignaciones reales que ya tiene este curso (Titular y Segunda Educadora)
+    const asigsCursoParv = asignaciones.filter(a => a.cursoId === cursoParvularioActivo.id);
+    const titularId = docente.id;
+    let horasTitularAsig = 0;
+    let horasSegundaAsig = 0;
+
+    asigsCursoParv.forEach(a => {
+      const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+      if (a.esCoDocenciaParvularia || a.esCoDocencia || a.coDocenteId === titularId || (a.docenteId !== titularId && /co-docencia|2da educadora|apoyo/i.test(a.asignatura))) {
+        horasSegundaAsig += h;
+      } else if (a.docenteId === titularId) {
+        horasTitularAsig += h;
+      } else {
+        horasSegundaAsig += h;
+      }
+    });
+
     return calcularDotacionParvulariaCurso(
       cursoParvularioActivo,
       colegio.porcentajePrioritarios,
@@ -2167,9 +2186,13 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
         horasNoAulaDeducibles: horasNoAulaDocente,
         horasContratoDisponiblesAula: horasContratoDisponiblesAula,
         aplicaArticulo69: Boolean(docente.aplicaArticulo69)
+      },
+      {
+        horasAsignadasTitular: horasTitularAsig,
+        horasAsignadasSegundaEducadora: horasSegundaAsig
       }
     );
-  }, [cursoParvularioActivo, colegio.porcentajePrioritarios, docente.horasContrato, horasNoAulaDocente, horasContratoDisponiblesAula, docente.aplicaArticulo69]);
+  }, [cursoParvularioActivo, colegio.porcentajePrioritarios, docente.horasContrato, docente.id, asignaciones, horasNoAulaDocente, horasContratoDisponiblesAula, docente.aplicaArticulo69]);
 
   // Cálculo de Carga Horaria y Proporción Docente Ley 20.903 en tiempo real para este docente
   const resumenCargaHoraria = useMemo(() => {
@@ -2193,15 +2216,29 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
     let haLectivas65 = 0;
     let haLectivas60 = 0;
+    let minsAulaParvularia65 = 0;
+    let minsAulaParvularia60 = 0;
 
     asigsProporcionales.forEach(a => {
       const c = cursos.find(cur => cur.id === a.cursoId);
       const es60 = c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+      const esParvCurso = Boolean(c && esNivelParvulario(c.nivel));
       const ha = getHorasAulaLectivaAsig(a);
-      if (es60) {
-        haLectivas60 += ha;
+
+      if (esParvCurso) {
+        // En Educación Parvularia cada hora asignada es cronológica de 60 minutos
+        const mins = Math.round(ha * 60);
+        if (es60) {
+          minsAulaParvularia60 += mins;
+        } else {
+          minsAulaParvularia65 += mins;
+        }
       } else {
-        haLectivas65 += ha;
+        if (es60) {
+          haLectivas60 += ha;
+        } else {
+          haLectivas65 += ha;
+        }
       }
     });
 
@@ -2216,9 +2253,16 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       ? docente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : ((docente.horasCoordinacionPie || 0) + (docente.horasDirectivas || 0) + (docente.horasInspectorGeneral || 0) + (docente.horasTecnicoPedagogicas || 0) + (docente.horasCoordinacion || 0));
 
-    // Contrato Requerido por Aula según Tabla Mineduc
-    const reqContrato65 = buscarContratoMinimoPorTabla(haLectivas65, '65_35');
-    const reqContrato60 = buscarContratoMinimoPorTabla(haLectivas60, '60_40');
+    // Contrato Requerido por Aula según Tablas Oficiales Mineduc
+    // 1. Aula Regular Básica/Media (45 min)
+    const reqContratoRegular65 = buscarContratoMinimoPorTabla(haLectivas65, '65_35');
+    const reqContratoRegular60 = buscarContratoMinimoPorTabla(haLectivas60, '60_40');
+    // 2. Aula Parvularia DTO 306 (60 min)
+    const reqContratoParv65 = buscarContratoMinimoParvulariaPorMinutos(minsAulaParvularia65, '65_35').horasContrato;
+    const reqContratoParv60 = buscarContratoMinimoParvulariaPorMinutos(minsAulaParvularia60, '60_40').horasContrato;
+
+    const reqContrato65 = reqContratoRegular65 + reqContratoParv65;
+    const reqContrato60 = reqContratoRegular60 + reqContratoParv60;
     const reqContratoAulaTotal = reqContrato65 + reqContrato60;
 
     // Contrato Total Requerido
@@ -2541,11 +2585,58 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
             )}
           </div>
 
+          {/* Barra de Progreso de Cobertura en Vivo */}
+          <div className="bg-white/80 p-2.5 rounded-xl border border-teal-100 shadow-2xs space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-teal-950 flex items-center gap-1.5">
+                <span>⏱️ Permanencia Semanal Cubierta en Vivo:</span>
+                <strong className="text-teal-700 text-sm">
+                  {dotacionParvulariaCursoActivo.minutosCubiertosTotalesTexto} / {dotacionParvulariaCursoActivo.permanenciaTexto}
+                </strong>
+                <span className={`px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  dotacionParvulariaCursoActivo.coberturaCompletaPermanencia 
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}>
+                  {dotacionParvulariaCursoActivo.porcentajeCoberturaPermanencia}%
+                </span>
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">
+                {dotacionParvulariaCursoActivo.coberturaCompletaPermanencia ? (
+                  <span className="text-emerald-700 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> ¡Permanencia 100% Cubierta!
+                  </span>
+                ) : (
+                  <span>Faltan por cubrir: <strong className="text-amber-700">{dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto}</strong></span>
+                )}
+              </span>
+            </div>
+
+            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden flex">
+              <div 
+                className="bg-teal-500 h-full transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.round((dotacionParvulariaCursoActivo.minutosAsignadosTitular / dotacionParvulariaCursoActivo.permanenciaMinutos) * 100))}%` }}
+                title={`Aporte Titular: ${dotacionParvulariaCursoActivo.minutosAsignadosTitularTexto}`}
+              />
+              <div 
+                className="bg-indigo-500 h-full transition-all duration-300"
+                style={{ width: `${Math.min(100 - Math.min(100, Math.round((dotacionParvulariaCursoActivo.minutosAsignadosTitular / dotacionParvulariaCursoActivo.permanenciaMinutos) * 100)), Math.round((dotacionParvulariaCursoActivo.minutosAsignadosSegundaEducadora / dotacionParvulariaCursoActivo.permanenciaMinutos) * 100))}%` }}
+                title={`Aporte 2da Educadora: ${dotacionParvulariaCursoActivo.minutosAsignadosSegundaTexto}`}
+              />
+            </div>
+            
+            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+              <span>🟢 Titular asignada: <strong>{dotacionParvulariaCursoActivo.minutosAsignadosTitularTexto}</strong> (Tope legal disp: {dotacionParvulariaCursoActivo.minutosAulaTitularTexto})</span>
+              <span>🟣 2da Educadora asignada: <strong>{dotacionParvulariaCursoActivo.minutosAsignadosSegundaTexto}</strong></span>
+            </div>
+          </div>
+
           {/* Grid de Métricas Oficiales de Parvularia */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
             <div className="bg-white/85 p-2 rounded-xl border border-teal-100 shadow-2xs">
-              <span className="block text-[10px] uppercase font-bold text-slate-500">Permanencia Niños</span>
+              <span className="block text-[10px] uppercase font-bold text-slate-500">Permanencia Requerida</span>
               <span className="text-sm font-black text-slate-800">{dotacionParvulariaCursoActivo.permanenciaTexto}</span>
+              <span className="block text-[9px] text-slate-400 font-medium">60 min por hora</span>
             </div>
             <div className="bg-white/85 p-2 rounded-xl border border-teal-100 shadow-2xs">
               <span className="block text-[10px] uppercase font-bold text-slate-500">Aula Educadora Titular</span>
@@ -2554,16 +2645,22 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 {dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h disp. ({dotacionParvulariaCursoActivo.horasContratoTitular}h contrato)
               </span>
             </div>
-            <div className={`p-2 rounded-xl border shadow-2xs ${dotacionParvulariaCursoActivo.minutosDeficit > 0 ? 'bg-amber-50/95 border-amber-300' : 'bg-emerald-50/95 border-emerald-300'}`}>
-              <span className="block text-[10px] uppercase font-bold text-slate-500">Déficit No Cubierto</span>
-              <span className={`text-sm font-black ${dotacionParvulariaCursoActivo.minutosDeficit > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
-                {dotacionParvulariaCursoActivo.minutosDeficitTexto}
+            <div className={`p-2 rounded-xl border shadow-2xs ${dotacionParvulariaCursoActivo.minutosDeficitRestante > 0 ? 'bg-amber-50/95 border-amber-300' : 'bg-emerald-50/95 border-emerald-300'}`}>
+              <span className="block text-[10px] uppercase font-bold text-slate-500">Déficit Restante en Vivo</span>
+              <span className={`text-sm font-black ${dotacionParvulariaCursoActivo.minutosDeficitRestante > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
+                {dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto}
+              </span>
+              <span className="block text-[9px] text-slate-500 font-medium">
+                {dotacionParvulariaCursoActivo.coberturaCompletaPermanencia ? '✓ Completo' : 'Por cubrir'}
               </span>
             </div>
             <div className="bg-white/85 p-2 rounded-xl border border-teal-100 shadow-2xs">
-              <span className="block text-[10px] uppercase font-bold text-slate-500">2da Educadora Proyectada</span>
-              <span className="text-sm font-black text-indigo-700">
-                {dotacionParvulariaCursoActivo.horasContratoSegundaEducadora > 0 ? `${dotacionParvulariaCursoActivo.horasContratoSegundaEducadora} hrs contrato` : 'Completo'}
+              <span className="block text-[10px] uppercase font-bold text-slate-500">2da Educadora Restante</span>
+              <span className={`text-sm font-black ${dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 ? 'text-indigo-700' : 'text-emerald-700'}`}>
+                {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 ? `${dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante} hrs contrato` : '✓ Cuadrado'}
+              </span>
+              <span className="block text-[9px] text-slate-400 font-medium">
+                {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 ? 'Falta contratar/asignar' : 'Dotación lista'}
               </span>
             </div>
           </div>
@@ -2600,11 +2697,19 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-semibold text-slate-600">
-                Plan Alumnos: <strong className={totalCubiertasCurso >= totalHorasCurso ? 'text-emerald-600' : 'text-amber-600'}>
-                  {totalCubiertasCurso} / {totalHorasCurso} HA
-                </strong> ({totalHorasCurso > 0 ? Math.round((totalCubiertasCurso / totalHorasCurso) * 100) : 0}%)
-              </span>
+              {esNivelParvulario(cursoInspeccion.nivel) && dotacionParvulariaCursoActivo && dotacionParvulariaCursoActivo.cursoId === cursoInspeccion.id ? (
+                <span className="font-semibold text-slate-600">
+                  Permanencia: <strong className={dotacionParvulariaCursoActivo.coberturaCompletaPermanencia ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>
+                    {dotacionParvulariaCursoActivo.minutosCubiertosTotalesTexto} / {dotacionParvulariaCursoActivo.permanenciaTexto}
+                  </strong> ({dotacionParvulariaCursoActivo.porcentajeCoberturaPermanencia}%)
+                </span>
+              ) : (
+                <span className="font-semibold text-slate-600">
+                  Plan Alumnos: <strong className={totalCubiertasCurso >= totalHorasCurso ? 'text-emerald-600' : 'text-amber-600'}>
+                    {totalCubiertasCurso} / {totalHorasCurso} HA
+                  </strong> ({totalHorasCurso > 0 ? Math.round((totalCubiertasCurso / totalHorasCurso) * 100) : 0}%)
+                </span>
+              )}
               {dispCursoInspeccion.horasCoDocenciaApoyoCurso > 0 && (
                 <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold text-[10px]">
                   +{dispCursoInspeccion.horasCoDocenciaApoyoCurso} HA Co-Docencia / Apoyo

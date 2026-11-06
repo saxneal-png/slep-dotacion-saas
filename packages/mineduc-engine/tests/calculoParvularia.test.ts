@@ -218,5 +218,39 @@ describe('Motor de Dotación en Educación Parvularia (Ley 20.903, DTO 306/2007,
       expect(consolidado.ahorroHorasPorPool).toBe(1); // 32 - 31 = 1 hora de optimización y contrato unificado
       expect(consolidado.totalTecnicosParvuloRequeridosDto315).toBe(2);
     });
+
+    it('actualiza en tiempo real la cobertura de permanencia y reduce el déficit a medida que se asignan horas', () => {
+      const curso = {
+        id: 'c1',
+        nivel: 'NT1 A',
+        regimen: 'JEC' as const,
+        matriculaProyectada: 20
+      };
+
+      // Titular de 44h en 65/35 -> Aporte aula: 1.710 min (28h 30m). Permanencia: 2.125 min (35h 25m). Déficit teórico: 415 min -> 2da educadora 11h.
+      const titular = { horasContrato: 44 };
+
+      // Estado 0: Sin horas asignadas aún
+      const resInicial = calcularDotacionParvulariaCurso(curso, 40, titular, { horasAsignadasTitular: 0, horasAsignadasSegundaEducadora: 0 });
+      expect(resInicial.minutosCubiertosTotales).toBe(0);
+      expect(resInicial.porcentajeCoberturaPermanencia).toBe(0);
+      expect(resInicial.minutosDeficitRestante).toBe(2125);
+      expect(resInicial.coberturaCompletaPermanencia).toBe(false);
+
+      // Estado 1: Se le asignan 20 horas cronológicas a la titular (1.200 min)
+      const resParcial = calcularDotacionParvulariaCurso(curso, 40, titular, { horasAsignadasTitular: 20, horasAsignadasSegundaEducadora: 0 });
+      expect(resParcial.minutosCubiertosTotales).toBe(1200);
+      expect(resParcial.minutosDeficitRestante).toBe(925);
+      expect(resParcial.porcentajeCoberturaPermanencia).toBe(56); // 1200 / 2125 = 56.4%
+
+      // Estado 2: Titular asigna su tope de 28.5 hrs (1.710 min) y se asignan 7 horas cronológicas (420 min) a la 2da educadora
+      // Total cubierto: 1.710 + 420 = 2.130 min >= 2.125 min
+      const resCompleto = calcularDotacionParvulariaCurso(curso, 40, titular, { horasAsignadasTitular: 28.5, horasAsignadasSegundaEducadora: 7 });
+      expect(resCompleto.minutosCubiertosTotales).toBe(2130);
+      expect(resCompleto.minutosDeficitRestante).toBe(0);
+      expect(resCompleto.porcentajeCoberturaPermanencia).toBe(100);
+      expect(resCompleto.coberturaCompletaPermanencia).toBe(true);
+      expect(resCompleto.horasContratoSegundaEducadoraRestante).toBe(0);
+    });
   });
 });

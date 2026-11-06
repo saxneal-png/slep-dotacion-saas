@@ -291,6 +291,20 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
       a => a.cursoId === cursoActivo.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
     );
     const docTitular = asigTitular ? docentes.find(d => d.id === asigTitular.docenteId) : null;
+
+    // Calcular minutos/horas reales asignadas a la titular y a la 2da educadora
+    const asigsCursoParv = asignaciones.filter(a => a.cursoId === cursoActivo.id);
+    let horasTitular = 0;
+    let horasSegunda = 0;
+    asigsCursoParv.forEach(a => {
+      const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+      if (a.esCoDocenciaParvularia || a.esCoDocencia || (docTitular && a.docenteId !== docTitular.id)) {
+        horasSegunda += h;
+      } else {
+        horasTitular += h;
+      }
+    });
+
     return calcularDotacionParvulariaCurso(
       {
         id: cursoActivo.id,
@@ -301,7 +315,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         esCombinado: cursoActivo.esCombinado
       },
       colegio.porcentajePrioritarios,
-      docTitular ? { horasContrato: docTitular.horasContrato, aplicaArticulo69: docTitular.aplicaArticulo69 } : null
+      docTitular ? { horasContrato: docTitular.horasContrato, aplicaArticulo69: docTitular.aplicaArticulo69 } : null,
+      {
+        horasAsignadasTitular: horasTitular,
+        horasAsignadasSegundaEducadora: horasSegunda
+      }
     );
   }, [esCursoParvulario, cursoActivo, colegio, asignaciones, docentes]);
 
@@ -891,10 +909,52 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 const asigsPie = asignaciones.filter(a => a.cursoId === c.id && esApoyoPie(a));
                 const totPieAsig = asigsPie.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
 
-                const coberturaDocPct = hrsPlan > 0 ? Math.round((totDocPlanAsig / hrsPlan) * 100) : 0;
-                const docColor = totDocPlanAsig === hrsPlan ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
-                                 totDocPlanAsig > hrsPlan ? 'text-red-700 bg-red-50 border-red-200' :
-                                 'text-amber-700 bg-amber-50 border-amber-200';
+                // Cobertura específica para Educación Parvularia en horas cronológicas (DTO 306)
+                const esParvC = esNivelParvulario(c.nivel);
+                let parvInfo = null;
+                if (esParvC && colegio) {
+                  const asigTitular = asignaciones.find(
+                    a => a.cursoId === c.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
+                  );
+                  const docTitular = asigTitular ? docentes.find(d => d.id === asigTitular.docenteId) : null;
+                  const asigsCursoParv = asignaciones.filter(a => a.cursoId === c.id);
+                  let hTitular = 0;
+                  let hSegunda = 0;
+                  asigsCursoParv.forEach(a => {
+                    const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+                    if (a.esCoDocenciaParvularia || a.esCoDocencia || (docTitular && a.docenteId !== docTitular.id)) {
+                      hSegunda += h;
+                    } else {
+                      hTitular += h;
+                    }
+                  });
+                  parvInfo = calcularDotacionParvulariaCurso(
+                    {
+                      id: c.id,
+                      nivel: c.nivel,
+                      letra: c.letra,
+                      regimen: c.regimen,
+                      matriculaProyectada: c.matriculaProyectada,
+                      esCombinado: c.esCombinado
+                    },
+                    colegio.porcentajePrioritarios,
+                    docTitular ? { horasContrato: docTitular.horasContrato, aplicaArticulo69: docTitular.aplicaArticulo69 } : null,
+                    {
+                      horasAsignadasTitular: hTitular,
+                      horasAsignadasSegundaEducadora: hSegunda
+                    }
+                  );
+                }
+
+                const coberturaDocPct = esParvC && parvInfo 
+                  ? parvInfo.porcentajeCoberturaPermanencia
+                  : (hrsPlan > 0 ? Math.round((totDocPlanAsig / hrsPlan) * 100) : 0);
+
+                const docColor = esParvC && parvInfo
+                  ? (parvInfo.coberturaCompletaPermanencia ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200')
+                  : (totDocPlanAsig === hrsPlan ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+                     totDocPlanAsig > hrsPlan ? 'text-red-700 bg-red-50 border-red-200' :
+                     'text-amber-700 bg-amber-50 border-amber-200');
 
                 return (
                   <div
@@ -995,11 +1055,18 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
                     {/* Badges de Cobertura */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
-                      {/* Badge Docencia Plan Regular */}
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${docColor}`}>
-                        <BookOpen className="w-3 h-3" />
-                        {totDocPlanAsig}/{hrsPlan} HA ({coberturaDocPct}%)
-                      </span>
+                      {/* Badge Docencia Plan Regular / Permanencia Parvularia */}
+                      {esParvC && parvInfo ? (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${docColor}`} title={`Permanencia DTO 306: ${parvInfo.minutosCubiertosTotalesTexto} cubiertos de ${parvInfo.permanenciaTexto}`}>
+                          <BookOpen className="w-3 h-3" />
+                          {parvInfo.minutosCubiertosTotalesTexto} / {parvInfo.permanenciaTexto} ({coberturaDocPct}%)
+                        </span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${docColor}`}>
+                          <BookOpen className="w-3 h-3" />
+                          {totDocPlanAsig}/{hrsPlan} HA ({coberturaDocPct}%)
+                        </span>
+                      )}
 
                       {/* Badge Co-Docencia no PIE */}
                       {totCoDoc > 0 && (
@@ -1286,7 +1353,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                             </p>
                           </div>
                         </div>
-                        {dotacionParvularia.segundaEducadoraRequerida && (
+                        {dotacionParvularia.horasContratoSegundaEducadoraRestante > 0 && (
                           <button
                             type="button"
                             onClick={() => {
@@ -1294,15 +1361,43 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                 isOpen: true,
                                 editandoAsig: null,
                                 asignaturaSugerida: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
-                                horasSugeridas: dotacionParvularia.horasContratoSegundaEducadora
+                                horasSugeridas: dotacionParvularia.horasContratoSegundaEducadoraRestante
                               });
                             }}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
                           >
                             <Plus className="w-3.5 h-3.5" />
-                            <span>Asignar 2da Educadora ({dotacionParvularia.horasContratoSegundaEducadora} hrs)</span>
+                            <span>Asignar 2da Educadora ({dotacionParvularia.horasContratoSegundaEducadoraRestante} hrs)</span>
                           </button>
                         )}
+                      </div>
+
+                      {/* Barra de Progreso de Permanencia en Tiempo Real */}
+                      <div className="mt-2.5 p-2 bg-white/70 rounded-xl border border-teal-100 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-teal-900">
+                            Cobertura de Permanencia: <strong className="text-teal-700">{dotacionParvularia.minutosCubiertosTotalesTexto}</strong> de {dotacionParvularia.permanenciaTexto}
+                          </span>
+                          <span className="font-extrabold text-teal-800">
+                            {dotacionParvularia.porcentajeCoberturaPermanencia}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden flex">
+                          <div 
+                            className="bg-teal-600 h-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.round((dotacionParvularia.minutosAsignadosTitular / dotacionParvularia.permanenciaMinutos) * 100))}%` }}
+                            title={`Titular: ${dotacionParvularia.minutosAsignadosTitularTexto}`}
+                          />
+                          <div 
+                            className="bg-indigo-500 h-full transition-all duration-300"
+                            style={{ width: `${Math.min(100 - Math.min(100, Math.round((dotacionParvularia.minutosAsignadosTitular / dotacionParvularia.permanenciaMinutos) * 100)), Math.round((dotacionParvularia.minutosAsignadosSegundaEducadora / dotacionParvularia.permanenciaMinutos) * 100))}%` }}
+                            title={`2da Educadora: ${dotacionParvularia.minutosAsignadosSegundaTexto}`}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                          <span>🟢 Titular asignada: <strong>{dotacionParvularia.minutosAsignadosTitularTexto}</strong> (Tope disp: {dotacionParvularia.minutosAulaTitularTexto})</span>
+                          <span>🟣 2da Educadora asignada: <strong>{dotacionParvularia.minutosAsignadosSegundaTexto}</strong></span>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-2.5 text-center">
@@ -1314,16 +1409,16 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           <span className="block text-[10px] uppercase font-bold text-slate-500">Aula Educadora Titular</span>
                           <span className="text-sm font-black text-teal-700">{dotacionParvularia.minutosAulaTitularTexto}</span>
                         </div>
-                        <div className={`p-2 rounded-xl border ${dotacionParvularia.minutosDeficit > 0 ? 'bg-amber-50/95 border-amber-300' : 'bg-emerald-50/95 border-emerald-300'}`}>
-                          <span className="block text-[10px] uppercase font-bold text-slate-500">Déficit No Cubierto</span>
-                          <span className={`text-sm font-black ${dotacionParvularia.minutosDeficit > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
-                            {dotacionParvularia.minutosDeficitTexto}
+                        <div className={`p-2 rounded-xl border ${dotacionParvularia.minutosDeficitRestante > 0 ? 'bg-amber-50/95 border-amber-300' : 'bg-emerald-50/95 border-emerald-300'}`}>
+                          <span className="block text-[10px] uppercase font-bold text-slate-500">Déficit Restante en Vivo</span>
+                          <span className={`text-sm font-black ${dotacionParvularia.minutosDeficitRestante > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
+                            {dotacionParvularia.minutosDeficitRestanteTexto}
                           </span>
                         </div>
                         <div className="bg-white/85 p-2 rounded-xl border border-teal-100">
-                          <span className="block text-[10px] uppercase font-bold text-slate-500">2da Educadora Proyectada</span>
-                          <span className="text-sm font-black text-indigo-700">
-                            {dotacionParvularia.horasContratoSegundaEducadora > 0 ? `${dotacionParvularia.horasContratoSegundaEducadora} hrs contrato` : 'Completo'}
+                          <span className="block text-[10px] uppercase font-bold text-slate-500">2da Educadora Restante</span>
+                          <span className={`text-sm font-black ${dotacionParvularia.horasContratoSegundaEducadoraRestante > 0 ? 'text-indigo-700' : 'text-emerald-700'}`}>
+                            {dotacionParvularia.horasContratoSegundaEducadoraRestante > 0 ? `${dotacionParvularia.horasContratoSegundaEducadoraRestante} hrs contrato` : '✓ Cuadrado'}
                           </span>
                         </div>
                       </div>
@@ -1399,19 +1494,38 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
                 {/* Resumen Indicador de Cobertura del Curso */}
                 <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-right min-w-[200px] flex-shrink-0">
-                  <div className="text-[10px] uppercase font-bold text-slate-500">Plan de Estudio (Malla + JEC)</div>
-                  <div className="text-2xl font-black text-[#002B49] flex items-center gap-1 justify-end">
-                    <span>{totalHorasDocenciaAsignadas}</span>
-                    <span className="text-slate-400 text-sm font-bold">/ {horasPlanCurso} HA</span>
-                  </div>
-                  <div className={`text-[11px] font-bold mt-0.5 ${
-                    totalHorasDocenciaAsignadas === horasPlanCurso ? 'text-emerald-600' :
-                    totalHorasDocenciaAsignadas > horasPlanCurso ? 'text-red-600' : 'text-amber-600'
-                  }`}>
-                    {totalHorasDocenciaAsignadas === horasPlanCurso ? '✓ Plan 100% Cubierto' :
-                     totalHorasDocenciaAsignadas > horasPlanCurso ? `⚠️ Exceso de ${totalHorasDocenciaAsignadas - horasPlanCurso} HA` :
-                     `Faltan ${horasPlanCurso - totalHorasDocenciaAsignadas} HA`}
-                  </div>
+                  {dotacionParvularia ? (
+                    <>
+                      <div className="text-[10px] uppercase font-bold text-teal-700">Permanencia Niños (DTO 306)</div>
+                      <div className="text-2xl font-black text-[#002B49] flex items-center gap-1 justify-end">
+                        <span>{dotacionParvularia.minutosCubiertosTotalesTexto}</span>
+                        <span className="text-slate-400 text-sm font-bold">/ {dotacionParvularia.permanenciaTexto}</span>
+                      </div>
+                      <div className={`text-[11px] font-bold mt-0.5 ${
+                        dotacionParvularia.coberturaCompletaPermanencia ? 'text-emerald-600' : 'text-amber-600'
+                      }`}>
+                        {dotacionParvularia.coberturaCompletaPermanencia
+                          ? '✓ Permanencia 100% Cubierta'
+                          : `Faltan ${dotacionParvularia.minutosDeficitRestanteTexto} (${dotacionParvularia.porcentajeCoberturaPermanencia}%)`}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-[10px] uppercase font-bold text-slate-500">Plan de Estudio (Malla + JEC)</div>
+                      <div className="text-2xl font-black text-[#002B49] flex items-center gap-1 justify-end">
+                        <span>{totalHorasDocenciaAsignadas}</span>
+                        <span className="text-slate-400 text-sm font-bold">/ {horasPlanCurso} HA</span>
+                      </div>
+                      <div className={`text-[11px] font-bold mt-0.5 ${
+                        totalHorasDocenciaAsignadas === horasPlanCurso ? 'text-emerald-600' :
+                        totalHorasDocenciaAsignadas > horasPlanCurso ? 'text-red-600' : 'text-amber-600'
+                      }`}>
+                        {totalHorasDocenciaAsignadas === horasPlanCurso ? '✓ Plan 100% Cubierto' :
+                         totalHorasDocenciaAsignadas > horasPlanCurso ? `⚠️ Exceso de ${totalHorasDocenciaAsignadas - horasPlanCurso} HA` :
+                         `Faltan ${horasPlanCurso - totalHorasDocenciaAsignadas} HA`}
+                      </div>
+                    </>
+                  )}
                   {(totalHorasCoDocenciaAsignadas > 0 || totalHorasTallerSepAsignadas > 0 || totalHorasColaborativoAsignadas > 0) && (
                     <div className="text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-200 flex justify-end gap-2 flex-wrap">
                       {totalHorasCoDocenciaAsignadas > 0 && (
