@@ -346,6 +346,33 @@ export async function generarExcelConsolidadoPalDEP(
     const rbdsExportados = new Set(establecimientos.map(e => Number(e.rbd)));
     const esExportacionTerritorialCompleta = establecimientos.length > 20;
 
+    // Helper para discriminar si una asignación es de Apoyo PIE (Decreto 170 / Aula de Recursos / Co-docencia PIE)
+    const esAsignacionPie = (a: AsignacionHoraria) => {
+      const ta = (a.tipoApoyo || '').toLowerCase();
+      const asig = (a.asignatura || '').toLowerCase();
+      return (
+        ta === 'pie' ||
+        ta.includes('pie') ||
+        ta.includes('recurso') ||
+        ta.includes('decreto 170') ||
+        asig.includes('pie') ||
+        asig.includes('decreto 170') ||
+        asig.includes('aula de recurso')
+      );
+    };
+
+    // Indexar asignaciones no PIE (Aula regular, talleres JEC, electivos, asignaturas adicionales, etc.)
+    // agrupadas por cursoId
+    const horasNoPiePorCurso = new Map<string, number>();
+    for (const asig of asignacionesTerritorio) {
+      if (asig.cursoId && !esAsignacionPie(asig)) {
+        const h = Number(asig.horasPedagogicasAula || 0);
+        if (h > 0) {
+          horasNoPiePorCurso.set(asig.cursoId, (horasNoPiePorCurso.get(asig.cursoId) || 0) + h);
+        }
+      }
+    }
+
     // Indexar cursos por RBD y nivel canónico
     // Clave: `${rbd}_${nivelCanónico}`
     interface EstadisticaNivel {
@@ -355,15 +382,6 @@ export async function generarExcelConsolidadoPalDEP(
       horasDocentes: number;
     }
     const nivelesStats = new Map<string, EstadisticaNivel>();
-
-    // Horas asignadas por curso en el SaaS
-    const horasAsignadasPorCurso = new Map<string, number>();
-    for (const asig of asignacionesTerritorio) {
-      if (asig.cursoId) {
-        const h = asig.horasPedagogicasAula || asig.horasCronologicasPie || 0;
-        horasAsignadasPorCurso.set(asig.cursoId, (horasAsignadasPorCurso.get(asig.cursoId) || 0) + h);
-      }
-    }
 
     cursosTerritorio.forEach(c => {
       const rbdNum = Number(c.rbd);
@@ -377,18 +395,23 @@ export async function generarExcelConsolidadoPalDEP(
         horasDocentes: 0
       };
 
-      // Cálculo de horas de plan de estudio para este curso
-      let hPlan = calcularHorasPlanCurso(c.nivel, c.regimen);
-      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
-      hPlan += hTalleres;
+      // Cálculo de horas efectivas del plan de estudio cargado en este curso:
+      // Se toman las horas efectivamente cargadas en la malla/asignaciones del curso
+      // (asignaturas base + electivos + talleres JEC + asignaturas adicionales), EXCLUYENDO las horas PIE.
+      const horasCargadasCursoNoPie = horasNoPiePorCurso.get(c.id) || 0;
 
-      const hDocAsignadas = horasAsignadasPorCurso.get(c.id) || 0;
+      // Fallback a horas del plan curricular oficial + talleres JEC si no tuviese asignaciones aún
+      let hPlanFallback = calcularHorasPlanCurso(c.nivel, c.regimen);
+      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
+      hPlanFallback += hTalleres;
+
+      const hPlanEfectivoCurso = horasCargadasCursoNoPie > 0 ? horasCargadasCursoNoPie : hPlanFallback;
 
       nivelesStats.set(key, {
         cursos: prev.cursos + 1,
         matricula: prev.matricula + (c.matriculaProyectada || 0),
-        horasPlanSemana: Math.max(prev.horasPlanSemana, hPlan),
-        horasDocentes: prev.horasDocentes + hDocAsignadas
+        horasPlanSemana: Math.max(prev.horasPlanSemana, hPlanEfectivoCurso),
+        horasDocentes: prev.horasDocentes + horasCargadasCursoNoPie
       });
     });
 
@@ -416,7 +439,7 @@ export async function generarExcelConsolidadoPalDEP(
           }
           // Col G: Total Hrs Plan Estudio con fórmula nativa =+E*F
           row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          // Col H: Total Horas Docentes reales asignadas en la dotación del SaaS
+          // Col H: Total Horas Docentes reales asignadas en la dotación del SaaS (excluyendo PIE)
           row.getCell(8).value = match.horasDocentes > 0 ? match.horasDocentes : Number(row.getCell(8).value || 0);
         } else {
           // El nivel no existe o fue cerrado en el SaaS para este colegio: vaciar a 0

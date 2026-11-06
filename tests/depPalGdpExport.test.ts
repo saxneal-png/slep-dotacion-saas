@@ -254,6 +254,45 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
       }
     });
     expect(encontradaFila3659).toBe(true);
+
+    // Test de inclusión de asignaturas adicionales excluyendo PIE
+    const curso1B = {
+      id: 'cur_1b',
+      rbd: '3659',
+      nivel: '1° Básico',
+      letra: 'A',
+      regimen: 'JEC' as const,
+      cupoSae: 30,
+      matriculaProyectada: 25,
+      alumnosNeet: 5,
+      alumnosNeep: 2
+    };
+
+    const asigs: any[] = [
+      { id: 'a1', rbd: '3659', cursoId: 'cur_1b', docenteId: 'doc_1', asignatura: 'Lenguaje', horasPedagogicasAula: 8 },
+      { id: 'a2', rbd: '3659', cursoId: 'cur_1b', docenteId: 'doc_1', asignatura: 'Matemática', horasPedagogicasAula: 8 },
+      { id: 'a3', rbd: '3659', cursoId: 'cur_1b', docenteId: 'doc_1', asignatura: 'Taller Robótica Adicional', horasPedagogicasAula: 4 }, // Adicional no PIE
+      { id: 'a4', rbd: '3659', cursoId: 'cur_1b', docenteId: 'doc_pie', asignatura: 'Apoyo Aula de Recursos PIE', horasPedagogicasAula: 10, tipoApoyo: 'PIE' } // Debe excluirse
+    ];
+
+    const bytesConAsigs = await generarExcelConsolidadoPalDEP([est], docentes, asistentes, [curso1B], asigs);
+    const wbConAsigs = new ExcelJS.Workbook();
+    await wbConAsigs.xlsx.load(bytesConAsigs as any);
+    const wsEstConAsigs = wbConAsigs.getWorksheet('Info Establecimiento')!;
+
+    let fila1B: any = null;
+    wsEstConAsigs.eachRow((r, n) => {
+      if (n > 3 && Number(r.getCell(2).value) === 3659 && r.getCell(3).text.includes('1° Básico')) {
+        fila1B = r;
+      }
+    });
+
+    expect(fila1B).toBeDefined();
+    // Horas cargadas no PIE: 8 + 8 + 4 = 20. El plan oficial de 1B JEC es 38. Fallback o cargadas:
+    expect(Number(fila1B.getCell(4).value)).toBe(25); // Matricula
+    expect(Number(fila1B.getCell(5).value)).toBe(1);  // Cursos
+    // Total horas docentes Col H debe ser exactamente 20 (excluye las 10h de PIE)
+    expect(Number(fila1B.getCell(8).value)).toBe(20);
   }, 15000);
 
   it('genera la Planilla GDP oficial del colegio con sus 6 hojas y fórmulas nativas', async () => {
