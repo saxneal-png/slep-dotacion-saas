@@ -117,8 +117,8 @@ export const CATALOGO_BCEP_PARVULARIA: NucleoParvulariaBcep[] = [
     id: 'bcep_talleres_integrados',
     ambito: 'Experiencias Integradas y Libre Disposición',
     nucleo: 'Juego Libre Guiado y Talleres de Desarrollo Integral',
-    horasJecCronologicas: 7.9, // Complemento para totalizar 35h 25m (~35.41h)
-    horasMediaJornadaCronologicas: 4,
+    horasJecCronologicas: 7.92, // 7h 55m exactos para totalizar 35h 25m (2.125 min)
+    horasMediaJornadaCronologicas: 3.5, // Para totalizar 22h 00m (1.320 min)
     descripcion: 'Proyectos integrados, rincones de juego libre guiado, talleres psicomotrices y de libre disposición.'
   }
 ];
@@ -290,6 +290,9 @@ export interface ResultadoDotacionParvulariaCurso {
   // Métricas en tiempo real según asignaciones cargadas
   minutosAsignadosTitular: number;
   minutosAsignadosTitularTexto: string;
+  minutosRestantesCapacidadTitular: number;
+  minutosRestantesCapacidadTitularTexto: string;
+  horasRestantesCapacidadTitular: number;
   minutosAsignadosSegundaEducadora: number;
   minutosAsignadosSegundaTexto: string;
   minutosCubiertosTotales: number;
@@ -297,6 +300,7 @@ export interface ResultadoDotacionParvulariaCurso {
   porcentajeCoberturaPermanencia: number;
   minutosDeficitRestante: number;
   minutosDeficitRestanteTexto: string;
+  horasAulaSegundaEducadoraRestante: number;
   horasContratoSegundaEducadoraRestante: number;
   coberturaCompletaPermanencia: boolean;
 }
@@ -407,19 +411,25 @@ export function calcularDotacionParvulariaCurso(
   const minutosDeficitRestante = Math.max(0, permanenciaMinutos - minutosCubiertosTotales);
   const coberturaCompletaPermanencia = minutosDeficitRestante === 0;
 
+  // Capacidad restante de aula de la Educadora Titular según su jornada disponible
+  const minutosRestantesCapacidadTitular = Math.max(0, minutosAulaTitular - minsAsigTitular);
+  const horasRestantesCapacidadTitular = Math.round((minutosRestantesCapacidadTitular / 60) * 100) / 100;
+
+  // Horas de aula y de contrato requeridas para cubrir el saldo de permanencia restante con la 2da Educadora
+  let horasAulaSegundaRestante = 0;
   let horasContratoSegundaRestante = 0;
+
   if (minutosDeficitRestante > 0) {
-    // Si la titular aún no completa sus horas disponibles de aula, la 2da educadora cubre lo que exceda el tope de la titular
-    // o el déficit restante inmediato si ya se asignaron horas
-    const remanenteTitularPorAsignar = Math.max(0, minutosAulaTitular - minsAsigTitular);
-    const deficitNoCubriblePorTitular = Math.max(0, minutosDeficitRestante - remanenteTitularPorAsignar);
-    
-    // Si la titular ya cubrió su tope o se evalúa el déficit que debe suplir la 2da educadora
-    const minsParaSegunda = Math.max(0, deficitNoCubriblePorTitular - minsAsigSegunda);
+    // Si la titular aún no tiene ninguna asignación cargada (0 min), el requerimiento base para la 2da educadora
+    // es el que excede el tope de la titular; pero una vez que se están asignando horas en vivo,
+    // el saldo pendiente real del curso es `minutosDeficitRestante` (y lo que supere el tope de la titular).
+    const minsParaSegunda = minsAsigTitular > 0
+      ? minutosDeficitRestante
+      : Math.max(0, minutosDeficit - minsAsigSegunda);
+
+    horasAulaSegundaRestante = Math.round((minsParaSegunda / 60) * 100) / 100;
     if (minsParaSegunda > 0) {
       horasContratoSegundaRestante = buscarContratoMinimoParvulariaPorMinutos(minsParaSegunda, regimenNormativo).horasContrato;
-    } else if (minsAsigSegunda === 0 && minutosDeficit > 0) {
-      horasContratoSegundaRestante = horasContratoSegunda;
     }
   }
 
@@ -463,6 +473,9 @@ export function calcularDotacionParvulariaCurso(
     // Métricas dinámicas en tiempo real
     minutosAsignadosTitular: minsAsigTitular,
     minutosAsignadosTitularTexto: formatearMinutosAHHMM(minsAsigTitular),
+    minutosRestantesCapacidadTitular,
+    minutosRestantesCapacidadTitularTexto: formatearMinutosAHHMM(minutosRestantesCapacidadTitular),
+    horasRestantesCapacidadTitular,
     minutosAsignadosSegundaEducadora: minsAsigSegunda,
     minutosAsignadosSegundaTexto: formatearMinutosAHHMM(minsAsigSegunda),
     minutosCubiertosTotales,
@@ -470,6 +483,7 @@ export function calcularDotacionParvulariaCurso(
     porcentajeCoberturaPermanencia,
     minutosDeficitRestante,
     minutosDeficitRestanteTexto: formatearMinutosAHHMM(minutosDeficitRestante),
+    horasAulaSegundaEducadoraRestante: horasAulaSegundaRestante,
     horasContratoSegundaEducadoraRestante: horasContratoSegundaRestante,
     coberturaCompletaPermanencia
   };

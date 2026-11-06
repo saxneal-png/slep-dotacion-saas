@@ -25,6 +25,7 @@ import {
   esModalidadTp,
   esNivelParvulario,
   calcularDotacionParvulariaCurso,
+  CATALOGO_BCEP_PARVULARIA,
   resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
 import {
@@ -1361,13 +1362,14 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                 isOpen: true,
                                 editandoAsig: null,
                                 asignaturaSugerida: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
-                                horasSugeridas: dotacionParvularia.horasContratoSegundaEducadoraRestante
+                                horasSugeridas: dotacionParvularia.horasAulaSegundaEducadoraRestante || dotacionParvularia.horasContratoSegundaEducadoraRestante
                               });
                             }}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
+                            title="Asignar horas de permanencia restantes a una 2da Educadora"
                           >
                             <Plus className="w-3.5 h-3.5" />
-                            <span>Asignar 2da Educadora ({dotacionParvularia.horasContratoSegundaEducadoraRestante} hrs)</span>
+                            <span>Asignar 2da Educadora ({dotacionParvularia.minutosDeficitRestanteTexto} aula / {dotacionParvularia.horasContratoSegundaEducadoraRestante}h contrato)</span>
                           </button>
                         )}
                       </div>
@@ -1727,14 +1729,65 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     </table>
                   </div>
 
-                  {/* Sugerencias Rápidas de Asignaturas del Plan MINEDUC */}
+                  {/* Sugerencias Rápidas de Asignaturas del Plan MINEDUC / Núcleos BCEP Parvularia */}
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2.5">
-                    <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-orange-600" />
-                      Asignaturas Sugeridas por el Plan Oficial ({planActivo.nivel})
+                    <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between gap-1.5">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-orange-600" />
+                        {esCursoParvulario
+                          ? `Núcleos BCEP y Permanencia del Curso (${cursoActivo?.regimen === 'JEC' ? '35h 25m' : '22h 00m'} en Horas Cronológicas de 60 min)`
+                          : `Asignaturas Sugeridas por el Plan Oficial (${planActivo.nivel})`}
+                      </span>
+                      {esCursoParvulario && dotacionParvularia && (
+                        <span className="text-[10px] font-extrabold text-teal-800 bg-teal-100 px-2 py-0.5 rounded-full border border-teal-200">
+                          Por cubrir: {dotacionParvularia.minutosDeficitRestanteTexto} ({dotacionParvularia.horasAulaSegundaEducadoraRestante}h)
+                        </span>
+                      )}
                     </h5>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {planActivo.asignaturasBase.map((asig, i) => {
+                      {esCursoParvulario && cursoActivo ? (
+                        CATALOGO_BCEP_PARVULARIA.map((b) => {
+                          const hrsSug = cursoActivo.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
+                          const asigsNucleo = asignacionesCurso.filter(a => !a.esTallerSep && !a.esTrabajoColaborativo && a.asignatura.trim().toLowerCase() === b.nucleo.toLowerCase());
+                          const hrsAsig = asigsNucleo.reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
+                          const hrsRestantes = Math.max(0, Math.round((hrsSug - hrsAsig) * 100) / 100);
+                          const cubierto = hrsRestantes <= 0.01;
+
+                          return (
+                            <div
+                              key={b.id}
+                              className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                                cubierto
+                                  ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                                  : hrsAsig > 0
+                                  ? 'bg-amber-50/70 border-amber-300 text-amber-950'
+                                  : 'bg-white border-slate-200 hover:border-teal-400'
+                              }`}
+                            >
+                              <div>
+                                <div className="font-bold flex items-center gap-1">
+                                  {cubierto ? <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" /> : null}
+                                  <span className="truncate max-w-[145px]" title={b.nucleo}>{b.nucleo}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  {b.ambito} • Meta: <strong>{hrsSug}h</strong> {hrsAsig > 0 && !cubierto ? `(Cubierto: ${hrsAsig}h)` : ''}
+                                </div>
+                              </div>
+
+                              {!cubierto && (
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalNuevaDocencia(b.nucleo, hrsRestantes)}
+                                  className="px-2 py-1 bg-teal-100 hover:bg-teal-200 text-teal-900 text-[10px] font-bold rounded transition-colors shrink-0"
+                                >
+                                  + Asignar ({hrsRestantes}h)
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        planActivo.asignaturasBase.map((asig, i) => {
                         const esAsigTallerOficial = /taller de literatura|taller laboral/i.test(asig.nombre);
                         const asigsDeEstaMateria = asignacionesPlanRegularCurso.filter(a => {
                           if (a.esTallerJec && !esAsigTallerOficial) return false;
@@ -1778,10 +1831,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                             )}
                           </div>
                         );
-                      })}
+                      })
+                      )}
 
-                      {/* Si el plan cuenta con horas de libre disposición JEC, mostrar tarjeta rápida para asignarlas */}
-                      {planActivo.horasLibreDisposicion > 0 && (
+                      {/* Si el plan cuenta con horas de libre disposición JEC (y no es parvulario que ya lo integra en BCEP), mostrar tarjeta rápida para asignarlas */}
+                      {!esCursoParvulario && planActivo.horasLibreDisposicion > 0 && (
                         (() => {
                           const horasTalleresJec = asignacionesPlanRegularCurso
                             .filter(a => {

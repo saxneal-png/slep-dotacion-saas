@@ -240,14 +240,24 @@ describe('Motor de Dotación en Educación Parvularia (Ley 20.903, DTO 306/2007,
       // Estado 1: Se le asignan 20 horas cronológicas a la titular (1.200 min)
       const resParcial = calcularDotacionParvulariaCurso(curso, 40, titular, { horasAsignadasTitular: 20, horasAsignadasSegundaEducadora: 0 });
       expect(resParcial.minutosCubiertosTotales).toBe(1200);
-      expect(resParcial.minutosDeficitRestante).toBe(925);
+      expect(resParcial.minutosDeficitRestante).toBe(925); // 15h 25m restantes de permanencia
+      expect(resParcial.horasAulaSegundaEducadoraRestante).toBe(15.42); // 925 / 60 = 15.42h de aula restantes
+      expect(resParcial.minutosRestantesCapacidadTitular).toBe(510); // 1710 - 1200 = 510 min (8h 30m aún asignables a la titular)
+      expect(resParcial.horasContratoSegundaEducadoraRestante).toBe(24); // Para cubrir 925 min en 65/35 si lo tomara la 2da educadora
       expect(resParcial.porcentajeCoberturaPermanencia).toBe(56); // 1200 / 2125 = 56.4%
 
-      // Estado 2: Titular asigna su tope de 28.5 hrs (1.710 min) y se asignan 7 horas cronológicas (420 min) a la 2da educadora
-      // Total cubierto: 1.710 + 420 = 2.130 min >= 2.125 min
-      const resCompleto = calcularDotacionParvulariaCurso(curso, 40, titular, { horasAsignadasTitular: 28.5, horasAsignadasSegundaEducadora: 7 });
-      expect(resCompleto.minutosCubiertosTotales).toBe(2130);
+      // Estado 1.5: La titular completa su tope legal de 28.5 hrs (1.710 min) -> Quedan 415 min (6h 55m = 6.92h) para la 2da educadora (11 hrs contrato)
+      const resTitularAlTope = calcularDotacionParvulariaCurso(curso, 40, titular, { horasAsignadasTitular: 28.5, horasAsignadasSegundaEducadora: 0 });
+      expect(resTitularAlTope.minutosRestantesCapacidadTitular).toBe(0);
+      expect(resTitularAlTope.minutosDeficitRestante).toBe(415);
+      expect(resTitularAlTope.horasAulaSegundaEducadoraRestante).toBe(6.92);
+      expect(resTitularAlTope.horasContratoSegundaEducadoraRestante).toBe(11);
+
+      // Estado 2: Titular asigna su tope de 28.5 hrs (1.710 min) y se asignan 6.92 horas cronológicas (415 min) a la 2da educadora
+      const resCompleto = calcularDotacionParvulariaCurso(curso, 40, titular, { horasAsignadasTitular: 28.5, horasAsignadasSegundaEducadora: 6.92 });
+      expect(resCompleto.minutosCubiertosTotales).toBe(2125);
       expect(resCompleto.minutosDeficitRestante).toBe(0);
+      expect(resCompleto.horasAulaSegundaEducadoraRestante).toBe(0);
       expect(resCompleto.porcentajeCoberturaPermanencia).toBe(100);
       expect(resCompleto.coberturaCompletaPermanencia).toBe(true);
       expect(resCompleto.horasContratoSegundaEducadoraRestante).toBe(0);

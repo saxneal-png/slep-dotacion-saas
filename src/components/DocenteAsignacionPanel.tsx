@@ -209,17 +209,40 @@ export function normalizarNombreAsignatura(nombre: string): string {
     return 'educacion fisica y salud';
   }
 
-  // 1.1 Ámbitos de Educación Parvularia (Bases Curriculares Dto. 28/2019)
-  if (n.includes('desarrollo personal') || n.includes('personal y social')) {
+  // 1.1 Ámbitos y Núcleos de Educación Parvularia (Bases Curriculares Dto. 28/2019)
+  if (
+    n.includes('desarrollo personal') ||
+    n.includes('personal y social') ||
+    n.includes('identidad y autonomia') ||
+    n.includes('convivencia y ciudadania') ||
+    n.includes('corporalidad y movimiento')
+  ) {
     return 'ambito desarrollo personal y social';
   }
-  if (n.includes('comunicacion integral')) {
+  if (
+    n.includes('comunicacion integral') ||
+    n.includes('lenguaje verbal') ||
+    n.includes('lenguajes artisticos')
+  ) {
     return 'ambito comunicacion integral';
   }
-  if (n.includes('interaccion y comprension') || n.includes('comprension del entorno') || n.includes('interaccion con el entorno')) {
+  if (
+    n.includes('interaccion y comprension') ||
+    n.includes('comprension del entorno') ||
+    n.includes('interaccion con el entorno') ||
+    n.includes('exploracion del entorno natural') ||
+    n.includes('comprension del entorno sociocultural') ||
+    n.includes('pensamiento matematico')
+  ) {
     return 'ambito interaccion y comprension del entorno';
   }
-  if (n.includes('experiencias de aprendizaje') || n.includes('aprendizaje integrad') || n.includes('experiencias integradas')) {
+  if (
+    n.includes('experiencias de aprendizaje') ||
+    n.includes('aprendizaje integrad') ||
+    n.includes('experiencias integradas') ||
+    n.includes('juego libre guiado') ||
+    n.includes('desarrollo integral')
+  ) {
     return 'experiencias de aprendizaje integradas';
   }
 
@@ -2564,32 +2587,33 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
               </div>
             </div>
 
-            {dotacionParvulariaCursoActivo.segundaEducadoraRequerida && (
+            {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   if (cursoParvularioActivo) {
-                    const hrsSugeridas = dotacionParvulariaCursoActivo.horasContratoSegundaEducadora;
-                    setHoras2daEducadoraInput(hrsSugeridas);
-                    // Seleccionar por defecto la primera educadora con horas disponibles distinta o el primer disponible
-                    const candidata = educadorasDisponibles.find(e => e.horasLibres > 0) || educadorasDisponibles[0];
+                    const hrsAulaFaltantes = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
+                    setHoras2daEducadoraInput(hrsAulaFaltantes > 0 ? hrsAulaFaltantes : dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante);
+                    // Seleccionar por defecto la primera educadora con horas disponibles distinta de la titular
+                    const candidata = educadorasDisponibles.find(e => e.docente.id !== docente.id && e.horasLibres > 0) || educadorasDisponibles.find(e => e.docente.id !== docente.id) || educadorasDisponibles[0];
                     setDocenteSeleccionada2daId(candidata ? candidata.docente.id : docente.id);
                     setModalSegundaEducadoraOpen(true);
                   }
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
+                title="Asignar horas restantes de permanencia a una 2da Educadora"
               >
                 <Users className="w-3.5 h-3.5" />
-                <span>Asignar 2da Educadora ({dotacionParvulariaCursoActivo.horasContratoSegundaEducadora} hrs)</span>
+                <span>Asignar 2da Educadora ({dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} aula / {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante}h contrato)</span>
               </button>
             )}
           </div>
 
           {/* Barra de Progreso de Cobertura en Vivo */}
           <div className="bg-white/80 p-2.5 rounded-xl border border-teal-100 shadow-2xs space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="font-bold text-teal-950 flex items-center gap-1.5">
-                <span>⏱️ Permanencia Semanal Cubierta en Vivo:</span>
+                <span>⏱️ Permanencia Estudiantes Cubierta:</span>
                 <strong className="text-teal-700 text-sm">
                   {dotacionParvulariaCursoActivo.minutosCubiertosTotalesTexto} / {dotacionParvulariaCursoActivo.permanenciaTexto}
                 </strong>
@@ -2601,13 +2625,13 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   {dotacionParvulariaCursoActivo.porcentajeCoberturaPermanencia}%
                 </span>
               </span>
-              <span className="text-[11px] font-semibold text-slate-500">
+              <span className="text-[11px] font-semibold text-slate-600">
                 {dotacionParvulariaCursoActivo.coberturaCompletaPermanencia ? (
                   <span className="text-emerald-700 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> ¡Permanencia 100% Cubierta!
+                    <CheckCircle2 className="w-3.5 h-3.5" /> ¡Permanencia de Estudiantes 100% Cubierta!
                   </span>
                 ) : (
-                  <span>Faltan por cubrir: <strong className="text-amber-700">{dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto}</strong></span>
+                  <span>Permanencia Restante Estudiantes: <strong className="text-amber-700 text-xs">{dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto}</strong> ({dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante}h cronológicas)</span>
                 )}
               </span>
             </div>
@@ -2625,8 +2649,15 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
               />
             </div>
             
-            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
-              <span>🟢 Titular asignada: <strong>{dotacionParvulariaCursoActivo.minutosAsignadosTitularTexto}</strong> (Tope legal disp: {dotacionParvulariaCursoActivo.minutosAulaTitularTexto})</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-600 pt-0.5">
+              <span>
+                🟢 Titular asignada: <strong>{dotacionParvulariaCursoActivo.minutosAsignadosTitularTexto}</strong> de {dotacionParvulariaCursoActivo.minutosAulaTitularTexto} tope legal
+                {dotacionParvulariaCursoActivo.minutosRestantesCapacidadTitular > 0 ? (
+                  <span className="text-teal-700 font-bold ml-1">(Disponibles en su tope: {dotacionParvulariaCursoActivo.minutosRestantesCapacidadTitularTexto})</span>
+                ) : (
+                  <span className="text-emerald-700 font-bold ml-1">(✓ Tope titular completado)</span>
+                )}
+              </span>
               <span>🟣 2da Educadora asignada: <strong>{dotacionParvulariaCursoActivo.minutosAsignadosSegundaTexto}</strong></span>
             </div>
           </div>
@@ -2634,33 +2665,33 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           {/* Grid de Métricas Oficiales de Parvularia */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
             <div className="bg-white/85 p-2 rounded-xl border border-teal-100 shadow-2xs">
-              <span className="block text-[10px] uppercase font-bold text-slate-500">Permanencia Requerida</span>
+              <span className="block text-[10px] uppercase font-bold text-slate-500">1. Permanencia Niños</span>
               <span className="text-sm font-black text-slate-800">{dotacionParvulariaCursoActivo.permanenciaTexto}</span>
-              <span className="block text-[9px] text-slate-400 font-medium">60 min por hora</span>
+              <span className="block text-[9px] text-slate-400 font-medium">Cubierto: {dotacionParvulariaCursoActivo.minutosCubiertosTotalesTexto}</span>
             </div>
             <div className="bg-white/85 p-2 rounded-xl border border-teal-100 shadow-2xs">
-              <span className="block text-[10px] uppercase font-bold text-slate-500">Aula Educadora Titular</span>
-              <span className="text-sm font-black text-teal-700">{dotacionParvulariaCursoActivo.minutosAulaTitularTexto}</span>
+              <span className="block text-[10px] uppercase font-bold text-slate-500">2. Aula Educadora Titular</span>
+              <span className="text-sm font-black text-teal-700">{dotacionParvulariaCursoActivo.minutosAsignadosTitularTexto} / {dotacionParvulariaCursoActivo.minutosAulaTitularTexto}</span>
               <span className="block text-[9px] text-slate-400 font-medium">
-                {dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h disp. ({dotacionParvulariaCursoActivo.horasContratoTitular}h contrato)
+                {dotacionParvulariaCursoActivo.minutosRestantesCapacidadTitular > 0 ? `Le restan ${dotacionParvulariaCursoActivo.minutosRestantesCapacidadTitularTexto} de aula` : `Tope legal cubierto (${dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h)`}
               </span>
             </div>
             <div className={`p-2 rounded-xl border shadow-2xs ${dotacionParvulariaCursoActivo.minutosDeficitRestante > 0 ? 'bg-amber-50/95 border-amber-300' : 'bg-emerald-50/95 border-emerald-300'}`}>
-              <span className="block text-[10px] uppercase font-bold text-slate-500">Déficit Restante en Vivo</span>
+              <span className="block text-[10px] uppercase font-bold text-slate-500">3. Permanencia Restante</span>
               <span className={`text-sm font-black ${dotacionParvulariaCursoActivo.minutosDeficitRestante > 0 ? 'text-amber-800' : 'text-emerald-700'}`}>
                 {dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto}
               </span>
               <span className="block text-[9px] text-slate-500 font-medium">
-                {dotacionParvulariaCursoActivo.coberturaCompletaPermanencia ? '✓ Completo' : 'Por cubrir'}
+                {dotacionParvulariaCursoActivo.coberturaCompletaPermanencia ? '✓ 0h pendientes' : `${dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante}h de aula por cubrir`}
               </span>
             </div>
             <div className="bg-white/85 p-2 rounded-xl border border-teal-100 shadow-2xs">
-              <span className="block text-[10px] uppercase font-bold text-slate-500">2da Educadora Restante</span>
+              <span className="block text-[10px] uppercase font-bold text-slate-500">4. Cuota 2da Educadora</span>
               <span className={`text-sm font-black ${dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 ? 'text-indigo-700' : 'text-emerald-700'}`}>
                 {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 ? `${dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante} hrs contrato` : '✓ Cuadrado'}
               </span>
               <span className="block text-[9px] text-slate-400 font-medium">
-                {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 ? 'Falta contratar/asignar' : 'Dotación lista'}
+                {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 ? `Para cubrir ${dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} de aula` : 'Permanencia cubierta'}
               </span>
             </div>
           </div>
@@ -2839,15 +2870,12 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                     type="button"
                     onClick={async () => {
                       if (onGuardarAsignacion) {
-                        const dotParv = calcularDotacionParvulariaCurso(
-                          cursoInspeccion,
-                          colegio.porcentajePrioritarios,
-                          { horasContrato: docente.horasContrato || 0, aplicaArticulo69: Boolean(docente.aplicaArticulo69) }
-                        );
-                        const hrsSugeridas = dotParv.horasContratoSegundaEducadora || 44;
+                        const hrsAulaSugeridas = dotacionParvulariaCursoActivo && dotacionParvulariaCursoActivo.cursoId === cursoInspeccion.id
+                          ? (dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100)
+                          : 9.17;
                         const horasPrompt = prompt(
-                          `Horas de Co-Docencia / 2da Educadora (DTO 306) en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`,
-                          String(hrsSugeridas)
+                          `Horas cronológicas de aula (60 min) de Co-Docencia / 2da Educadora (DTO 306) para cubrir permanencia en ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`,
+                          String(hrsAulaSugeridas > 0 ? hrsAulaSugeridas : 9.17)
                         );
                         const h = Number(horasPrompt);
                         if (h && h > 0) {
@@ -2876,174 +2904,167 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   </button>
                 )}
 
-                {/* Si es curso de Educación Parvularia: Desplegar Menú Modular BCEP por Ámbitos y Núcleos en Horas Cronológicas (60 min) */}
-                {!isDocenteSepPuro && !isDocentePiePuro && cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel) && (
-                  <div className="w-full mt-1.5 space-y-2 bg-teal-50/60 p-2.5 rounded-xl border border-teal-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-teal-900 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                        <span>Bases Curriculares BCEP (Decreto 28/2019) — Asignar por Núcleos (Horas Cronológicas 60 min):</span>
-                      </span>
-                      <span className="text-[10px] font-bold text-teal-700 bg-white/80 px-2 py-0.5 rounded-full border border-teal-200">
-                        Régimen: {cursoInspeccion.regimen} ({cursoInspeccion.regimen === 'JEC' ? '35h 25m' : '22h 30m'})
-                      </span>
-                    </div>
+                {/* Si es curso de Educación Parvularia: Desplegar Menú Modular BCEP por Ámbitos y Núcleos en Horas Cronológicas (60 min) conectado en vivo a la Permanencia */}
+                {!isDocenteSepPuro && !isDocentePiePuro && cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel) && (() => {
+                  const asigsCursoParv = asignaciones.filter(
+                    a => a.cursoId === cursoInspeccion.id && !a.esTallerSep && !a.esTrabajoColaborativo
+                  );
+                  const dotParvAct = dotacionParvulariaCursoActivo && dotacionParvulariaCursoActivo.cursoId === cursoInspeccion.id
+                    ? dotacionParvulariaCursoActivo
+                    : null;
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
-                      {/* Ámbito 1: Desarrollo Personal y Social */}
-                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
-                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
-                          🌱 Des. Personal y Social
+                  // Función helper para renderizar cada botón de núcleo con descuento en vivo
+                  const renderBotonNucleo = (b: typeof CATALOGO_BCEP_PARVULARIA[number]) => {
+                    const hrsPlanNucleo = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
+                    const hrsYaAsignadasNucleo = asigsCursoParv
+                      .filter(a => a.asignatura.trim().toLowerCase() === b.nucleo.toLowerCase())
+                      .reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
+
+                    const hrsRestantesNucleo = Math.max(0, Math.round((hrsPlanNucleo - hrsYaAsignadasNucleo) * 100) / 100);
+                    const cubierto = hrsRestantesNucleo <= 0.01;
+
+                    // Tope legal restante de la educadora titular actual
+                    const hrsTopeRestanteTitular = dotParvAct ? dotParvAct.horasRestantesCapacidadTitular : 99;
+                    const excedeTopeTitular = !cubierto && hrsTopeRestanteTitular > 0 && hrsRestantesNucleo > hrsTopeRestanteTitular;
+                    const topeTitularAgotado = !cubierto && dotParvAct !== null && hrsTopeRestanteTitular <= 0.01;
+
+                    return (
+                      <div key={b.id} className="space-y-0.5">
+                        <button
+                          type="button"
+                          disabled={cubierto}
+                          onClick={async () => {
+                            if (!onGuardarAsignacion || cubierto) return;
+                            // Si a la titular le queda menos capacidad que el núcleo completo, ofrecer ajustar a su tope exacto o asignar como 2da educadora
+                            let horasAAsignar = hrsRestantesNucleo;
+                            let comoCoDocencia = false;
+
+                            if (excedeTopeTitular) {
+                              const usarTope = confirm(
+                                `A ${docente.nombres} le restan ${dotParvAct?.minutosRestantesCapacidadTitularTexto} (${hrsTopeRestanteTitular}h) para completar su tope legal de aula (${dotParvAct?.minutosAulaTitularTexto}).\n\n¿Deseas asignarle exactamente ${hrsTopeRestanteTitular}h en "${b.nucleo}" para cuadrar su tope legal y dejar las ${Math.round((hrsRestantesNucleo - hrsTopeRestanteTitular) * 100) / 100}h restantes disponibles para la 2da Educadora?`
+                              );
+                              if (usarTope) {
+                                horasAAsignar = hrsTopeRestanteTitular;
+                              }
+                            } else if (topeTitularAgotado) {
+                              comoCoDocencia = true;
+                            }
+
+                            const nuevaAsig: AsignacionHoraria = {
+                              id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                              rbd: colegio.rbd,
+                              docenteId: docente.id,
+                              asignatura: b.nucleo,
+                              cursoId: cursoInspeccion.id,
+                              horasPedagogicasAula: horasAAsignar,
+                              periodo: 2027,
+                              esProporcionDocente: true,
+                              ...(comoCoDocencia ? {
+                                esCoDocencia: true,
+                                esCoDocenciaParvularia: true,
+                                tipoApoyo: 'CO_DOCENCIA' as const
+                              } : {})
+                            };
+                            await onGuardarAsignacion(nuevaAsig);
+                          }}
+                          className={`w-full text-left p-1.5 rounded border flex items-center justify-between text-[11px] transition-all ${
+                            cubierto
+                              ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 cursor-default opacity-85'
+                              : excedeTopeTitular
+                              ? 'bg-amber-50/80 hover:bg-amber-100 border-amber-300 text-slate-900 cursor-pointer'
+                              : 'bg-teal-50/50 hover:bg-teal-100 border-teal-200/60 text-slate-800 cursor-pointer'
+                          }`}
+                          title={
+                            cubierto
+                              ? `✓ ${b.nucleo} ya está 100% cubierto (${hrsYaAsignadasNucleo}h asignadas)`
+                              : excedeTopeTitular
+                              ? `Quedan ${hrsRestantesNucleo}h en este núcleo (tu tope legal restante es ${hrsTopeRestanteTitular}h)`
+                              : `Haz clic para asignar ${hrsRestantesNucleo}h cronológicas de ${b.nucleo} (descuenta directo de la permanencia)`
+                          }
+                        >
+                          <span className="font-semibold truncate flex items-center gap-1">
+                            {cubierto && <Check className="w-3 h-3 text-emerald-600 shrink-0" />}
+                            <span className="truncate">{b.nucleo}</span>
+                          </span>
+                          <span className={`font-black px-1.5 py-0.2 rounded text-[10px] shrink-0 ${
+                            cubierto
+                              ? 'bg-emerald-200/80 text-emerald-900'
+                              : hrsYaAsignadasNucleo > 0
+                              ? 'bg-amber-200 text-amber-900'
+                              : 'bg-teal-200/80 text-teal-900'
+                          }`}>
+                            {cubierto
+                              ? `✓ ${hrsPlanNucleo}h`
+                              : hrsYaAsignadasNucleo > 0
+                              ? `Faltan ${hrsRestantesNucleo}h (de ${hrsPlanNucleo}h)`
+                              : `${hrsRestantesNucleo}h`}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <div className="w-full mt-1.5 space-y-2 bg-teal-50/60 p-2.5 rounded-xl border border-teal-200">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-black text-teal-900 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                          <span>Plan de Estudio BCEP &amp; Permanencia (Dto. 28/2019 y DTO 306) — Cada núcleo asignado descuenta en vivo de la permanencia:</span>
                         </span>
-                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Desarrollo Personal y Social').map(b => {
-                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
-                          return (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={async () => {
-                                if (onGuardarAsignacion) {
-                                  const nuevaAsig: AsignacionHoraria = {
-                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                                    rbd: colegio.rbd,
-                                    docenteId: docente.id,
-                                    asignatura: b.nucleo,
-                                    cursoId: cursoInspeccion.id,
-                                    horasPedagogicasAula: hrs,
-                                    periodo: 2027,
-                                    esProporcionDocente: true
-                                  };
-                                  await onGuardarAsignacion(nuevaAsig);
-                                }
-                              }}
-                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
-                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
-                            >
-                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
-                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
-                                {hrs}h
-                              </span>
-                            </button>
-                          );
-                        })}
+                        <div className="flex items-center gap-1.5">
+                          {dotParvAct && (
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                              dotParvAct.coberturaCompletaPermanencia
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : 'bg-amber-100 text-amber-900 border-amber-300'
+                            }`}>
+                              {dotParvAct.coberturaCompletaPermanencia
+                                ? '✓ 0h 0m por cubrir'
+                                : `Por cubrir: ${dotParvAct.minutosDeficitRestanteTexto} (${dotParvAct.horasAulaSegundaEducadoraRestante}h)`}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold text-teal-700 bg-white/80 px-2 py-0.5 rounded-full border border-teal-200">
+                            Meta {cursoInspeccion.regimen}: {dotParvAct ? dotParvAct.permanenciaTexto : (cursoInspeccion.regimen === 'JEC' ? '35 h 25 m' : '22 h 0 m')}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Ámbito 2: Comunicación Integral */}
-                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
-                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
-                          🗣️ Comunicación Integral
-                        </span>
-                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Comunicación Integral').map(b => {
-                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
-                          return (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={async () => {
-                                if (onGuardarAsignacion) {
-                                  const nuevaAsig: AsignacionHoraria = {
-                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                                    rbd: colegio.rbd,
-                                    docenteId: docente.id,
-                                    asignatura: b.nucleo,
-                                    cursoId: cursoInspeccion.id,
-                                    horasPedagogicasAula: hrs,
-                                    periodo: 2027,
-                                    esProporcionDocente: true
-                                  };
-                                  await onGuardarAsignacion(nuevaAsig);
-                                }
-                              }}
-                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
-                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
-                            >
-                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
-                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
-                                {hrs}h
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
+                        {/* Ámbito 1: Desarrollo Personal y Social */}
+                        <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                          <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                            🌱 Des. Personal y Social
+                          </span>
+                          {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Desarrollo Personal y Social').map(renderBotonNucleo)}
+                        </div>
 
-                      {/* Ámbito 3: Interacción y Comprensión del Entorno */}
-                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
-                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
-                          🔍 Interacción y Entorno
-                        </span>
-                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Interacción y Comprensión del Entorno').map(b => {
-                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
-                          return (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={async () => {
-                                if (onGuardarAsignacion) {
-                                  const nuevaAsig: AsignacionHoraria = {
-                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                                    rbd: colegio.rbd,
-                                    docenteId: docente.id,
-                                    asignatura: b.nucleo,
-                                    cursoId: cursoInspeccion.id,
-                                    horasPedagogicasAula: hrs,
-                                    periodo: 2027,
-                                    esProporcionDocente: true
-                                  };
-                                  await onGuardarAsignacion(nuevaAsig);
-                                }
-                              }}
-                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
-                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
-                            >
-                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
-                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
-                                {hrs}h
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                        {/* Ámbito 2: Comunicación Integral */}
+                        <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                          <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                            🗣️ Comunicación Integral
+                          </span>
+                          {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Comunicación Integral').map(renderBotonNucleo)}
+                        </div>
 
-                      {/* Experiencias Integradas & Talleres */}
-                      <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
-                        <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
-                          🧩 Experiencias & Talleres
-                        </span>
-                        {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Experiencias Integradas y Libre Disposición').map(b => {
-                          const hrs = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
-                          return (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={async () => {
-                                if (onGuardarAsignacion) {
-                                  const nuevaAsig: AsignacionHoraria = {
-                                    id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                                    rbd: colegio.rbd,
-                                    docenteId: docente.id,
-                                    asignatura: b.nucleo,
-                                    cursoId: cursoInspeccion.id,
-                                    horasPedagogicasAula: hrs,
-                                    periodo: 2027,
-                                    esProporcionDocente: true
-                                  };
-                                  await onGuardarAsignacion(nuevaAsig);
-                                }
-                              }}
-                              className="w-full text-left p-1 rounded bg-teal-50/50 hover:bg-teal-100 border border-teal-200/60 flex items-center justify-between text-[11px] transition-all"
-                              title={`Asignar ${hrs}h cronológicas de ${b.nucleo}`}
-                            >
-                              <span className="font-semibold text-slate-800 truncate">{b.nucleo}</span>
-                              <span className="font-black text-teal-800 bg-teal-200/80 px-1 rounded text-[10px] shrink-0">
-                                {hrs}h
-                              </span>
-                            </button>
-                          );
-                        })}
+                        {/* Ámbito 3: Interacción y Comprensión del Entorno */}
+                        <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                          <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                            🔍 Interacción y Entorno
+                          </span>
+                          {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Interacción y Comprensión del Entorno').map(renderBotonNucleo)}
+                        </div>
+
+                        {/* Experiencias Integradas & Talleres */}
+                        <div className="bg-white p-2 rounded-lg border border-teal-100 shadow-2xs space-y-1">
+                          <span className="text-[10px] uppercase font-black text-teal-800 block border-b border-teal-50 pb-0.5">
+                            🧩 Experiencias &amp; Talleres
+                          </span>
+                          {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Experiencias Integradas y Libre Disposición').map(renderBotonNucleo)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Para docentes regulares / mixtos con horas de Subvención General en cursos de Básica/Media: ofrecer las asignaturas disponibles del plan regular */}
                 {!isDocenteSepPuro && !isDocentePiePuro && (!cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && dispCursoInspeccion.disponibles.map(asig => (
@@ -3251,18 +3272,22 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
               }}
               className="p-4 space-y-4 text-xs"
             >
-              {/* Resumen del Déficit a Cubrir */}
+              {/* Resumen del Déficit a Cubrir en Tiempo Real */}
               <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-1.5">
                 <div className="flex justify-between items-center text-teal-950 font-bold">
-                  <span>Déficit de Atención de Aula:</span>
-                  <span className="text-sm font-black text-amber-700">{dotacionParvulariaCursoActivo.minutosDeficitTexto}</span>
+                  <span>Permanencia Restante de Estudiantes por Cubrir:</span>
+                  <span className="text-sm font-black text-amber-700">
+                    {dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} ({dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante}h aula)
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-teal-800 text-[11px]">
-                  <span>Jornada de Contrato Proyectada:</span>
-                  <span className="font-extrabold text-indigo-700">{dotacionParvulariaCursoActivo.horasContratoSegundaEducadora} hrs (Régimen {dotacionParvulariaCursoActivo.regimenNormativoProporcion === '60_40' ? '60/40' : '65/35'})</span>
+                  <span>Jornada de Contrato Requerida (2da Educadora):</span>
+                  <span className="font-extrabold text-indigo-700">
+                    {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante} hrs contrato (Régimen {dotacionParvulariaCursoActivo.regimenNormativoProporcion === '60_40' ? '60/40' : '65/35'})
+                  </span>
                 </div>
                 <div className="text-[10px] text-teal-700 pt-0.5 border-t border-teal-200/60">
-                  Titular con {dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h disponibles para aula aporta {dotacionParvulariaCursoActivo.minutosAulaTitularTexto} de los {dotacionParvulariaCursoActivo.permanenciaTexto} de permanencia de los párvulos.
+                  La Educadora Titular cubre {dotacionParvulariaCursoActivo.minutosAsignadosTitularTexto} (tope legal: {dotacionParvulariaCursoActivo.minutosAulaTitularTexto}) de los {dotacionParvulariaCursoActivo.permanenciaTexto} de permanencia de los estudiantes.
                 </div>
               </div>
 
@@ -3331,27 +3356,31 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 </div>
               </div>
 
-              {/* Horas a Asignar */}
+              {/* Horas de Aula a Asignar (con cálculo automático del contrato equivalente) */}
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
                 <div>
                   <label className="block text-slate-800 font-bold mb-0.5">
-                    Horas de Aula / Co-docencia a Asignar (60 min):
+                    Horas Cronológicas de Permanencia / Aula a Cubrir (60 min):
                   </label>
                   <p className="text-[10px] text-slate-500">
-                    Sugerido por Ceil Matching: <strong>{dotacionParvulariaCursoActivo.horasContratoSegundaEducadora} hrs</strong>
+                    Para cubrir <strong>{horas2daEducadoraInput}h</strong> de aula se requiere un contrato de{' '}
+                    <strong className="text-indigo-700">
+                      {buscarContratoMinimoParvulariaPorMinutos(Math.round(horas2daEducadoraInput * 60), dotacionParvulariaCursoActivo.regimenNormativoProporcion).horasContrato} hrs
+                    </strong>
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <input
                     type="number"
-                    min={1}
+                    step="0.01"
+                    min={0.5}
                     max={44}
                     value={horas2daEducadoraInput}
-                    onChange={(e) => setHoras2daEducadoraInput(Math.max(1, Number(e.target.value)))}
-                    className="w-20 text-center font-black text-base bg-white border border-teal-300 rounded-lg py-1 text-teal-900 focus:ring-2 focus:ring-teal-500 outline-none"
+                    onChange={(e) => setHoras2daEducadoraInput(Math.max(0.5, Number(e.target.value)))}
+                    className="w-24 text-center font-black text-base bg-white border border-teal-300 rounded-lg py-1 text-teal-900 focus:ring-2 focus:ring-teal-500 outline-none"
                     required
                   />
-                  <span className="text-xs font-bold text-slate-600">hrs</span>
+                  <span className="text-xs font-bold text-slate-600">hrs aula</span>
                 </div>
               </div>
 
