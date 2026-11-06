@@ -5,7 +5,13 @@
 
 import ExcelJS from 'exceljs';
 import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria } from '../types';
-import { homologarDocenteAPal, homologarAsistenteAPal, sanitizeExcelText } from './depHomologationEngine';
+import {
+  homologarDocenteAPal,
+  homologarAsistenteAPal,
+  sanitizeExcelText,
+  homologarNivelExcelPal
+} from './depHomologationEngine';
+import { calcularHorasPlanCurso } from '@slep/mineduc-engine';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
@@ -335,29 +341,90 @@ export async function generarExcelConsolidadoPalDEP(
     }
   }
 
-  // 3. Sincronización de Info Establecimiento (preservando fórmula Col G = +E*F)
-  if (wsEst && cursosTerritorio.length > 0) {
-    // Si hay cursos, actualizar cursos y matrícula de cada nivel
-    const nivelesCounts = new Map<string, { cursos: number; matricula: number }>();
+  // 3. Sincronización Integral de Info Establecimiento con Datos Reales del SaaS
+  if (wsEst) {
+    const rbdsExportados = new Set(establecimientos.map(e => Number(e.rbd)));
+    const esExportacionTerritorialCompleta = establecimientos.length > 20;
+
+    // Indexar cursos por RBD y nivel canónico
+    // Clave: `${rbd}_${nivelCanónico}`
+    interface EstadisticaNivel {
+      cursos: number;
+      matricula: number;
+      horasPlanSemana: number;
+      horasDocentes: number;
+    }
+    const nivelesStats = new Map<string, EstadisticaNivel>();
+
+    // Horas asignadas por curso en el SaaS
+    const horasAsignadasPorCurso = new Map<string, number>();
+    for (const asig of asignacionesTerritorio) {
+      if (asig.cursoId) {
+        const h = asig.horasPedagogicasAula || asig.horasCronologicasPie || 0;
+        horasAsignadasPorCurso.set(asig.cursoId, (horasAsignadasPorCurso.get(asig.cursoId) || 0) + h);
+      }
+    }
+
     cursosTerritorio.forEach(c => {
-      const key = `${c.rbd}_${c.nivel.trim().toLowerCase()}`;
-      const prev = nivelesCounts.get(key) || { cursos: 0, matricula: 0 };
-      nivelesCounts.set(key, {
+      const rbdNum = Number(c.rbd);
+      const canonico = homologarNivelExcelPal(c.nivel);
+      const key = `${rbdNum}_${canonico}`;
+
+      const prev = nivelesStats.get(key) || {
+        cursos: 0,
+        matricula: 0,
+        horasPlanSemana: 0,
+        horasDocentes: 0
+      };
+
+      // Cálculo de horas de plan de estudio para este curso
+      let hPlan = calcularHorasPlanCurso(c.nivel, c.regimen);
+      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
+      hPlan += hTalleres;
+
+      const hDocAsignadas = horasAsignadasPorCurso.get(c.id) || 0;
+
+      nivelesStats.set(key, {
         cursos: prev.cursos + 1,
-        matricula: prev.matricula + (c.matriculaProyectada || 0)
+        matricula: prev.matricula + (c.matriculaProyectada || 0),
+        horasPlanSemana: Math.max(prev.horasPlanSemana, hPlan),
+        horasDocentes: prev.horasDocentes + hDocAsignadas
       });
     });
 
     wsEst.eachRow((row, rowNumber) => {
-      if (rowNumber <= 3) return;
+      if (rowNumber <= 3) return; // Cabeceras
       const rbd = Number(row.getCell(2).value || 0);
-      const nivelStr = String(row.getCell(3).text || '').trim().toLowerCase();
-      const match = nivelesCounts.get(`${rbd}_${nivelStr}`);
-      if (match) {
-        row.getCell(4).value = match.matricula;
-        row.getCell(5).value = match.cursos;
-        // Col G conserva su fórmula nativa =+E*F
-        row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
+
+      // Si se exporta un colegio individual o subconjunto, no alterar los RBDs ajenos
+      if (!esExportacionTerritorialCompleta && !rbdsExportados.has(rbd)) {
+        return;
+      }
+
+      // Si el RBD está en el alcance de los establecimientos exportados
+      if (rbdsExportados.has(rbd)) {
+        const nivelRaw = String(row.getCell(3).text || '').trim();
+        const nivelCanonico = homologarNivelExcelPal(nivelRaw);
+        const match = nivelesStats.get(`${rbd}_${nivelCanonico}`);
+
+        if (match && match.cursos > 0) {
+          // Datos reales desde el SaaS
+          row.getCell(4).value = match.matricula;
+          row.getCell(5).value = match.cursos;
+          if (match.horasPlanSemana > 0) {
+            row.getCell(6).value = match.horasPlanSemana;
+          }
+          // Col G: Total Hrs Plan Estudio con fórmula nativa =+E*F
+          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
+          // Col H: Total Horas Docentes reales asignadas en la dotación del SaaS
+          row.getCell(8).value = match.horasDocentes > 0 ? match.horasDocentes : Number(row.getCell(8).value || 0);
+        } else {
+          // El nivel no existe o fue cerrado en el SaaS para este colegio: vaciar a 0
+          row.getCell(4).value = 0;
+          row.getCell(5).value = 0;
+          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
+          row.getCell(8).value = 0;
+        }
         row.commit();
       }
     });

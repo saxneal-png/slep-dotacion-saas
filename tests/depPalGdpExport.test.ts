@@ -240,6 +240,20 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     const wsResumen = wb.getWorksheet('Resumen');
     expect(wsResumen).toBeDefined();
     expect(wsResumen!.getCell('B3').value).toBeDefined();
+
+    // Verificación de sincronización de Info Establecimiento
+    const wsEst = wb.getWorksheet('Info Establecimiento');
+    expect(wsEst).toBeDefined();
+    const rowRbd3659 = wsEst!.getRow(4); // o buscar fila con 3659
+    let encontradaFila3659 = false;
+    wsEst!.eachRow((r, n) => {
+      if (n > 3 && Number(r.getCell(2).value) === 3659) {
+        encontradaFila3659 = true;
+        expect(r.getCell(7).value).toBeDefined(); // Fórmula +E*F
+        expect((r.getCell(7).value as any).formula).toContain('+E');
+      }
+    });
+    expect(encontradaFila3659).toBe(true);
   }, 15000);
 
   it('genera la Planilla GDP oficial del colegio con sus 6 hojas y fórmulas nativas', async () => {

@@ -467,3 +467,133 @@ export function inferirPropuestaGdp(horasVigentes: number, horasSolicitadas: num
   if (horasSolicitadas < horasVigentes) return 'Reducción horas';
   return 'Continuidad';
 }
+
+/**
+ * Normaliza y homologa cualquier nombre de nivel proveniente de los cursos del SaaS
+ * a las categorías y nombres de nivel oficiales utilizados en la hoja "Info Establecimiento" de la DEP.
+ */
+export function normalizarNivelInfoEstablecimiento(nivel: string): string {
+  const n = (nivel || '').toLowerCase().trim();
+
+  // Parvularia
+  if (/pre-?k|nt1|primer nivel de transici/i.test(n)) {
+    return 'Prekínder';
+  }
+  if (/k[ií]nder|nt2|segundo nivel de transici/i.test(n)) {
+    return 'Kínder';
+  }
+  if (/menor y mayor|medio menor/i.test(n)) {
+    return 'medio menor y mayor';
+  }
+  if (/nt1\s*nt2|parvulari/i.test(n)) {
+    return 'NT1 NT2';
+  }
+
+  // Básica 1° a 8° Regular
+  for (let i = 1; i <= 8; i++) {
+    const reg = new RegExp(`^${i}[°º]?\\s*(?:b[aá]sico|b\\b)`, 'i');
+    if (reg.test(n) || n === `${i}° básico` || n === `${i} básico` || n === `${i}b`) {
+      return `${i}° Básico`;
+    }
+  }
+
+  // Media 1° a 4° Regular (HC / TP)
+  for (let i = 1; i <= 4; i++) {
+    const reg = new RegExp(`^${i}[°º]?\\s*(?:medio|m\\b)`, 'i');
+    if (reg.test(n) || n === `${i}° medio` || n === `${i} medio` || n === `${i}m`) {
+      return `${i}° Medio`;
+    }
+  }
+
+  // Multigrados y Combinados
+  if (/1[°º]?\s*(?:y|\-)\s*2/i.test(n) && /b[aá]sico/i.test(n)) {
+    return '1° y 2°';
+  }
+  if (/3[°º]?\s*(?:y|\-)\s*4/i.test(n) && /b[aá]sico/i.test(n)) {
+    return '3° y 4°';
+  }
+
+  // Modalidad Adultos EPJA Básica
+  if (/epja|adulto|nocturn/i.test(n) && /1[°º]?\s*nivel\s*b[aá]sico|primer\s*nivel\s*b[aá]sico/i.test(n)) {
+    return '1° nivel básico';
+  }
+  if (/epja|adulto|nocturn/i.test(n) && /2[°º]?\s*nivel\s*b[aá]sico|segundo\s*nivel\s*b[aá]sico/i.test(n)) {
+    return '2° nivel básico';
+  }
+  if (/epja|adulto|nocturn/i.test(n) && /3[°º]?\s*nivel\s*b[aá]sico|tercer\s*nivel\s*b[aá]sico/i.test(n)) {
+    return '3° nivel básico';
+  }
+
+  // Modalidad Adultos EPJA Media
+  if (/epja|adulto|nocturn/i.test(n) && /1[°º]?\s*nivel\s*m|primer\s*nivel\s*m/i.test(n)) {
+    return '1° nivel medio';
+  }
+  if (/epja|adulto|nocturn/i.test(n) && /2[°º]?\s*nivel\s*m|segundo\s*nivel\s*m/i.test(n)) {
+    return '2° nivel medio';
+  }
+  if (/epja/i.test(n)) {
+    return 'EPJA';
+  }
+
+  // Educación Especial y Talleres Laborales
+  if (/servicios menores/i.test(n)) return 'taller laboral servicios menores';
+  if (/asistencia al hogar/i.test(n)) return 'taller laboral asistencia al hogar';
+  if (/invernadero/i.test(n)) return 'taller laboral invernadero y reciclaje';
+  if (/habilidades para la vida/i.test(n)) return 'taller laboral habilidades para la vida';
+  if (/laboral|taller tl|tl\b/i.test(n)) return 'Taller Laboral';
+  if (/opci[oó]n 4/i.test(n)) return 'Opción 4';
+  if (/\bce\b/i.test(n)) return 'CE';
+
+  return nivel.trim();
+}
+
+/**
+ * Normaliza el string que viene en la plantilla Excel DEP en la hoja Info Establecimiento
+ * para permitir comparación tolerante a acentos, espacios dobles y variaciones de redacción.
+ */
+export function homologarNivelExcelPal(raw: string): string {
+  const s = (raw || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Quitar tildes
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (/pre-?kinder|nt1/i.test(s)) return 'prekinder';
+  if (/kinder|nt2/i.test(s)) return 'kinder';
+  if (/medio menor/i.test(s)) return 'medio menor y mayor';
+  if (/nt1 nt2/i.test(s)) return 'nt1 nt2';
+
+  for (let i = 1; i <= 8; i++) {
+    if (new RegExp(`^${i}[°º]?\\s*basico`, 'i').test(s)) {
+      return `${i} basico`;
+    }
+  }
+
+  for (let i = 1; i <= 4; i++) {
+    if (new RegExp(`^${i}[°º]?\\s*medio`, 'i').test(s)) {
+      return `${i} medio`;
+    }
+  }
+
+  if (/1[°º]?\s*(?:y|-)\s*2/i.test(s)) return '1 y 2';
+  if (/3[°º]?\s*(?:y|-)\s*4/i.test(s)) return '3 y 4';
+
+  if (/pimer|primer|1[°º]?\s*nivel\s*basico/i.test(s)) return '1 nivel basico';
+  if (/segundo|2[°º]?\s*nivel\s*basico/i.test(s)) return '2 nivel basico';
+  if (/tercer|3[°º]?\s*nivel\s*basico/i.test(s)) return '3 nivel basico';
+
+  if (/primer|1[°º]?\s*nivel\s*m/i.test(s)) return '1 nivel medio';
+  if (/segundo|2[°º]?\s*nivel\s*m/i.test(s)) return '2 nivel medio';
+
+  if (/servicios menores/i.test(s)) return 'taller laboral servicios menores';
+  if (/asistencia al hogar/i.test(s)) return 'taller laboral asistencia al hogar';
+  if (/invernadero/i.test(s)) return 'taller laboral invernadero y reciclaje';
+  if (/habilidades para la vida/i.test(s)) return 'taller laboral habilidades para la vida';
+  if (/laboral|taller tl|\btl\b/i.test(s)) return 'taller laboral';
+  if (/opcion 4/i.test(s)) return 'opcion 4';
+  if (/\bce\b/i.test(s)) return 'ce';
+  if (/epja/i.test(s)) return 'epja';
+
+  return s;
+}
