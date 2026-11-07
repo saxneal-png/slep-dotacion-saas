@@ -26,6 +26,8 @@ import {
   esNivelParvulario,
   calcularDotacionParvulariaCurso,
   buscarContratoMinimoParvulariaPorMinutos,
+  obtenerTramoMineduc,
+  formatearMinutosAHHMM,
   CATALOGO_BCEP_PARVULARIA,
   resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
@@ -652,8 +654,17 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     return calcularDisponibilidadCurso(cursoActual, infoPlan, asignacionesColegio);
   }, [cursoActual, infoPlan, asignacionesColegio]);
 
-  const esParvulariaFila = Boolean(cursoActual && esNivelParvulario(cursoActual.nivel));
+  const esEducadoraFila = docente.estamento === 'EDUCADORA_PARVULO' || 
+    Boolean(docente.esEducadoraParvulo) || 
+    Boolean(docente.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.cargoInstitucional)) ||
+    Boolean(docente.titulo && /p[aá]rvulo|infantil|preescolar/i.test(docente.titulo)) ||
+    Boolean(docente.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.funcionPrincipal));
+  const esParvulariaFila = esEducadoraFila && Boolean(cursoActual && esNivelParvulario(cursoActual.nivel));
   const esCoDocParv = Boolean(a.esCoDocenciaParvularia || (esParvulariaFila && esCoDoc));
+
+  // Verificar si la asignatura actual coincide con algún núcleo BCEP de Educación Parvularia
+  const matchBcepActual = CATALOGO_BCEP_PARVULARIA.find(b => b.nucleo.toLowerCase() === (a.asignatura || '').trim().toLowerCase());
+  const esCoDocDto306Nombre = /atenci[oó]n\s*directa\s*y\s*co-docencia\s*parvularia/i.test(a.asignatura || '');
 
   // Verificar si la asignatura actual coincide con alguna del plan
   const asigEnPlan = infoPlan.asignaturas.find(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura));
@@ -670,10 +681,10 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     infoCanonicaFila.ambito === 'PLAN_COMUN_ELECTIVO'
   );
 
-  const esLibreDisposicion = !esPie && !esCoDoc && !esOficialProfundizacionOPlan && (
+  const esLibreDisposicion = !esPie && !esCoDoc && !esOficialProfundizacionOPlan && !matchBcepActual && !esCoDocDto306Nombre && (
     a.esTallerJec || 
-    /taller|jec|libre/i.test(a.asignatura) || 
-    (!asigEnPlan && a.cursoId !== 'TRANSVERSAL')
+    (/taller|jec|libre/i.test(a.asignatura) && !esParvulariaFila) || 
+    (!asigEnPlan && a.cursoId !== 'TRANSVERSAL' && !esParvulariaFila)
   );
 
   const esMedio34Fila = Boolean(
@@ -689,7 +700,11 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   const matchProfActual = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === a.asignatura.toLowerCase());
   const matchPlanComunActual = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => a.asignatura.toLowerCase().includes(c.nombre.toLowerCase()));
 
-  const valorSelectFila = esLibreDisposicion
+  const valorSelectFila = matchBcepActual
+    ? matchBcepActual.nucleo
+    : esCoDocDto306Nombre
+    ? 'Atención Directa y Co-Docencia Parvularia (DTO 306)'
+    : esLibreDisposicion
     ? 'LIBRE_DISPOSICION'
     : (
         matchProfActual
@@ -832,10 +847,23 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                 }}
                 className="bg-white hover:bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs font-bold text-slate-800 shadow-xs focus:ring-1 focus:ring-orange-500 focus:border-orange-500 w-full"
               >
+                {esParvulariaFila && (
+                  <optgroup label="👶 Núcleos BCEP Educación Parvularia (Horas 60 min)">
+                    {CATALOGO_BCEP_PARVULARIA.map(b => (
+                      <option key={b.id} value={b.nucleo}>
+                        👶 {b.nucleo} ({cursoActual?.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas} h 60m)
+                      </option>
+                    ))}
+                    <option value="Atención Directa y Co-Docencia Parvularia (DTO 306)">
+                      👶 Atención Directa y Co-Docencia Parvularia (DTO 306)
+                    </option>
+                  </optgroup>
+                )}
+
                 <optgroup label="🟢 Asignaturas Disponibles del Plan de Estudio">
                   {disponibilidad.disponibles.map(d => (
                     <option key={d.nombre} value={d.nombre}>
-                      {d.nombre} ({d.horasDisponibles} HA faltan / {d.horasPlan} HA plan)
+                      {d.nombre} ({d.horasDisponibles} {esParvulariaFila ? 'h (60m)' : 'HA'} faltan / {d.horasPlan} {esParvulariaFila ? 'h' : 'HA'} plan)
                     </option>
                   ))}
                   {disponibilidad.disponibles.length === 0 && (
@@ -879,7 +907,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   </>
                 )}
 
-                {infoPlan.esJec && (
+                {infoPlan.esJec && !esParvulariaFila && (
                   <optgroup label="⚡ Libre Disposición / JEC (Nombre Flexible)">
                     <option value="LIBRE_DISPOSICION">
                       ⚡ Taller JEC / Libre Disposición ({disponibilidad.horasLibreDisponibles} HA libres)
@@ -891,7 +919,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   <optgroup label="⚪ Asignaturas Ya Cubiertas en este Curso">
                     {disponibilidad.cubiertas.map(d => (
                       <option key={d.nombre} value={d.nombre}>
-                        {d.nombre} (Cubierta: {d.horasAsignadas}/{d.horasPlan} HA{d.horasCompensadasLibreDisposicion ? ` [+${d.horasCompensadasLibreDisposicion}h JEC]` : ''})
+                        {d.nombre} (Cubierta: {d.horasAsignadas}/{d.horasPlan} {esParvulariaFila ? 'h (60m)' : 'HA'}{d.horasCompensadasLibreDisposicion ? ` [+${d.horasCompensadasLibreDisposicion}h JEC]` : ''})
                       </option>
                     ))}
                   </optgroup>
@@ -2105,11 +2133,49 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     }
   }, [asignaciones, docente.id, cursos, onEliminarAsignacion]);
 
+  // Detección estricta de rol Educadora de Párvulo (nunca por el hecho de dictar un taller en un curso parvulario)
+  const esEducadora = useMemo(() => {
+    return docente.estamento === 'EDUCADORA_PARVULO' || 
+           Boolean(docente.esEducadoraParvulo) || 
+           Boolean(docente.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.cargoInstitucional)) ||
+           Boolean(docente.titulo && /p[aá]rvulo|infantil|preescolar/i.test(docente.titulo)) ||
+           Boolean(docente.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.funcionPrincipal));
+  }, [docente]);
+
+  // Todos los cursos de Educación Parvularia de la escuela (para el tablero de cobertura)
+  const todosCursosParvulariosEscuela = useMemo(() => {
+    return cursos.filter(c => esNivelParvulario(c.nivel));
+  }, [cursos]);
+
+  // Curso inicial sugerido: si es Educadora de Párvulos, abrir siempre en su primer curso parvulario asignado o en el primer curso parvulario del colegio (nunca en 1° Básico)
+  const cursoInicialSugeridoId = useMemo(() => {
+    if (esEducadora) {
+      const asigParv = asignacionesDocente.find(a => {
+        const c = cursos.find(cur => cur.id === a.cursoId);
+        return c && esNivelParvulario(c.nivel);
+      });
+      if (asigParv?.cursoId) return asigParv.cursoId;
+      if (todosCursosParvulariosEscuela[0]?.id) return todosCursosParvulariosEscuela[0].id;
+    }
+    return cursos[0]?.id || '';
+  }, [esEducadora, asignacionesDocente, cursos, todosCursosParvulariosEscuela]);
+
   // Estado para el selector de Curso del Resumen Rápido de Cumplimiento
-  const [cursoInspeccionId, setCursoInspeccionId] = useState<string>(cursos[0]?.id || '');
+  const [cursoInspeccionId, setCursoInspeccionId] = useState<string>(cursoInicialSugeridoId);
+
+  // Asegurar que para una Educadora de Párvulos el curso seleccionado por defecto sea un curso parvulario si estaba en 1° Básico
+  useEffect(() => {
+    if (esEducadora && todosCursosParvulariosEscuela.length > 0) {
+      const actual = cursos.find(c => c.id === cursoInspeccionId);
+      if (!actual || !esNivelParvulario(actual.nivel)) {
+        setCursoInspeccionId(cursoInicialSugeridoId);
+      }
+    }
+  }, [esEducadora, todosCursosParvulariosEscuela, cursos, cursoInspeccionId, cursoInicialSugeridoId]);
+
   const cursoInspeccion = useMemo(() => {
-    return cursos.find(c => c.id === cursoInspeccionId) || cursos[0] || null;
-  }, [cursos, cursoInspeccionId]);
+    return cursos.find(c => c.id === cursoInspeccionId) || (esEducadora ? todosCursosParvulariosEscuela[0] : null) || cursos[0] || null;
+  }, [cursos, cursoInspeccionId, esEducadora, todosCursosParvulariosEscuela]);
 
   const planCursoInspeccion = useMemo(() => {
     return resolverPlanCurso(cursoInspeccion, planesDb);
@@ -2131,39 +2197,29 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     return cubiertasBase + dispCursoInspeccion.horasLibreAsignadas;
   }, [dispCursoInspeccion]);
 
-  // Detección de rol Educadora de Párvulo y Cursos Parvularios asignados
-  const esEducadora = useMemo(() => {
-    return docente.estamento === 'EDUCADORA_PARVULO' || 
-           Boolean(docente.esEducadoraParvulo) || 
-           Boolean(docente.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.cargoInstitucional)) ||
-           Boolean(docente.titulo && /p[aá]rvulo|infantil|preescolar/i.test(docente.titulo)) ||
-           Boolean(docente.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.funcionPrincipal)) ||
-           asignacionesDocente.some(a => {
-             const c = cursos.find(cur => cur.id === a.cursoId);
-             return c && esNivelParvulario(c.nivel);
-           });
-  }, [docente, asignacionesDocente, cursos]);
-
-  // Cursos de párvulo con los que este docente interactúa (asignados o el curso inspeccionado)
+  // Cursos de párvulo disponibles para esta educadora (todos los cursos parvularios de la escuela)
   const cursosParvulariosDocente = useMemo(() => {
+    if (esEducadora && todosCursosParvulariosEscuela.length > 0) {
+      return todosCursosParvulariosEscuela;
+    }
     const ids = new Set<string>();
     asignacionesDocente.forEach(a => {
       const c = cursos.find(cur => cur.id === a.cursoId);
       if (c && esNivelParvulario(c.nivel)) ids.add(c.id);
     });
     const lista = cursos.filter(c => ids.has(c.id));
-    // Si el curso inspeccionado es parvulario y no está en la lista, incluirlo para visualización
     if (cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel) && !ids.has(cursoInspeccion.id)) {
       lista.unshift(cursoInspeccion);
     }
     return lista;
-  }, [asignacionesDocente, cursos, cursoInspeccion]);
+  }, [esEducadora, todosCursosParvulariosEscuela, asignacionesDocente, cursos, cursoInspeccion]);
 
-  // Cálculo de Horas No Aula / Deducibles del docente
+  // Cálculo de Horas No Aula / Deducibles del docente (sin duplicar funcionesNoAula con horasTrabajoColaborativo)
   const horasNoAulaDocente = useMemo(() => {
-    const fnNoAula = (docente.funcionesNoAula && docente.funcionesNoAula.length > 0)
-      ? docente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : ((docente.horasCoordinacionPie || 0) + (docente.horasDirectivas || 0) + (docente.horasInspectorGeneral || 0) + (docente.horasTecnicoPedagogicas || 0) + (docente.horasCoordinacion || 0));
+    if (docente.funcionesNoAula && docente.funcionesNoAula.length > 0) {
+      return docente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0);
+    }
+    const fnNoAula = (docente.horasCoordinacionPie || 0) + (docente.horasDirectivas || 0) + (docente.horasInspectorGeneral || 0) + (docente.horasTecnicoPedagogicas || 0) + (docente.horasCoordinacion || 0);
     const trabajoColab = docente.horasTrabajoColaborativo || 0;
     return fnNoAula + trabajoColab;
   }, [docente]);
@@ -2178,44 +2234,112 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     if (cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel)) {
       return cursoInspeccion;
     }
-    return cursosParvulariosDocente[0] || null;
-  }, [cursoInspeccion, cursosParvulariosDocente]);
+    return cursosParvulariosDocente[0] || todosCursosParvulariosEscuela[0] || null;
+  }, [cursoInspeccion, cursosParvulariosDocente, todosCursosParvulariosEscuela]);
 
-  const dotacionParvulariaCursoActivo = useMemo(() => {
-    if (!cursoParvularioActivo) return null;
+  // Función auxiliar para calcular el estado normativo de cualquier curso parvulario de la escuela
+  const calcularEstadoCursoParvulario = (cursoParv: CursoSae) => {
+    const asigsCursoParv = asignaciones.filter(a => a.cursoId === cursoParv.id && !a.esTallerSep && !a.esTrabajoColaborativo);
 
-    // Calcular las asignaciones reales que ya tiene este curso (Titular y Segunda Educadora)
-    const asigsCursoParv = asignaciones.filter(a => a.cursoId === cursoParvularioActivo.id);
-    const titularId = docente.id;
+    // Identificar quién es la Educadora Titular de este curso (la educadora con mayor carga regular no co-docente, o la educadora actual si tiene carga o si nadie tiene)
+    const mapaHorasPorDocente = new Map<string, { regular: number; codoc: number; total: number }>();
+    asigsCursoParv.forEach(a => {
+      const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+      const prev = mapaHorasPorDocente.get(a.docenteId) || { regular: 0, codoc: 0, total: 0 };
+      const esCoDocAsig = Boolean(a.esCoDocenciaParvularia || a.esCoDocencia || /co-docencia|2da educadora|apoyo/i.test(a.asignatura));
+      if (esCoDocAsig) {
+        prev.codoc += h;
+      } else {
+        prev.regular += h;
+      }
+      prev.total += h;
+      mapaHorasPorDocente.set(a.docenteId, prev);
+    });
+
+    // Determinar el docente titular del curso
+    let titularDocente = docente;
+    let maxRegular = -1;
+    mapaHorasPorDocente.forEach((vals, docId) => {
+      const dObj = docentes.find(x => x.id === docId);
+      const esEdObj = dObj && (
+        dObj.estamento === 'EDUCADORA_PARVULO' ||
+        Boolean(dObj.esEducadoraParvulo) ||
+        Boolean(dObj.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(dObj.cargoInstitucional)) ||
+        Boolean(dObj.titulo && /p[aá]rvulo|infantil|preescolar/i.test(dObj.titulo))
+      );
+      if (esEdObj && vals.regular > maxRegular) {
+        maxRegular = vals.regular;
+        titularDocente = dObj;
+      }
+    });
+
+    const titularId = titularDocente.id;
     let horasTitularAsig = 0;
     let horasSegundaAsig = 0;
 
     asigsCursoParv.forEach(a => {
       const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-      if (a.esCoDocenciaParvularia || a.esCoDocencia || a.coDocenteId === titularId || (a.docenteId !== titularId && /co-docencia|2da educadora|apoyo/i.test(a.asignatura))) {
+      if (a.esCoDocenciaParvularia || a.esCoDocencia || (a.docenteId !== titularId)) {
         horasSegundaAsig += h;
-      } else if (a.docenteId === titularId) {
-        horasTitularAsig += h;
       } else {
-        horasSegundaAsig += h;
+        horasTitularAsig += h;
       }
     });
 
-    return calcularDotacionParvulariaCurso(
-      cursoParvularioActivo,
+    const horasNoAulaTitular = (titularDocente.funcionesNoAula && titularDocente.funcionesNoAula.length > 0)
+      ? titularDocente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : ((titularDocente.horasCoordinacionPie || 0) + (titularDocente.horasDirectivas || 0) + (titularDocente.horasInspectorGeneral || 0) + (titularDocente.horasTecnicoPedagogicas || 0) + (titularDocente.horasCoordinacion || 0) + (titularDocente.horasTrabajoColaborativo || 0));
+    const horasDispAulaTitular = Math.max(0, (titularDocente.horasContrato || 0) - horasNoAulaTitular);
+
+    const resultado = calcularDotacionParvulariaCurso(
+      cursoParv,
       colegio.porcentajePrioritarios,
       {
-        horasContrato: docente.horasContrato || 0,
-        horasNoAulaDeducibles: horasNoAulaDocente,
-        horasContratoDisponiblesAula: horasContratoDisponiblesAula,
-        aplicaArticulo69: Boolean(docente.aplicaArticulo69)
+        horasContrato: titularDocente.horasContrato || 0,
+        horasNoAulaDeducibles: horasNoAulaTitular,
+        horasContratoDisponiblesAula: horasDispAulaTitular,
+        aplicaArticulo69: Boolean(titularDocente.aplicaArticulo69)
       },
       {
         horasAsignadasTitular: horasTitularAsig,
         horasAsignadasSegundaEducadora: horasSegundaAsig
       }
     );
-  }, [cursoParvularioActivo, colegio.porcentajePrioritarios, docente.horasContrato, docente.id, asignaciones, horasNoAulaDocente, horasContratoDisponiblesAula, docente.aplicaArticulo69]);
+
+    // Desglose de educadoras/docentes que participan en este curso
+    const participantes = Array.from(mapaHorasPorDocente.entries()).map(([docId, vals]) => {
+      const dObj = docentes.find(x => x.id === docId);
+      return {
+        docenteId: docId,
+        nombreCompleto: dObj ? `${dObj.nombres.split(' ')[0]} ${dObj.apellidos.split(' ')[0]}` : 'Docente',
+        esTitularCurso: docId === titularId,
+        horas: Math.round(vals.total * 100) / 100
+      };
+    });
+
+    const horasDocenteActualEnCurso = Math.round((mapaHorasPorDocente.get(docente.id)?.total || 0) * 100) / 100;
+
+    return {
+      ...resultado,
+      titularDocente,
+      esDocenteActualTitularDelCurso: titularDocente.id === docente.id,
+      horasDocenteActualEnCurso,
+      participantes
+    };
+  };
+
+  // Tablero panorámico de todos los cursos parvularios de la escuela
+  const resumenTodosCursosParvularios = useMemo(() => {
+    return todosCursosParvulariosEscuela.map(c => ({
+      curso: c,
+      estado: calcularEstadoCursoParvulario(c)
+    }));
+  }, [todosCursosParvulariosEscuela, asignaciones, docentes, docente, colegio.porcentajePrioritarios]);
+
+  const dotacionParvulariaCursoActivo = useMemo(() => {
+    if (!cursoParvularioActivo) return null;
+    return calcularEstadoCursoParvulario(cursoParvularioActivo);
+  }, [cursoParvularioActivo, colegio.porcentajePrioritarios, docente, docentes, asignaciones]);
 
   // Cálculo de Carga Horaria y Proporción Docente Ley 20.903 en tiempo real para este docente
   const resumenCargaHoraria = useMemo(() => {
@@ -2244,12 +2368,15 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
     asigsProporcionales.forEach(a => {
       const c = cursos.find(cur => cur.id === a.cursoId);
-      const es60 = c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
       const esParvCurso = Boolean(c && esNivelParvulario(c.nivel));
+      const es60 = (esEducadora && esParvCurso)
+        ? (c?.regimenProporcion === '60_40' || colegio.porcentajePrioritarios >= 60)
+        : (c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80));
       const ha = getHorasAulaLectivaAsig(a);
 
-      if (esParvCurso) {
-        // En Educación Parvularia cada hora asignada es cronológica de 60 minutos
+      // IMPORTANTE: Solo las Educadoras de Párvulos se calculan en horas cronológicas de 60 min (DTO 306).
+      // Un docente de aula regular que dicta un taller en Pre-Kínder o Kínder se calcula SIEMPRE como docente de aula regular (45 min).
+      if (esEducadora && esParvCurso) {
         const mins = Math.round(ha * 60);
         if (es60) {
           minsAulaParvularia60 += mins;
@@ -2266,27 +2393,39 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     });
 
     const totalHaLectivas = haLectivas65 + haLectivas60;
+    const totalHorasAulaParvularia = Math.round(((minsAulaParvularia65 + minsAulaParvularia60) / 60) * 100) / 100;
+    const horasAulaParv65 = Math.round((minsAulaParvularia65 / 60) * 100) / 100;
+    const horasAulaParv60 = Math.round((minsAulaParvularia60 / 60) * 100) / 100;
 
     // Asignaciones exentas o de trabajo colaborativo / fuera de curso
     const asigsExentas = asignacionesDocente.filter(a => !asigsProporcionales.includes(a));
     const horasCronExentasAsig = asigsExentas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
 
     // Funciones No Aula Institucionales / Coordinación PIE / Directivas / UTP
-    const horasFuncionesNoAula = (docente.funcionesNoAula && docente.funcionesNoAula.length > 0)
-      ? docente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : ((docente.horasCoordinacionPie || 0) + (docente.horasDirectivas || 0) + (docente.horasInspectorGeneral || 0) + (docente.horasTecnicoPedagogicas || 0) + (docente.horasCoordinacion || 0));
+    const horasFuncionesNoAula = horasNoAulaDocente;
 
     // Contrato Requerido por Aula según Tablas Oficiales Mineduc
     // 1. Aula Regular Básica/Media (45 min)
     const reqContratoRegular65 = buscarContratoMinimoPorTabla(haLectivas65, '65_35');
     const reqContratoRegular60 = buscarContratoMinimoPorTabla(haLectivas60, '60_40');
     // 2. Aula Parvularia DTO 306 (60 min)
-    const reqContratoParv65 = buscarContratoMinimoParvulariaPorMinutos(minsAulaParvularia65, '65_35').horasContrato;
-    const reqContratoParv60 = buscarContratoMinimoParvulariaPorMinutos(minsAulaParvularia60, '60_40').horasContrato;
+    const lookupParv65 = buscarContratoMinimoParvulariaPorMinutos(minsAulaParvularia65, '65_35');
+    const lookupParv60 = buscarContratoMinimoParvulariaPorMinutos(minsAulaParvularia60, '60_40');
+    const reqContratoParv65 = lookupParv65.horasContrato;
+    const reqContratoParv60 = lookupParv60.horasContrato;
 
     const reqContrato65 = reqContratoRegular65 + reqContratoParv65;
     const reqContrato60 = reqContratoRegular60 + reqContratoParv60;
     const reqContratoAulaTotal = reqContrato65 + reqContrato60;
+
+    // Tope máximo de horas de aula (60m) que la educadora puede hacer con su jornada contratada disponible
+    const regDefectoParv: '65_35' | '60_40' = colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35';
+    const tramoTopeEducadora = obtenerTramoMineduc(horasContratoDisponiblesAula, regDefectoParv);
+    const minsTopeEducadora = tramoTopeEducadora
+      ? tramoTopeEducadora.lectivasMinutosCronologicos
+      : Math.floor(horasContratoDisponiblesAula * 60 * (regDefectoParv === '60_40' ? 0.60 : 0.65));
+    const topeMaxHorasAulaSegunContrato = Math.round((minsTopeEducadora / 60) * 100) / 100;
+    const topeMaxMinutosAulaTexto = formatearMinutosAHHMM(minsTopeEducadora);
 
     // Contrato Total Requerido
     const contratoRequeridoTotal = reqContratoAulaTotal + Math.round((horasCronExentasAsig + horasFuncionesNoAula) * 10) / 10;
@@ -2294,7 +2433,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const saldoHoras = Math.round((horasContratoReal - contratoRequeridoTotal) * 10) / 10;
 
     // Auditoría multitramo oficial para recreos y HNL
-    const audit = calcularAuditoriaDocenteMultitramo({
+    const auditRegular = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: haLectivas65,
       horasAula60_40: haLectivas60,
       horasPieCronologicas: Math.round(horasCronExentasAsig * 10) / 10,
@@ -2305,11 +2444,19 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       aplicaArticulo69: Boolean(docente.aplicaArticulo69)
     });
 
+    const minutosRecreoTotal = auditRegular.minutosRecreoTotal + lookupParv65.minutosRecreo + lookupParv60.minutosRecreo;
+    const minutosHnlTotal = auditRegular.minutosHnlTotal + lookupParv65.minutosHnl + lookupParv60.minutosHnl;
+
     return {
       isDocenteDiferencial,
       haLectivas65,
       haLectivas60,
       totalHaLectivas,
+      totalHorasAulaParvularia,
+      horasAulaParv65,
+      horasAulaParv60,
+      topeMaxHorasAulaSegunContrato,
+      topeMaxMinutosAulaTexto,
       reqContrato65,
       reqContrato60,
       reqContratoAulaTotal,
@@ -2318,32 +2465,57 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       contratoRequeridoTotal,
       horasContratoReal,
       saldoHoras,
-      audit
+      audit: {
+        ...auditRegular,
+        minutosRecreoTotal,
+        minutosHnlTotal
+      }
     };
-  }, [asignacionesDocente, cursos, colegio.porcentajePrioritarios, docente]);
+  }, [asignacionesDocente, cursos, colegio.porcentajePrioritarios, docente, esEducadora, horasNoAulaDocente, horasContratoDisponiblesAula]);
 
-  // Lista de Educadoras y Docentes de Aula disponibles en el colegio con su disponibilidad de horas
+  // Lista exclusiva de Educadoras de Párvulos disponibles en el colegio con su capacidad de aula (60m) y contrato libre
   const educadorasDisponibles = useMemo(() => {
-    return docentes.map(d => {
-      const asigsD = asignaciones.filter(a => a.docenteId === d.id);
-      const horasAsignadas = asigsD.reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
+    const regParv: '65_35' | '60_40' = colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35';
+
+    const mapeados = docentes.map(d => {
+      const esEdParv = d.estamento === 'EDUCADORA_PARVULO' ||
+        Boolean(d.esEducadoraParvulo) ||
+        Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
+        Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
+        Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal));
+
+      const asigsD = asignaciones.filter(a => a.docenteId === d.id && !a.esTrabajoColaborativo);
+      const horasAulaAsignadas = Math.round(asigsD.reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0) * 100) / 100;
       const horasContrato = d.horasContrato || 0;
-      const horasLibres = Math.max(0, horasContrato - horasAsignadas);
-      const esEdParv = d.estamento === 'EDUCADORA_PARVULO' || Boolean(d.esEducadoraParvulo) || (d.cargoInstitucional && /p[aá]rvulo/i.test(d.cargoInstitucional));
+      const noAulaD = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
+        ? d.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : ((d.horasCoordinacionPie || 0) + (d.horasDirectivas || 0) + (d.horasInspectorGeneral || 0) + (d.horasTecnicoPedagogicas || 0) + (d.horasCoordinacion || 0) + (d.horasTrabajoColaborativo || 0));
+      const contratoDispAula = Math.max(0, horasContrato - noAulaD);
+      const tramoTope = obtenerTramoMineduc(contratoDispAula, regParv);
+      const minsTopeD = tramoTope ? tramoTope.lectivasMinutosCronologicos : Math.floor(contratoDispAula * 60 * (regParv === '60_40' ? 0.60 : 0.65));
+      const topeAulaHoras = Math.round((minsTopeD / 60) * 100) / 100;
+      const horasAulaLibres = Math.max(0, Math.round((topeAulaHoras - horasAulaAsignadas) * 100) / 100);
+      const reqContratoActual = buscarContratoMinimoParvulariaPorMinutos(Math.round(horasAulaAsignadas * 60), regParv).horasContrato + noAulaD;
+      const horasLibres = Math.max(0, Math.round((horasContrato - reqContratoActual) * 10) / 10);
+
       return {
         docente: d,
         horasContrato,
-        horasAsignadas,
+        horasNoAula: noAulaD,
+        horasAsignadas: horasAulaAsignadas,
+        topeAulaHoras,
+        horasAulaLibres,
         horasLibres,
         esEducadora: esEdParv
       };
-    }).sort((a, b) => {
-      // Priorizar primero educadoras de párvulos, luego mayor cantidad de horas libres
-      if (a.esEducadora && !b.esEducadora) return -1;
-      if (!a.esEducadora && b.esEducadora) return 1;
-      return b.horasLibres - a.horasLibres;
     });
-  }, [docentes, asignaciones]);
+
+    // Filtrar EXCLUSIVAMENTE a las Educadoras de Párvulos (si existen en la escuela)
+    const soloEducadoras = mapeados.filter(m => m.esEducadora);
+    const listaFinal = soloEducadoras.length > 0 ? soloEducadoras : mapeados;
+
+    return listaFinal.sort((a, b) => b.horasAulaLibres - a.horasAulaLibres);
+  }, [docentes, asignaciones, colegio.porcentajePrioritarios]);
 
   // Detección de posibles asignaciones duplicadas de este docente
   const idsDuplicadosSugeridos = useMemo(() => {
@@ -2458,15 +2630,19 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
           {/* Indicadores Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-            {/* 1. Horas Aula Lectivas (45 min) */}
-            <div className="bg-white border border-indigo-100 rounded-lg p-2.5 shadow-2xs">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">1. Horas Aula (45m)</span>
+            {/* 1. Horas Aula (60 min para Educadora DTO 306) */}
+            <div className="bg-white border border-teal-200 rounded-lg p-2.5 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">1. Horas Aula (60m)</span>
               <div className="flex items-baseline gap-1">
-                <span className="text-lg font-black text-indigo-700">{resumenCargaHoraria.totalHaLectivas}</span>
-                <span className="text-xs font-bold text-slate-500">HA</span>
+                <span className="text-lg font-black text-teal-700">
+                  {resumenCargaHoraria.totalHorasAulaParvularia > 0 ? resumenCargaHoraria.totalHorasAulaParvularia : resumenCargaHoraria.totalHaLectivas}
+                </span>
+                <span className="text-xs font-bold text-slate-500">
+                  {resumenCargaHoraria.totalHorasAulaParvularia > 0 || resumenCargaHoraria.totalHaLectivas === 0 ? 'hrs (60m)' : 'HA'}
+                </span>
               </div>
-              <span className="text-[10px] text-slate-500 block truncate" title={`${resumenCargaHoraria.haLectivas65} HA en 65/35, ${resumenCargaHoraria.haLectivas60} HA en 60/40`}>
-                {resumenCargaHoraria.haLectivas65} HA (65/35){resumenCargaHoraria.haLectivas60 > 0 ? ` • ${resumenCargaHoraria.haLectivas60} HA (60/40)` : ''}
+              <span className="text-[10px] text-teal-700 font-semibold block truncate" title={`Tope máximo según tu jornada disponible (${horasContratoDisponiblesAula}h): ${resumenCargaHoraria.topeMaxMinutosAulaTexto}`}>
+                Tope legal: {resumenCargaHoraria.topeMaxHorasAulaSegunContrato}h ({resumenCargaHoraria.topeMaxMinutosAulaTexto})
               </span>
             </div>
 
@@ -2478,7 +2654,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 <span className="text-xs font-bold text-slate-500">hrs</span>
               </div>
               <span className="text-[10px] text-slate-400 block">
-                Tabla Ley 20.903
+                Tabla DTO 306 / Ley 20.903
               </span>
             </div>
 
@@ -2546,16 +2722,16 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           {/* Desglose de Derechos Mineduc (Recreo y Horas No Lectivas) */}
           <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 bg-white/70 rounded-lg px-3 py-1.5 border border-slate-200/50">
             <span className="flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-indigo-600" />
+              <Clock className="w-3.5 h-3.5 text-teal-600" />
               <span>Recreo Garantizado: <strong>{Math.floor(resumenCargaHoraria.audit.minutosRecreoTotal / 60)}h {resumenCargaHoraria.audit.minutosRecreoTotal % 60}m</strong></span>
             </span>
             <span className="flex items-center gap-1">
               <span>📚 Horas No Lectivas (HNL): <strong>{Math.floor(resumenCargaHoraria.audit.minutosHnlTotal / 60)}h {resumenCargaHoraria.audit.minutosHnlTotal % 60}m</strong></span>
               <span className="text-slate-400 text-[10px]">(Preparación, Colaboración, PACI/FUDEI)</span>
             </span>
-            {resumenCargaHoraria.totalHaLectivas > 0 && (
-              <span className="text-[10px] font-semibold text-indigo-700">
-                {resumenCargaHoraria.totalHaLectivas} periodos lectivos de 45 min asignados a cursos
+            {resumenCargaHoraria.totalHorasAulaParvularia > 0 && (
+              <span className="text-[10px] font-semibold text-teal-800">
+                {resumenCargaHoraria.totalHorasAulaParvularia} hrs cronológicas (60m) frente a párvulos
               </span>
             )}
           </div>
@@ -2565,48 +2741,212 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       {/* Tarjeta Resumen de Normativa Educación Parvularia (DTO 306/2007 & Ley 20.903) */}
       {esEducadora && dotacionParvulariaCursoActivo && (
         <div className="bg-gradient-to-r from-teal-50/95 via-emerald-50/90 to-teal-50/95 border border-teal-200/90 rounded-2xl p-3.5 shadow-xs space-y-2.5">
+          {/* Tablero Panorámico de Todos los Cursos de Párvulos de la Escuela */}
+          {resumenTodosCursosParvularios.length > 0 && (
+            <div className="bg-white/90 border border-teal-200/80 rounded-xl p-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] uppercase font-black text-teal-900 tracking-wide flex items-center gap-1.5">
+                  <span>🏫 Mapa de Cobertura de Cursos de Párvulos de la Escuela (Haz clic en un curso para gestionarlo):</span>
+                </span>
+                <span className="text-[10px] font-bold text-slate-500">
+                  {resumenTodosCursosParvularios.length} {resumenTodosCursosParvularios.length === 1 ? 'curso parvulario' : 'cursos parvularios'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {resumenTodosCursosParvularios.map(({ curso: cItem, estado: estItem }) => {
+                  const activo = cursoParvularioActivo?.id === cItem.id;
+                  const topeTitHoras = Math.round((estItem.minutosAulaTitular / 60) * 100) / 100;
+                  const asigTitHoras = Math.round((estItem.minutosAsignadosTitular / 60) * 100) / 100;
+                  const titularExcedida = asigTitHoras > topeTitHoras + 0.05;
+
+                  return (
+                    <div
+                      key={cItem.id}
+                      onClick={() => setCursoInspeccionId(cItem.id)}
+                      className={`p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        activo
+                          ? 'bg-teal-50/95 border-teal-500 ring-2 ring-teal-500/20 shadow-xs'
+                          : 'bg-slate-50/70 hover:bg-teal-50/40 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${estItem.coberturaCompletaPermanencia && !titularExcedida ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <span className="text-xs font-black text-slate-900">
+                            {cItem.nivel} {cItem.letra} ({cItem.regimen})
+                          </span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                          titularExcedida
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : estItem.coberturaCompletaPermanencia
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        }`}>
+                          {titularExcedida
+                            ? `⚠️ Titular excedida (${asigTitHoras}h / ${topeTitHoras}h tope)`
+                            : estItem.coberturaCompletaPermanencia
+                            ? '✓ 100% Cuadrado'
+                            : `Faltan ${estItem.minutosDeficitRestanteTexto} (${estItem.horasAulaSegundaEducadoraRestante}h)`}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-600">
+                        <span>
+                          Permanencia: <strong>{estItem.minutosCubiertosTotalesTexto} / {estItem.permanenciaTexto}</strong>
+                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {estItem.participantes.length > 0 ? (
+                            estItem.participantes.map(p => (
+                              <span
+                                key={p.docenteId}
+                                className={`px-1.5 py-0.2 rounded font-bold text-[9px] ${
+                                  p.esTitularCurso
+                                    ? 'bg-teal-100 text-teal-900 border border-teal-200'
+                                    : 'bg-indigo-100 text-indigo-900 border border-indigo-200'
+                                }`}
+                              >
+                                {p.esTitularCurso ? '🟢' : '🟣'} {p.nombreCompleto}: {p.horas}h
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-400 italic">Sin educadoras asignadas</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-200/70 pb-2">
             <div className="flex items-center gap-2">
               <span className="p-1.5 bg-teal-600 text-white rounded-lg shadow-xs">
                 <GraduationCap className="w-4 h-4" />
               </span>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h4 className="text-xs font-black text-teal-950 uppercase tracking-wide">
                     Normativa Educación Parvularia (DTO 306/2007 &amp; Ley 20.903)
                   </h4>
                   {cursoParvularioActivo && (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-200/80 text-teal-900 border border-teal-300">
-                      Curso: {cursoParvularioActivo.nivel} {cursoParvularioActivo.letra} ({cursoParvularioActivo.regimen})
+                      Curso Activo: {cursoParvularioActivo.nivel} {cursoParvularioActivo.letra} ({cursoParvularioActivo.regimen})
                     </span>
                   )}
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/90 text-teal-800 border border-teal-200">
+                    Titular del Curso: {dotacionParvulariaCursoActivo.titularDocente.nombres.split(' ')[0]} {dotacionParvulariaCursoActivo.titularDocente.apellidos.split(' ')[0]} ({dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h disp. → tope {dotacionParvulariaCursoActivo.minutosAulaTitularTexto})
+                  </span>
                 </div>
                 <p className="text-[11px] text-teal-700 font-medium mt-0.5">
-                  Permanencia: <strong>{dotacionParvulariaCursoActivo.permanenciaTexto}</strong> (60 min/hora) | Régimen: <strong>{dotacionParvulariaCursoActivo.regimenNormativoProporcion === '60_40' ? '60/40 (Vulnerable ≥ 60% Prioritarios)' : '65/35'}</strong>
+                  Permanencia Niños: <strong>{dotacionParvulariaCursoActivo.permanenciaTexto}</strong> (60 min/hora) | Régimen: <strong>{dotacionParvulariaCursoActivo.regimenNormativoProporcion === '60_40' ? '60/40 (Vulnerable ≥ 60% Prioritarios)' : '65/35'}</strong>
                 </p>
               </div>
             </div>
 
-            {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (cursoParvularioActivo) {
-                    const hrsAulaFaltantes = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
-                    setHoras2daEducadoraInput(hrsAulaFaltantes > 0 ? hrsAulaFaltantes : dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante);
-                    // Seleccionar por defecto la primera educadora con horas disponibles distinta de la titular
-                    const candidata = educadorasDisponibles.find(e => e.docente.id !== docente.id && e.horasLibres > 0) || educadorasDisponibles.find(e => e.docente.id !== docente.id) || educadorasDisponibles[0];
-                    setDocenteSeleccionada2daId(candidata ? candidata.docente.id : docente.id);
-                    setModalSegundaEducadoraOpen(true);
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
-                title="Asignar horas restantes de permanencia a una 2da Educadora"
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Asignar 2da Educadora ({dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} aula / {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante}h contrato)</span>
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Botón de Cuadratura Automática al Tope Legal cuando la educadora actual está sobreasignada en este curso */}
+              {cursoParvularioActivo && dotacionParvulariaCursoActivo.esDocenteActualTitularDelCurso && dotacionParvulariaCursoActivo.minutosAsignadosTitular > dotacionParvulariaCursoActivo.minutosAulaTitular + 1 && onGuardarAsignacion && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const topeHorasExacto = Math.round((dotacionParvulariaCursoActivo.minutosAulaTitular / 60) * 100) / 100;
+                    const actualHoras = Math.round((dotacionParvulariaCursoActivo.minutosAsignadosTitular / 60) * 100) / 100;
+                    const excesoHoras = Math.round((actualHoras - topeHorasExacto) * 100) / 100;
+                    const deficitQueQuedara = Math.max(0, Math.round(((dotacionParvulariaCursoActivo.permanenciaMinutos - dotacionParvulariaCursoActivo.minutosAulaTitular - dotacionParvulariaCursoActivo.minutosAsignadosSegundaEducadora) / 60) * 100) / 100);
+
+                    if (!confirm(
+                      `Actualmente ${docente.nombres} tiene ${actualHoras}h (60m) asignadas en ${cursoParvularioActivo.nivel} ${cursoParvularioActivo.letra}, lo que excede su tope legal de aula (${topeHorasExacto}h / ${dotacionParvulariaCursoActivo.minutosAulaTitularTexto} para sus ${dotacionParvulariaCursoActivo.horasDisponiblesAulaTitular}h disponibles de contrato).\n\n¿Deseas ajustar automáticamente sus asignaciones en este curso a su tope legal exacto (${topeHorasExacto}h) para que su contrato quede Exacto (0) y liberar las ${deficitQueQuedara}h restantes de permanencia para asignárselas a la 2da Educadora?`
+                    )) return;
+
+                    let porReducir = excesoHoras;
+                    const asigsDocEnCurso = [...asignacionesDocente]
+                      .filter(a => a.cursoId === cursoParvularioActivo.id && !a.esTrabajoColaborativo)
+                      .reverse();
+
+                    for (const asigItem of asigsDocEnCurso) {
+                      if (porReducir <= 0.001) break;
+                      const hItem = asigItem.horasPedagogicasAula || asigItem.horasCronologicasPie || 0;
+                      if (hItem <= porReducir + 0.01) {
+                        porReducir = Math.round((porReducir - hItem) * 100) / 100;
+                        if (onEliminarAsignacion) {
+                          await onEliminarAsignacion(asigItem.id);
+                        }
+                      } else {
+                        const nuevaH = Math.round((hItem - porReducir) * 100) / 100;
+                        porReducir = 0;
+                        await onGuardarAsignacion({
+                          ...asigItem,
+                          horasPedagogicasAula: nuevaH
+                        });
+                      }
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
+                  title="Ajusta las horas de la educadora titular a su tope legal exacto según su contrato y libera el resto para la 2da educadora"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>
+                    Cuadrar a mi Tope Legal ({Math.round((dotacionParvulariaCursoActivo.minutosAulaTitular / 60) * 100) / 100}h) y Liberar Resto para 2da Educadora
+                  </span>
+                </button>
+              )}
+
+              {/* Si estamos viendo la ficha de la 2da educadora (ej. Raquel Ibáñez) y en el curso faltan horas por cubrir, botón directo para asignárselas a ella */}
+              {cursoParvularioActivo && !dotacionParvulariaCursoActivo.esDocenteActualTitularDelCurso && dotacionParvulariaCursoActivo.minutosDeficitRestante > 0 && onGuardarAsignacion && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const hrsFaltantesCurso = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
+                    const nuevaAsig: AsignacionHoraria = {
+                      id: `asig_codoc_parv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                      rbd: colegio.rbd,
+                      docenteId: docente.id,
+                      asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
+                      cursoId: cursoParvularioActivo.id,
+                      horasPedagogicasAula: hrsFaltantesCurso,
+                      periodo: 2027,
+                      esCoDocencia: true,
+                      esCoDocenciaParvularia: true,
+                      tipoApoyo: 'CO_DOCENCIA',
+                      esProporcionDocente: true
+                    };
+                    await onGuardarAsignacion(nuevaAsig);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>
+                    Asignar a {docente.nombres.split(' ')[0]} las {dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} ({dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante}h) faltantes de {cursoParvularioActivo.nivel} {cursoParvularioActivo.letra}
+                  </span>
+                </button>
+              )}
+
+              {/* Botón para abrir el modal de Asignar a otra Educadora de Párvulos */}
+              {(dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 || dotacionParvulariaCursoActivo.minutosDeficitRestante > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cursoParvularioActivo) {
+                      const hrsAulaFaltantes = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
+                      setHoras2daEducadoraInput(hrsAulaFaltantes > 0 ? hrsAulaFaltantes : dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante);
+                      // Seleccionar por defecto la primera educadora con horas disponibles distinta de la titular del curso
+                      const idTitCurso = dotacionParvulariaCursoActivo.titularDocente.id;
+                      const candidata = educadorasDisponibles.find(e => e.docente.id !== idTitCurso && e.horasAulaLibres > 0) || educadorasDisponibles.find(e => e.docente.id !== idTitCurso) || educadorasDisponibles[0];
+                      setDocenteSeleccionada2daId(candidata ? candidata.docente.id : docente.id);
+                      setModalSegundaEducadoraOpen(true);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
+                  title="Asignar horas restantes de permanencia a otra Educadora de Párvulos de la escuela"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Asignar a 2da Educadora ({dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} aula / {dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante}h contrato)</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Barra de Progreso de Cobertura en Vivo */}
@@ -2904,8 +3244,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   </button>
                 )}
 
-                {/* Si es curso de Educación Parvularia: Desplegar Menú Modular BCEP por Ámbitos y Núcleos en Horas Cronológicas (60 min) conectado en vivo a la Permanencia */}
-                {!isDocenteSepPuro && !isDocentePiePuro && cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel) && (() => {
+                {/* Si es Educadora de Párvulos en curso de Educación Parvularia: Desplegar Menú Modular BCEP por Ámbitos y Núcleos en Horas Cronológicas (60 min) conectado en vivo a la Permanencia */}
+                {esEducadora && !isDocenteSepPuro && !isDocentePiePuro && cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel) && (() => {
                   const asigsCursoParv = asignaciones.filter(
                     a => a.cursoId === cursoInspeccion.id && !a.esTallerSep && !a.esTrabajoColaborativo
                   );
@@ -3066,8 +3406,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   );
                 })()}
 
-                {/* Para docentes regulares / mixtos con horas de Subvención General en cursos de Básica/Media: ofrecer las asignaturas disponibles del plan regular */}
-                {!isDocenteSepPuro && !isDocentePiePuro && (!cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && dispCursoInspeccion.disponibles.map(asig => (
+                {/* Para docentes regulares / mixtos con horas de Subvención General en cursos de Básica/Media (o docentes de aula regular que dictan taller en Parvularia): ofrecer las asignaturas disponibles o taller */}
+                {!isDocenteSepPuro && !isDocentePiePuro && (!esEducadora || !cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && dispCursoInspeccion.disponibles.map(asig => (
                   <button
                     key={asig.nombre}
                     type="button"
@@ -3097,15 +3437,16 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   </button>
                 ))}
 
-                {!isDocenteSepPuro && !isDocentePiePuro && (!cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && dispCursoInspeccion.horasLibreDisponibles > 0 && (
+                {!isDocenteSepPuro && !isDocentePiePuro && (!esEducadora || !cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && (dispCursoInspeccion.horasLibreDisponibles > 0 || (!esEducadora && cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel))) && (
                   <button
                     type="button"
                     onClick={async () => {
                       if (onGuardarAsignacion) {
-                        const nombreTaller = prompt(`Nombre del Taller JEC / Libre Disposición para ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, 'Taller de Libre Disposición');
+                        const nombreTaller = prompt(`Nombre del Taller / Asignatura (45 min HA) para ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, 'Taller de Educación Física / Música / Inglés');
                         if (nombreTaller && nombreTaller.trim()) {
-                          const horasInput = prompt(`Horas a asignar (Disponibles: ${dispCursoInspeccion.horasLibreDisponibles} HA):`, String(dispCursoInspeccion.horasLibreDisponibles));
-                          const h = Number(horasInput) || dispCursoInspeccion.horasLibreDisponibles;
+                          const dispSugerida = dispCursoInspeccion.horasLibreDisponibles > 0 ? dispCursoInspeccion.horasLibreDisponibles : 2;
+                          const horasInput = prompt(`Horas Pedagógicas (45 min HA) a asignar:`, String(dispSugerida));
+                          const h = Number(horasInput) || dispSugerida;
                           const nuevaAsig: AsignacionHoraria = {
                             id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                             rbd: colegio.rbd,
@@ -3114,19 +3455,20 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             cursoId: cursoInspeccion.id,
                             horasPedagogicasAula: h,
                             periodo: 2027,
-                            esTallerJec: true
+                            esTallerJec: true,
+                            esProporcionDocente: true
                           };
                           await onGuardarAsignacion(nuevaAsig);
                         }
                       }
                     }}
                     className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded text-[11px] font-semibold transition-all hover:scale-105 shadow-xs"
-                    title={`Haz clic para asignar un Taller JEC (${dispCursoInspeccion.horasLibreDisponibles} HA libres)`}
+                    title={`Haz clic para asignar un Taller o Asignatura en bloques de 45 min (HA)`}
                   >
                     <Plus className="w-2.5 h-2.5 text-amber-600" />
-                    <span>⚡ Taller JEC / Libre Disp.</span>
+                    <span>⚡ Taller JEC / Especialidad (45m)</span>
                     <span className="bg-amber-200 text-amber-950 px-1 rounded text-[10px] font-extrabold">
-                      {dispCursoInspeccion.horasLibreDisponibles} HA
+                      {dispCursoInspeccion.horasLibreDisponibles > 0 ? `${dispCursoInspeccion.horasLibreDisponibles} HA` : '2 HA'}
                     </span>
                   </button>
                 )}
@@ -3291,15 +3633,16 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 </div>
               </div>
 
-              {/* Selector de Educadora / Docente con Disponibilidad */}
+              {/* Selector exclusivo de Educadoras de Párvulos con Capacidad de Aula Disponible */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1.5 flex items-center justify-between">
-                  <span>Educadora o Docente a Asignar *</span>
-                  <span className="text-[10px] font-normal text-slate-400">({educadorasDisponibles.length} docentes en colegio)</span>
+                  <span>Educadora de Párvulos a Asignar *</span>
+                  <span className="text-[10px] font-normal text-teal-700 font-semibold">({educadorasDisponibles.length} educadoras en establecimiento)</span>
                 </label>
-                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 custom-scrollbar">
-                  {educadorasDisponibles.map(({ docente: docItem, horasContrato, horasAsignadas, horasLibres, esEducadora: esEd }) => {
+                <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 custom-scrollbar">
+                  {educadorasDisponibles.map(({ docente: docItem, horasContrato, horasNoAula, horasAsignadas, topeAulaHoras, horasAulaLibres, horasLibres, esEducadora: esEd }) => {
                     const estaSeleccionada = docenteSeleccionada2daId === docItem.id;
+                    const esTitularCurso = dotacionParvulariaCursoActivo.titularDocente.id === docItem.id;
                     return (
                       <div
                         key={docItem.id}
@@ -3319,35 +3662,35 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             className="text-teal-600 focus:ring-teal-500"
                           />
                           <div>
-                            <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <div className="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
                               <span>{docItem.nombres} {docItem.apellidos}</span>
                               {esEd && (
                                 <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-teal-100 text-teal-800 border border-teal-200">
                                   Educadora Párvulo
                                 </span>
                               )}
-                              {docItem.id === docente.id && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600">
-                                  Titular Actual
+                              {esTitularCurso && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  Titular de este Curso
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              RUN: {docItem.run} • Contrato: {horasContrato}h
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              Contrato: {horasContrato}h{horasNoAula > 0 ? ` (${horasNoAula}h no aula)` : ''} • Tope aula: <strong>{topeAulaHoras}h (60m)</strong>
                             </div>
                           </div>
                         </div>
 
-                        <div className="text-right">
+                        <div className="text-right shrink-0">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                            horasLibres > 0
+                            horasAulaLibres > 0
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               : 'bg-rose-100 text-rose-800 border border-rose-200'
                           }`}>
-                            {horasLibres > 0 ? `${horasLibres}h Libres` : 'Sin horas libres'}
+                            {horasAulaLibres > 0 ? `${horasAulaLibres}h aula disp. (${horasLibres}h contrato)` : 'Tope aula completo'}
                           </span>
                           <span className="block text-[9px] text-slate-400 mt-0.5">
-                            {horasAsignadas}h asignadas
+                            {horasAsignadas}h / {topeAulaHoras}h aula asignadas
                           </span>
                         </div>
                       </div>

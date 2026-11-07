@@ -40,7 +40,14 @@ import {
   TipoFuncionNoAula,
   FuenteFinanciamientoFuncion
 } from '../types';
-import { calcularJornadaMinutos, validarSobreasignacionDocente, calcularAuditoriaDocenteMultitramo, buscarContratoMinimoPorTabla } from '@slep/mineduc-engine';
+import {
+  calcularJornadaMinutos,
+  validarSobreasignacionDocente,
+  calcularAuditoriaDocenteMultitramo,
+  buscarContratoMinimoPorTabla,
+  esNivelParvulario,
+  buscarContratoMinimoParvulariaPorMinutos
+} from '@slep/mineduc-engine';
 import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalculationService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
@@ -323,9 +330,19 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
           };
 
+      const isEducadoraParvuloDoc = d.estamento === 'EDUCADORA_PARVULO' ||
+        Boolean(d.esEducadoraParvulo) ||
+        Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
+        Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
+        Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal));
+
       const ped65 = asigsDocenciaAulaEfectiva
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
+          const esParv = Boolean(c && esNivelParvulario(c.nivel));
+          if (isEducadoraParvuloDoc && esParv) {
+            return colegio.porcentajePrioritarios < 60 && c?.regimenProporcion !== '60_40';
+          }
           return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
         })
         .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
@@ -333,11 +350,16 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const ped60 = asigsDocenciaAulaEfectiva
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
+          const esParv = Boolean(c && esNivelParvulario(c.nivel));
+          if (isEducadoraParvuloDoc && esParv) {
+            return colegio.porcentajePrioritarios >= 60 || c?.regimenProporcion === '60_40';
+          }
           return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
         })
         .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
 
-      const auditMulti = calcularAuditoriaDocenteMultitramo({
+      // Si es Educadora de Párvulos con horas en cursos parvularios, sus horas frente a curso son cronológicas de 60 min (DTO 306)
+      let auditMulti = calcularAuditoriaDocenteMultitramo({
         horasAula65_35: ped65,
         horasAula60_40: ped60,
         horasPieCronologicas: pieCronologicas,
@@ -347,6 +369,28 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         horasContratoReal: d.horasContrato,
         aplicaArticulo69: Boolean(d.aplicaArticulo69)
       });
+
+      if (isEducadoraParvuloDoc && (ped65 > 0 || ped60 > 0)) {
+        const match65 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ped65 * 60), '65_35');
+        const match60 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ped60 * 60), '60_40');
+        const reqAulaParv = match65.horasContrato + match60.horasContrato;
+        const contratoCalcParv = reqAulaParv + pieCronologicas + sepExentas + hInstNoAula;
+        const saldoParv = Math.round((d.horasContrato - contratoCalcParv) * 10) / 10;
+        const minHnlParv = match65.minutosHnl + match60.minutosHnl;
+        const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+
+        auditMulti = {
+          ...auditMulti,
+          req65_35: match65.horasContrato,
+          req60_40: match60.horasContrato,
+          contratoCalculadoTotal: contratoCalcParv,
+          saldoHoras: saldoParv,
+          esInfractorExcesoLectivo: saldoParv < 0,
+          minutosHnlTotal: minHnlParv,
+          minutosRecreoTotal: minRecParv,
+          minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
+        };
+      }
 
       const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
@@ -983,12 +1027,16 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
                     {/* Aula 65/35 */}
                     <td className="px-3 py-3 text-center bg-indigo-50/15">
-                      <span className="font-bold text-slate-800 text-xs">{ped65} HA</span>
+                      <span className="font-bold text-slate-800 text-xs">
+                        {ped65} {d.estamento === 'EDUCADORA_PARVULO' || d.esEducadoraParvulo ? 'h (60m)' : 'HA'}
+                      </span>
                     </td>
 
                     {/* Aula 60/40 */}
                     <td className="px-3 py-3 text-center bg-purple-50/15">
-                      <span className="font-bold text-slate-800 text-xs">{ped60} HA</span>
+                      <span className="font-bold text-slate-800 text-xs">
+                        {ped60} {d.estamento === 'EDUCADORA_PARVULO' || d.esEducadoraParvulo ? 'h (60m)' : 'HA'}
+                      </span>
                     </td>
 
                     {/* PIE / SEP */}
