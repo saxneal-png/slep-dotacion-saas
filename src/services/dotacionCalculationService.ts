@@ -240,12 +240,31 @@ export function calcularDiagnosticoColegio(
       const asigsC = asignaciones.filter(a => a.cursoId === c.id);
       let hTitular = 0;
       let hSegunda = 0;
-      const asigTitular = asigsC.find(a => !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo);
+
+      // En Educación Parvularia (DTO 306), la permanencia es cubierta ÚNICA y EXCLUSIVAMENTE por Educadoras de Párvulos.
+      // El apoyo PIE (Decreto 170 / Docente Diferencial) ingresa como recurso adicional para NEE y NO descuenta permanencia.
+      const asigsCParvPermanencia = asigsC.filter(a => {
+        const d = docentesMap.get(a.docenteId);
+        const esEd = Boolean(d && (
+          d.estamento === 'EDUCADORA_PARVULO' ||
+          Boolean(d.esEducadoraParvulo) ||
+          Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
+          Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo))
+        ));
+        const esPie = Boolean(
+          (d && d.estamento === 'DOCENTE_DIFERENCIAL') ||
+          (a.tipoApoyo && /pie|decreto 170|recurso/i.test(a.tipoApoyo)) ||
+          (a.asignatura && /pie|decreto 170/i.test(a.asignatura))
+        );
+        return esEd && !esPie && !a.esTrabajoColaborativo && !a.esTallerSep;
+      });
+
+      const asigTitular = asigsCParvPermanencia.find(a => !a.esCoDocenciaParvularia);
       const titularDocId = asigTitular?.docenteId;
 
-      asigsC.forEach(a => {
+      asigsCParvPermanencia.forEach(a => {
         const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-        if (a.esCoDocenciaParvularia || a.esCoDocencia || (titularDocId && a.docenteId !== titularDocId)) {
+        if (a.esCoDocenciaParvularia || (titularDocId && a.docenteId !== titularDocId)) {
           hSegunda += h;
         } else {
           hTitular += h;

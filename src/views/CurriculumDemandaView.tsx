@@ -211,12 +211,19 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   // Helper para discriminar si una asignación es de Apoyo PIE (Decreto 170)
   const esApoyoPie = (a: AsignacionHoraria) => {
+    const d = docentes.find(doc => doc.id === a.docenteId);
+    const esDocDiff = Boolean(d && (
+      d.estamento === 'DOCENTE_DIFERENCIAL' ||
+      ((d.horasPieTitular || 0) + (d.horasPieContrata || 0) > 0 &&
+       (d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0) === 0)
+    ));
     return (
+      esDocDiff ||
       a.tipoApoyo === 'PIE' ||
-      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
-      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
-      (a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('co-docencia en aula regular')) ||
-      (a.asignatura && a.asignatura.toLowerCase().includes('pie'))
+      Boolean(a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('pie')) ||
+      Boolean(a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('recurso')) ||
+      Boolean(a.tipoApoyo && a.tipoApoyo.toLowerCase().includes('co-docencia en aula regular')) ||
+      Boolean(a.asignatura && a.asignatura.toLowerCase().includes('pie'))
     );
   };
 
@@ -294,12 +301,24 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     const docTitular = asigTitular ? docentes.find(d => d.id === asigTitular.docenteId) : null;
 
     // Calcular minutos/horas reales asignadas a la titular y a la 2da educadora
-    const asigsCursoParv = asignaciones.filter(a => a.cursoId === cursoActivo.id);
+    // En Parvularia (DTO 306), la permanencia es cubierta ÚNICA y EXCLUSIVAMENTE por Educadoras de Párvulos.
+    // El apoyo PIE (Decreto 170) ingresa como recurso especializado adicional y NO descuenta permanencia.
+    const asigsCursoParv = asignaciones.filter(a => {
+      if (a.cursoId !== cursoActivo.id || esApoyoPie(a) || a.esTrabajoColaborativo || a.esTallerSep) return false;
+      const d = docentes.find(doc => doc.id === a.docenteId);
+      return Boolean(d && (
+        d.estamento === 'EDUCADORA_PARVULO' ||
+        Boolean(d.esEducadoraParvulo) ||
+        Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
+        Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo))
+      ));
+    });
+
     let horasTitular = 0;
     let horasSegunda = 0;
     asigsCursoParv.forEach(a => {
       const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-      if (a.esCoDocenciaParvularia || a.esCoDocencia || (docTitular && a.docenteId !== docTitular.id)) {
+      if (a.esCoDocenciaParvularia || (docTitular && a.docenteId !== docTitular.id)) {
         horasSegunda += h;
       } else {
         horasTitular += h;
@@ -918,12 +937,22 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     a => a.cursoId === c.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
                   );
                   const docTitular = asigTitular ? docentes.find(d => d.id === asigTitular.docenteId) : null;
-                  const asigsCursoParv = asignaciones.filter(a => a.cursoId === c.id);
+                  const asigsCursoParv = asignaciones.filter(a => {
+                    if (a.cursoId !== c.id || esApoyoPie(a) || a.esTrabajoColaborativo || a.esTallerSep) return false;
+                    const d = docentes.find(doc => doc.id === a.docenteId);
+                    return Boolean(d && (
+                      d.estamento === 'EDUCADORA_PARVULO' ||
+                      Boolean(d.esEducadoraParvulo) ||
+                      Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
+                      Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo))
+                    ));
+                  });
+
                   let hTitular = 0;
                   let hSegunda = 0;
                   asigsCursoParv.forEach(a => {
                     const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-                    if (a.esCoDocenciaParvularia || a.esCoDocencia || (docTitular && a.docenteId !== docTitular.id)) {
+                    if (a.esCoDocenciaParvularia || (docTitular && a.docenteId !== docTitular.id)) {
                       hSegunda += h;
                     } else {
                       hTitular += h;
