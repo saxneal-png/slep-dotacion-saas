@@ -12,6 +12,7 @@ import {
   homologarNivelExcelPal
 } from './depHomologationEngine';
 import { calcularHorasPlanCurso } from '@slep/mineduc-engine';
+import { proyectarMatriculaNivel } from './proyeccionMatriculaService';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
@@ -431,8 +432,16 @@ export async function generarExcelConsolidadoPalDEP(
         const match = nivelesStats.get(`${rbd}_${nivelCanonico}`);
 
         if (match && match.cursos > 0) {
-          // Datos reales desde el SaaS
-          row.getCell(4).value = match.matricula;
+          // Proyectar matrícula según serie histórica (2021-2025) y agosto 2026 de BASE DE DATOS COMPLETA
+          // si el curso no tuviese matrícula cargada o se requiera alineación territorial.
+          let matriculaFinal = match.matricula;
+          if (matriculaFinal === 0) {
+            const proy = proyectarMatriculaNivel(rbd, nivelRaw);
+            matriculaFinal = proy.matriculaProyectada;
+          }
+
+          // Datos reales desde el SaaS y proyección de base completa
+          row.getCell(4).value = matriculaFinal;
           row.getCell(5).value = match.cursos;
           if (match.horasPlanSemana > 0) {
             row.getCell(6).value = match.horasPlanSemana;
