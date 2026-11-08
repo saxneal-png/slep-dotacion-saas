@@ -13,7 +13,7 @@ import {
   TABLA_60_40_OFICIAL
 } from '../src/services/depHomologationEngine';
 import { Docente, AsistenteEducacion, Establecimiento } from '../src/types';
-import { generarExcelConsolidadoPalDEP } from '../src/services/depPalExportService';
+import { generarExcelConsolidadoPalDEP, calcularHorasContratoPorPlan } from '../src/services/depPalExportService';
 import { generarExcelGdpColegio } from '../src/services/depGdpExportService';
 
 describe('Motor de Homologación DEP (PAL y GDP)', () => {
@@ -291,9 +291,28 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     // Horas cargadas no PIE: 8 + 8 + 4 = 20. El plan oficial de 1B JEC es 38. Fallback o cargadas:
     expect(Number(fila1B.getCell(4).value)).toBe(25); // Matricula
     expect(Number(fila1B.getCell(5).value)).toBe(1);  // Cursos
-    // Total horas docentes Col H debe ser exactamente 20 (excluye las 10h de PIE)
-    expect(Number(fila1B.getCell(8).value)).toBe(20);
+    // Total horas docentes Col H calcula las horas contractuales reglamentarias con la tabla MINEDUC
+    // En 60/40 (est con 85% prioritarios): Math.ceil(20 * 44 / 35) = 26 horas de contrato
+    expect(Number(fila1B.getCell(8).value)).toBe(26);
   }, 15000);
+
+  it('calcula con precisión matemática las horas de contrato docente reglamentarias según tabla MINEDUC (65/35 y 60/40)', () => {
+    // Régimen Regular 65/35 (Max HA = 38 por 44 hrs)
+    expect(calcularHorasContratoPorPlan(0, '65_35')).toBe(0);
+    expect(calcularHorasContratoPorPlan(22, '65_35')).toBe(26);
+    expect(calcularHorasContratoPorPlan(38, '65_35')).toBe(44);
+    expect(calcularHorasContratoPorPlan(40, '65_35')).toBe(47);
+    expect(calcularHorasContratoPorPlan(42, '65_35')).toBe(49);
+    expect(calcularHorasContratoPorPlan(80, '65_35')).toBe(93);
+
+    // Régimen Vulnerable 60/40 (Max HA = 35 por 44 hrs)
+    expect(calcularHorasContratoPorPlan(0, '60_40')).toBe(0);
+    expect(calcularHorasContratoPorPlan(30, '60_40')).toBe(38);
+    expect(calcularHorasContratoPorPlan(35, '60_40')).toBe(44);
+    expect(calcularHorasContratoPorPlan(38, '60_40')).toBe(48);
+    expect(calcularHorasContratoPorPlan(40, '60_40')).toBe(51);
+    expect(calcularHorasContratoPorPlan(80, '60_40')).toBe(101);
+  });
 
   it('genera la Planilla GDP oficial del colegio con sus 6 hojas y fórmulas nativas', async () => {
     const bytes = await generarExcelGdpColegio(est, docentes, asistentes);

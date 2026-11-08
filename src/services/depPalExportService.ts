@@ -11,12 +11,28 @@ import {
   sanitizeExcelText,
   homologarNivelExcelPal
 } from './depHomologationEngine';
-import { calcularHorasPlanCurso } from '@slep/mineduc-engine';
+import { calcularHorasPlanCurso, determinarRegimenNormativo } from '@slep/mineduc-engine';
 import { proyectarMatriculaNivel } from './proyeccionMatriculaService';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
 import { cargarPlantillaOficialBuffer } from './templateLoaderService';
+
+/**
+ * Calcula las horas de contrato docente reglamentarias MINEDUC para una demanda de aula (Total HA),
+ * aplicando la proporción legal del establecimiento y nivel (Ley N° 20.903 y DFL 1/1996)
+ * con las adecuaciones de la tabla reglamentaria oficial:
+ * - Régimen 65/35: jornada de 44 hrs cubre hasta 38 HA -> Math.ceil(totalHA * 44 / 38)
+ * - Régimen 60/40: jornada de 44 hrs cubre hasta 35 HA -> Math.ceil(totalHA * 44 / 35)
+ */
+export function calcularHorasContratoPorPlan(
+  totalHA: number,
+  regimen: '65_35' | '60_40' = '65_35'
+): number {
+  if (totalHA <= 0) return 0;
+  const maxHA = regimen === '60_40' ? 35 : 38;
+  return Math.ceil((totalHA * 44) / maxHA);
+}
 
 /**
  * Obtiene el buffer de la plantilla oficial PAL 2027
@@ -374,6 +390,10 @@ export async function generarExcelConsolidadoPalDEP(
       }
     }
 
+    // Mapa de establecimientos por RBD
+    const estMap = new Map<number, Establecimiento>();
+    establecimientos.forEach(e => estMap.set(Number(e.rbd), e));
+
     // Indexar cursos por RBD y nivel canónico
     // Clave: `${rbd}_${nivelCanónico}`
     interface EstadisticaNivel {
@@ -381,6 +401,7 @@ export async function generarExcelConsolidadoPalDEP(
       matricula: number;
       horasPlanSemana: number;
       horasDocentes: number;
+      regimenProporcion?: '65_35' | '60_40';
     }
     const nivelesStats = new Map<string, EstadisticaNivel>();
 
@@ -393,7 +414,8 @@ export async function generarExcelConsolidadoPalDEP(
         cursos: 0,
         matricula: 0,
         horasPlanSemana: 0,
-        horasDocentes: 0
+        horasDocentes: 0,
+        regimenProporcion: c.regimenProporcion
       };
 
       // Cálculo de horas efectivas del plan de estudio cargado en este curso:
@@ -407,12 +429,14 @@ export async function generarExcelConsolidadoPalDEP(
       hPlanFallback += hTalleres;
 
       const hPlanEfectivoCurso = horasCargadasCursoNoPie > 0 ? horasCargadasCursoNoPie : hPlanFallback;
+      const regProp = c.regimenProporcion || prev.regimenProporcion;
 
       nivelesStats.set(key, {
         cursos: prev.cursos + 1,
         matricula: prev.matricula + (c.matriculaProyectada || 0),
         horasPlanSemana: Math.max(prev.horasPlanSemana, hPlanEfectivoCurso),
-        horasDocentes: prev.horasDocentes + horasCargadasCursoNoPie
+        horasDocentes: prev.horasDocentes + horasCargadasCursoNoPie,
+        regimenProporcion: regProp
       });
     });
 
@@ -431,6 +455,24 @@ export async function generarExcelConsolidadoPalDEP(
         const nivelCanonico = homologarNivelExcelPal(nivelRaw);
         const match = nivelesStats.get(`${rbd}_${nivelCanonico}`);
 
+        const colE_cursosPrev = Number(row.getCell(5).value || 0);
+        const colF_planPrev = Number(row.getCell(6).value || 0);
+        const colH_docPrev = Number(row.getCell(8).value || 0);
+
+        // Detectar si la plantilla base ministerial de la DEP tenía régimen 60/40 para esta fila
+        const totPlanPrev = colE_cursosPrev * colF_planPrev;
+        const era60_40EnTemplate = totPlanPrev > 0 && colH_docPrev === Math.ceil(totPlanPrev * 44 / 35);
+
+        const estActual = estMap.get(rbd);
+        let regimenNivel: '65_35' | '60_40' = '65_35';
+        if (match && match.regimenProporcion) {
+          regimenNivel = match.regimenProporcion;
+        } else if (estActual && estActual.porcentajePrioritarios !== undefined) {
+          regimenNivel = determinarRegimenNormativo(estActual.porcentajePrioritarios, nivelRaw, 80);
+        } else if (era60_40EnTemplate) {
+          regimenNivel = '60_40';
+        }
+
         if (match && match.cursos > 0) {
           // Proyectar matrícula según serie histórica (2021-2025) y agosto 2026 de BASE DE DATOS COMPLETA
           // si el curso no tuviese matrícula cargada o se requiera alineación territorial.
@@ -440,16 +482,18 @@ export async function generarExcelConsolidadoPalDEP(
             matriculaFinal = proy.matriculaProyectada;
           }
 
+          const hPlanSemana = match.horasPlanSemana > 0 ? match.horasPlanSemana : (colF_planPrev > 0 ? colF_planPrev : 38);
+          const totalHA = match.cursos * hPlanSemana;
+          const horasContratoDocente = calcularHorasContratoPorPlan(totalHA, regimenNivel);
+
           // Datos reales desde el SaaS y proyección de base completa
           row.getCell(4).value = matriculaFinal;
           row.getCell(5).value = match.cursos;
-          if (match.horasPlanSemana > 0) {
-            row.getCell(6).value = match.horasPlanSemana;
-          }
+          row.getCell(6).value = hPlanSemana;
           // Col G: Total Hrs Plan Estudio con fórmula nativa =+E*F
           row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          // Col H: Total Horas Docentes reales asignadas en la dotación del SaaS (excluyendo PIE)
-          row.getCell(8).value = match.horasDocentes > 0 ? match.horasDocentes : Number(row.getCell(8).value || 0);
+          // Col H: Total Horas Docentes contractuales calculadas según tabla y proporción oficial
+          row.getCell(8).value = horasContratoDocente;
         } else {
           // El nivel no existe o fue cerrado en el SaaS para este colegio: vaciar a 0
           row.getCell(4).value = 0;
