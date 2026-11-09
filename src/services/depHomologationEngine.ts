@@ -4,6 +4,7 @@
  */
 
 import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria } from '../types';
+import { determinarRegimenNormativo } from '@slep/mineduc-engine';
 
 // Tablas de Referencia Normativa Oficiales de la DEP (Rango A4:D47)
 // Mapeo exacto de Horas Aula Pedagógicas (HA) a [HA, Horas Lectivas Cronológicas, Horas No Lectivas Cronológicas, Jornada]
@@ -236,25 +237,54 @@ export function homologarDocenteAPal(
 
   const cargoPal = docente.cargoInstitucional || docente.funcionPrincipal || (funcionPal === 'Función Directiva' ? 'DIRECTOR/A' : (funcionPal === 'Función Técnico Pedagógica' ? 'JEFE/A UTP' : 'DOCENTE DE AULA'));
 
-  // 3. Proporción 65/35 o 60/40
-  const proporcionHa: '65/35' | '60/40' = (establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35';
+  // 3. Horas pedagógicas clasificadas por proporción (65/35 vs 60/40) y ciclo (Básica vs Media)
+  let haBasica65 = 0;
+  let haMedia65 = 0;
+  let haBasica60 = 0;
+  let haMedia60 = 0;
 
-  // 4. Horas pedagógicas distribuidas entre Básica y Media
-  let haBasica = 0;
-  let haMedia = 0;
   asigsDoc.forEach(a => {
     const curso = cursosColegio.find(c => c.id === a.cursoId);
-    if (curso && /medio|media/i.test(curso.nivel)) {
-      haMedia += a.horasPedagogicasAula;
+    const esMedia = curso ? /medio|media/i.test(curso.nivel) : false;
+
+    // Determinar proporción reglamentaria del curso
+    let regProp: '65/35' | '60/40' = '65/35';
+    if (curso && curso.regimenProporcion) {
+      regProp = curso.regimenProporcion === '60_40' ? '60/40' : '65/35';
     } else {
-      haBasica += a.horasPedagogicasAula;
+      const regNorm = determinarRegimenNormativo(
+        establecimiento.porcentajePrioritarios || 0,
+        curso?.nivel || ''
+      );
+      regProp = regNorm === '60_40' ? '60/40' : '65/35';
+    }
+
+    if (regProp === '60/40') {
+      if (esMedia) haMedia60 += a.horasPedagogicasAula;
+      else haBasica60 += a.horasPedagogicasAula;
+    } else {
+      if (esMedia) haMedia65 += a.horasPedagogicasAula;
+      else haBasica65 += a.horasPedagogicasAula;
     }
   });
 
-  if (haBasica + haMedia === 0 && docente.horasAula && docente.horasAula > 0) {
-    if (nivelPal === 'Educación Media') haMedia = docente.horasAula;
-    else haBasica = docente.horasAula;
+  // Si no tenía asignaciones directas por curso pero registra docente.horasAula
+  const totalHaAsigs = haBasica65 + haMedia65 + haBasica60 + haMedia60;
+  if (totalHaAsigs === 0 && docente.horasAula && docente.horasAula > 0) {
+    const regDefault: '65/35' | '60/40' = (establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35';
+    const esMedia = nivelPal === 'Educación Media';
+    if (regDefault === '60/40') {
+      if (esMedia) haMedia60 = docente.horasAula;
+      else haBasica60 = docente.horasAula;
+    } else {
+      if (esMedia) haMedia65 = docente.horasAula;
+      else haBasica65 = docente.horasAula;
+    }
   }
+
+  const totalHa65 = haBasica65 + haMedia65;
+  const totalHa60 = haBasica60 + haMedia60;
+  const tieneAmbasProporciones = totalHa65 > 0 && totalHa60 > 0;
 
   const hSubvTit = Number(docente.horasSubvencionGeneralTitular || 0);
   const hSubvCtta = Number(docente.horasSubvencionGeneralContrata || 0);
@@ -275,11 +305,16 @@ export function homologarDocenteAPal(
     lMedia: number,
     pieCrono: number,
     sepCrono: number,
-    obsSuffix: string = ''
+    obsSuffix: string = '',
+    proporcionEspecifica?: '65/35' | '60/40',
+    nivelEspecifico?: 'Educación Parvularia' | 'Educación Básica' | 'Educación Media' | 'Ed. Básica/Media'
   ): PalDocenteRowData => {
+    const prop = proporcionEspecifica || ((establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35');
+    const niv = nivelEspecifico || nivelPal;
+
     // Prevenir que el cruce de tablas VLOOKUP con jornadas compartidas exceda el total de la Columna J
     const dispJornada = Math.max(0, jornadaContrato - pieCrono - sepCrono);
-    const maxHaPermitida = obtenerMaxHaParaJornada(dispJornada, proporcionHa);
+    const maxHaPermitida = obtenerMaxHaParaJornada(dispJornada, prop);
     let totalHa = kBasica + lMedia;
     if (totalHa > maxHaPermitida && maxHaPermitida >= 0) {
       if (totalHa > 0) {
@@ -293,7 +328,7 @@ export function homologarDocenteAPal(
       totalHa = kBasica + lMedia;
     }
 
-    const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(totalHa, proporcionHa);
+    const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(totalHa, prop);
 
     // Col R absorbe la diferencia exacta para cuadrar Col J = N + O + P + Q + R
     const sumaAsignada = round(lectivasCrono + noLectivasCrono + pieCrono + sepCrono, 2);
@@ -312,7 +347,7 @@ export function homologarDocenteAPal(
       rut: sanitizeExcelText(formatRut(docente.run)),
       establecimiento: sanitizeExcelText(establecimiento.nombre.toUpperCase()),
       rbd: Number(establecimiento.rbd),
-      nivel: nivelPal,
+      nivel: niv,
       estamento: estamentoPal,
       cargo: sanitizeExcelText(cargoPal.toUpperCase()),
       funcion: funcionPal,
@@ -321,13 +356,96 @@ export function homologarDocenteAPal(
       totalHrsContrato: jornadaContrato,
       hrsLectivasBasica: kBasica,
       hrsLectivasMedia: lMedia,
-      proporcionHa,
+      proporcionHa: prop,
       hrsPieCronologicas: pieCrono,
       hrsSepCronologicas: sepCrono,
       otrasFuncionesNoLectivas: otrasFunciones,
       observaciones: sanitizeExcelText(obsText)
     };
   };
+
+  // CASO A: Docente con horas en AMBAS proporciones (65/35 y 60/40)
+  // Se crean 2 filas independientes (una por cada régimen) para garantizar exactitud total en el VLOOKUP de Excel
+  if (tieneAmbasProporciones) {
+    const calidadUnica: 'Titular' | 'Plazo Fijo' = (totalTit > 0 || docente.calidadJuridica === 'TITULAR') ? 'Titular' : 'Plazo Fijo';
+    const jornadaTotal = docente.horasContrato || (totalTit + totalCtta);
+    const pieTotal = hPieTit + hPieCtta;
+    const sepTotal = hSepTit + hSepCtta;
+    const dispRegular = Math.max(0, jornadaTotal - pieTotal - sepTotal);
+
+    // Requerimiento mínimo por tabla de cada tramo
+    const req65 = TABLA_65_35_OFICIAL[totalHa65]?.jornada || Math.ceil(totalHa65 * 44 / 38);
+    const req60 = TABLA_60_40_OFICIAL[totalHa60]?.jornada || Math.ceil(totalHa60 * 44 / 35);
+    const reqTotal = req65 + req60;
+
+    let c65 = 0;
+    let c60 = 0;
+    if (dispRegular >= reqTotal) {
+      // Jornada suficiente para cubrir ambos requerimientos normativos
+      c65 = req65;
+      c60 = req60;
+      const rem = dispRegular - reqTotal;
+      if (rem > 0) {
+        const add65 = Math.round(rem * (req65 / reqTotal));
+        c65 += add65;
+        c60 = dispRegular - c65;
+      }
+    } else if (dispRegular > 0 && reqTotal > 0) {
+      c65 = Math.round(dispRegular * (req65 / reqTotal));
+      c60 = dispRegular - c65;
+      if (c65 === 0 && dispRegular >= 2) {
+        c65 = 1;
+        c60 = dispRegular - 1;
+      } else if (c60 === 0 && dispRegular >= 2) {
+        c60 = 1;
+        c65 = dispRegular - 1;
+      }
+    } else {
+      c65 = Math.round(dispRegular / 2);
+      c60 = dispRegular - c65;
+    }
+
+    const nivel65: 'Educación Parvularia' | 'Educación Básica' | 'Educación Media' | 'Ed. Básica/Media' =
+      (haBasica65 > 0 && haMedia65 > 0) ? 'Ed. Básica/Media' : (haMedia65 > 0 ? 'Educación Media' : 'Educación Básica');
+    const nivel60: 'Educación Parvularia' | 'Educación Básica' | 'Educación Media' | 'Ed. Básica/Media' =
+      (haBasica60 > 0 && haMedia60 > 0) ? 'Ed. Básica/Media' : (haMedia60 > 0 ? 'Educación Media' : (tieneParvula ? 'Educación Parvularia' : 'Educación Básica'));
+
+    const fila65 = armarFila(
+      calidadUnica,
+      c65 + pieTotal + sepTotal,
+      haBasica65,
+      haMedia65,
+      pieTotal,
+      sepTotal,
+      'Tramo 65/35',
+      '65/35',
+      nivel65
+    );
+
+    const fila60 = armarFila(
+      calidadUnica,
+      c60,
+      haBasica60,
+      haMedia60,
+      0,
+      0,
+      'Tramo 60/40',
+      '60/40',
+      nivel60
+    );
+
+    return [fila65, fila60];
+  }
+
+  // CASO B: Proporción única (solo 60/40, solo 65/35 o sin docencia de aula)
+  const proporcionHa: '65/35' | '60/40' = totalHa60 > 0
+    ? '60/40'
+    : (totalHa65 > 0
+      ? '65/35'
+      : ((establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35'));
+
+  const haBasica = haBasica65 + haBasica60;
+  const haMedia = haMedia65 + haMedia60;
 
   // Regla 33 DEP: Si tiene contratos Titular y Contrata, desdoblar en 2 filas
   if (tieneContratosMixtos) {
@@ -343,15 +461,15 @@ export function homologarDocenteAPal(
     let kBasCtta = Math.min(maxHaCtta, haBasica - kBasTit);
     let lMedCtta = Math.min(Math.max(0, maxHaCtta - kBasCtta), haMedia - lMedTit);
 
-    const filaTit = armarFila('Titular', totalTit, kBasTit, lMedTit, hPieTit, hSepTit, 'Contrato Titular');
-    const filaCtta = armarFila('Plazo Fijo', totalCtta, kBasCtta, lMedCtta, hPieCtta, hSepCtta, 'Contrato Contrata');
+    const filaTit = armarFila('Titular', totalTit, kBasTit, lMedTit, hPieTit, hSepTit, 'Contrato Titular', proporcionHa);
+    const filaCtta = armarFila('Plazo Fijo', totalCtta, kBasCtta, lMedCtta, hPieCtta, hSepCtta, 'Contrato Contrata', proporcionHa);
     return [filaTit, filaCtta];
   }
 
   // Fila única
   const calidadUnica = (totalTit > 0 || docente.calidadJuridica === 'TITULAR') ? 'Titular' : 'Plazo Fijo';
   const jornada = docente.horasContrato || (totalTit + totalCtta);
-  return [armarFila(calidadUnica, jornada, haBasica, haMedia, hPieTit + hPieCtta, hSepTit + hSepCtta)];
+  return [armarFila(calidadUnica, jornada, haBasica, haMedia, hPieTit + hPieCtta, hSepTit + hSepCtta, '', proporcionHa)];
 }
 
 /**

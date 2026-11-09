@@ -107,6 +107,72 @@ describe('Motor de Homologación DEP (PAL y GDP)', () => {
     expect(filas[0].totalHrsContrato + filas[1].totalHrsContrato).toBe(44);
   });
 
+  it('desdobla un Docente con horas en ambas proporciones (65/35 y 60/40) en dos filas con Columna M correspondiente', () => {
+    // Escuela con 70% prioritarios: Ciclo inicial (Prekínder a 4° Básico) es 60/40, de 5° Básico en adelante es 65/35
+    const est: Establecimiento = {
+      id: 'est_3672',
+      rbd: '3672',
+      nombre: 'ESC. BASICA ARTURO MUTIZABAL SOTOMAYOR',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 70
+    };
+
+    const cursosColegio: any[] = [
+      { id: 'c_2b', rbd: '3672', nivel: '2° Básico', letra: 'A', regimen: 'JEC', cupoSae: 30, matriculaProyectada: 20 },
+      { id: 'c_6b', rbd: '3672', nivel: '6° Básico', letra: 'A', regimen: 'JEC', cupoSae: 30, matriculaProyectada: 20 }
+    ];
+
+    const docMultitramo: Docente = {
+      id: 'doc_multi',
+      rbd: '3672',
+      run: '14.567.890-1',
+      nombres: 'PATRICIO',
+      apellidos: 'CONTRERAS',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44,
+      cargoInstitucional: 'DOCENTE DE AULA'
+    };
+
+    // 16 horas en 2° Básico (régimen 60/40, req 22 hrs) y 17 horas en 6° Básico (régimen 65/35, req 22 hrs)
+    // Suman exactamente 44 hrs de jornada de contrato completa
+    const asigs: any[] = [
+      { id: 'asig_1', rbd: '3672', cursoId: 'c_2b', docenteId: 'doc_multi', asignatura: 'Lenguaje 2B', horasPedagogicasAula: 16 },
+      { id: 'asig_2', rbd: '3672', cursoId: 'c_6b', docenteId: 'doc_multi', asignatura: 'Matemática 6B', horasPedagogicasAula: 17 }
+    ];
+
+    const filas = homologarDocenteAPal(docMultitramo, est, cursosColegio, asigs);
+    expect(filas.length).toBe(2);
+
+    const fila65 = filas.find(f => f.proporcionHa === '65/35');
+    const fila60 = filas.find(f => f.proporcionHa === '60/40');
+
+    expect(fila65).toBeDefined();
+    expect(fila60).toBeDefined();
+
+    // Verificación de horas aula por tramo
+    expect(fila65!.hrsLectivasBasica).toBe(17);
+    expect(fila60!.hrsLectivasBasica).toBe(16);
+
+    // Verificación de Columna M seleccionada
+    expect(fila65!.proporcionHa).toBe('65/35');
+    expect(fila60!.proporcionHa).toBe('60/40');
+
+    // Cuadratura de jornada total: la suma debe ser exactamente 44 hrs
+    expect(fila65!.totalHrsContrato + fila60!.totalHrsContrato).toBe(44);
+
+    // Cuadratura matemática de cada fila con fórmulas VLOOKUP
+    const v65 = evaluarVlookupPal(fila65!.hrsLectivasBasica + fila65!.hrsLectivasMedia, '65/35');
+    const suma65 = v65.lectivasCrono + v65.noLectivasCrono + fila65!.hrsPieCronologicas + fila65!.hrsSepCronologicas + fila65!.otrasFuncionesNoLectivas;
+    expect(Math.abs(suma65 - fila65!.totalHrsContrato)).toBeLessThan(0.01);
+
+    const v60 = evaluarVlookupPal(fila60!.hrsLectivasBasica + fila60!.hrsLectivasMedia, '60/40');
+    const suma60 = v60.lectivasCrono + v60.noLectivasCrono + fila60!.hrsPieCronologicas + fila60!.hrsSepCronologicas + fila60!.otrasFuncionesNoLectivas;
+    expect(Math.abs(suma60 - fila60!.totalHrsContrato)).toBeLessThan(0.01);
+  });
+
   it('homologa un Asistente de la Educación cuadrando exactamente Col I = J + K + L', () => {
     const est: Establecimiento = {
       id: 'est_3659',
