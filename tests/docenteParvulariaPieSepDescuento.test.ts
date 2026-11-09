@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Docente, AsignacionHoraria, CursoSae } from '../src/types';
-import { calcularHorasFueraAulaDocente } from '../src/services/auditoriaDocenteService';
+import { calcularHorasFueraAulaDocente, auditarCargaDocenteIntegral } from '../src/services/auditoriaDocenteService';
 import {
   obtenerTramoMineduc,
   buscarContratoMinimoParvulariaPorMinutos,
@@ -193,5 +193,74 @@ describe('Descuento previo de horas PIE y SEP fuera del aula para Educadoras de 
     expect(estadoCurso.minutosDeficit).toBe(775);
     expect(estadoCurso.minutosAulaSegundaEducadora).toBe(810);
     expect(estadoCurso.coberturaCompletaPermanencia).toBe(false);
+  });
+
+  it('Caso Verónica Valenzuela: 42h contrato (40 Subv + 2 PIE), 2h No Aula, 2h Colab PIE y 24h en Kínder 65/35 cuadra en 41h (+1h libre) sin falso Exceso Lectivo', () => {
+    const veronica: Docente = {
+      id: 'doc-veronica',
+      rbd: '3829',
+      run: '15757231-8',
+      nombres: 'Verónica Valeria',
+      apellidos: 'Valenzuela Navarrete',
+      estamento: 'EDUCADORA_PARVULO',
+      calidadJuridica: 'TITULAR',
+      horasContrato: 42,
+      horasSubvencionGeneralTitular: 40,
+      horasSubvencionGeneralContrata: 0,
+      horasPieTitular: 2,
+      horasPieContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 0,
+      horasTrabajoColaborativo: 2,
+      funcionesNoAula: [
+        { id: 'f1', tipo: 'OTRA', nombre: 'Función Institucional 1', horas: 1, financiamiento: 'SUBV_GENERAL' },
+        { id: 'f2', tipo: 'OTRA', nombre: 'Función Institucional 2', horas: 1, financiamiento: 'SUBV_GENERAL' }
+      ]
+    };
+
+    const kinderA: CursoSae = {
+      id: 'kinder-a',
+      rbd: '3829',
+      nivel: 'Kínder',
+      letra: 'A',
+      regimen: 'JEC',
+      regimenProporcion: '65_35',
+      matriculaActual: 20,
+      matriculaProyectada: 20,
+      capacidadMaximaSae: 30,
+      neeTransitorios: 3,
+      neePermanentes: 1
+    };
+
+    const asigKinder: AsignacionHoraria = {
+      id: 'asig-kinder-24',
+      rbd: '3829',
+      cursoId: 'kinder-a',
+      docenteId: 'doc-veronica',
+      asignatura: 'Lenguajes Artísticos',
+      horasPedagogicasAula: 24
+    };
+
+    const desglose = calcularHorasFueraAulaDocente(veronica, [asigKinder], 68);
+    expect(desglose.horasInstitucionalesSubvGen).toBe(2);
+    expect(desglose.pieCronologicas).toBe(2);
+    expect(desglose.horasExentasTotales).toBe(4);
+    expect(desglose.horasParaDocenciaAula).toBe(38);
+
+    // Tope en 65/35 para 38h disponibles = 24h 45m (1485 min)
+    const tramo38 = obtenerTramoMineduc(desglose.horasParaDocenciaAula, '65_35');
+    expect(tramo38?.lectivasMinutosCronologicos).toBe(1485);
+
+    // Auditoría integral (incluso si el colegio tiene 68% prioritarios, respeta regimenProporcion='65_35' del curso)
+    const cursosMap = new Map<string, CursoSae>([['kinder-a', kinderA]]);
+    const audit = auditarCargaDocenteIntegral(veronica, [asigKinder], [], cursosMap, 68);
+
+    expect(audit.ha65_35).toBe(24);
+    expect(audit.ha60_40).toBe(0);
+    expect(audit.auditDoc.req65_35).toBe(37);
+    expect(audit.auditDoc.contratoCalculadoTotal).toBe(41); // 37 (Aula) + 2 (PIE) + 2 (No Aula) = 41h
+    expect(audit.auditDoc.saldoHoras).toBe(1); // 42 - 41 = +1h libre
+    expect(audit.auditDoc.esInfractorExcesoLectivo).toBe(false);
+    expect(audit.estaSobreasignado).toBe(false);
   });
 });

@@ -1,7 +1,9 @@
 import { Docente, AsignacionHoraria, CursoSae } from '../types';
 import {
   calcularAuditoriaDocenteMultitramo,
-  buscarContratoMinimoPorTabla
+  buscarContratoMinimoPorTabla,
+  esNivelParvulario,
+  buscarContratoMinimoParvulariaPorMinutos
 } from '@slep/mineduc-engine';
 
 export type AuditoriaDocenteMultitramoResult = ReturnType<typeof calcularAuditoriaDocenteMultitramo>;
@@ -543,21 +545,36 @@ export function auditarCargaDocenteIntegral(
     horasInstitucionalesSubvGen + sepExentasCronologicas + pieCronologicas;
   const horasParaDocenciaAula = Math.max(0, hContrato - horasExentasTotales);
 
+  const isEducadoraParvuloDoc =
+    doc.estamento === 'EDUCADORA_PARVULO' ||
+    Boolean(doc.esEducadoraParvulo) ||
+    Boolean(doc.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.cargoInstitucional)) ||
+    Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
+    Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal));
+
+  const esCurso60ParvORegular = (c: CursoSae | undefined): boolean => {
+    const esParv = Boolean(c && esNivelParvulario(c.nivel));
+    if (c?.regimenProporcion) return c.regimenProporcion === '60_40';
+    return isEducadoraParvuloDoc && esParv
+      ? porcentajePrioritariosColegio >= 60
+      : porcentajePrioritariosColegio >= 80;
+  };
+
   const ha60_40 = asigsDocenciaAulaEfectiva
     .filter(a => {
       const c = cursosMap.get(a.cursoId);
-      return c ? c.regimenProporcion === '60_40' : porcentajePrioritariosColegio >= 80;
+      return esCurso60ParvORegular(c);
     })
     .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
 
   const ha65_35 = asigsDocenciaAulaEfectiva
     .filter(a => {
       const c = cursosMap.get(a.cursoId);
-      return c ? c.regimenProporcion !== '60_40' : porcentajePrioritariosColegio < 80;
+      return !esCurso60ParvORegular(c);
     })
     .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
 
-  const auditDoc = calcularAuditoriaDocenteMultitramo({
+  let auditDoc = calcularAuditoriaDocenteMultitramo({
     horasAula65_35: ha65_35,
     horasAula60_40: ha60_40,
     horasPieCronologicas: pieCronologicas,
@@ -567,6 +584,35 @@ export function auditarCargaDocenteIntegral(
     horasContratoReal: hContrato,
     aplicaArticulo69: Boolean(doc.aplicaArticulo69)
   });
+
+  if (isEducadoraParvuloDoc && (ha65_35 > 0 || ha60_40 > 0)) {
+    const match65 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ha65_35 * 60), '65_35');
+    const match60 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ha60_40 * 60), '60_40');
+    const reqAulaParv = match65.horasContrato + match60.horasContrato;
+    const contratoCalcParv = reqAulaParv + pieCronologicas + sepExentasCronologicas + horasInstitucionalesSubvGen;
+    const saldoParv = Math.round((hContrato - contratoCalcParv) * 10) / 10;
+    const minHnlParv = match65.minutosHnl + match60.minutosHnl;
+    const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+    const totalHorasAulaParv = ha65_35 + ha60_40;
+    const pctRealParv = horasParaDocenciaAula > 0
+      ? Math.round((totalHorasAulaParv / horasParaDocenciaAula) * 1000) / 10
+      : 0;
+    const pctLimiteParv = ha60_40 > ha65_35 ? 60 : 65;
+
+    auditDoc = {
+      ...auditDoc,
+      req65_35: match65.horasContrato,
+      req60_40: match60.horasContrato,
+      contratoCalculadoTotal: contratoCalcParv,
+      saldoHoras: saldoParv,
+      esInfractorExcesoLectivo: saldoParv < 0,
+      porcentajeLectivoReal: pctRealParv,
+      porcentajeLimitePonderado: pctLimiteParv,
+      minutosHnlTotal: minHnlParv,
+      minutosRecreoTotal: minRecParv,
+      minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
+    };
+  }
 
   const maxHAPermitidas = Math.floor(auditDoc.minutosLimitePermitido / 45);
   const horasNoLectivasCronologicas = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
@@ -582,21 +628,24 @@ export function auditarCargaDocenteIntegral(
   const pedCurricular65 = asigsCurricularesTitulares
     .filter(a => {
       const c = cursosMap.get(a.cursoId);
-      return c ? c.regimenProporcion !== '60_40' : porcentajePrioritariosColegio < 80;
+      return !esCurso60ParvORegular(c);
     })
     .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
   const pedCurricular60 = asigsCurricularesTitulares
     .filter(a => {
       const c = cursosMap.get(a.cursoId);
-      return c ? c.regimenProporcion === '60_40' : porcentajePrioritariosColegio >= 80;
+      return esCurso60ParvORegular(c);
     })
     .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
   const pedCurricularTitular = pedCurricular65 + pedCurricular60;
   const reqSubvGenDoc =
     (pedCurricularTitular > 0
-      ? buscarContratoMinimoPorTabla(pedCurricular65, '65_35') +
-        buscarContratoMinimoPorTabla(pedCurricular60, '60_40')
+      ? isEducadoraParvuloDoc
+        ? buscarContratoMinimoParvulariaPorMinutos(Math.round(pedCurricular65 * 60), '65_35').horasContrato +
+          buscarContratoMinimoParvulariaPorMinutos(Math.round(pedCurricular60 * 60), '60_40').horasContrato
+        : buscarContratoMinimoPorTabla(pedCurricular65, '65_35') +
+          buscarContratoMinimoPorTabla(pedCurricular60, '60_40')
       : 0) + horasInstitucionalesSubvGen;
 
   const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;

@@ -320,41 +320,32 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             horasReduccionArticulo69: 0
           };
 
-      const valSobre = !esExento
-        ? validarSobreasignacionDocente(horasParaDocencia, pedAulaRegular, regimenProporcion)
-        : {
-            estaSobreasignado: pedAulaRegular > 0,
-            horasAsignadas: pedAulaRegular,
-            horasMaxLectivasPermitidas: 0,
-            excesoHoras: pedAulaRegular,
-            mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
-          };
-
       const isEducadoraParvuloDoc = d.estamento === 'EDUCADORA_PARVULO' ||
         Boolean(d.esEducadoraParvulo) ||
         Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
         Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
         Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal));
 
+      const esCurso60ParvORegular = (c: CursoSae | undefined): boolean => {
+        const esParv = Boolean(c && esNivelParvulario(c.nivel));
+        if (c?.regimenProporcion) return c.regimenProporcion === '60_40';
+        if (colegio.regimenProporcion) return colegio.regimenProporcion === '60_40';
+        return (isEducadoraParvuloDoc && esParv)
+          ? colegio.porcentajePrioritarios >= 60
+          : colegio.porcentajePrioritarios >= 80;
+      };
+
       const ped65 = asigsDocenciaAulaEfectiva
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
-          const esParv = Boolean(c && esNivelParvulario(c.nivel));
-          if (isEducadoraParvuloDoc && esParv) {
-            return colegio.porcentajePrioritarios < 60 && c?.regimenProporcion !== '60_40';
-          }
-          return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
+          return !esCurso60ParvORegular(c);
         })
         .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
 
       const ped60 = asigsDocenciaAulaEfectiva
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
-          const esParv = Boolean(c && esNivelParvulario(c.nivel));
-          if (isEducadoraParvuloDoc && esParv) {
-            return colegio.porcentajePrioritarios >= 60 || c?.regimenProporcion === '60_40';
-          }
-          return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+          return esCurso60ParvORegular(c);
         })
         .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
 
@@ -378,6 +369,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         const saldoParv = Math.round((d.horasContrato - contratoCalcParv) * 10) / 10;
         const minHnlParv = match65.minutosHnl + match60.minutosHnl;
         const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+        const totalHorasAulaParv = ped65 + ped60;
+        const pctRealParv = horasParaDocencia > 0
+          ? Math.round((totalHorasAulaParv / horasParaDocencia) * 1000) / 10
+          : 0;
+        const pctLimiteParv = ped60 > ped65 ? 60 : 65;
 
         auditMulti = {
           ...auditMulti,
@@ -386,11 +382,33 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           contratoCalculadoTotal: contratoCalcParv,
           saldoHoras: saldoParv,
           esInfractorExcesoLectivo: saldoParv < 0,
+          porcentajeLectivoReal: pctRealParv,
+          porcentajeLimitePonderado: pctLimiteParv,
           minutosHnlTotal: minHnlParv,
           minutosRecreoTotal: minRecParv,
           minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
         };
       }
+
+      const valSobre = isEducadoraParvuloDoc
+        ? {
+            estaSobreasignado: auditMulti.esInfractorExcesoLectivo,
+            horasAsignadas: ped65 + ped60,
+            horasMaxLectivasPermitidas: Math.round(horasParaDocencia * (ped60 > ped65 ? 0.60 : 0.65) * 100) / 100,
+            excesoHoras: Math.max(0, -auditMulti.saldoHoras),
+            mensaje: auditMulti.esInfractorExcesoLectivo
+              ? `Sobreasignada en ${Math.abs(auditMulti.saldoHoras)} hrs de contrato.`
+              : 'Dentro del límite normativo DTO 306.'
+          }
+        : (!esExento
+          ? validarSobreasignacionDocente(horasParaDocencia, pedAulaRegular, regimenProporcion)
+          : {
+              estaSobreasignado: pedAulaRegular > 0,
+              horasAsignadas: pedAulaRegular,
+              horasMaxLectivasPermitidas: 0,
+              excesoHoras: pedAulaRegular,
+              mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
+            });
 
       const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
 
@@ -427,6 +445,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         ped60,
         pieCronologicas,
         sepExentas,
+        hInstNoAula,
         horasParaDocencia,
         calculo,
         valSobre,
@@ -943,7 +962,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                docentesFiltrados.map(({ docente: d, pedAsignadas, pedAulaRegular, pedCoDocencia, pedTallerSep, pedTrabajoColab, ped65, ped60, pieCronologicas, sepExentas, calculo, valSobre, auditMulti, esExento, hDir, hInsp, hTec, hCoord, hTallerSepDoc, hColabDoc, docTerritorial, esImprocedenteFinanciamiento, deficitFinanciamiento }) => {
+                docentesFiltrados.map(({ docente: d, pedAsignadas, pedAulaRegular, pedCoDocencia, pedTallerSep, pedTrabajoColab, ped65, ped60, pieCronologicas, sepExentas, hInstNoAula, calculo, valSobre, auditMulti, esExento, hDir, hInsp, hTec, hCoord, hTallerSepDoc, hColabDoc, docTerritorial, esImprocedenteFinanciamiento, deficitFinanciamiento }) => {
                 const esMultiEscuela = docTerritorial && docTerritorial.contratos.length > 1;
 
                 // Para Educadoras Diferenciales (cuyo contrato PIE está exento en la homologación DEP de la proporción 65/35 regular):
@@ -1077,7 +1096,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           {auditMulti.contratoCalculadoTotal} hrs
                         </span>
                         <span className="text-[9px] text-slate-400 mt-0.5 font-mono">
-                          (Aula: {auditMulti.req65_35 + auditMulti.req60_40}h + PIE: {pieCronologicas}h + SEP: {sepExentas}h)
+                          (Aula: {auditMulti.req65_35 + auditMulti.req60_40}h + PIE: {pieCronologicas}h + SEP: {sepExentas}h{hInstNoAula > 0 ? ` + No Aula: ${hInstNoAula}h` : ''})
                         </span>
                       </div>
                     </td>
