@@ -144,8 +144,8 @@ export function calcularDiagnosticoColegio(
   const demandaPorAsignatura: { [asig: string]: number } = {};
 
   for (const curso of cursos) {
-    const plan = obtenerPlanPorCurso(curso.nivel, curso.regimen);
-    const horasPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(curso.nivel, curso.regimen);
+    const plan = obtenerPlanPorCurso(curso.nivel, curso.regimen, curso.especialidadTp);
+    const horasPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(curso.nivel, curso.regimen, curso.especialidadTp);
     const horasTalleres = (curso.talleresJec || []).reduce((sum, t) => sum + t.horas, 0);
 
     horasAulaDemandadasCurriculo += (horasPlan + horasTalleres);

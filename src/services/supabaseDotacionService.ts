@@ -111,7 +111,7 @@ export function mapCursoToDb(curso: CursoSae) {
   return {
     id: curso.id,
     rbd: curso.rbd.trim(),
-    periodo: 2027,
+    periodo: curso.periodo || 2027,
     nivel: curso.nivel,
     letra: curso.letra || 'A',
     regimen: curso.regimen || 'JEC',
@@ -145,7 +145,7 @@ export function mapCursoFromDb(row: any): CursoSae {
   return {
     id: row.id,
     rbd: row.rbd,
-    periodo: 2027,
+    periodo: Number(row.periodo || 2027),
     nivel: row.nivel,
     letra: row.letra,
     regimen: row.regimen,
@@ -206,7 +206,7 @@ export function mapDocenteToDb(docente: Docente, incluirColumnaRequiere: boolean
   const base: any = {
     id: docente.id,
     rbd: docente.rbd.trim(),
-    periodo: 2027,
+    periodo: docente.periodo || 2027,
     run: docente.run,
     nombres: docente.nombres,
     apellidos: docente.apellidos,
@@ -286,7 +286,7 @@ export function mapDocenteFromDb(row: any): Docente {
   return {
     id: row.id,
     rbd: row.rbd,
-    periodo: 2027,
+    periodo: Number(row.periodo || 2027),
     run: row.run,
     nombres: row.nombres,
     apellidos: row.apellidos,
@@ -349,7 +349,7 @@ export function mapAsignacionToDb(asig: AsignacionHoraria) {
     horas_cronologicas_pie: asig.horasCronologicasPie || 0,
     horas_colaborativas: asig.horasColaborativas || 0,
     tipo_apoyo: asig.tipoApoyo || null,
-    periodo: 2027,
+    periodo: asig.periodo || 2027,
     es_taller_sep: Boolean(asig.esTallerSep),
     es_trabajo_colaborativo: Boolean(asig.esTrabajoColaborativo),
     es_proporcion_docente: Boolean(asig.esProporcionDocente),
@@ -383,7 +383,7 @@ export function mapAsignacionFromDb(row: any): AsignacionHoraria {
     horasCronologicasPie: Number(row.horas_cronologicas_pie || 0),
     horasColaborativas: Number(row.horas_colaborativas || 0),
     tipoApoyo: row.tipo_apoyo || undefined,
-    periodo: 2027,
+    periodo: Number(row.periodo || 2027),
     esTallerSep: Boolean(row.es_taller_sep),
     esTrabajoColaborativo: Boolean(row.es_trabajo_colaborativo),
     esProporcionDocente: Boolean(row.es_proporcion_docente),
@@ -400,7 +400,7 @@ export function mapAsistenteToDb(ast: AsistenteEducacion) {
   return {
     id: ast.id,
     rbd: ast.rbd.trim(),
-    periodo: 2027,
+    periodo: ast.periodo || 2027,
     run: ast.run,
     nombres: ast.nombres,
     apellidos: ast.apellidos,
@@ -441,7 +441,7 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
   return {
     id: row.id,
     rbd: row.rbd,
-    periodo: 2027,
+    periodo: Number(row.periodo || 2027),
     run: row.run,
     nombres: row.nombres,
     apellidos: row.apellidos,
@@ -1496,7 +1496,7 @@ export class SupabaseDotacionService {
       }
       const docentes = rowsValidos.map(mapDocenteFromDb);
       if (docentes.length > 0) {
-        await guardarDocentesBatch(docentes);
+        await guardarDocentesBatch(docentes, true);
         docCount = docentes.length;
       }
     }
@@ -1519,7 +1519,7 @@ export class SupabaseDotacionService {
       }
       const asignaciones = rowsValidos.map(mapAsignacionFromDb);
       if (asignaciones.length > 0) {
-        await guardarAsignacionesBatch(asignaciones);
+        await guardarAsignacionesBatch(asignaciones, true);
         asigCount = asignaciones.length;
       }
     }
@@ -1542,7 +1542,7 @@ export class SupabaseDotacionService {
       }
       const asistentes = rowsValidos.map(mapAsistenteFromDb);
       if (asistentes.length > 0) {
-        await guardarAsistentesBatch(asistentes, undefined, periodo, false);
+        await guardarAsistentesBatch(asistentes, undefined, periodo, false, true);
         astCount = asistentes.length;
       }
     }

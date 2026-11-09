@@ -34,6 +34,7 @@ import {
   coincideAsignacionConNucleoBcep
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
+import { calcularHorasFueraAulaDocente } from '../services/auditoriaDocenteService';
 
 interface DocenteAsignacionPanelProps {
   docente: Docente;
@@ -2287,20 +2288,13 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     return lista;
   }, [esEducadora, todosCursosParvulariosEscuela, asignacionesDocente, cursos, cursoInspeccion]);
 
-  // Cálculo de Horas No Aula / Deducibles del docente (sin duplicar funcionesNoAula con horasTrabajoColaborativo)
-  const horasNoAulaDocente = useMemo(() => {
-    if (docente.funcionesNoAula && docente.funcionesNoAula.length > 0) {
-      return docente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0);
-    }
-    const fnNoAula = (docente.horasCoordinacionPie || 0) + (docente.horasDirectivas || 0) + (docente.horasInspectorGeneral || 0) + (docente.horasTecnicoPedagogicas || 0) + (docente.horasCoordinacion || 0);
-    const trabajoColab = docente.horasTrabajoColaborativo || 0;
-    return fnNoAula + trabajoColab;
-  }, [docente]);
+  // Desglose oficial de Horas Fuera de Aula / Deducibles del docente (Institucionales, SEP, PIE y exentas)
+  const desgloseHorasFueraAula = useMemo(() => {
+    return calcularHorasFueraAulaDocente(docente, asignacionesDocente, colegio.porcentajePrioritarios || 0);
+  }, [docente, asignacionesDocente, colegio.porcentajePrioritarios]);
 
-  // Horas de contrato disponibles netas para docencia de aula
-  const horasContratoDisponiblesAula = useMemo(() => {
-    return Math.max(0, (docente.horasContrato || 0) - horasNoAulaDocente);
-  }, [docente.horasContrato, horasNoAulaDocente]);
+  const horasNoAulaDocente = desgloseHorasFueraAula.horasExentasTotales;
+  const horasContratoDisponiblesAula = desgloseHorasFueraAula.horasParaDocenciaAula;
 
   // Cálculo de dotación parvularia DTO 306 para el curso relevante
   const cursoParvularioActivo = useMemo(() => {
@@ -2395,10 +2389,11 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       }
     });
 
-    const horasNoAulaTitular = (titularDocente.funcionesNoAula && titularDocente.funcionesNoAula.length > 0)
-      ? titularDocente.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
-      : ((titularDocente.horasCoordinacionPie || 0) + (titularDocente.horasDirectivas || 0) + (titularDocente.horasInspectorGeneral || 0) + (titularDocente.horasTecnicoPedagogicas || 0) + (titularDocente.horasCoordinacion || 0) + (titularDocente.horasTrabajoColaborativo || 0));
-    const horasDispAulaTitular = Math.max(0, (titularDocente.horasContrato || 0) - horasNoAulaTitular);
+    const desgloseTit = titularDocente.id === docente.id
+      ? desgloseHorasFueraAula
+      : calcularHorasFueraAulaDocente(titularDocente, asignaciones, colegio.porcentajePrioritarios || 0);
+    const horasNoAulaTitular = desgloseTit.horasExentasTotales;
+    const horasDispAulaTitular = desgloseTit.horasParaDocenciaAula;
 
     const resultado = calcularDotacionParvulariaCurso(
       {
@@ -2542,12 +2537,10 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const horasAulaParv65 = Math.round((minsAulaParvularia65 / 60) * 100) / 100;
     const horasAulaParv60 = Math.round((minsAulaParvularia60 / 60) * 100) / 100;
 
-    // Asignaciones exentas o de trabajo colaborativo / fuera de curso
-    const asigsExentas = asignacionesDocente.filter(a => !asigsProporcionales.includes(a));
-    const horasCronExentasAsig = asigsExentas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
-
-    // Funciones No Aula Institucionales / Coordinación PIE / Directivas / UTP
-    const horasFuncionesNoAula = horasNoAulaDocente;
+    // Asignaciones exentas y funciones fuera de aula (Institucionales, SEP y PIE)
+    const horasFuncionesNoAula = desgloseHorasFueraAula.horasInstitucionalesSubvGen;
+    const horasCronExentasAsig = Math.round((desgloseHorasFueraAula.sepExentasCronologicas + desgloseHorasFueraAula.pieCronologicas) * 10) / 10;
+    const totalHorasFueraAula = desgloseHorasFueraAula.horasExentasTotales;
 
     // Contrato Requerido por Aula según Tablas Oficiales Mineduc
     // 1. Aula Regular Básica/Media (45 min)
@@ -2576,7 +2569,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const topeMaxMinutosAulaTexto = formatearMinutosAHHMM(minsTopeEducadora);
 
     // Contrato Total Requerido
-    const contratoRequeridoTotal = reqContratoAulaTotal + Math.round((horasCronExentasAsig + horasFuncionesNoAula) * 10) / 10;
+    const contratoRequeridoTotal = reqContratoAulaTotal + totalHorasFueraAula;
     const horasContratoReal = docente.horasContrato || 0;
     const saldoHoras = Math.round((horasContratoReal - contratoRequeridoTotal) * 10) / 10;
 
@@ -2584,10 +2577,10 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const auditRegular = calcularAuditoriaDocenteMultitramo({
       horasAula65_35: haLectivas65,
       horasAula60_40: haLectivas60,
-      horasPieCronologicas: Math.round(horasCronExentasAsig * 10) / 10,
-      horasTallerSepExento: 0,
-      horasPieSepCronologicas: Math.round(horasCronExentasAsig * 10) / 10,
-      horasNoAulaInstitucionales: horasFuncionesNoAula,
+      horasPieCronologicas: desgloseHorasFueraAula.pieCronologicas,
+      horasTallerSepExento: desgloseHorasFueraAula.sepExentasCronologicas,
+      horasPieSepCronologicas: Math.round((desgloseHorasFueraAula.pieCronologicas + desgloseHorasFueraAula.sepExentasCronologicas) * 10) / 10,
+      horasNoAulaInstitucionales: desgloseHorasFueraAula.horasInstitucionalesSubvGen,
       horasContratoReal,
       aplicaArticulo69: Boolean(docente.aplicaArticulo69)
     });
@@ -2637,10 +2630,11 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       const asigsD = asignaciones.filter(a => a.docenteId === d.id && !a.esTrabajoColaborativo);
       const horasAulaAsignadas = Math.round(asigsD.reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0) * 100) / 100;
       const horasContrato = d.horasContrato || 0;
-      const noAulaD = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
-        ? d.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
-        : ((d.horasCoordinacionPie || 0) + (d.horasDirectivas || 0) + (d.horasInspectorGeneral || 0) + (d.horasTecnicoPedagogicas || 0) + (d.horasCoordinacion || 0) + (d.horasTrabajoColaborativo || 0));
-      const contratoDispAula = Math.max(0, horasContrato - noAulaD);
+      const desgloseD = d.id === docente.id
+        ? desgloseHorasFueraAula
+        : calcularHorasFueraAulaDocente(d, asignaciones, colegio.porcentajePrioritarios || 0);
+      const noAulaD = desgloseD.horasExentasTotales;
+      const contratoDispAula = desgloseD.horasParaDocenciaAula;
       const tramoTope = obtenerTramoMineduc(contratoDispAula, regParv);
       const minsTopeD = tramoTope ? tramoTope.lectivasMinutosCronologicos : Math.floor(contratoDispAula * 60 * (regParv === '60_40' ? 0.60 : 0.65));
       const topeAulaHoras = Math.round((minsTopeD / 60) * 100) / 100;

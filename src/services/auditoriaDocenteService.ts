@@ -62,6 +62,237 @@ export function getHorasAulaLectivaAsig(a: AsignacionHoraria): number {
   return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
 }
 
+export interface DesgloseHorasFueraAulaDocente {
+  horasInstitucionalesSubvGen: number;
+  sepExentasCronologicas: number;
+  pieCronologicas: number;
+  horasExentasTotales: number;
+  horasParaDocenciaAula: number;
+}
+
+/**
+ * Calcula con precisión las horas deducibles fuera del aula de un docente (Institucionales, SEP, PIE y exentas),
+ * deduciéndolas de su contrato para obtener las horas de contrato realmente disponibles para docencia de aula.
+ */
+export function calcularHorasFueraAulaDocente(
+  doc: Docente,
+  asignacionesDocente: AsignacionHoraria[],
+  porcentajePrioritariosColegio: number = 0
+): DesgloseHorasFueraAulaDocente {
+  const isSepFin = (f: any) => Boolean(f && (f.tipo === 'SEP' || f.financiamiento === 'SEP' || /sep/i.test(f.nombre || '') || /sep/i.test(f.tipo || '')));
+  const isPieFin = (f: any) => Boolean(f && (f.tipo === 'PIE' || f.financiamiento === 'PIE' || /pie/i.test(f.nombre || '') || /pie/i.test(f.tipo || '')));
+
+  const hContrato = Number(doc.horasContrato) || 0;
+  const hDir = Number(doc.horasDirectivas) || 0;
+  const hInsp = Number(doc.horasInspectorGeneral) || 0;
+  const hTec = Number(doc.horasTecnicoPedagogicas) || 0;
+  const hCoord = Number(doc.horasCoordinacion) || 0;
+  const hCoordPie = Number(doc.horasCoordinacionPie) || 0;
+  const hConv = Number(doc.horasConvivenciaEscolar) || 0;
+  const hExtra = Number(doc.horasExtraescolar) || 0;
+  const hTallerSepDoc = Number(doc.horasTallerSep) || 0;
+  const hColabDoc = Number(doc.horasTrabajoColaborativo) || 0;
+
+  const isDiferencialDoc = doc.estamento === 'DOCENTE_DIFERENCIAL';
+  const isPieDoc =
+    isDiferencialDoc ||
+    (doc.horasPieTitular || 0) + (doc.horasPieContrata || 0) > 0;
+  const isSepDoc =
+    (doc.horasSepTitular || 0) + (doc.horasSepContrata || 0) > 0 ||
+    hTallerSepDoc > 0;
+
+  const contratoPieDoc = (doc.horasPieTitular || 0) + (doc.horasPieContrata || 0);
+  const contratoSepDoc = (doc.horasSepTitular || 0) + (doc.horasSepContrata || 0);
+
+  const sumFuncionesNoAulaSep =
+    doc.funcionesNoAula && doc.funcionesNoAula.length > 0
+      ? doc.funcionesNoAula
+          .filter(f => isSepFin(f))
+          .reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+
+  const sumFuncionesNoAulaPie =
+    doc.funcionesNoAula && doc.funcionesNoAula.length > 0
+      ? doc.funcionesNoAula
+          .filter(f => isPieFin(f))
+          .reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : 0;
+
+  const sumFuncionesNoAulaSubvGen =
+    doc.funcionesNoAula && doc.funcionesNoAula.length > 0
+      ? doc.funcionesNoAula
+          .filter(f => !isSepFin(f) && !isPieFin(f))
+          .reduce((s, f) => s + (Number(f.horas) || 0), 0)
+      : hDir + hInsp + hTec + hCoord + hConv + hExtra;
+
+  const asigsDocente = asignacionesDocente.filter(a => a.docenteId === doc.id);
+
+  const asigsTrabajoColaborativo = asigsDocente.filter(
+    a =>
+      a.esTrabajoColaborativo ||
+      a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
+      (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
+  );
+
+  const esSepAsigCheck = (a: AsignacionHoraria) =>
+    Boolean(
+      a.esTallerSep ||
+        a.tipoApoyo === 'TALLER_SEP' ||
+        (a.tipoApoyo && /sep/i.test(a.tipoApoyo)) ||
+        (a.asignatura && /sep/i.test(a.asignatura)) ||
+        (isSepDoc &&
+          !/pie|decreto 170|recurso|cl[ií]nico/i.test(a.asignatura || '') &&
+          !/pie|decreto 170|recurso|cl[ií]nico/i.test(a.tipoApoyo || ''))
+    );
+
+  const esPieAsigCheck = (a: AsignacionHoraria) =>
+    !esSepAsigCheck(a) &&
+    Boolean(
+      (a.tipoApoyo &&
+        /pie|decreto 170|aula de recurso|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) ||
+        (a.asignatura && /pie|decreto 170|aula de recurso/i.test(a.asignatura)) ||
+        isPieDoc
+    );
+
+  const asigsCoDocenciaPie = asigsDocente.filter(
+    a =>
+      !asigsTrabajoColaborativo.includes(a) &&
+      (a.tipoApoyo === 'CO_DOCENCIA' ||
+        a.esCoDocencia ||
+        esPieAsigCheck(a))
+  );
+
+  const asigsTallerSep = asigsDocente.filter(
+    a =>
+      a.esTallerSep ||
+      a.tipoApoyo === 'TALLER_SEP' ||
+      (a.asignatura && /taller\s*sep/i.test(a.asignatura))
+  );
+
+  const asigsCoDocenciaSep = asigsDocente.filter(
+    a =>
+      !asigsTrabajoColaborativo.includes(a) &&
+      !asigsCoDocenciaPie.includes(a) &&
+      !asigsTallerSep.includes(a) &&
+      esSepAsigCheck(a)
+  );
+
+  const asigsAulaRegular = asigsDocente.filter(
+    a =>
+      !asigsTrabajoColaborativo.includes(a) &&
+      !asigsCoDocenciaPie.includes(a) &&
+      !asigsCoDocenciaSep.includes(a) &&
+      !asigsTallerSep.includes(a) &&
+      Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO')
+  );
+
+  const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
+    const tieneCurso = Boolean(
+      a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO'
+    );
+    const esTrabajoNoAula = Boolean(
+      a.esTrabajoColaborativo ||
+        a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
+        (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+        (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
+    );
+    if (!tieneCurso || esTrabajoNoAula) return false;
+    if (isPieDoc) return true;
+    return Boolean(a.esProporcionDocente);
+  });
+
+  const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(
+    a => !asigsCoDocenciaPieProporcional.includes(a)
+  );
+
+  const cronTrabajoColab = asigsTrabajoColaborativo.reduce(
+    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    0
+  );
+  const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce(
+    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    0
+  );
+  const cronCoDocenciaSep = asigsCoDocenciaSep.reduce(
+    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    0
+  );
+  const cronTallerSep = asigsTallerSep.reduce(
+    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    0
+  );
+  const cronApoyoPie = Math.round((cronTrabajoColab + cronCoDocenciaPie) * 10) / 10;
+  const cronSepTotal = Math.round((cronCoDocenciaSep + cronTallerSep) * 10) / 10;
+
+  const regimenTabla: '60_40' | '65_35' = porcentajePrioritariosColegio >= 80 ? '60_40' : '65_35';
+
+  const asigsTallerSepLectivos = hTallerSepDoc > 0 ? [] : asigsTallerSep;
+  const asigsCandidatasAula = [
+    ...asigsAulaRegular,
+    ...asigsCoDocenciaSep,
+    ...asigsTallerSepLectivos,
+    ...asigsCoDocenciaPieProporcional
+  ];
+  const pedCandidatas = asigsCandidatasAula.reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
+  const esSepProporcional =
+    isSepDoc && hContrato > 0 && buscarContratoMinimoPorTabla(pedCandidatas, regimenTabla) <= hContrato;
+
+  const sepExentasCronologicas =
+    isPieDoc || (isSepDoc && !esSepProporcional)
+      ? cronSepTotal > 0 || hTallerSepDoc > 0 || sumFuncionesNoAulaSep > 0
+        ? Math.max(contratoSepDoc, hTallerSepDoc, cronSepTotal + sumFuncionesNoAulaSep)
+        : 0
+      : hTallerSepDoc + sumFuncionesNoAulaSep;
+
+  const colabPieEfectivo = Math.max(cronTrabajoColab, hColabDoc);
+  const hNoAulaPieEfectivas = Math.max(colabPieEfectivo + hCoordPie, sumFuncionesNoAulaPie);
+  const pieCronologicas = isDiferencialDoc
+    ? asigsCoDocenciaPieProporcional.length > 0
+      ? cronCoDocenciaPie + hNoAulaPieEfectivas
+      : cronApoyoPie > 0
+      ? Math.max(
+          cronCoDocenciaPie + hNoAulaPieEfectivas,
+          Math.min(
+            contratoPieDoc,
+            buscarContratoMinimoPorTabla(
+              asigsCoDocenciaPie.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0) +
+                asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0),
+              regimenTabla
+            ) + hNoAulaPieEfectivas
+          )
+        )
+      : hNoAulaPieEfectivas
+    : Math.max(cronCoDocenciaPie + colabPieEfectivo + sumFuncionesNoAulaPie, colabPieEfectivo + hCoordPie);
+
+  // Asignaciones exentas residuales
+  const asigsClasificadas = new Set([
+    ...asigsAulaRegular,
+    ...asigsCoDocenciaPieProporcional,
+    ...asigsCoDocenciaPieCronologicas,
+    ...asigsTrabajoColaborativo,
+    ...asigsCoDocenciaSep,
+    ...asigsTallerSep
+  ]);
+  const asigsResidualesExentas = asigsDocente.filter(a => !asigsClasificadas.has(a));
+  const cronResiduales = asigsResidualesExentas.reduce(
+    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    0
+  );
+
+  const horasInstitucionalesSubvGen = sumFuncionesNoAulaSubvGen;
+  const horasExentasTotales = Math.round((horasInstitucionalesSubvGen + sepExentasCronologicas + pieCronologicas + cronResiduales) * 10) / 10;
+  const horasParaDocenciaAula = Math.max(0, Math.round((hContrato - horasExentasTotales) * 10) / 10);
+
+  return {
+    horasInstitucionalesSubvGen,
+    sepExentasCronologicas,
+    pieCronologicas,
+    horasExentasTotales,
+    horasParaDocenciaAula
+  };
+}
+
 /**
  * Ejecuta la auditoría integral oficial de un docente en un establecimiento,
  * garantizando 100% de consistencia entre Vista Escuela, Consolidado Territorial y Estadísticas.

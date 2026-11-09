@@ -117,9 +117,14 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): 
            situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
     FROM docentes
     WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
+    ORDER BY rbd ASC, apellidos ASC, nombres ASC
   `, [periodo, periodo]);
   if (!res.length) return [];
-  return res[0].values.map(row => {
+
+  const seenRbdRun = new Set<string>();
+  const docentes: Docente[] = [];
+
+  for (const row of res[0].values) {
     const horasContrato = Number(row[8]);
     const calJuridica = row[6] as any;
     let subvGenTitular = Number(row[9] || 0);
@@ -145,10 +150,20 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): 
       } catch (_) {}
     }
 
-    return {
+    const rbdStr = String(row[1]);
+    const runStr = String(row[2]);
+    const cleanRun = runStr.replace(/[.\s-]/g, '').toUpperCase();
+    const key = `${rbdStr}_${cleanRun || row[0]}`;
+
+    if (seenRbdRun.has(key)) {
+      continue;
+    }
+    seenRbdRun.add(key);
+
+    docentes.push({
       id: String(row[0]),
-      rbd: String(row[1]),
-      run: String(row[2]),
+      rbd: rbdStr,
+      run: runStr,
       nombres: String(row[3]),
       apellidos: String(row[4]),
       titulo: row[5] ? String(row[5]) : undefined,
@@ -197,8 +212,10 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): 
       observacionesPal: row[45] ? String(row[45]) : undefined,
       observacionesSlep: row[46] ? String(row[46]) : undefined,
       requiereAutorizacionDocente: Boolean(row[47])
-    };
-  });
+    });
+  }
+
+  return docentes;
 }
 
 export async function guardarDocente(d: Docente, skipCloudSync: boolean = false): Promise<void> {
@@ -209,19 +226,10 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
   d.run = d.run || runNorm;
   
   // Aislamiento estricto por periodo:
-  // 1. Si d.id ya existe en este rbd y periodo, respetar estrictamente ese id para mantener FKs
-  let docId: string = '';
-  if (d.id) {
-    const existingById = db.exec(
-      "SELECT id FROM docentes WHERE id = ? AND rbd = ? AND periodo = ?",
-      [d.id, d.rbd, docPeriodo]
-    );
-    if (existingById.length && existingById[0].values.length) {
-      docId = d.id;
-    }
-  }
+  // 1. Si d.id ya viene definido, respetarlo como ID canónico
+  let docId: string = d.id ? String(d.id).trim() : '';
 
-  // 2. Si no se encontró por ID directo, buscar por RUN (normalizado o limpio) en este (rbd, periodo)
+  // 2. Si no viene ID, buscar por RUN (normalizado o limpio) en este (rbd, periodo)
   if (!docId) {
     const existingByRun = db.exec(
       `SELECT id FROM docentes 
@@ -233,12 +241,23 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
     if (existingByRun.length && existingByRun[0].values.length) {
       docId = String(existingByRun[0].values[0][0]);
     } else {
-      // Si no existe en este periodo, verificar si d.id ya está ocupado por otro periodo
-      const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
-      if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
-        docId = d.id;
-      } else {
-        docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
+      docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
+    }
+  }
+
+  // 3. Limpiar cualquier registro duplicado previo del mismo RUN en este RBD y periodo con id diferente
+  // y re-enlazar asignaciones si apuntaban al id anterior para no perder horas
+  if (docId) {
+    const viejos = db.exec(
+      `SELECT id FROM docentes WHERE rbd = ? AND periodo = ? AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?) AND id != ?`,
+      [d.rbd, docPeriodo, runNorm, d.run, cleanRun, docId]
+    );
+    if (viejos.length && viejos[0].values.length) {
+      for (const vRow of viejos[0].values) {
+        const oldId = String(vRow[0]);
+        db.run("UPDATE asignaciones_horarias SET docente_id = ? WHERE docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
+        db.run("UPDATE asignaciones_horarias SET co_docente_id = ? WHERE co_docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
+        db.run("DELETE FROM docentes WHERE id = ?", [oldId]);
       }
     }
   }
@@ -375,16 +394,7 @@ export async function guardarDocentesBatch(
       const cleanRun = limpiarRutParaId(d.run);
       d.run = d.run || runNorm;
 
-      let docId: string = '';
-      if (d.id) {
-        const existingById = db.exec(
-          "SELECT id FROM docentes WHERE id = ? AND rbd = ? AND periodo = ?",
-          [d.id, d.rbd, docPeriodo]
-        );
-        if (existingById.length && existingById[0].values.length) {
-          docId = d.id;
-        }
-      }
+      let docId: string = d.id ? String(d.id).trim() : '';
 
       if (!docId) {
         const existing = db.exec(
@@ -397,11 +407,21 @@ export async function guardarDocentesBatch(
         if (existing.length && existing[0].values.length) {
           docId = String(existing[0].values[0][0]);
         } else {
-          const idEnOtroPeriodo = d.id ? db.exec("SELECT id FROM docentes WHERE id = ? AND periodo != ?", [d.id, docPeriodo]) : [];
-          if (d.id && (!idEnOtroPeriodo.length || !idEnOtroPeriodo[0].values.length)) {
-            docId = d.id;
-          } else {
-            docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
+          docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
+        }
+      }
+
+      if (docId) {
+        const viejos = db.exec(
+          `SELECT id FROM docentes WHERE rbd = ? AND periodo = ? AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?) AND id != ?`,
+          [d.rbd, docPeriodo, runNorm, d.run, cleanRun, docId]
+        );
+        if (viejos.length && viejos[0].values.length) {
+          for (const vRow of viejos[0].values) {
+            const oldId = String(vRow[0]);
+            db.run("UPDATE asignaciones_horarias SET docente_id = ? WHERE docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
+            db.run("UPDATE asignaciones_horarias SET co_docente_id = ? WHERE co_docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
+            db.run("DELETE FROM docentes WHERE id = ?", [oldId]);
           }
         }
       }

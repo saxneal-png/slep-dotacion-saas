@@ -102,8 +102,16 @@ export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: nu
   `);
   stmt.bind([periodo, periodo]);
   const results: AsistenteEducacion[] = [];
+  const seenRbdRun = new Set<string>();
+
   while (stmt.step()) {
-    results.push(mapRowToAsistente(stmt.get()));
+    const ast = mapRowToAsistente(stmt.get());
+    const cleanRun = (ast.run || '').replace(/[.\s-]/g, '').toUpperCase();
+    const key = `${ast.rbd}_${cleanRun || ast.id}`;
+    if (!seenRbdRun.has(key)) {
+      seenRbdRun.add(key);
+      results.push(ast);
+    }
   }
   stmt.free();
   return results;
@@ -212,24 +220,32 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
 
 export async function guardarAsistente(
   asistenteOrDb: AsistenteEducacion | Database,
-  maybeAsistente?: AsistenteEducacion
+  maybeAsistenteOrSkipCloud?: AsistenteEducacion | boolean,
+  maybeSkipCloud?: boolean
 ): Promise<void> {
   if ('exec' in asistenteOrDb) {
-    if (maybeAsistente) {
-      guardarAsistenteSync(asistenteOrDb as Database, maybeAsistente);
-      SupabaseDotacionService.guardarAsistente(maybeAsistente).catch(err =>
-        console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
-      );
+    if (maybeAsistenteOrSkipCloud && typeof maybeAsistenteOrSkipCloud !== 'boolean') {
+      const ast = maybeAsistenteOrSkipCloud;
+      const skip = Boolean(maybeSkipCloud);
+      guardarAsistenteSync(asistenteOrDb as Database, ast);
+      if (!skip) {
+        SupabaseDotacionService.guardarAsistente(ast).catch(err =>
+          console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
+        );
+      }
     }
     return;
   }
   const db = await getDb();
   const ast = asistenteOrDb as AsistenteEducacion;
+  const skip = Boolean(maybeAsistenteOrSkipCloud);
   guardarAsistenteSync(db, ast);
   await persistDb();
-  SupabaseDotacionService.guardarAsistente(ast).catch(err =>
-    console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
-  );
+  if (!skip) {
+    SupabaseDotacionService.guardarAsistente(ast).catch(err =>
+      console.warn('[asistentesRepo] Aviso sincronizando con Supabase:', err)
+    );
+  }
 }
 
 export function guardarAsistentesBatchSync(
@@ -250,6 +266,13 @@ export function guardarAsistentesBatchSync(
       }
     }
 
+    const delDupStmt = db.prepare(`
+      DELETE FROM asistentes_educacion 
+      WHERE rbd = ? AND periodo = ? 
+        AND (run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?)
+        AND id != ?
+    `);
+
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO asistentes_educacion (
         id, rbd, periodo, run, nombres, apellidos, cargo_funcion, estamento,
@@ -264,10 +287,16 @@ export function guardarAsistentesBatchSync(
     `);
 
     for (const a of asistentes) {
+      const astPeriodo = a.periodo || periodo;
+      const cleanRun = (a.run || '').replace(/[.\s-]/g, '');
+
+      // Eliminar registros duplicados previos del mismo RUN en el mismo colegio con otro id
+      delDupStmt.run([a.rbd, astPeriodo, a.run.trim(), cleanRun, a.id]);
+
       stmt.run([
         a.id,
         a.rbd,
-        a.periodo || periodo,
+        astPeriodo,
         a.run.trim(),
         a.nombres.trim(),
         a.apellidos.trim(),
@@ -303,6 +332,7 @@ export function guardarAsistentesBatchSync(
         a.horasHonorarios || 0
       ]);
     }
+    delDupStmt.free();
     stmt.free();
     db.exec('COMMIT;');
   } catch (error) {
@@ -316,18 +346,22 @@ export async function guardarAsistentesBatch(
   asistentesOrRbd?: AsistenteEducacion[] | string,
   rbdOrPeriodo?: string | number,
   periodoOrReemplazar?: number | boolean,
-  maybeReemplazar?: boolean
+  maybeReemplazarOrSkipCloud?: boolean,
+  maybeSkipCloud?: boolean
 ): Promise<void> {
   if ('exec' in dbOrAsistentes) {
     const db = dbOrAsistentes as Database;
     const asistentes = asistentesOrRbd as AsistenteEducacion[];
     const rbd = typeof rbdOrPeriodo === 'string' ? rbdOrPeriodo : undefined;
     const periodo = typeof periodoOrReemplazar === 'number' ? periodoOrReemplazar : 2027;
-    const reemplazar = Boolean(maybeReemplazar);
+    const reemplazar = Boolean(maybeReemplazarOrSkipCloud);
+    const skipCloud = Boolean(maybeSkipCloud);
     guardarAsistentesBatchSync(db, asistentes, rbd, periodo, reemplazar);
-    SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
-      console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
-    );
+    if (!skipCloud) {
+      SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
+        console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
+      );
+    }
     return;
   }
 
@@ -335,13 +369,16 @@ export async function guardarAsistentesBatch(
   const rbd = typeof asistentesOrRbd === 'string' ? asistentesOrRbd : undefined;
   const periodo = typeof rbdOrPeriodo === 'number' ? rbdOrPeriodo : 2027;
   const reemplazar = Boolean(periodoOrReemplazar);
+  const skipCloud = Boolean(maybeReemplazarOrSkipCloud);
 
   const db = await getDb();
   guardarAsistentesBatchSync(db, asistentes, rbd, periodo, reemplazar);
   await persistDb();
-  SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
-    console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
-  );
+  if (!skipCloud) {
+    SupabaseDotacionService.guardarAsistentesBatch(asistentes).catch(err =>
+      console.warn('[asistentesRepo] Aviso sincronizando lote con Supabase:', err)
+    );
+  }
 }
 
 export function eliminarAsistenteSync(db: Database, id: string): void {

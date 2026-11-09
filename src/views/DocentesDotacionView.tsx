@@ -654,7 +654,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Contratos Requeridos (Lookup)</span>
                 <span className="text-lg font-extrabold text-indigo-600 font-mono">{totalContratoRequerido} hrs</span>
@@ -663,9 +663,13 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Contratos Reales (Planta)</span>
                 <span className="text-lg font-extrabold text-slate-800 font-mono">{totalContratoReal} hrs</span>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Total Horas PIE / SEP</span>
-                <span className="text-lg font-extrabold text-purple-600 font-mono">{docentesAuditados.reduce((s, item) => s + (item.pieCronologicas + item.sepExentas), 0)} hrs</span>
+              <div className="bg-blue-50/60 p-2.5 rounded-xl border border-blue-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 block">Total Horas PIE</span>
+                <span className="text-lg font-extrabold text-blue-700 font-mono">{docentesAuditados.reduce((s, item) => s + item.pieCronologicas, 0)} hrs</span>
+              </div>
+              <div className="bg-purple-50/60 p-2.5 rounded-xl border border-purple-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800 block">Total Horas SEP</span>
+                <span className="text-lg font-extrabold text-purple-700 font-mono">{docentesAuditados.reduce((s, item) => s + item.sepExentas, 0)} hrs</span>
               </div>
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Sobrante Total (Holgura)</span>
@@ -920,7 +924,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                 <th className="px-3 py-3 text-center">Calidad</th>
                 <th className="px-3 py-3 text-center bg-indigo-50/40">Aula 65/35<br /><span className="text-[9px] font-normal text-slate-400 font-mono">(HA)</span></th>
                 <th className="px-3 py-3 text-center bg-purple-50/40">Aula 60/40<br /><span className="text-[9px] font-normal text-slate-400 font-mono">(HA)</span></th>
-                <th className="px-3 py-3 text-center">PIE / SEP<br /><span className="text-[9px] font-normal text-slate-400 font-mono">(cron)</span></th>
+                <th className="px-3 py-3 text-center bg-blue-50/40 text-blue-900 border-x border-blue-100">PIE<br /><span className="text-[9px] font-normal text-blue-500 font-mono">(cron)</span></th>
+                <th className="px-3 py-3 text-center bg-purple-50/40 text-purple-900 border-r border-purple-100">SEP<br /><span className="text-[9px] font-normal text-purple-500 font-mono">(cron/ex)</span></th>
                 <th className="px-3 py-3 text-center bg-slate-100/60">Contrato Calculado<br /><span className="text-[9px] font-normal text-slate-400 font-mono">(Lookup)</span></th>
                 <th className="px-3 py-3 text-center">Contrato Real<br /><span className="text-[9px] font-normal text-slate-400 font-mono">(Pagado)</span></th>
                 <th className="px-4 py-3 text-center">Saldos / Alertas</th>
@@ -932,7 +937,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             <tbody className="divide-y divide-slate-200">
               {docentesFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-8 text-center text-slate-400">
+                  <td colSpan={12} className="p-8 text-center text-slate-400">
                     <p className="text-sm font-semibold">No se encontraron docentes con los filtros aplicados.</p>
                     <p className="text-xs text-slate-400 mt-1">Prueba cambiando el término de búsqueda o seleccionando otro estamento/estado.</p>
                   </td>
@@ -1039,10 +1044,27 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       </span>
                     </td>
 
-                    {/* PIE / SEP */}
-                    <td className="px-3 py-3 text-center">
-                      {(pieCronologicas + sepExentas) > 0 ? (
-                        <span className="font-bold text-purple-700 text-xs">{pieCronologicas + sepExentas} hrs</span>
+                    {/* PIE */}
+                    <td className="px-3 py-3 text-center bg-blue-50/15 border-x border-blue-50">
+                      {pieCronologicas > 0 ? (
+                        <div className="flex flex-col items-center">
+                          <span className="font-bold text-blue-700 text-xs">{pieCronologicas} hrs</span>
+                          {esDiferencialPie && (
+                            <span className="text-[9px] text-blue-500 font-medium font-mono">D.170</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </td>
+
+                    {/* SEP */}
+                    <td className="px-3 py-3 text-center bg-purple-50/15 border-r border-purple-50">
+                      {sepExentas > 0 ? (
+                        <div className="flex flex-col items-center">
+                          <span className="font-bold text-purple-700 text-xs">{sepExentas} hrs</span>
+                          <span className="text-[9px] text-purple-500 font-medium font-mono">PME</span>
+                        </div>
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
@@ -1055,7 +1077,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           {auditMulti.contratoCalculadoTotal} hrs
                         </span>
                         <span className="text-[9px] text-slate-400 mt-0.5 font-mono">
-                          (Base: {auditMulti.req65_35 + auditMulti.req60_40}h + {pieCronologicas + sepExentas}h PIE/SEP)
+                          (Aula: {auditMulti.req65_35 + auditMulti.req60_40}h + PIE: {pieCronologicas}h + SEP: {sepExentas}h)
                         </span>
                       </div>
                     </td>

@@ -291,11 +291,9 @@ export const App: React.FC = () => {
     setSincronizandoNube(true);
     mostrarMensaje(`☁️ Sincronizando toda la cartera territorial desde Supabase (${periodoActivo})...`);
     try {
-      const res = await SupabaseDotacionService.descargarTodaLaCarteraDesdeSupabase(periodoActivo);
-      localStorage.setItem(`slep_last_cartera_sync_${periodoActivo}`, String(Date.now()));
       await cargarDatos(periodoActivo, true);
       mostrarMensaje(
-        `✓ Sincronización territorial completada: ${res.establecimientosDescargados} colegios actualizados (${res.docentesDescargados} docentes, ${res.cursosDescargados} cursos, ${res.asistentesDescargados} asistentes).`,
+        '✓ Sincronización territorial completada y datos consolidados exitosamente.',
         'success'
       );
     } catch (err: any) {
@@ -437,7 +435,7 @@ export const App: React.FC = () => {
 
       if (defaultEst) {
         setColegioActivo(defaultEst);
-        await cargarDatosColegio(defaultEst.rbd, p);
+        await cargarDatosColegio(defaultEst.rbd, p, !forceCloudSync);
       }
     } catch (err: any) {
       console.error('Error al inicializar datos:', err);

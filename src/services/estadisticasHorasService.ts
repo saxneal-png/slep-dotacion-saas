@@ -462,8 +462,8 @@ export function calcularEstadisticasColegio(
   for (const c of cursos) {
     cursosMap.set(c.id, c);
     totalMatricula += c.matriculaProyectada || 0;
-    const plan = obtenerPlanPorCurso(c.nivel, c.regimen);
-    const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen);
+    const plan = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
+    const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
     const hrsTalleres = (c.talleresJec || []).reduce((sum, t) => sum + t.horas, 0);
     horasAulaDemandadasPlan += (hrsPlan + hrsTalleres);
 
@@ -474,6 +474,17 @@ export function calcularEstadisticasColegio(
       const pie = calcularDemandaNormativaPieCurso(cNeet, cNeep, isJec);
       horasDemandaPieNormativa += pie.horasTotalCronologicas;
       horasColaborativasDemandadasPie += pie.horasTrabajoColaborativoCronologicas;
+    }
+  }
+
+  // 1.1 Talleres Institucionales / Transversales (no asociados a un curso específico)
+  const asignacionesTransversales = asignaciones.filter(
+    a => !a.cursoId || a.cursoId === 'TRANSVERSAL' || a.cursoId === 'SIN_CURSO'
+  );
+  for (const asig of asignacionesTransversales) {
+    const hrs = asig.horasPedagogicasAula || 0;
+    if (hrs > 0) {
+      horasAulaDemandadasPlan += hrs;
     }
   }
 

@@ -38,6 +38,7 @@ import { ModalCombinarCursos } from '../components/ModalCombinarCursos';
 import { ModalDescombinarCurso } from '../components/ModalDescombinarCurso';
 import { ModalReconciliarMalla } from '../components/ModalReconciliarMalla';
 import { analizarSincronizacionDotacion } from '../services/reconciliacionDotacionService';
+import { calcularHorasFueraAulaDocente } from '../services/auditoriaDocenteService';
 import { CursoModalForm } from './curriculum/components/CursoModalForm';
 import { CursoNeeModal } from './curriculum/components/CursoNeeModal';
 import { MallaPlanPanel } from './curriculum/components/MallaPlanPanel';
@@ -339,12 +340,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     }
 
     const docTitular = titularId ? docentes.find(d => d.id === titularId) : null;
-    const horasNoAulaTit = docTitular
-      ? ((docTitular.funcionesNoAula && docTitular.funcionesNoAula.length > 0)
-          ? docTitular.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
-          : ((docTitular.horasCoordinacionPie || 0) + (docTitular.horasDirectivas || 0) + (docTitular.horasInspectorGeneral || 0) + (docTitular.horasTecnicoPedagogicas || 0) + (docTitular.horasCoordinacion || 0) + (docTitular.horasTrabajoColaborativo || 0)))
-      : 0;
-    const horasDispAulaTit = docTitular ? Math.max(0, (docTitular.horasContrato || 0) - horasNoAulaTit) : 0;
+    const desgloseTit = docTitular
+      ? calcularHorasFueraAulaDocente(docTitular, asignaciones, colegio?.porcentajePrioritarios || 0)
+      : null;
+    const horasNoAulaTit = desgloseTit ? desgloseTit.horasExentasTotales : 0;
+    const horasDispAulaTit = desgloseTit ? desgloseTit.horasParaDocenciaAula : 0;
 
     let horasTitular = 0;
     let horasSegunda = 0;
@@ -1021,12 +1021,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   if (!cTitId && asigsCursoParv.length > 0) cTitId = asigsCursoParv[0].docenteId;
 
                   const docTitular = cTitId ? docentes.find(d => d.id === cTitId) : null;
-                  const cNoAula = docTitular
-                    ? ((docTitular.funcionesNoAula && docTitular.funcionesNoAula.length > 0)
-                        ? docTitular.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
-                        : ((docTitular.horasCoordinacionPie || 0) + (docTitular.horasDirectivas || 0) + (docTitular.horasInspectorGeneral || 0) + (docTitular.horasTecnicoPedagogicas || 0) + (docTitular.horasCoordinacion || 0) + (docTitular.horasTrabajoColaborativo || 0)))
-                    : 0;
-                  const cDispAula = docTitular ? Math.max(0, (docTitular.horasContrato || 0) - cNoAula) : 0;
+                  const desgloseCTit = docTitular
+                    ? calcularHorasFueraAulaDocente(docTitular, asignaciones, colegio?.porcentajePrioritarios || 0)
+                    : null;
+                  const cNoAula = desgloseCTit ? desgloseCTit.horasExentasTotales : 0;
+                  const cDispAula = desgloseCTit ? desgloseCTit.horasParaDocenciaAula : 0;
 
                   let hTitular = 0;
                   let hSegunda = 0;

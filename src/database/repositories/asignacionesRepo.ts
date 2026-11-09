@@ -146,6 +146,19 @@ export async function listarAsignaciones(rbd: string, periodo: number = 2027): P
 
 export async function listarTodasLasAsignaciones(periodo: number = 2027): Promise<AsignacionHoraria[]> {
   const db = await getDb();
+  await purgarAsignacionesPlanComunElectivoInvalidas(db);
+  try {
+    db.run(`
+      DELETE FROM asignaciones_horarias 
+      WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
+        AND curso_id IS NOT NULL 
+        AND curso_id NOT IN ('TRANSVERSAL', 'SIN_CURSO', '')
+        AND curso_id NOT IN (
+          SELECT id FROM cursos_sae WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
+        )
+    `, [periodo, periodo, periodo, periodo]);
+  } catch (_) {}
+
   const res = db.exec("SELECT id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec, asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo, periodo, es_taller_sep, es_proporcion_docente, es_co_docencia, es_agrupacion_flexible, es_trabajo_colaborativo, cursos_compartidos_json, es_diferenciado_compartido, codigo_asignatura, ambito_curricular FROM asignaciones_horarias WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))", [periodo, periodo]);
   if (!res.length) return [];
   return res[0].values.map(row => {
