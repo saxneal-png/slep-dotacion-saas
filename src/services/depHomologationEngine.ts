@@ -154,6 +154,22 @@ export function obtenerMaxHaParaJornada(
   return maxHa;
 }
 
+/**
+ * Calcula las horas de contrato docente reglamentarias MINEDUC para una demanda de aula (Total HA),
+ * aplicando la proporción legal del establecimiento y nivel (Ley N° 20.903 y DFL 1/1996)
+ * con las adecuaciones de la tabla reglamentaria oficial para entregar un número entero cerrado:
+ * - Régimen 65/35: jornada de 44 hrs cubre hasta 38 HA -> Math.ceil(totalHA * 44 / 38)
+ * - Régimen 60/40: jornada de 44 hrs cubre hasta 35 HA -> Math.ceil(totalHA * 44 / 35)
+ */
+export function calcularHorasContratoPorPlan(
+  totalHA: number,
+  regimen: '65_35' | '60_40' = '65_35'
+): number {
+  if (totalHA <= 0) return 0;
+  const maxHA = regimen === '60_40' ? 35 : 38;
+  return Math.ceil((totalHA * 44) / maxHA);
+}
+
 export interface PalDocenteRowData {
   rut: string;
   establecimiento: string;
@@ -222,6 +238,14 @@ export function homologarDocenteAPal(
     nivelPal = 'Educación Básica';
   }
 
+  const esNivelParvularia = (nivel: string = '') => {
+    return /kínder|kinder|pre-?kinder|nt1|nt2|transición|transicion|parvul|medio menor|medio mayor/i.test(nivel);
+  };
+
+  const esDocenteEducadora = tieneParvula ||
+    docente.estamento === 'OTRA_ESTABLECIMIENTO' ||
+    /educadora|párvulo|parvulo/i.test(docente.titulo || docente.cargoInstitucional || docente.funcionPrincipal || '');
+
   // Helper para discriminar co-docencia y horas PIE
   const esAsignacionPie = (a: AsignacionHoraria) => {
     const ta = (a.tipoApoyo || '').toLowerCase();
@@ -238,26 +262,49 @@ export function homologarDocenteAPal(
   };
 
   const esCoDocenciaNoPie = (a: AsignacionHoraria) => {
+    // REGLA MINISTERIAL: Las educadoras que son parte de la permanencia de los estudiantes
+    // de párvulos con y sin JEC NO se consideran como co-docentes
+    const curso = cursosColegio.find(c => c.id === a.cursoId);
+    if (curso && esNivelParvularia(curso.nivel)) {
+      return false;
+    }
+    if (esDocenteEducadora) {
+      return false;
+    }
+
     const esCo = Boolean(
       a.esCoDocencia ||
-      a.esCoDocenciaParvularia ||
       a.coDocenteId ||
-      (a.tipoApoyo && /co-?docencia|segunda educadora/i.test(a.tipoApoyo)) ||
+      (a.tipoApoyo && /co-?docencia/i.test(a.tipoApoyo)) ||
       (a.asignatura && /co-?docencia/i.test(a.asignatura))
     );
     return esCo && !esAsignacionPie(a);
   };
 
-  // Identificar horas técnicas de co-docencia (salvo PIE) y horas de plan de estudio cargadas en el SaaS con cargo a SEP
-  const horasTecnicasCoDocencia = asigsDoc
-    .filter(esCoDocenciaNoPie)
-    .reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
+  // Régimen normativo predominante del establecimiento para proporciones (65/35 o 60/40)
+  const regDocenteProp: '65_35' | '60_40' = (establecimiento.porcentajePrioritarios || 0) >= 80 ? '60_40' : '65_35';
 
-  // Asignaciones del plan de estudio en el SaaS (no PIE)
-  const asigsPlanNoPie = asigsDoc.filter(a => !esAsignacionPie(a) && !esCoDocenciaNoPie(a));
-  const asigsSepExplicitas = asigsDoc.filter(a => a.esTallerSep || (a.tipoApoyo && /sep/i.test(a.tipoApoyo)));
-  const haSepExplicitas = asigsSepExplicitas.reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
+  // 1. Horas pedagógicas de Co-Docencia no PIE (en Básica o Media) y cálculo proporcional cerrado
+  const asigsCoDocNoPie = asigsDoc.filter(esCoDocenciaNoPie);
+  const haCoDocNoPie = asigsCoDocNoPie.reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
+  const deltaSepCoDoc = calcularHorasContratoPorPlan(haCoDocNoPie, regDocenteProp);
 
+  // 2. Horas pedagógicas Adicionales al Plan Normativo (talleres JEC/SEP, refuerzos, electivos extras)
+  const esAsignacionAdicionalAlPlan = (a: AsignacionHoraria) => {
+    if (esAsignacionPie(a) || esCoDocenciaNoPie(a)) return false;
+    return Boolean(
+      a.esTallerSep ||
+      a.esTallerJec ||
+      (a.tipoApoyo && /taller|refuerzo|adicional|nivelaci[oó]n/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /taller|refuerzo|nivelaci[oó]n|adicional|libre disposici[oó]n/i.test(a.asignatura))
+    );
+  };
+
+  const asigsAdicionalesPlan = asigsDoc.filter(esAsignacionAdicionalAlPlan);
+  const haAdicionalPlan = asigsAdicionalesPlan.reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
+  const deltaSepAdicional = calcularHorasContratoPorPlan(haAdicionalPlan, regDocenteProp);
+
+  // 3. Horas de financiamiento base de nómina
   const hSubvTit = Number(docente.horasSubvencionGeneralTitular || 0);
   const hSubvCtta = Number(docente.horasSubvencionGeneralContrata || 0);
   const hSepTit = Number(docente.horasSepTitular || 0);
@@ -265,16 +312,12 @@ export function homologarDocenteAPal(
   const hPieTit = Number(docente.horasPieTitular || 0);
   const hPieCtta = Number(docente.horasPieContrata || 0);
 
-  const contratoSepDoc = hSepTit + hSepCtta;
-  // Todas las horas cargadas en el SaaS como parte del plan de estudio con cargo a la subvención SEP
-  let sepPlanSaaSCrono = 0;
-  if (contratoSepDoc > 0 || haSepExplicitas > 0) {
-    const haPedagSep = haSepExplicitas > 0 ? haSepExplicitas : asigsPlanNoPie.reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
-    sepPlanSaaSCrono = round(haPedagSep * 0.75, 2);
-  }
+  const sepBaseOriginal = hSepTit + hSepCtta;
+  // Suma total a la Columna Q: SEP Original + Co-docencia no PIE + Horas Adicionales al Plan
+  const sepTotalCalculado = sepBaseOriginal + deltaSepCoDoc + deltaSepAdicional;
 
   // 2. Estamento y Función oficial DEP
-  const esEducadora = tieneParvula && (docente.estamento === 'OTRA_ESTABLECIMIENTO' || /educadora|párvulo|parvulo/i.test(docente.titulo || docente.cargoInstitucional || ''));
+  const esEducadora = esDocenteEducadora;
   const estamentoPal: 'Docente' | 'Educadora de Parvulos' = esEducadora ? 'Educadora de Parvulos' : 'Docente';
 
   let funcionPal: 'Función Directiva' | 'Función Técnico Pedagógica' | 'Docente aula' | 'Otros (Talleristas / Apoyo / etc.)' = 'Docente aula';
@@ -283,7 +326,7 @@ export function homologarDocenteAPal(
   } else if (
     (docente.horasTecnicoPedagogicas && docente.horasTecnicoPedagogicas > 0) ||
     (docente.horasCoordinacion && docente.horasCoordinacion > 0) ||
-    horasTecnicasCoDocencia > 0 ||
+    (haCoDocNoPie > 0 && !esEducadora) ||
     /utp|evaluador|orientador|curricul|apoyo técnico/i.test(docente.cargoInstitucional || docente.funcionPrincipal || '')
   ) {
     // Co-docencia no PIE es clasificada como Función Técnico Pedagógica
@@ -295,21 +338,21 @@ export function homologarDocenteAPal(
   let cargoPal = docente.cargoInstitucional || docente.funcionPrincipal;
   if (!cargoPal) {
     if (funcionPal === 'Función Directiva') cargoPal = 'DIRECTOR/A';
-    else if (horasTecnicasCoDocencia > 0 && funcionPal === 'Función Técnico Pedagógica') cargoPal = 'DOCENTE DE APOYO TÉCNICO / CO-DOCENCIA';
+    else if (haCoDocNoPie > 0 && !esEducadora && funcionPal === 'Función Técnico Pedagógica') cargoPal = 'DOCENTE DE APOYO TÉCNICO / CO-DOCENCIA';
     else if (funcionPal === 'Función Técnico Pedagógica') cargoPal = 'JEFE/A UTP';
-    else cargoPal = 'DOCENTE DE AULA';
+    else cargoPal = esEducadora ? 'EDUCADORA DE PARVULOS' : 'DOCENTE DE AULA';
   }
 
   // 3. Horas pedagógicas clasificadas por proporción (65/35 vs 60/40) y ciclo (Básica vs Media)
-  // Nota: Las horas de co-docencia no PIE son técnicas y no forman parte del aula titular en K y L
+  // Nota: Las horas de co-docencia no PIE y las horas adicionales van con cargo a SEP y no a K y L
   let haBasica65 = 0;
   let haMedia65 = 0;
   let haBasica60 = 0;
   let haMedia60 = 0;
 
   asigsDoc.forEach(a => {
-    // Si es co-docencia no PIE o es PIE, no se imputa a las horas lectivas de aula regular en K y L
-    if (esCoDocenciaNoPie(a) || esAsignacionPie(a)) return;
+    // Excluir horas que ya van financiadas con cargo a SEP o PIE
+    if (esCoDocenciaNoPie(a) || esAsignacionPie(a) || esAsignacionAdicionalAlPlan(a)) return;
 
     const curso = cursosColegio.find(c => c.id === a.cursoId);
     const esMedia = curso ? /medio|media/i.test(curso.nivel) : false;
@@ -337,7 +380,7 @@ export function homologarDocenteAPal(
 
   // Si no tenía asignaciones directas por curso pero registra docente.horasAula
   const totalHaAsigs = haBasica65 + haMedia65 + haBasica60 + haMedia60;
-  if (totalHaAsigs === 0 && docente.horasAula && docente.horasAula > 0 && horasTecnicasCoDocencia === 0) {
+  if (totalHaAsigs === 0 && docente.horasAula && docente.horasAula > 0 && haCoDocNoPie === 0) {
     const regDefault: '65/35' | '60/40' = (establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35';
     const esMedia = nivelPal === 'Educación Media';
     if (regDefault === '60/40') {
@@ -430,7 +473,7 @@ export function homologarDocenteAPal(
     const calidadUnica: 'Titular' | 'Plazo Fijo' = (totalTit > 0 || docente.calidadJuridica === 'TITULAR') ? 'Titular' : 'Plazo Fijo';
     const jornadaTotal = docente.horasContrato || (totalTit + totalCtta);
     const pieTotal = hPieTit + hPieCtta;
-    const sepTotal = Math.max(hSepTit + hSepCtta, sepPlanSaaSCrono);
+    const sepTotal = Math.min(Math.max(0, jornadaTotal - pieTotal), sepTotalCalculado);
     const dispRegular = Math.max(0, jornadaTotal - pieTotal - sepTotal);
 
     // Requerimiento mínimo por tabla de cada tramo
@@ -510,7 +553,7 @@ export function homologarDocenteAPal(
   // Regla 33 DEP: Si tiene contratos Titular y Contrata, desdoblar en 2 filas
   if (tieneContratosMixtos) {
     const sepTitEfectivo = hSepTit;
-    const sepCttaEfectivo = Math.min(Math.max(0, totalCtta - hPieCtta), Math.max(hSepCtta, sepPlanSaaSCrono));
+    const sepCttaEfectivo = Math.min(Math.max(0, totalCtta - hPieCtta), hSepCtta + deltaSepCoDoc + deltaSepAdicional);
 
     const dispTit = Math.max(0, totalTit - hPieTit - sepTitEfectivo);
     const maxHaTit = obtenerMaxHaParaJornada(dispTit, proporcionHa);
@@ -533,7 +576,7 @@ export function homologarDocenteAPal(
   const calidadUnica = (totalTit > 0 || docente.calidadJuridica === 'TITULAR') ? 'Titular' : 'Plazo Fijo';
   const jornada = docente.horasContrato || (totalTit + totalCtta);
   const pieTotal = hPieTit + hPieCtta;
-  const sepTotal = Math.min(Math.max(0, jornada - pieTotal), Math.max(hSepTit + hSepCtta, sepPlanSaaSCrono));
+  const sepTotal = Math.min(Math.max(0, jornada - pieTotal), sepTotalCalculado);
   return [armarFila(calidadUnica, jornada, haBasica, haMedia, pieTotal, sepTotal, '', proporcionHa)];
 }
 

@@ -519,7 +519,7 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     expect((wsSep.getCell('R4').value as any).formula).toBe('P5/D4');
   });
 
-  it('clasifica la co-docencia no PIE como Técnica (Función Técnico Pedagógica) y no como aula regular en Cols K/L', () => {
+  it('no considera como co-docente a las educadoras que son parte de la permanencia de párvulos con y sin JEC', () => {
     const est: Establecimiento = {
       id: 'est_3659',
       rbd: '3659',
@@ -529,44 +529,156 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
       porcentajePrioritarios: 75
     };
 
-    const docCoDoc: Docente = {
-      id: 'doc_codoc_1',
+    const educadora: Docente = {
+      id: 'doc_educadora_1',
       rbd: '3659',
-      run: '15.678.901-2',
-      nombres: 'CAMILA',
-      apellidos: 'PARRA',
+      run: '17.890.123-4',
+      nombres: 'MARCELA',
+      apellidos: 'PINO',
+      titulo: 'Educadora de Párvulos',
+      estamento: 'OTRA_ESTABLECIMIENTO',
+      calidadJuridica: 'TITULAR',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44,
+      cargoInstitucional: 'EDUCADORA DE PARVULOS'
+    };
+
+    const cursoParv: CursoSae = {
+      id: 'cur_k_jec',
+      rbd: '3659',
+      nivel: 'Kínder',
+      letra: 'A',
+      regimen: 'JEC',
+      cupoSae: 25,
+      matriculaProyectada: 20,
+      alumnosNeet: 0,
+      alumnosNeep: 0
+    };
+
+    // Asignación de permanencia en Kínder JEC (cobertura permanencia párvulos)
+    const asigParv: any[] = [
+      {
+        id: 'asig_permanencia',
+        rbd: '3659',
+        cursoId: 'cur_k_jec',
+        docenteId: 'doc_educadora_1',
+        asignatura: 'Atención y Permanencia de Aula Kínder JEC',
+        horasPedagogicasAula: 35,
+        esCoDocenciaParvularia: true // Aunque venga marcado en el SaaS, NO debe considerarse co-docente
+      }
+    ];
+
+    const filas = homologarDocenteAPal(educadora, est, [cursoParv], asigParv);
+    expect(filas.length).toBe(1);
+    const f = filas[0];
+
+    // Regla Ministerial: Estamento Educadora de Párvulos y Función Docente aula (NO técnico-pedagógica)
+    expect(f.estamento).toBe('Educadora de Parvulos');
+    expect(f.funcion).toBe('Docente aula');
+    expect(f.cargo).toBe('EDUCADORA DE PARVULOS');
+    // Las horas de permanencia son lectivas de aula en Básica/Párvulos
+    expect(f.hrsLectivasBasica).toBe(35);
+  });
+
+  it('suma las horas de co-docencia no PIE con proporción cerrada a las horas SEP previas en Columna Q', () => {
+    const est: Establecimiento = {
+      id: 'est_3659',
+      rbd: '3659',
+      nombre: 'ESCUELA ARTURO MERINO BENITEZ',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 75 // 65/35
+    };
+
+    // Docente que ya tiene 10 hrs SEP de contrato
+    const docMixtoSep: Docente = {
+      id: 'doc_sep_existente',
+      rbd: '3659',
+      run: '18.901.234-5',
+      nombres: 'GABRIEL',
+      apellidos: 'SOTO',
       calidadJuridica: 'CONTRATA',
       estamento: 'DOCENTE_AULA',
       horasContrato: 30,
-      horasSubvencionGeneralContrata: 30
+      horasSepContrata: 10,
+      horasSubvencionGeneralContrata: 20
     };
 
+    // 4 HA de co-docencia en aula regular básica no PIE (en 65/35: ceil(4 * 44 / 38) = 5 hrs de contrato)
     const asigCoDoc: any[] = [
       {
-        id: 'asig_codoc',
+        id: 'asig_codoc_b',
         rbd: '3659',
-        cursoId: 'cur_1',
-        docenteId: 'doc_codoc_1',
-        asignatura: 'Segunda Educadora / Co-docencia en Aula Regular',
-        horasPedagogicasAula: 20,
+        cursoId: 'cur_6b',
+        docenteId: 'doc_sep_existente',
+        asignatura: 'Co-docencia Lenguaje 6° Básico',
+        horasPedagogicasAula: 4,
         esCoDocencia: true,
         tipoApoyo: 'Co-docencia Aula Regular'
       }
     ];
 
-    const filas = homologarDocenteAPal(docCoDoc, est, [], asigCoDoc);
+    const filas = homologarDocenteAPal(docMixtoSep, est, [], asigCoDoc);
     expect(filas.length).toBe(1);
     const f = filas[0];
 
-    // Función debe ser clasificada como Técnico Pedagógica
-    expect(f.funcion).toBe('Función Técnico Pedagógica');
-    // Las horas de co-docencia técnica NO van a K y L (aula regular titular)
-    expect(f.hrsLectivasBasica).toBe(0);
-    expect(f.hrsLectivasMedia).toBe(0);
-    // Cuadratura exacta de contrato en Col J = N + O + P + Q + R
+    // Las 10 hrs SEP previas + 5 hrs cerradas proporcionales de co-docencia = 15 hrs SEP en Columna Q
+    expect(f.hrsSepCronologicas).toBe(15);
     expect(f.totalHrsContrato).toBe(30);
+
+    // Verificación de balance de la fila
     const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(f.hrsLectivasBasica + f.hrsLectivasMedia, f.proporcionHa);
     expect(lectivasCrono + noLectivasCrono + f.hrsPieCronologicas + f.hrsSepCronologicas + f.otrasFuncionesNoLectivas).toBe(30);
+  });
+
+  it('suma las horas adicionales al plan normativo con proporción cerrada a las horas SEP previas en Columna Q', () => {
+    const est: Establecimiento = {
+      id: 'est_3659',
+      rbd: '3659',
+      nombre: 'ESCUELA ARTURO MERINO BENITEZ',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 75 // 65/35
+    };
+
+    // Docente que ya tiene 8 hrs SEP de contrato
+    const docTaller: Docente = {
+      id: 'doc_taller_sep',
+      rbd: '3659',
+      run: '19.012.345-6',
+      nombres: 'LORENA',
+      apellidos: 'MUÑOZ',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 25,
+      horasSepContrata: 8,
+      horasSubvencionGeneralContrata: 17
+    };
+
+    // 4 HA de taller adicional al plan normativo (en 65/35: ceil(4 * 44 / 38) = 5 hrs de contrato)
+    const asigTaller: any[] = [
+      {
+        id: 'asig_taller_adicional',
+        rbd: '3659',
+        cursoId: 'cur_7b',
+        docenteId: 'doc_taller_sep',
+        asignatura: 'Taller Robótica y Ciencia Adicional',
+        horasPedagogicasAula: 4,
+        esTallerJec: true
+      }
+    ];
+
+    const filas = homologarDocenteAPal(docTaller, est, [], asigTaller);
+    expect(filas.length).toBe(1);
+    const f = filas[0];
+
+    // 8 hrs previas + 5 hrs de contrato cerrado proporcional del taller adicional = 13 hrs SEP en Columna Q
+    expect(f.hrsSepCronologicas).toBe(13);
+    expect(f.totalHrsContrato).toBe(25);
+
+    // Balance de jornada
+    const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(f.hrsLectivasBasica + f.hrsLectivasMedia, f.proporcionHa);
+    expect(lectivasCrono + noLectivasCrono + f.hrsPieCronologicas + f.hrsSepCronologicas + f.otrasFuncionesNoLectivas).toBe(25);
   });
 
   it('exporta las horas de plan de estudio cargadas en el SaaS con cargo a la subvención SEP (Columna Q)', () => {
