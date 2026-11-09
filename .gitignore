@@ -48,4 +48,9 @@ scripts/seed_*.cjs
 # Supabase CLI temp
 supabase/.temp/
 
+# Working and temporary Excel files in root
+/*.xlsx
+/~*.xlsx
+~$*.xlsx
+
 
