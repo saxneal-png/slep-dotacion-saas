@@ -173,4 +173,100 @@ describe('Sistema Canónico de Códigos e Indexación de Asignaturas (Decreto 08
     expect(asigDif?.horasAsignadas).toBe(0);
     expect(asigDif?.horasDisponibles).toBe(18);
   });
+
+  it('en Educación Media TP de Adultos (EPJA D.S. N° 10/2022), los módulos de Formación Diferenciada con Especialización NO son JEC ni colapsan a Lengua y Literatura', () => {
+    const cursoEpjaTp: CursoSae = {
+      id: 'curso-epja-tp-3',
+      rbd: '12345',
+      nivel: 'Educación Media TP Adultos Nivel 3',
+      letra: 'A',
+      regimen: 'No JEC',
+      cupoSae: 30,
+      matriculaProyectada: 25
+    };
+
+    const infoPlanEpja = {
+      asignaturas: [
+        { nombre: 'Lengua y Literatura', horas: 2 },
+        { nombre: 'Matemática', horas: 2 },
+        { nombre: 'Ciencias Naturales', horas: 2 },
+        { nombre: 'Idioma Extranjero: Inglés', horas: 4 },
+        { nombre: 'Formación Instrumental', horas: 2 },
+        { 
+          nombre: 'Formación Diferenciada con Especialización: Especialización diferenciada en sectores económicos específicos (a lo menos 12 horas semanales)', 
+          horas: 12 
+        }
+      ],
+      horasLibreDisposicion: 0,
+      esJec: false,
+      talleresJecPredefinidos: [],
+      nombrePlan: 'Educación Media Técnico-Profesional con Formación en Especialidades - Nivel 3',
+      categoria: 'EPJA'
+    };
+
+    // 1. Verificar resolución canónica de un módulo técnico en contexto EPJA
+    const resMod = resolverCodigoYAmbitoAsignatura('Mecánica Automotriz y Motores Térmicos', {
+      nivelCurso: cursoEpjaTp.nivel,
+      esJec: false
+    });
+    expect(resMod.ambito).toBe('DIFERENCIADA_TP');
+    expect(resMod.codigo.startsWith('DIF-EPJA-') || resMod.codigo.startsWith('DIF-TP-')).toBe(true);
+
+    // 2. Verificar que sonAsignaturasEquivalentes reconozca el módulo como parte de la Formación Diferenciada con Especialización
+    const esEquivalente = sonAsignaturasEquivalentes(
+      'Formación Diferenciada con Especialización: Especialización diferenciada en sectores económicos específicos (a lo menos 12 horas semanales)',
+      'Mecánica Automotriz y Motores Térmicos'
+    );
+    expect(esEquivalente).toBe(true);
+
+    // 3. NUNCA debe considerarlo equivalente a Lengua y Literatura ni a Matemática
+    expect(sonAsignaturasEquivalentes('Lengua y Literatura', 'Mecánica Automotriz y Motores Térmicos')).toBe(false);
+    expect(sonAsignaturasEquivalentes('Matemática', 'Mecánica Automotriz y Motores Térmicos')).toBe(false);
+
+    // 4. Asignación de 6 HA de un módulo de especialidad y 6 HA de otro módulo en el curso EPJA
+    const asig1: AsignacionHoraria = {
+      id: 'asig-epja-mod-1',
+      rbd: '12345',
+      cursoId: 'curso-epja-tp-3',
+      docenteId: 'doc-tp-1',
+      asignatura: 'Mecánica Automotriz y Motores Térmicos',
+      codigoAsignatura: resMod.codigo,
+      ambitoCurricular: 'DIFERENCIADA_TP',
+      horasPedagogicasAula: 6,
+      esTallerJec: false
+    };
+
+    const asig2: AsignacionHoraria = {
+      id: 'asig-epja-mod-2',
+      rbd: '12345',
+      cursoId: 'curso-epja-tp-3',
+      docenteId: 'doc-tp-2',
+      asignatura: 'Sistemas Eléctricos y Electrónica del Automóvil',
+      codigoAsignatura: 'DIF-EPJA-SISTEMAS_ELECTRICOS',
+      ambitoCurricular: 'DIFERENCIADA_TP',
+      horasPedagogicasAula: 6,
+      esTallerJec: false
+    };
+
+    const disp = calcularDisponibilidadCurso(cursoEpjaTp, infoPlanEpja, [asig1, asig2]);
+
+    // En EPJA no hay horas de Libre Disposición JEC (deben ser 0)
+    expect(disp.horasLibrePlan).toBe(0);
+    expect(disp.horasLibreAsignadas).toBe(0);
+    expect(disp.horasLibreDisponibles).toBe(0);
+
+    // El bloque de Formación Diferenciada con Especialización (12 HA) debe quedar 100% CUBIERTO (6 + 6 = 12 HA)
+    const asigEspecialidad = disp.todas.find(a => a.nombre.includes('Formación Diferenciada con Especialización'));
+    expect(asigEspecialidad).toBeDefined();
+    expect(asigEspecialidad?.horasPlan).toBe(12);
+    expect(asigEspecialidad?.horasAsignadas).toBe(12);
+    expect(asigEspecialidad?.horasDisponibles).toBe(0);
+    expect(asigEspecialidad?.estado).toBe('CUBIERTA');
+
+    // Lengua y Literatura y las demás asignaturas troncales deben seguir disponibles intactas con 2 HA
+    const asigLeng = disp.todas.find(a => a.nombre === 'Lengua y Literatura');
+    expect(asigLeng?.horasAsignadas).toBe(0);
+    expect(asigLeng?.horasDisponibles).toBe(2);
+    expect(asigLeng?.estado).toBe('DISPONIBLE');
+  });
 });

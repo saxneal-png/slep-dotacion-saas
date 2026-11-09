@@ -49,6 +49,23 @@ interface DocenteAsignacionPanelProps {
 type TipoFormularioActivo = 'REGULAR' | 'CO_DOCENCIA' | 'PIE' | null;
 
 // ============================================================================
+// Helper para detectar modalidad EPJA (Adultos D.S. N° 10/2022 y D.S. N° 452/2013)
+// Los cursos EPJA jamás poseen régimen JEC ni horas de Libre Disposición JEC
+// ============================================================================
+export function esCursoModalidadEpja(
+  curso?: CursoSae | null,
+  infoPlan?: { nombrePlan?: string; categoria?: string } | null
+): boolean {
+  if (!curso && !infoPlan) return false;
+  if (infoPlan?.categoria === 'EPJA') return true;
+  const txt = `${curso?.nivel || ''} ${infoPlan?.nombrePlan || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/\b(epja|adulto|adultos|tercera jornada|vespertin|nocturn)\b/i.test(txt)) return true;
+  if (/\bnivel\s*[123]\b/i.test(txt) && !/\b(nt[12]|transicion|parvulo)\b/i.test(txt)) return true;
+  if (txt.includes('formacion en oficios') || txt.includes('formacion en especialidades')) return true;
+  return false;
+}
+
+// ============================================================================
 // Helper para resolver plan y asignaturas de un curso
 // ============================================================================
 interface InfoPlanResuelto {
@@ -60,7 +77,7 @@ interface InfoPlanResuelto {
   categoria?: string;
 }
 
-function resolverPlanCurso(
+export function resolverPlanCurso(
   curso: CursoSae | null,
   planesDb: PlanEstudioCurricular[]
 ): InfoPlanResuelto {
@@ -74,23 +91,27 @@ function resolverPlanCurso(
     };
   }
 
-  const esJec = curso.regimen === 'JEC';
-  const talleresCurso = curso.talleresJec || [];
+  const esNivelEpja = esCursoModalidadEpja(curso, null);
+  const esJec = !esNivelEpja && curso.regimen === 'JEC';
+  const talleresCurso = esNivelEpja ? [] : (curso.talleresJec || []);
 
   // 1. Si el curso tiene un plan de estudio personalizado asignado en la BD
   if (curso.planEstudioId) {
     const planDb = planesDb.find(p => p.id === curso.planEstudioId);
     if (planDb && planDb.asignaturas && planDb.asignaturas.length > 0) {
+      const esPlanEpja = esNivelEpja || planDb.categoria === 'EPJA' || esCursoModalidadEpja(curso, { nombrePlan: planDb.nivel, categoria: planDb.categoria });
+      const esJecReal = !esPlanEpja && (planDb.regimen === 'JEC' || esJec);
       return {
         asignaturas: planDb.asignaturas.map(a => ({
           nombre: a.nombre,
           horas: Number(a.horasSemanales) || 2,
           caracter: a.caracter || 'Obligatoria'
         })),
-        horasLibreDisposicion: planDb.horasLibreDisposicion || (esJec ? 6 : 0),
-        esJec: planDb.regimen === 'JEC' || esJec,
-        talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
-        nombrePlan: planDb.nivel
+        horasLibreDisposicion: esPlanEpja ? 0 : (planDb.horasLibreDisposicion ?? (esJecReal ? 6 : 0)),
+        esJec: esJecReal,
+        talleresJecPredefinidos: esPlanEpja ? [] : talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
+        nombrePlan: planDb.nivel,
+        categoria: planDb.categoria
       };
     }
   }
@@ -98,20 +119,23 @@ function resolverPlanCurso(
   // 2. Si no, consultar el motor normativo de MINEDUC
   const planMineduc: PlanEstudioNivel | null = obtenerPlanPorCurso(
     curso.nivel,
-    curso.regimen,
+    esNivelEpja ? 'No JEC' : curso.regimen,
     curso.especialidadTp
   );
 
   if (planMineduc && planMineduc.asignaturasBase && planMineduc.asignaturasBase.length > 0) {
+    const esPlanEpja = esNivelEpja || planMineduc.categoria === 'EPJA' || esCursoModalidadEpja(curso, { nombrePlan: planMineduc.nivel, categoria: planMineduc.categoria });
+    const esJecReal = !esPlanEpja && (planMineduc.regimen === 'JEC' || esJec);
+
     const asignaturasBase = planMineduc.asignaturasBase.map(a => ({
       nombre: a.nombre,
       horas: a.horasSugeridas,
       caracter: 'Obligatoria'
     }));
 
-    // En 3° y 4° Medio TP, si el plan no tiene explícito el Plan Común Electivo, incluirlo
+    // En 3° y 4° Medio TP Regular (no EPJA), si el plan no tiene explícito el Plan Común Electivo, incluirlo
     // para que el establecimiento pueda seleccionarlo y asignarlo con cargo a sus horas de libre disposición (2 HA)
-    const esMedio34 = !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(curso.nivel) && (
+    const esMedio34 = !esPlanEpja && !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(curso.nivel) && (
       /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(curso.nivel) ||
       ((planMineduc.categoria === 'MEDIA_HC' || planMineduc.categoria === 'MEDIA_TP') && /[34]/i.test(planMineduc.nivel))
     );
@@ -126,9 +150,9 @@ function resolverPlanCurso(
 
     return {
       asignaturas: asignaturasBase,
-      horasLibreDisposicion: planMineduc.horasLibreDisposicion || (esJec ? 6 : 0),
-      esJec: planMineduc.regimen === 'JEC' || esJec,
-      talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
+      horasLibreDisposicion: esPlanEpja ? 0 : (planMineduc.horasLibreDisposicion ?? (esJecReal ? 6 : 0)),
+      esJec: esJecReal,
+      talleresJecPredefinidos: esPlanEpja ? [] : talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
       nombrePlan: planMineduc.nivel,
       categoria: planMineduc.categoria
     };
@@ -154,7 +178,7 @@ function resolverPlanCurso(
     horasLibreDisposicion: esJec ? 6 : 0,
     esJec,
     talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
-    nombrePlan: `${curso.nivel} (${curso.regimen})`
+    nombrePlan: `${curso.nivel} (${esNivelEpja ? 'No JEC' : curso.regimen})`
   };
 }
 
@@ -190,11 +214,31 @@ export function normalizarNombreAsignatura(nombre: string): string {
   n = n.replace(/^idioma extranjero:\s*/i, '');
   n = n.replace(/\s+/g, ' ').trim();
 
-  // Si es un módulo de Formación Diferenciada Técnico-Profesional, PRESERVAR SU IDENTIDAD INTACTA
+  // Si es un módulo de Formación Diferenciada Técnico-Profesional u Oficio/Especialidad EPJA, PRESERVAR SU IDENTIDAD INTACTA
   // para que JAMÁS colisione con Matemática ("materias primas", "materiales"), Educación Física ("salud"),
   // Ciencias Naturales ("química"), Música, etc.
-  if (/^m[oó]dulo\b/i.test(n)) {
+  if (
+    /^m[oó]dulo\b/i.test(n) ||
+    (n.includes('formacion diferenciada') && (n.includes('especializacion') || n.includes('oficio') || n.includes('tp') || n.includes('tecnico') || n.includes('especialidad')))
+  ) {
+    if (n.includes('formacion diferenciada') && (n.includes('especializacion') || n.includes('tp') || n.includes('tecnico') || n.includes('especialidad'))) {
+      return 'formacion diferenciada con especializacion';
+    }
+    if (n.includes('formacion diferenciada') && n.includes('oficio')) {
+      return 'formacion diferenciada en oficios';
+    }
     return `modulo_${n.replace(/^m[oó]dulo\s*(menci[oó]n|com[uú]n)?\s*:?\s*/i, '').replace(/[^a-z0-9]/g, '_')}`;
+  }
+
+  // Formación Instrumental EPJA (D.S. N° 10/2022 - 2 HA)
+  if (
+    n.startsWith('formacion instrumental') ||
+    n === 'pensamiento computacional' ||
+    n === 'responsabilidad personal y social' ||
+    n === 'emprendimiento y empleabilidad' ||
+    n === 'educacion financiera'
+  ) {
+    return 'formacion instrumental';
   }
 
   // Si es un taller, refuerzo o libre disposición (y no es el electivo oficial 'Taller de Literatura' ni 'Taller Laboral'),
@@ -344,15 +388,44 @@ export function sonAsignaturasEquivalentes(asigA: string, asigB: string): boolea
   const bNorm = asigB.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
   // NUNCA considerar equivalente una asignatura troncal regular (Matemática, Lenguaje, etc.) con un Módulo TP
-  const esModuloA = /^m[oó]dulo\b/i.test(aNorm);
-  const esModuloB = /^m[oó]dulo\b/i.test(bNorm);
-  if ((esModuloA && !esModuloB) || (esModuloB && !esModuloA)) {
-    // Excepción única: Si el plan del curso tiene el bloque genérico de Formación Diferenciada TP (22 HA)
-    const esBloqueGenericoTpA = aNorm.includes('formacion diferenciada') && (aNorm.includes('tecnico') || aNorm.includes('tp') || aNorm.includes('especialidad'));
-    const esBloqueGenericoTpB = bNorm.includes('formacion diferenciada') && (bNorm.includes('tecnico') || bNorm.includes('tp') || bNorm.includes('especialidad'));
-    if ((esBloqueGenericoTpA && esModuloB) || (esBloqueGenericoTpB && esModuloA)) {
+  const esModuloA = /^(m[oó]dulo|oficio|especialidad)\b/i.test(aNorm);
+  const esModuloB = /^(m[oó]dulo|oficio|especialidad)\b/i.test(bNorm);
+  const esBloqueGenericoTpA = aNorm.includes('formacion diferenciada') && (aNorm.includes('tecnico') || aNorm.includes('tp') || aNorm.includes('especialidad') || aNorm.includes('especializacion') || aNorm.includes('oficio'));
+  const esBloqueGenericoTpB = bNorm.includes('formacion diferenciada') && (bNorm.includes('tecnico') || bNorm.includes('tp') || bNorm.includes('especialidad') || bNorm.includes('especializacion') || bNorm.includes('oficio'));
+
+  // Si uno de los dos es el bloque de Formación Diferenciada TP / con Especialización / en Oficios (ej. EPJA 12 HA o 4 HA o Regular 22 HA):
+  // equivale a cualquier módulo o asignatura de especialidad/oficio que NO sea una asignatura troncal de Formación General ni Formación Instrumental.
+  if (esBloqueGenericoTpA || esBloqueGenericoTpB) {
+    const otroNorm = esBloqueGenericoTpA ? normalizarNombreAsignatura(asigB) : normalizarNombreAsignatura(asigA);
+    const troncalesNorm = new Set([
+      'lenguaje y comunicacion',
+      'matematica',
+      'historia, geografia y ciencias sociales',
+      'ciencias naturales',
+      'ingles',
+      'educacion fisica y salud',
+      'artes visuales',
+      'musica',
+      'tecnologia',
+      'orientacion',
+      'religion',
+      'filosofia',
+      'ciencias para la ciudadania',
+      'educacion ciudadana',
+      'plan comun electivo',
+      'formacion instrumental',
+      'ambito desarrollo personal y social',
+      'ambito comunicacion integral',
+      'ambito interaccion y comprension del entorno',
+      'experiencias de aprendizaje integradas'
+    ]);
+    if (!troncalesNorm.has(otroNorm) && !otroNorm.startsWith('taller_')) {
       return true;
     }
+    return false;
+  }
+
+  if ((esModuloA && !esModuloB) || (esModuloB && !esModuloA)) {
     return false;
   }
 
@@ -456,11 +529,12 @@ export function calcularDisponibilidadCurso(
     .filter(a => (a.cursoId === curso.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(curso.id))) && esAsignacionCoDocenciaOApoyo(a))
     .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
 
+  const esCursoEpja = esCursoModalidadEpja(curso, infoPlan);
   // Libre Disposición / JEC: calcular las horas asignadas a talleres o asignaturas no presentes en el plan base
-  const horasLibrePlan = infoPlan.horasLibreDisposicion || (curso.regimen === 'JEC' ? 6 : 0);
+  const horasLibrePlan = esCursoEpja ? 0 : (infoPlan.horasLibreDisposicion ?? (infoPlan.esJec ? 6 : 0));
   
-  // Asignaciones que no coincidieron con ninguna asignatura obligatoria/base del plan son consideradas JEC/Libre Disposición
-  const asigsLibres = asigsCurso.filter(a => {
+  // Asignaciones que no coincidieron con ninguna asignatura obligatoria/base del plan son consideradas JEC/Libre Disposición (salvo en EPJA donde no existe JEC)
+  const asigsLibres = esCursoEpja ? [] : asigsCurso.filter(a => {
     // Si la asignación tiene código/ámbito canónico o es oficial de profundización HC / Electivo, NUNCA es Libre Disposición
     const infoCanonica = resolverCodigoYAmbitoAsignatura(a.asignatura, {
       nivelCurso: curso.nivel,
@@ -494,18 +568,18 @@ export function calcularDisponibilidadCurso(
     const esAsigPlanTallerOficial = /taller de literatura|taller laboral/i.test(asigPlan.nombre) || esAsignaturaProfundizacionHc(asigPlan.nombre);
     const horasAsig = asigsCurso
       .filter(a => {
-        // Un taller JEC, taller SEP o libre disposición NUNCA debe descontar horas del plan regular (salvo asignaturas oficiales como Taller de Literatura o electivos)
+        // Un taller JEC, taller SEP o libre disposición NUNCA debe descontar horas del plan regular (salvo asignaturas oficiales como Taller de Literatura, electivos o en cursos EPJA donde no existe JEC)
         const infoCanonicaA = resolverCodigoYAmbitoAsignatura(a.asignatura, {
           nivelCurso: curso.nivel,
-          esJec: a.esTallerJec,
+          esJec: esCursoEpja ? false : a.esTallerJec,
           esTallerSep: a.esTallerSep,
           esTrabajoColaborativo: a.esTrabajoColaborativo
         });
-        const esMateriaOficial = infoCanonicaA.esOficial && (infoCanonicaA.ambito === 'DIFERENCIADA_HC' || infoCanonicaA.ambito === 'DIFERENCIADA_TP' || infoCanonicaA.ambito === 'PLAN_COMUN' || infoCanonicaA.ambito === 'PLAN_COMUN_ELECTIVO');
+        const esMateriaOficial = esCursoEpja || (infoCanonicaA.esOficial && (infoCanonicaA.ambito === 'DIFERENCIADA_HC' || infoCanonicaA.ambito === 'DIFERENCIADA_TP' || infoCanonicaA.ambito === 'PLAN_COMUN' || infoCanonicaA.ambito === 'PLAN_COMUN_ELECTIVO'));
 
-        if (a.esTallerJec && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
+        if (!esCursoEpja && a.esTallerJec && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
         if (a.esTallerSep) return false;
-        if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
+        if (!esCursoEpja && /taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
         return sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre);
       })
       .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
@@ -515,7 +589,7 @@ export function calcularDisponibilidadCurso(
 
     // Compensación automática con cargo a Libre Disposición para cursos JEC (especialmente Orientación o refuerzos)
     let horasCompensadas = 0;
-    if (curso.regimen === 'JEC' && horasExceso > 0 && saldoLibreDisponible > 0) {
+    if (!esCursoEpja && infoPlan.esJec && horasExceso > 0 && saldoLibreDisponible > 0) {
       horasCompensadas = Math.min(horasExceso, saldoLibreDisponible);
       saldoLibreDisponible -= horasCompensadas;
       totalCompensadoLibre += horasCompensadas;
@@ -689,11 +763,13 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   const matchBcepActual = CATALOGO_BCEP_PARVULARIA.find(b => b.nucleo.toLowerCase() === (a.asignatura || '').trim().toLowerCase());
   const esCoDocDto306Nombre = /atenci[oó]n\s*directa\s*y\s*co-docencia\s*parvularia/i.test(a.asignatura || '');
 
+  const esCursoEpjaFila = esCursoModalidadEpja(cursoActual, infoPlan);
+
   // Verificar si la asignatura actual coincide con alguna del plan
   const asigEnPlan = infoPlan.asignaturas.find(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura));
   const infoCanonicaFila = resolverCodigoYAmbitoAsignatura(a.asignatura, {
     nivelCurso: cursoActual?.nivel,
-    esJec: a.esTallerJec,
+    esJec: esCursoEpjaFila ? false : a.esTallerJec,
     esTallerSep: a.esTallerSep,
     esTrabajoColaborativo: a.esTrabajoColaborativo,
     esDiferenciadoCompartido: a.esDiferenciadoCompartido
@@ -705,14 +781,38 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     infoCanonicaFila.ambito === 'PLAN_COMUN_ELECTIVO'
   );
 
-  const esLibreDisposicion = !esPie && !esCoDoc && !esOficialProfundizacionOPlan && !matchBcepActual && !esCoDocDto306Nombre && (
-    a.esTallerJec || 
-    (/taller|jec|libre/i.test(a.asignatura) && !esParvulariaFila) || 
-    (!asigEnPlan && a.cursoId !== 'TRANSVERSAL' && !esParvulariaFila)
+  // En cursos sin JEC o en cursos EPJA (Adultos D.S. 10/2022), JAMÁS existe Libre Disposición JEC
+  const esLibreDisposicion = Boolean(
+    infoPlan.esJec &&
+    !esCursoEpjaFila &&
+    !esPie &&
+    !esCoDoc &&
+    !esOficialProfundizacionOPlan &&
+    !matchBcepActual &&
+    !esCoDocDto306Nombre &&
+    (
+      a.esTallerJec || 
+      (/taller|jec|libre/i.test(a.asignatura) && !esParvulariaFila) || 
+      (!asigEnPlan && a.cursoId !== 'TRANSVERSAL' && !esParvulariaFila)
+    )
   );
+
+  // Autocorrección reactiva: si la fila pertenecía a un curso EPJA o sin JEC y tenía esTallerJec: true por error previo, limpiarlo
+  useEffect(() => {
+    if (esCursoEpjaFila && a.esTallerJec && onGuardarAsignacion) {
+      const resCod = resolverCodigoYAmbitoAsignatura(a.asignatura, { nivelCurso: cursoActual?.nivel, esJec: false });
+      onGuardarAsignacion({
+        ...a,
+        esTallerJec: false,
+        codigoAsignatura: resCod.codigo,
+        ambitoCurricular: resCod.ambito
+      });
+    }
+  }, [a.id, esCursoEpjaFila, a.esTallerJec]);
 
   const esMedio34Fila = Boolean(
     cursoActual &&
+    !esCursoEpjaFila &&
     !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoActual.nivel) &&
     (
       /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoActual.nivel) ||
@@ -724,8 +824,9 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   const matchProfActual = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === a.asignatura.toLowerCase());
   const matchPlanComunActual = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => a.asignatura.toLowerCase().includes(c.nombre.toLowerCase()));
 
-  // Si es un módulo TP oficial, preservar su valor exacto para que el select no lo colapse a OTRA_MANUAL o Matemática
-  const esModuloTpActual = /^m[oó]dulo\b/i.test(a.asignatura || '');
+  // Si es un módulo TP oficial o un módulo/especialidad personalizado en EPJA, preservar su valor exacto para que el select no lo colapse a Lengua y Literatura
+  const esModuloTpActual = /^(m[oó]dulo|oficio|especialidad)\b/i.test(a.asignatura || '') ||
+    (esCursoEpjaFila && Boolean(a.asignatura) && (!asigEnPlan || asigEnPlan.nombre.toLowerCase() !== a.asignatura.toLowerCase()));
 
   const valorSelectFila = matchBcepActual
     ? matchBcepActual.nucleo
@@ -738,7 +839,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
           ? matchProfActual.nombre
           : (matchPlanComunActual && a.asignatura.toLowerCase().includes('electivo')
               ? `${matchPlanComunActual.nombre} (Electivo)`
-              : (asigEnPlan?.nombre || (esModuloTpActual ? a.asignatura : 'OTRA_MANUAL'))
+              : (esModuloTpActual ? a.asignatura : (asigEnPlan?.nombre || 'OTRA_MANUAL'))
             )
       );
 
@@ -889,9 +990,9 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   </optgroup>
                 )}
 
-                {/* Si la fila tiene un módulo TP asignado pero no está en disponibilidad.disponibles (o ya está cubierto), incluirlo para que el select lo muestre fielmente */}
-                {esModuloTpActual && !disponibilidad.disponibles.some(d => d.nombre === a.asignatura) && (
-                  <optgroup label="🛠️ Módulo de Especialidad TP Asignado">
+                {/* Si la fila tiene un módulo TP o asignatura específica asignada que no está literalmente en disponibles ni cubiertas, incluirlo para que el select lo muestre fielmente y NUNCA salte a Lengua y Literatura */}
+                {(esModuloTpActual || (a.asignatura && valorSelectFila === a.asignatura)) && !disponibilidad.disponibles.some(d => d.nombre === a.asignatura) && !disponibilidad.cubiertas.some(d => d.nombre === a.asignatura) && (
+                  <optgroup label={esCursoEpjaFila ? '🛠️ Módulo / Especialidad EPJA Asignado' : '🛠️ Módulo de Especialidad TP Asignado'}>
                     <option value={a.asignatura}>
                       🛠️ {a.asignatura}
                     </option>
@@ -994,13 +1095,29 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   onBlur={async () => {
                     const val = nombreManual.trim();
                     if (val && val !== a.asignatura && onGuardarAsignacion) {
-                      await onGuardarAsignacion({ ...a, asignatura: val, esTallerJec: esLibreDisposicion });
+                      const resCod = resolverCodigoYAmbitoAsignatura(val, {
+                        nivelCurso: cursoActual?.nivel,
+                        esJec: esCursoEpjaFila ? false : esLibreDisposicion,
+                        esTallerSep: a.esTallerSep
+                      });
+                      const nuevoEsJec = !esCursoEpjaFila && infoPlan.esJec && (
+                        resCod.ambito === 'LIBRE_DISPOSICION_JEC' ||
+                        (esLibreDisposicion && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'DIFERENCIADA_TP' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO')
+                      );
+                      await onGuardarAsignacion({
+                        ...a,
+                        asignatura: val,
+                        codigoAsignatura: resCod.codigo,
+                        ambitoCurricular: resCod.ambito,
+                        esTallerJec: nuevoEsJec
+                      });
+                      setEditandoManual(false);
                     }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                   }}
-                  placeholder="Ej: Taller de Robótica, Inglés Comunicativo, etc."
+                  placeholder={esCursoEpjaFila ? 'Ej: Módulo Instalaciones Eléctricas, Contabilidad, Mecánica...' : 'Ej: Taller de Robótica, Inglés Comunicativo, etc.'}
                   className="bg-amber-50 hover:bg-white focus:bg-white border border-amber-300 focus:border-amber-500 px-1.5 py-0.5 text-xs text-amber-900 font-medium rounded outline-none w-full"
                 />
               </div>
@@ -1287,9 +1404,14 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     }
   }, [regCursoId]);
 
+  const esCursoEpjaForm = useMemo(() => {
+    return esCursoModalidadEpja(cursoSeleccionado, infoPlan);
+  }, [cursoSeleccionado, infoPlan]);
+
   const esMedio34Form = useMemo(() => {
     return Boolean(
       cursoSeleccionado &&
+      !esCursoEpjaForm &&
       !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoSeleccionado.nivel) &&
       (
         /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoSeleccionado.nivel) ||
@@ -1297,7 +1419,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
         ((infoPlan.categoria === 'MEDIA_HC' || infoPlan.categoria === 'MEDIA_TP') && /[34]/i.test(infoPlan.nombrePlan))
       )
     );
-  }, [cursoSeleccionado, infoPlan.nombrePlan, infoPlan.categoria]);
+  }, [cursoSeleccionado, esCursoEpjaForm, infoPlan.nombrePlan, infoPlan.categoria]);
 
   const esParvularioForm = useMemo(() => {
     return Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
@@ -1308,15 +1430,23 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       cursoSeleccionado && (
         cursoSeleccionado.nivel.toLowerCase().includes('tp') ||
         Boolean(cursoSeleccionado.especialidadTp) ||
-        infoPlan.categoria === 'MEDIA_TP'
+        infoPlan.categoria === 'MEDIA_TP' ||
+        (esCursoEpjaForm && /tp|t[eé]cnico|especialidad|oficio/i.test(`${cursoSeleccionado.nivel} ${infoPlan.nombrePlan}`))
       )
     );
-  }, [cursoSeleccionado, infoPlan.categoria]);
+  }, [cursoSeleccionado, infoPlan.categoria, infoPlan.nombrePlan, esCursoEpjaForm]);
+
+  const esSeleccionDiferenciadaEpja = useMemo(() => {
+    if (!esCursoEpjaForm) return false;
+    const t = tipoAsignaturaSeleccionada.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return t.includes('formacion diferenciada') && (t.includes('especializacion') || t.includes('oficio') || t.includes('tp') || t.includes('especialidad'));
+  }, [esCursoEpjaForm, tipoAsignaturaSeleccionada]);
 
   const esModoPersonalizado = 
     regCursoId === 'TRANSVERSAL' ||
     tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ||
-    tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__';
+    tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__' ||
+    esSeleccionDiferenciadaEpja;
 
   const handleSeleccionAsignatura = (valor: string) => {
     setTipoAsignaturaSeleccionada(valor);
@@ -1372,20 +1502,23 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       esJec = false;
     } else if (tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__') {
       nombreFinal = regNombreCustom.trim() || 'Taller de Libre Disposición';
-      esJec = true;
+      esJec = !esCursoEpjaForm && infoPlan.esJec;
     } else if (tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__') {
       nombreFinal = regNombreCustom.trim();
-      esJec = /taller|jec|libre/i.test(nombreFinal);
+      esJec = !esCursoEpjaForm && infoPlan.esJec && /taller|jec|libre/i.test(nombreFinal);
+    } else if (esSeleccionDiferenciadaEpja) {
+      nombreFinal = regNombreCustom.trim() || tipoAsignaturaSeleccionada.trim();
+      esJec = false;
     } else if (tipoAsignaturaSeleccionada.startsWith('__TALLER_EXISTENTE__:')) {
       nombreFinal = tipoAsignaturaSeleccionada.replace('__TALLER_EXISTENTE__:', '').trim();
-      esJec = true;
+      esJec = !esCursoEpjaForm && infoPlan.esJec;
     } else {
       nombreFinal = tipoAsignaturaSeleccionada.trim();
       esJec = false;
     }
 
     if (!nombreFinal) {
-      alert('Por favor especifica el nombre de la asignatura o taller.');
+      alert('Por favor especifica el nombre de la asignatura, módulo o taller.');
       return;
     }
 
@@ -1406,7 +1539,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       codigoAsignatura: resCod.codigo,
       ambitoCurricular: resCod.ambito,
       horasPedagogicasAula: Number(regHoras),
-      esTallerJec: resCod.ambito === 'LIBRE_DISPOSICION_JEC' || (esJec && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO'),
+      esTallerJec: !esCursoEpjaForm && infoPlan.esJec && (resCod.ambito === 'LIBRE_DISPOSICION_JEC' || (esJec && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'DIFERENCIADA_TP' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO')),
       esTallerSep: regEsTallerSep,
       esProporcionDocente: regCursoId !== 'TRANSVERSAL',
       cursosCompartidosIds: regCompartir && regCursosCompartidos.length > 0 ? regCursosCompartidos : undefined,
@@ -1602,7 +1735,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           </div>
         )}
 
-        {/* 3. CAMPO DE NOMBRE PERSONALIZADO (CONDICIONAL PARA JEC O LIBRE DISPOSICIÓN) */}
+        {/* 3. CAMPO DE NOMBRE PERSONALIZADO (CONDICIONAL PARA JEC, MÓDULOS EPJA O ASIGNATURA ESPECÍFICA) */}
         {esModoPersonalizado && (
           <div className="min-w-[200px] flex-1">
             <label className="block text-[10px] font-bold text-amber-700 mb-1 flex items-center gap-1">
@@ -1610,17 +1743,21 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
               <span>
                 {regCursoId === 'TRANSVERSAL'
                   ? 'Nombre del Taller Transversal'
-                  : 'Nombre del Taller JEC / Libre Disposición'}
+                  : esSeleccionDiferenciadaEpja
+                  ? 'Nombre del Módulo / Especialidad / Oficio EPJA (Opcional)'
+                  : esCursoEpjaForm
+                  ? 'Nombre del Módulo o Asignatura EPJA'
+                  : 'Nombre del Taller JEC / Asignatura Específica'}
               </span>
             </label>
             <input
               type="text"
-              autoFocus
+              autoFocus={!esSeleccionDiferenciadaEpja}
               value={regNombreCustom}
               onChange={(e) => setRegNombreCustom(e.target.value)}
-              placeholder="Ej: Taller de Robótica, Refuerzo Matemático, Ajedrez..."
+              placeholder={esCursoEpjaForm ? 'Ej: Módulo Instalaciones Eléctricas, Contabilidad, Mecánica...' : 'Ej: Taller de Robótica, Refuerzo Matemático, Ajedrez...'}
               className="w-full px-2.5 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-slate-900 bg-amber-50/40 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-              required
+              required={!esSeleccionDiferenciadaEpja}
             />
           </div>
         )}
@@ -3591,11 +3728,17 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                     type="button"
                     onClick={async () => {
                       if (onGuardarAsignacion) {
+                        const resCod = resolverCodigoYAmbitoAsignatura(asig.nombre, {
+                          nivelCurso: cursoInspeccion.nivel,
+                          esJec: false
+                        });
                         const nuevaAsig: AsignacionHoraria = {
                           id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                           rbd: colegio.rbd,
                           docenteId: docente.id,
                           asignatura: asig.nombre,
+                          codigoAsignatura: resCod.codigo,
+                          ambitoCurricular: resCod.ambito,
                           cursoId: cursoInspeccion.id,
                           horasPedagogicasAula: asig.horasDisponibles,
                           periodo: 2027,

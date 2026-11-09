@@ -674,7 +674,14 @@ export const PlanesEstudioView: React.FC<PlanesEstudioViewProps> = ({
                   </label>
                   <select
                     value={planEnEdicion.categoria}
-                    onChange={(e) => setPlanEnEdicion({ ...planEnEdicion, categoria: e.target.value as any })}
+                    onChange={(e) => {
+                      const nuevaCat = e.target.value as any;
+                      setPlanEnEdicion({
+                        ...planEnEdicion,
+                        categoria: nuevaCat,
+                        ...(nuevaCat === 'EPJA' ? { regimen: 'No JEC', horasLibreDisposicion: 0 } : {})
+                      });
+                    }}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2 text-xs font-bold text-slate-900 dark:text-white"
                   >
                     <option value="EPJA">🌟 EPJA (Adultos)</option>

@@ -540,6 +540,83 @@ export const CATALOGO_CODIGOS_ASIGNATURAS: DefinicionAsignaturaCanonica[] = [
     areaProfundizacion: 'C',
     disciplina: 'Filosofía',
     alias: ['filosofia y cine']
+  },
+
+  // ==========================================================================
+  // 6. EDUCACIÓN DE PERSONAS JÓVENES Y ADULTAS - EPJA (D.S. N° 10/2022 y D.S. N° 452/2013)
+  // ==========================================================================
+  // ── Formación Instrumental (2 HA en Media HC y TP Adultos) ──
+  {
+    codigo: 'PC-EPJA-INST-GEN',
+    nombreOficial: 'Formación Instrumental',
+    ambito: 'PLAN_COMUN',
+    nivelOModalidad: 'EPJA Educación Media',
+    horasSugeridas: 2,
+    alias: [
+      'formacion instrumental',
+      'formacion instrumental (pensamiento computacional / responsabilidad personal y social / emprendimiento y empleabilidad / educacion financiera)',
+      'formacion instrumental (convivencia social / consumo y calidad de vida / insercion laboral / tecnologias de la informacion y las telecomunicaciones)'
+    ]
+  },
+  {
+    codigo: 'PC-EPJA-INST-1',
+    nombreOficial: 'Pensamiento Computacional (Formación Instrumental EPJA)',
+    ambito: 'PLAN_COMUN',
+    nivelOModalidad: 'EPJA Educación Media',
+    horasSugeridas: 2,
+    alias: ['pensamiento computacional epja', 'formacion instrumental: pensamiento computacional', 'instrumental pensamiento computacional']
+  },
+  {
+    codigo: 'PC-EPJA-INST-2',
+    nombreOficial: 'Responsabilidad Personal y Social',
+    ambito: 'PLAN_COMUN',
+    nivelOModalidad: 'EPJA Educación Media',
+    horasSugeridas: 2,
+    alias: ['responsabilidad personal y social', 'formacion instrumental: responsabilidad personal y social', 'convivencia social']
+  },
+  {
+    codigo: 'PC-EPJA-INST-3',
+    nombreOficial: 'Emprendimiento y Empleabilidad',
+    ambito: 'PLAN_COMUN',
+    nivelOModalidad: 'EPJA Educación Media',
+    horasSugeridas: 2,
+    alias: ['emprendimiento y empleabilidad', 'formacion instrumental: emprendimiento y empleabilidad', 'insercion laboral']
+  },
+  {
+    codigo: 'PC-EPJA-INST-4',
+    nombreOficial: 'Educación Financiera',
+    ambito: 'PLAN_COMUN',
+    nivelOModalidad: 'EPJA Educación Media',
+    horasSugeridas: 2,
+    alias: ['educacion financiera', 'formacion instrumental: educacion financiera', 'consumo y calidad de vida']
+  },
+  // ── Formación Diferenciada EPJA (Oficios y Especialidades TP - Sin JEC) ──
+  {
+    codigo: 'DIF-EPJA-OFICIOS',
+    nombreOficial: 'Formación Diferenciada en Oficios',
+    ambito: 'DIFERENCIADA_TP',
+    nivelOModalidad: 'EPJA Básica y Media',
+    horasSugeridas: 4,
+    alias: [
+      'formacion diferenciada en oficios',
+      'formacion en oficios',
+      'formacion diferenciada en oficios: aprendizaje de un oficio en algun area de actividad economica de interes (4 horas semanales)',
+      'formacion diferenciada en oficios: aprendizaje de un oficio en algun area de actividad economica de interes (a lo menos 4 horas semanales)'
+    ]
+  },
+  {
+    codigo: 'DIF-EPJA-TP-ESP',
+    nombreOficial: 'Formación Diferenciada con Especialización',
+    ambito: 'DIFERENCIADA_TP',
+    nivelOModalidad: 'EPJA Educación Media TP (Niveles 2 y 3)',
+    horasSugeridas: 12,
+    alias: [
+      'formacion diferenciada con especializacion',
+      'formacion diferenciada tp (especialidad)',
+      'formacion diferenciada tp',
+      'formacion diferenciada con especializacion: especializacion diferenciada en sectores economicos especificos (a lo menos 12 horas semanales)',
+      'especializacion diferenciada en sectores economicos especificos'
+    ]
   }
 ];
 
@@ -594,19 +671,33 @@ export function resolverCodigoYAmbitoAsignatura(
   horasSugeridas?: number;
 } {
   const norm = normalizarCadenaBusqueda(nombreAsignatura);
+  const nivelNorm = normalizarCadenaBusqueda(contexto?.nivelCurso || '');
+  const esContextoEpja = /\b(epja|adulto|adultos|tercera jornada|vespertin|nocturn)\b/i.test(nivelNorm) ||
+    (/\bnivel\s*[123]\b/i.test(nivelNorm) && !/\b(nt[12]|transicion|parvulo)\b/i.test(nivelNorm));
 
-  // 0. Detección especial prioritaria para Módulos de Especialidad Técnico-Profesional (Decreto 0876/2019)
+  // 0. Detección especial prioritaria para Módulos y Formación Diferenciada Técnico-Profesional / Oficios (Decreto 0876/2019 y EPJA D.S. 10/2022)
   if (
-    /^(modulo|modulo mencion|modulo comun)\b/i.test(norm) ||
-    /^(modulo|modulo mencion|modulo comun):/i.test(nombreAsignatura.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    /^(modulo|modulo mencion|modulo comun|oficio|especialidad)\b/i.test(norm) ||
+    /^(modulo|modulo mencion|modulo comun|oficio|especialidad):/i.test(nombreAsignatura.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')) ||
+    (norm.includes('formacion diferenciada') && (norm.includes('especializacion') || norm.includes('oficio') || norm.includes('tp') || norm.includes('tecnico') || norm.includes('especialidad')))
   ) {
-    const slugMod = norm.replace(/^modulo\s*(mencion|comun)?\s*:?\s*/i, '').replace(/\s+/g, '_').substring(0, 32).toUpperCase();
+    const slugMod = norm
+      .replace(/^(modulo|oficio|especialidad|formacion diferenciada)\s*(mencion|comun|con especializacion|en oficios|tp)?\s*:?\s*/i, '')
+      .replace(/\s+/g, '_')
+      .substring(0, 32)
+      .toUpperCase();
     return {
       codigo: `DIF-TP-${slugMod || 'MODULO'}`,
       ambito: 'DIFERENCIADA_TP',
       nombreOficial: nombreAsignatura.trim(),
       esOficial: true
     };
+  }
+
+  // 0.1 Detección prioritaria para Formación Instrumental EPJA (2 HA)
+  if (norm.startsWith('formacion instrumental')) {
+    const asig = MAPA_POR_CODIGO.get('PC-EPJA-INST-GEN')!;
+    return { codigo: asig.codigo, ambito: asig.ambito, nombreOficial: nombreAsignatura.trim(), esOficial: true, horasSugeridas: 2 };
   }
 
   // 1. Detección especial prioritaria para evitar colisión de Ciudadanía
@@ -687,6 +778,17 @@ export function resolverCodigoYAmbitoAsignatura(
       ambito: 'ADICIONAL_EXTRA',
       nombreOficial: nombreAsignatura.trim(),
       esOficial: false
+    };
+  }
+
+  // En contexto EPJA (Adultos), NUNCA existe régimen JEC (D.S. N° 10/2022).
+  // Las asignaturas/módulos de especialidad u oficios creados con nombres propios pertenecen a Formación Diferenciada TP.
+  if (esContextoEpja) {
+    return {
+      codigo: `DIF-EPJA-${slug || 'MODULO'}`,
+      ambito: 'DIFERENCIADA_TP',
+      nombreOficial: nombreAsignatura.trim(),
+      esOficial: true
     };
   }
 
