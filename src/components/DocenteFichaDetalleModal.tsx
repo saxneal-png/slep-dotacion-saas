@@ -273,7 +273,9 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                           <span className="text-slate-400 font-semibold text-xs italic">Exento (No Aula)</span>
                         ) : (
                           <>
-                            <strong className="text-slate-800 text-sm">{c.maxHorasPedagogicasMineduc} HA</strong>
+                            <strong className="text-slate-800 text-sm">
+                              {c.maxHorasPedagogicasMineduc} {c.docente.estamento === 'EDUCADORA_PARVULO' || c.docente.esEducadoraParvulo ? 'h (60m)' : 'HA'}
+                            </strong>
                             <span className="text-[10px] text-slate-400 block font-mono">({formatMins(c.minutosLectivosMineduc)})</span>
                           </>
                         )}
@@ -281,11 +283,11 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                       <div>
                         <span className="text-slate-500 block text-[11px]">Aula Regular Asignada:</span>
                         <strong className={`text-sm ${c.estaSobreasignado ? 'text-red-600' : 'text-emerald-700'}`}>
-                          {c.horasAulaRegular !== undefined ? c.horasAulaRegular : c.horasPedagogicasAsignadas} HA
+                          {c.horasAulaRegular !== undefined ? c.horasAulaRegular : c.horasPedagogicasAsignadas} {c.docente.estamento === 'EDUCADORA_PARVULO' || c.docente.esEducadoraParvulo ? 'h (60m)' : 'HA'}
                         </strong>
                         <span className="text-[10px] text-slate-400 block font-mono">
                           {c.horasCoDocencia ? `+${c.horasCoDocencia}h Co-Doc • ` : ''}
-                          ({formatMins((c.horasAulaRegular !== undefined ? c.horasAulaRegular : c.horasPedagogicasAsignadas) * 45)})
+                          ({formatMins((c.horasAulaRegular !== undefined ? c.horasAulaRegular : c.horasPedagogicasAsignadas) * (c.docente.estamento === 'EDUCADORA_PARVULO' || c.docente.esEducadoraParvulo ? 60 : 45))})
                         </span>
                       </div>
                       <div>
@@ -370,11 +372,11 @@ export const DocenteFichaDetalleModal: React.FC<DocenteFichaDetalleModalProps> =
                             <span className="font-bold text-slate-700 block text-[11px]">Distribución de Jornada Docente:</span>
                             <div className="flex justify-between text-slate-600 text-[11px]">
                               <span>Tramo Regular 65/35:</span>
-                              <span className="font-semibold text-indigo-700">{c.contratoPonderado65_35 || 0} hrs ({c.horasAula65_35 || 0} HA aula)</span>
+                              <span className="font-semibold text-indigo-700">{c.contratoPonderado65_35 || 0} hrs ({c.horasAula65_35 || 0} {c.docente.estamento === 'EDUCADORA_PARVULO' || c.docente.esEducadoraParvulo ? 'h (60m)' : 'HA'} aula)</span>
                             </div>
                             <div className="flex justify-between text-slate-600 text-[11px]">
                               <span>Tramo Vulnerable 60/40:</span>
-                              <span className="font-semibold text-purple-700">{c.contratoPonderado60_40 || 0} hrs ({c.horasAula60_40 || 0} HA aula)</span>
+                              <span className="font-semibold text-purple-700">{c.contratoPonderado60_40 || 0} hrs ({c.horasAula60_40 || 0} {c.docente.estamento === 'EDUCADORA_PARVULO' || c.docente.esEducadoraParvulo ? 'h (60m)' : 'HA'} aula)</span>
                             </div>
                             {Boolean(c.horasPieCronologicas ?? c.horasPieSepCronologicas) && (
                               <div className="flex justify-between text-slate-600 text-[11px] border-t border-slate-100 pt-1">

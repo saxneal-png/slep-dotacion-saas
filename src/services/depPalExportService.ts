@@ -4,7 +4,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria } from '../types';
+import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria, PlanEstudioCurricular } from '../types';
 import {
   homologarDocenteAPal,
   homologarAsistenteAPal,
@@ -16,7 +16,7 @@ import { proyectarMatriculaNivel } from './proyeccionMatriculaService';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
-import { listarPlanesEstudio, PlanEstudioCurricular } from '../database/repositories/planesEstudioRepo';
+import { listarPlanesEstudio } from '../database/repositories/planesEstudioRepo';
 import { listarTodosLosCursos } from '../database/repositories/cursosRepo';
 import { listarTodasLasAsignaciones } from '../database/repositories/asignacionesRepo';
 import { extraerGradosDeCurso } from './combinacionCursosService';
@@ -418,9 +418,11 @@ export async function generarExcelConsolidadoPalDEP(
       const planDb = c.planEstudioId ? planesEstudioDb.find(p => p.id === c.planEstudioId) : undefined;
       // 2. Plan oficial MINEDUC considerando nivel, régimen (JEC/No JEC) y especialidad TP
       const planMineduc = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
-      let hPlan = planDb && planDb.totalHorasPlan > 0
+      let hPlan: number = (planDb && typeof planDb.totalHorasPlan === 'number' && planDb.totalHorasPlan > 0)
         ? planDb.totalHorasPlan
-        : (planMineduc ? planMineduc.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp));
+        : (planMineduc && typeof planMineduc.totalHorasPlan === 'number'
+          ? planMineduc.totalHorasPlan
+          : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp));
       // Sumar talleres JEC explícitos si están configurados
       const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
       hPlan += hTalleres;

@@ -25,7 +25,7 @@ export {
   validarOfertaElectivosHc,
   validarEleccionEstudianteHc
 };
-export type { AsignaturaProfundizacionHc, ResultadoValidacionOfertaElectivosHc };
+export type { AsignaturaProfundizacionHc, ResultadoValidacionOfertaElectivosHc, PlanEstudioCurricular };
 
 // =============================================================================
 // PLAN OFICIAL EPJA 2024 (DECRETO SUPREMO DE EDUCACIÓN N° 10/2022)

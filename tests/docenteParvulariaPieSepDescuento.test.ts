@@ -253,7 +253,7 @@ describe('Descuento previo de horas PIE y SEP fuera del aula para Educadoras de 
 
     // Auditoría integral (incluso si el colegio tiene 68% prioritarios, respeta regimenProporcion='65_35' del curso)
     const cursosMap = new Map<string, CursoSae>([['kinder-a', kinderA]]);
-    const audit = auditarCargaDocenteIntegral(veronica, [asigKinder], [], cursosMap, 68);
+    const audit = auditarCargaDocenteIntegral(veronica, [asigKinder], [kinderA], cursosMap, 68);
 
     expect(audit.ha65_35).toBe(24);
     expect(audit.ha60_40).toBe(0);
@@ -262,5 +262,51 @@ describe('Descuento previo de horas PIE y SEP fuera del aula para Educadoras de 
     expect(audit.auditDoc.saldoHoras).toBe(1); // 42 - 41 = +1h libre
     expect(audit.auditDoc.esInfractorExcesoLectivo).toBe(false);
     expect(audit.estaSobreasignado).toBe(false);
+  });
+
+  it('respeta el régimen 65/35 de los cursos parvularios de la escuela incluso cuando porcentajePrioritarios es 75% por defecto o la asignación tiene curso sin regimenProporcion explícito', () => {
+    const educadora: Docente = {
+      id: 'doc-ed-6535',
+      rbd: '3971',
+      run: '16.123.456-7',
+      nombres: 'Ruth Marlene',
+      apellidos: 'Salgado Palma',
+      estamento: 'EDUCADORA_PARVULO',
+      calidadJuridica: 'TITULAR',
+      horasContrato: 39,
+      horasSubvencionGeneralTitular: 39
+    };
+
+    const cursoParvSinRegExplicito: CursoSae = {
+      id: 'pk-k-comb',
+      rbd: '3971',
+      nivel: 'Curso Combinado (Pre-Kínder - Kínder)',
+      letra: 'A',
+      regimen: 'JEC',
+      // Aunque no tenga regimenProporcion explícito y el colegio tenga 75% por defecto,
+      // o cuando otros cursos de la escuela son 65_35, debe calcularse en 65_35 (y no en 60_40)
+      cupoSae: 30,
+      matriculaProyectada: 18
+    };
+
+    const asig: AsignacionHoraria = {
+      id: 'asig-ruth-1',
+      rbd: '3971',
+      cursoId: 'pk-k-comb',
+      docenteId: 'doc-ed-6535',
+      asignatura: 'Plan Común Educación Parvularia',
+      horasPedagogicasAula: 25.5 // 25h 30m en 65/35 para 39h de contrato
+    };
+
+    const cursosMap = new Map<string, CursoSae>([['pk-k-comb', cursoParvSinRegExplicito]]);
+    const audit = auditarCargaDocenteIntegral(educadora, [asig], [cursoParvSinRegExplicito], cursosMap, 75);
+
+    expect(audit.ha65_35).toBe(25.5);
+    expect(audit.ha60_40).toBe(0);
+    expect(audit.auditDoc.req65_35).toBe(39);
+    expect(audit.auditDoc.req60_40).toBe(0);
+    expect(audit.auditDoc.contratoCalculadoTotal).toBe(39);
+    expect(audit.auditDoc.saldoHoras).toBe(0);
+    expect(audit.auditDoc.esInfractorExcesoLectivo).toBe(false);
   });
 });

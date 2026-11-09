@@ -1039,7 +1039,8 @@ export const App: React.FC = () => {
         docentesScope,
         diagnosticosColegiosPermitidos,
         colegioActivo?.asesorUatp || 'Asesor UATP',
-        asignacionesScope
+        asignacionesScope,
+        cursosScope
       );
       const filename = `Consolidado_Dotacion_SLEP_Valle_Diguillin_${new Date().toISOString().split('T')[0]}.xlsx`;
       const guardado = await guardarArchivoNativoOEnNavegador(
@@ -1258,7 +1259,7 @@ export const App: React.FC = () => {
               onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
               onGuardarColegio={handleGuardarColegio}
               onAbrirCopilot={() => setModalCopilotAbierto(true)}
-              onNavegarAPestana={setVistaActiva}
+              onNavegarAPestana={setVistaActiva} todosLosCursos={todosLosCursos}
               onGuardarApartadoNube={handleGuardarCambiosEnNube}
               onRefrescarApartadoNube={handleRefrescarDesdeNube}
               guardandoEnNube={guardandoEnNube}
@@ -1358,7 +1359,7 @@ export const App: React.FC = () => {
             todosLosColegios={colegiosPermitidos}
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
-            onNavegarAPestana={setVistaActiva}
+            onNavegarAPestana={setVistaActiva} todosLosCursos={todosLosCursos}
             periodoActivo={periodoActivo}
           />
         )}

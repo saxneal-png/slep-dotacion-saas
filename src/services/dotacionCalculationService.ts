@@ -517,13 +517,20 @@ export function calcularDiagnosticoColegio(
       Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
       Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal));
 
+    const cursosParvulariosColegio = cursos.filter(x => esNivelParvulario(x.nivel));
+    const regimenParvularioPredominante: '65_35' | '60_40' =
+      cursosParvulariosColegio.find(x => x.regimenProporcion)?.regimenProporcion ||
+      est.regimenProporcion ||
+      '65_35';
+
     const esCurso60ParvORegular = (c: CursoSae | undefined): boolean => {
       const esParv = Boolean(c && esNivelParvulario(c.nivel));
       if (c?.regimenProporcion) return c.regimenProporcion === '60_40';
+      if (isEducadoraParvuloDoc && (esParv || !c)) {
+        return regimenParvularioPredominante === '60_40';
+      }
       if (est.regimenProporcion) return est.regimenProporcion === '60_40';
-      return (isEducadoraParvuloDoc && esParv)
-        ? est.porcentajePrioritarios >= 60
-        : est.porcentajePrioritarios >= 80;
+      return est.porcentajePrioritarios >= 80;
     };
 
     // Separar horas de docencia efectiva según régimen del curso (60/40 vs 65/35) para cálculo independiente
@@ -560,6 +567,7 @@ export function calcularDiagnosticoColegio(
       const saldoParv = Math.round((doc.horasContrato - contratoCalcParv) * 10) / 10;
       const minHnlParv = match65.minutosHnl + match60.minutosHnl;
       const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+      const minAulaTablaParv = match65.minutosAula + match60.minutosAula;
       const totalHorasAulaParv = ped65 + ped60;
       const pctRealParv = horasParaDocenciaAula > 0
         ? Math.round((totalHorasAulaParv / horasParaDocenciaAula) * 1000) / 10
@@ -570,18 +578,24 @@ export function calcularDiagnosticoColegio(
         ...auditDoc,
         req65_35: match65.horasContrato,
         req60_40: match60.horasContrato,
+        contratoPonderado65_35: match65.horasContrato,
+        contratoPonderado60_40: match60.horasContrato,
         contratoCalculadoTotal: contratoCalcParv,
         saldoHoras: saldoParv,
         esInfractorExcesoLectivo: saldoParv < 0,
         porcentajeLectivoReal: pctRealParv,
         porcentajeLimitePonderado: pctLimiteParv,
+        minutosLectivosTablaTotal: minAulaTablaParv,
+        minutosLimitePermitido: minAulaTablaParv,
         minutosHnlTotal: minHnlParv,
         minutosRecreoTotal: minRecParv,
         minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
       };
     }
 
-    const maxHAPermitidas = Math.floor(auditDoc.minutosLimitePermitido / 45);
+    const maxHAPermitidas = isEducadoraParvuloDoc
+      ? Math.round((auditDoc.minutosLimitePermitido / 60) * 100) / 100
+      : Math.floor(auditDoc.minutosLimitePermitido / 45);
     horasLectivasDisponibles += maxHAPermitidas;
 
     const totalHADocente = ped65 + ped60;
@@ -1236,13 +1250,20 @@ export function obtenerDocentesConsolidadosTerritorio(
         Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
         Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal));
 
+      const cursosParvulariosColegio = cursosColegio.filter(x => esNivelParvulario(x.nivel));
+      const regimenParvularioPredominante: '65_35' | '60_40' =
+        cursosParvulariosColegio.find(x => x.regimenProporcion)?.regimenProporcion ||
+        (('regimenProporcion' in colegio && colegio.regimenProporcion) ? colegio.regimenProporcion : undefined) ||
+        '65_35';
+
       const esCurso60ParvORegular = (c: CursoSae | undefined): boolean => {
         const esParv = Boolean(c && esNivelParvulario(c.nivel));
         if (c?.regimenProporcion) return c.regimenProporcion === '60_40';
+        if (isEducadoraParvuloDoc && (esParv || !c)) {
+          return regimenParvularioPredominante === '60_40';
+        }
         if ('regimenProporcion' in colegio && colegio.regimenProporcion) return colegio.regimenProporcion === '60_40';
-        return (isEducadoraParvuloDoc && esParv)
-          ? colegio.porcentajePrioritarios >= 60
-          : colegio.porcentajePrioritarios >= 80;
+        return colegio.porcentajePrioritarios >= 80;
       };
 
       const horasAula65_35 = asigsDocenciaAulaEfectiva
@@ -1278,6 +1299,7 @@ export function obtenerDocentesConsolidadosTerritorio(
         const saldoParv = Math.round((doc.horasContrato - contratoCalcParv) * 10) / 10;
         const minHnlParv = match65.minutosHnl + match60.minutosHnl;
         const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+        const minAulaTablaParv = match65.minutosAula + match60.minutosAula;
         const totalHorasAulaParv = horasAula65_35 + horasAula60_40;
         const pctRealParv = horasDocenciaNeta > 0
           ? Math.round((totalHorasAulaParv / horasDocenciaNeta) * 1000) / 10
@@ -1288,11 +1310,15 @@ export function obtenerDocentesConsolidadosTerritorio(
           ...auditMulti,
           req65_35: match65.horasContrato,
           req60_40: match60.horasContrato,
+          contratoPonderado65_35: match65.horasContrato,
+          contratoPonderado60_40: match60.horasContrato,
           contratoCalculadoTotal: contratoCalcParv,
           saldoHoras: saldoParv,
           esInfractorExcesoLectivo: saldoParv < 0,
           porcentajeLectivoReal: pctRealParv,
           porcentajeLimitePonderado: pctLimiteParv,
+          minutosLectivosTablaTotal: minAulaTablaParv,
+          minutosLimitePermitido: minAulaTablaParv,
           minutosHnlTotal: minHnlParv,
           minutosRecreoTotal: minRecParv,
           minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
@@ -1351,7 +1377,9 @@ export function obtenerDocentesConsolidadosTerritorio(
         alertaFinanciamientoSepPie = `Improcedencia Financiera: El docente imparte ${horasAulaPlanEstudioYJec} HA de Plan de Estudio titular que exigen ${contratoReqSubvencionGeneral}h de Subvención General, pero su contrato solo dispone de ${subvencionGeneralContratoTotal}h de Subv. General (Déficit: ${deficitSubvencionGeneral}h cubiertas improcedentemente con fondos SEP o PIE).`;
       }
 
-      const maxPermitidasDoc = (isPieDoc && auditMulti.minutosLimitePermitido === 0 && horasDocenciaNeta > 0)
+      const maxPermitidasDoc = isEducadoraParvuloDoc
+        ? Math.round((auditMulti.minutosLimitePermitido / 60) * 100) / 100
+        : (isPieDoc && auditMulti.minutosLimitePermitido === 0 && horasDocenciaNeta > 0)
         ? calculo.horasPedagogicasDisponiblesMax
         : Math.floor(auditMulti.minutosLimitePermitido / 45);
       const minsLectivosDoc = (isPieDoc && auditMulti.minutosLectivosTablaTotal === 0 && horasDocenciaNeta > 0)
@@ -1366,6 +1394,10 @@ export function obtenerDocentesConsolidadosTerritorio(
       const minsPlan40Doc = (isPieDoc && auditMulti.minutosHnlPlanificacion40 === 0 && horasDocenciaNeta > 0)
         ? Math.round(calculo.minutosNoLectivosCalculados * 0.40)
         : auditMulti.minutosHnlPlanificacion40;
+
+      const regimenEfectivoContrato: '60/40' | '65/35' = isEducadoraParvuloDoc
+        ? (horasAula60_40 > horasAula65_35 ? '60/40' : (horasAula65_35 > 0 ? '65/35' : (regimenParvularioPredominante === '60_40' ? '60/40' : '65/35')))
+        : regimen;
 
       contratos.push({
         colegio,
@@ -1382,8 +1414,8 @@ export function obtenerDocentesConsolidadosTerritorio(
         horasAulaRegular: pedAulaRegular,
         esExentoProporcion: horasDocenciaNeta === 0,
         horasPedagogicasAsignadas: pedTotalAsignadas,
-        regimen,
-        maxHorasPedagogicasMineduc: doc.aplicaArticulo69 ? Math.min(maxPermitidasDoc, 32) : maxPermitidasDoc,
+        regimen: regimenEfectivoContrato,
+        maxHorasPedagogicasMineduc: doc.aplicaArticulo69 ? Math.min(maxPermitidasDoc, isEducadoraParvuloDoc ? 24 : 32) : maxPermitidasDoc,
         minutosLectivosMineduc: doc.aplicaArticulo69 ? Math.min(minsLectivosDoc, 1440) : minsLectivosDoc,
         minutosRecreoMineduc: minsRecreoDoc,
         minutosNoLectivosMineduc: minsHnlDoc,

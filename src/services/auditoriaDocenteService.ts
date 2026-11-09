@@ -552,12 +552,18 @@ export function auditarCargaDocenteIntegral(
     Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
     Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal));
 
+  const cursosParvulariosColegio = Array.from(cursosMap.values()).filter((x: CursoSae) => esNivelParvulario(x.nivel));
+  const regimenParvularioPredominante: '65_35' | '60_40' =
+    cursosParvulariosColegio.find((x: CursoSae) => x.regimenProporcion)?.regimenProporcion ||
+    '65_35';
+
   const esCurso60ParvORegular = (c: CursoSae | undefined): boolean => {
     const esParv = Boolean(c && esNivelParvulario(c.nivel));
     if (c?.regimenProporcion) return c.regimenProporcion === '60_40';
-    return isEducadoraParvuloDoc && esParv
-      ? porcentajePrioritariosColegio >= 60
-      : porcentajePrioritariosColegio >= 80;
+    if (isEducadoraParvuloDoc && (esParv || !c)) {
+      return regimenParvularioPredominante === '60_40';
+    }
+    return porcentajePrioritariosColegio >= 80;
   };
 
   const ha60_40 = asigsDocenciaAulaEfectiva
@@ -593,6 +599,7 @@ export function auditarCargaDocenteIntegral(
     const saldoParv = Math.round((hContrato - contratoCalcParv) * 10) / 10;
     const minHnlParv = match65.minutosHnl + match60.minutosHnl;
     const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+    const minAulaTablaParv = match65.minutosAula + match60.minutosAula;
     const totalHorasAulaParv = ha65_35 + ha60_40;
     const pctRealParv = horasParaDocenciaAula > 0
       ? Math.round((totalHorasAulaParv / horasParaDocenciaAula) * 1000) / 10
@@ -603,18 +610,24 @@ export function auditarCargaDocenteIntegral(
       ...auditDoc,
       req65_35: match65.horasContrato,
       req60_40: match60.horasContrato,
+      contratoPonderado65_35: match65.horasContrato,
+      contratoPonderado60_40: match60.horasContrato,
       contratoCalculadoTotal: contratoCalcParv,
       saldoHoras: saldoParv,
       esInfractorExcesoLectivo: saldoParv < 0,
       porcentajeLectivoReal: pctRealParv,
       porcentajeLimitePonderado: pctLimiteParv,
+      minutosLectivosTablaTotal: minAulaTablaParv,
+      minutosLimitePermitido: minAulaTablaParv,
       minutosHnlTotal: minHnlParv,
       minutosRecreoTotal: minRecParv,
       minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
     };
   }
 
-  const maxHAPermitidas = Math.floor(auditDoc.minutosLimitePermitido / 45);
+  const maxHAPermitidas = isEducadoraParvuloDoc
+    ? Math.round((auditDoc.minutosLimitePermitido / 60) * 100) / 100
+    : Math.floor(auditDoc.minutosLimitePermitido / 45);
   const horasNoLectivasCronologicas = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
   const horasRecreoCronologicas = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
 

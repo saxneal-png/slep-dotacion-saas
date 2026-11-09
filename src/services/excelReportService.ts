@@ -4,7 +4,7 @@ import {
   consolidarCarteraTerritorial,
   obtenerDocentesConsolidadosTerritorio
 } from './dotacionCalculationService';
-import { Establecimiento, Docente, AsignacionHoraria } from '../types';
+import { Establecimiento, Docente, AsignacionHoraria, CursoSae } from '../types';
 
 /**
  * Genera el archivo Excel corporativo oficial para el SLEP Valle Diguillín
@@ -15,7 +15,8 @@ export async function generarExcelConsolidadoSlep(
   docentes: Docente[],
   diagnosticos: DiagnosticoColegioCompleto[],
   asesorNombre: string = 'UATP SLEP Valle Diguillín',
-  asignaciones: AsignacionHoraria[] = []
+  asignaciones: AsignacionHoraria[] = [],
+  cursos: CursoSae[] = []
 ): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SLEP Valle Diguillín - Sistema de Dotación Docente';
@@ -341,7 +342,7 @@ export async function generarExcelConsolidadoSlep(
   // ===========================================================================
   // HOJA 5: NÓMINA DOCENTE TERRITORIAL & FINANCIAMIENTO (SUBV. GENERAL / SEP / PIE)
   // ===========================================================================
-  const docentesTerritorio = obtenerDocentesConsolidadosTerritorio(establecimientos, docentes, asignaciones);
+  const docentesTerritorio = obtenerDocentesConsolidadosTerritorio(establecimientos, docentes, asignaciones, cursos);
   const wsNominaTerritorial = workbook.addWorksheet('Nómina Docente Territorial', {
     views: [{ showGridLines: true }]
   });
