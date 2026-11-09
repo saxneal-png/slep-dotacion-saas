@@ -26,7 +26,8 @@ import {
   esNivelParvulario,
   calcularDotacionParvulariaCurso,
   CATALOGO_BCEP_PARVULARIA,
-  resolverCodigoYAmbitoAsignatura
+  resolverCodigoYAmbitoAsignatura,
+  coincideAsignacionConNucleoBcep
 } from '@slep/mineduc-engine';
 import {
   ModalAsignarDocencia,
@@ -228,8 +229,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   };
 
   // Helper para discriminar Co-Docencia no PIE / Agrupaciones Flexibles (independiente de su fuente de financiamiento)
+  // En Educación Parvularia (DTO 306), la 2da Educadora complementaria es parte integral de la cobertura curricular
+  // y NO debe ser tratada como apoyo prescindible fuera del plan.
   const esCoDocenciaNoPie = (a: AsignacionHoraria) => {
     if (esApoyoPie(a)) return false;
+    if (a.esCoDocenciaParvularia) return false;
     return (
       a.esCoDocencia === true ||
       a.esAgrupacionFlexible === true ||
@@ -295,10 +299,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   const dotacionParvularia = useMemo(() => {
     if (!esCursoParvulario || !cursoActivo || !colegio) return null;
-    const asigTitular = asignaciones.find(
-      a => a.cursoId === cursoActivo.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
-    );
-    const docTitular = asigTitular ? docentes.find(d => d.id === asigTitular.docenteId) : null;
 
     // Calcular minutos/horas reales asignadas a la titular y a la 2da educadora
     // En Parvularia (DTO 306), la permanencia es cubierta ÚNICA y EXCLUSIVAMENTE por Educadoras de Párvulos.
@@ -310,9 +310,41 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         d.estamento === 'EDUCADORA_PARVULO' ||
         Boolean(d.esEducadoraParvulo) ||
         Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
-        Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo))
+        Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
+        Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal))
       ));
     });
+
+    // Determinar la educadora titular basándonos en la mayor carga horaria regular
+    const mapaHoras = new Map<string, number>();
+    asigsCursoParv.forEach(a => {
+      const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+      const esCoDoc = Boolean(a.esCoDocenciaParvularia || /co-docencia|2da educadora/i.test(a.asignatura));
+      if (!esCoDoc) {
+        mapaHoras.set(a.docenteId, (mapaHoras.get(a.docenteId) || 0) + h);
+      }
+    });
+
+    let titularId = '';
+    let maxH = -1;
+    mapaHoras.forEach((h, docId) => {
+      if (h > maxH) {
+        maxH = h;
+        titularId = docId;
+      }
+    });
+
+    if (!titularId && asigsCursoParv.length > 0) {
+      titularId = asigsCursoParv[0].docenteId;
+    }
+
+    const docTitular = titularId ? docentes.find(d => d.id === titularId) : null;
+    const horasNoAulaTit = docTitular
+      ? ((docTitular.funcionesNoAula && docTitular.funcionesNoAula.length > 0)
+          ? docTitular.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+          : ((docTitular.horasCoordinacionPie || 0) + (docTitular.horasDirectivas || 0) + (docTitular.horasInspectorGeneral || 0) + (docTitular.horasTecnicoPedagogicas || 0) + (docTitular.horasCoordinacion || 0) + (docTitular.horasTrabajoColaborativo || 0)))
+      : 0;
+    const horasDispAulaTit = docTitular ? Math.max(0, (docTitular.horasContrato || 0) - horasNoAulaTit) : 0;
 
     let horasTitular = 0;
     let horasSegunda = 0;
@@ -332,10 +364,16 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         letra: cursoActivo.letra,
         regimen: cursoActivo.regimen,
         matriculaProyectada: cursoActivo.matriculaProyectada,
-        esCombinado: cursoActivo.esCombinado
+        esCombinado: cursoActivo.esCombinado,
+        regimenProporcion: cursoActivo.regimenProporcion
       },
       colegio.porcentajePrioritarios,
-      docTitular ? { horasContrato: docTitular.horasContrato, aplicaArticulo69: docTitular.aplicaArticulo69 } : null,
+      docTitular ? {
+        horasContrato: docTitular.horasContrato,
+        horasNoAulaDeducibles: horasNoAulaTit,
+        horasContratoDisponiblesAula: horasDispAulaTit,
+        aplicaArticulo69: docTitular.aplicaArticulo69
+      } : null,
       {
         horasAsignadasTitular: horasTitular,
         horasAsignadasSegundaEducadora: horasSegunda
@@ -662,13 +700,32 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
       const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
       const asigsDoc = asignaciones.filter(a => 
         (a.cursoId === c.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(c.id))) && 
-        !esApoyoPie(a)
+        !esApoyoPie(a) &&
+        !esCoDocenciaNoPie(a) &&
+        !a.esTallerSep &&
+        a.tipoApoyo !== 'TALLER_SEP' &&
+        !a.esTrabajoColaborativo &&
+        a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
       );
       const totDocAsig = asigsDoc.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
-      if (filtroCoberturaCurso === 'COMPLETO') matchCobertura = totDocAsig === hrsPlan;
-      else if (filtroCoberturaCurso === 'DEFICIT') matchCobertura = totDocAsig < hrsPlan;
-      else if (filtroCoberturaCurso === 'SOBRE') matchCobertura = totDocAsig > hrsPlan;
+      // Si es curso parvulario, verificar permanencia cubierta
+      const esParvC = esNivelParvulario(c.nivel);
+      if (esParvC) {
+        // En JEC son 35h 25m (~35.42h), sin JEC 22h
+        const metaMins = c.regimen === 'JEC' ? 2125 : 1320;
+        const minsAsignados = Math.round(totDocAsig * 60);
+        const completo = minsAsignados >= (metaMins - 15);
+        const sobre = minsAsignados > (metaMins + 30);
+
+        if (filtroCoberturaCurso === 'COMPLETO') matchCobertura = completo && !sobre;
+        else if (filtroCoberturaCurso === 'DEFICIT') matchCobertura = !completo;
+        else if (filtroCoberturaCurso === 'SOBRE') matchCobertura = sobre;
+      } else {
+        if (filtroCoberturaCurso === 'COMPLETO') matchCobertura = totDocAsig === hrsPlan;
+        else if (filtroCoberturaCurso === 'DEFICIT') matchCobertura = totDocAsig < hrsPlan;
+        else if (filtroCoberturaCurso === 'SOBRE') matchCobertura = totDocAsig > hrsPlan;
+      }
     }
 
     return matchTexto && matchCiclo && matchRegimen && matchCobertura;
@@ -933,10 +990,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 const esParvC = esNivelParvulario(c.nivel);
                 let parvInfo = null;
                 if (esParvC && colegio) {
-                  const asigTitular = asignaciones.find(
-                    a => a.cursoId === c.id && !a.esCoDocencia && !a.esCoDocenciaParvularia && !a.esTallerSep && !a.esTrabajoColaborativo
-                  );
-                  const docTitular = asigTitular ? docentes.find(d => d.id === asigTitular.docenteId) : null;
                   const asigsCursoParv = asignaciones.filter(a => {
                     if (a.cursoId !== c.id || esApoyoPie(a) || a.esTrabajoColaborativo || a.esTallerSep) return false;
                     const d = docentes.find(doc => doc.id === a.docenteId);
@@ -944,9 +997,36 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       d.estamento === 'EDUCADORA_PARVULO' ||
                       Boolean(d.esEducadoraParvulo) ||
                       Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
-                      Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo))
+                      Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
+                      Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal))
                     ));
                   });
+
+                  // Determinar la titular según mayor carga regular
+                  const mapaHC = new Map<string, number>();
+                  asigsCursoParv.forEach(a => {
+                    const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+                    if (!a.esCoDocenciaParvularia && !/co-docencia|2da educadora/i.test(a.asignatura)) {
+                      mapaHC.set(a.docenteId, (mapaHC.get(a.docenteId) || 0) + h);
+                    }
+                  });
+                  let cTitId = '';
+                  let cMaxH = -1;
+                  mapaHC.forEach((hVal, dId) => {
+                    if (hVal > cMaxH) {
+                      cMaxH = hVal;
+                      cTitId = dId;
+                    }
+                  });
+                  if (!cTitId && asigsCursoParv.length > 0) cTitId = asigsCursoParv[0].docenteId;
+
+                  const docTitular = cTitId ? docentes.find(d => d.id === cTitId) : null;
+                  const cNoAula = docTitular
+                    ? ((docTitular.funcionesNoAula && docTitular.funcionesNoAula.length > 0)
+                        ? docTitular.funcionesNoAula.reduce((s, f) => s + (Number(f.horas) || 0), 0)
+                        : ((docTitular.horasCoordinacionPie || 0) + (docTitular.horasDirectivas || 0) + (docTitular.horasInspectorGeneral || 0) + (docTitular.horasTecnicoPedagogicas || 0) + (docTitular.horasCoordinacion || 0) + (docTitular.horasTrabajoColaborativo || 0)))
+                    : 0;
+                  const cDispAula = docTitular ? Math.max(0, (docTitular.horasContrato || 0) - cNoAula) : 0;
 
                   let hTitular = 0;
                   let hSegunda = 0;
@@ -965,10 +1045,16 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       letra: c.letra,
                       regimen: c.regimen,
                       matriculaProyectada: c.matriculaProyectada,
-                      esCombinado: c.esCombinado
+                      esCombinado: c.esCombinado,
+                      regimenProporcion: c.regimenProporcion
                     },
                     colegio.porcentajePrioritarios,
-                    docTitular ? { horasContrato: docTitular.horasContrato, aplicaArticulo69: docTitular.aplicaArticulo69 } : null,
+                    docTitular ? {
+                      horasContrato: docTitular.horasContrato,
+                      horasNoAulaDeducibles: cNoAula,
+                      horasContratoDisponiblesAula: cDispAula,
+                      aplicaArticulo69: docTitular.aplicaArticulo69
+                    } : null,
                     {
                       horasAsignadasTitular: hTitular,
                       horasAsignadasSegundaEducadora: hSegunda
@@ -1585,7 +1671,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                   }`}
                 >
                   <BookOpen className="w-4 h-4" />
-                  <span>Docencia de Aula ({totalHorasDocenciaAsignadas}/{horasPlanCurso} HA)</span>
+                  <span>
+                    {esCursoParvulario && dotacionParvularia
+                      ? `Docencia de Aula & Permanencia (${dotacionParvularia.minutosCubiertosTotalesTexto} / ${dotacionParvularia.permanenciaTexto})`
+                      : `Docencia de Aula (${totalHorasDocenciaAsignadas}/${horasPlanCurso} HA)`}
+                  </span>
                 </button>
 
                 <button
@@ -1777,7 +1867,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       {esCursoParvulario && cursoActivo ? (
                         CATALOGO_BCEP_PARVULARIA.map((b) => {
                           const hrsSug = cursoActivo.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
-                          const asigsNucleo = asignacionesCurso.filter(a => !a.esTallerSep && !a.esTrabajoColaborativo && a.asignatura.trim().toLowerCase() === b.nucleo.toLowerCase());
+                          const asigsNucleo = asignacionesCurso.filter(a => !a.esTallerSep && !a.esTrabajoColaborativo && coincideAsignacionConNucleoBcep(a.asignatura, b));
                           const hrsAsig = asigsNucleo.reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
                           const hrsRestantes = Math.max(0, Math.round((hrsSug - hrsAsig) * 100) / 100);
                           const cubierto = hrsRestantes <= 0.01;

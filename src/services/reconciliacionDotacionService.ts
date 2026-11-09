@@ -6,7 +6,8 @@ import {
   esModalidadTp,
   esModalidadMultigradoOCombinado,
   esModalidadAdultos,
-  esModalidadEspecial
+  esModalidadEspecial,
+  esNivelParvulario
 } from '@slep/mineduc-engine';
 import {
   reconciliarYLimpiarAsignacionesEnDb,
@@ -113,16 +114,20 @@ export function analizarSincronizacionDotacion(
 
   // 4. Evaluar cursos con déficit de cobertura
   const cursosIncompletos = cursos.map(c => {
+    const esParvC = esNivelParvulario(c.nivel);
     const plan = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
-    const hrsPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
+    const hrsPlan = esParvC
+      ? (c.regimen === 'JEC' ? 35.42 : 22)
+      : (plan ? plan.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp));
+    
     const asigsC = asignaciones.filter(a => 
       a.cursoId === c.id && 
       !a.tipoApoyo?.toLowerCase().includes('pie') && 
-      !a.esCoDocencia && 
+      (!a.esCoDocencia || (esParvC && Boolean(a.esCoDocenciaParvularia))) && 
       !a.esTallerSep
     );
     const horasAsignadas = asigsC.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-    const deficit = Math.max(0, hrsPlan - horasAsignadas);
+    const deficit = Math.max(0, Math.round((hrsPlan - horasAsignadas) * 100) / 100);
 
     return {
       curso: c,
@@ -130,7 +135,7 @@ export function analizarSincronizacionDotacion(
       horasAsignadas,
       deficit
     };
-  }).filter(c => c.deficit > 0);
+  }).filter(c => c.deficit > 0.05);
 
   const estaSincronizado = huerfanasCount === 0 && duplicadasCount === 0;
 

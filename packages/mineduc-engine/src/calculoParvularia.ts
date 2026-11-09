@@ -124,8 +124,52 @@ export const CATALOGO_BCEP_PARVULARIA: NucleoParvulariaBcep[] = [
 ];
 
 /**
- * Determina si el nivel o curso corresponde a Educación Parvularia (NT1, NT2, Kínder, Pre-Kínder o Combinado Parvulario).
+ * Normaliza nombres curriculares para conciliación entre Ámbitos generales y Núcleos BCEP.
  */
+function normalizarTextoParvularia(texto: string): string {
+  return (texto || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Determina si una asignatura asignada corresponde o aporta a un núcleo BCEP específico,
+ * considerando equivalencias por nombre de núcleo, por ámbito curricular o co-docencia / permanencia general DTO 306.
+ */
+export function coincideAsignacionConNucleoBcep(
+  asignaturaAsignada: string,
+  nucleoBcep: NucleoParvulariaBcep
+): boolean {
+  const asigNorm = normalizarTextoParvularia(asignaturaAsignada);
+  const nucleoNorm = normalizarTextoParvularia(nucleoBcep.nucleo);
+  const ambitoNorm = normalizarTextoParvularia(nucleoBcep.ambito);
+
+  // 1. Coincidencia directa por nombre de núcleo
+  if (asigNorm === nucleoNorm || asigNorm.includes(nucleoNorm) || nucleoNorm.includes(asigNorm)) {
+    return true;
+  }
+
+  // 2. Coincidencia por Ámbito Curricular general
+  if (asigNorm.includes(ambitoNorm) || ambitoNorm.includes(asigNorm)) {
+    return true;
+  }
+
+  // 3. Casos comunes abreviados o descriptivos
+  if (nucleoBcep.id === 'bcep_identidad' && /identidad|autonom/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_convivencia' && /convivencia|ciudadan/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_corporalidad' && /corporal|movimiento|motricidad|psicomot/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_lenguaje_verbal' && /lenguaje verbal|comunicacion verbal|iniciacion lectura/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_lenguajes_artisticos' && /artistico|musica|expresion plastica|artes visuales/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_entorno_natural' && /entorno natural|ciencias natural|naturaleza|medio ambiente/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_entorno_sociocultural' && /sociocultural|social|patrimonio|comunidad/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_pensamiento_matematico' && /matematic|pensamiento logico|calculo/i.test(asigNorm)) return true;
+  if (nucleoBcep.id === 'bcep_talleres_integrados' && /juego libre|taller jec|libre disposicion|experiencias integradas|taller desarrollo/i.test(asigNorm)) return true;
+
+  return false;
+}
+
 export function esNivelParvulario(nivelOCurso: string): boolean {
   if (!nivelOCurso) return false;
   const n = nivelOCurso.toLowerCase().trim();
@@ -246,6 +290,7 @@ export interface InputCursoParvularia {
   matriculaProyectada: number;
   esCombinado?: boolean;
   permanenciaMinutosCustom?: number;
+  regimenProporcion?: RegimenHorario;
 }
 
 export interface InputEducadoraTitular {
@@ -316,11 +361,14 @@ export function calcularDotacionParvulariaCurso(
   asignacionesReales?: InputAsignacionesRealesParvularia | null
 ): ResultadoDotacionParvulariaCurso {
   // 1. Determinar Régimen Normativo:
-  // En NT1 y NT2, colegios con >= 60% prioritarios pasan obligatoriamente a régimen 60/40 (Ley 20.903)
-  const regimenNormativo: RegimenHorario = determinarRegimenNormativo(
-    porcentajePrioritariosColegio,
-    true // Es ciclo inicial parvulario
-  );
+  // Si el curso especifica explícitamente su régimen ('65_35' o '60_40'), se respeta con máxima prioridad.
+  // De lo contrario, en NT1 y NT2 colegios con >= 60% prioritarios pasan a régimen 60/40 (Ley 20.903)
+  const regimenNormativo: RegimenHorario = curso.regimenProporcion
+    ? curso.regimenProporcion
+    : determinarRegimenNormativo(
+        porcentajePrioritariosColegio,
+        true // Es ciclo inicial parvulario
+      );
 
   // 2. Determinar Permanencia Requerida del Curso (Minutos)
   const permanenciaMinutos = determinarPermanenciaParvularia(

@@ -29,7 +29,8 @@ import {
   obtenerTramoMineduc,
   formatearMinutosAHHMM,
   CATALOGO_BCEP_PARVULARIA,
-  resolverCodigoYAmbitoAsignatura
+  resolverCodigoYAmbitoAsignatura,
+  coincideAsignacionConNucleoBcep
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
 
@@ -2328,7 +2329,15 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const horasDispAulaTitular = Math.max(0, (titularDocente.horasContrato || 0) - horasNoAulaTitular);
 
     const resultado = calcularDotacionParvulariaCurso(
-      cursoParv,
+      {
+        id: cursoParv.id,
+        nivel: cursoParv.nivel,
+        letra: cursoParv.letra,
+        regimen: cursoParv.regimen,
+        matriculaProyectada: cursoParv.matriculaProyectada,
+        esCombinado: cursoParv.esCombinado,
+        regimenProporcion: cursoParv.regimenProporcion
+      },
       colegio.porcentajePrioritarios,
       {
         horasContrato: titularDocente.horasContrato || 0,
@@ -2434,8 +2443,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       const c = cursos.find(cur => cur.id === a.cursoId);
       const esParvCurso = Boolean(c && esNivelParvulario(c.nivel));
       const es60 = (esEducadora && esParvCurso)
-        ? (c?.regimenProporcion === '60_40' || colegio.porcentajePrioritarios >= 60)
-        : (c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80));
+        ? (c?.regimenProporcion ? c.regimenProporcion === '60_40' : (colegio.regimenProporcion ? colegio.regimenProporcion === '60_40' : colegio.porcentajePrioritarios >= 60))
+        : (c?.regimenProporcion ? c.regimenProporcion === '60_40' : (colegio.regimenProporcion ? colegio.regimenProporcion === '60_40' : colegio.porcentajePrioritarios >= 80));
       const ha = getHorasAulaLectivaAsig(a);
 
       // IMPORTANTE: Solo las Educadoras de Párvulos se calculan en horas cronológicas de 60 min (DTO 306).
@@ -2483,7 +2492,10 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const reqContratoAulaTotal = reqContrato65 + reqContrato60;
 
     // Tope máximo de horas de aula (60m) que la educadora puede hacer con su jornada contratada disponible
-    const regDefectoParv: '65_35' | '60_40' = colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35';
+    // Se prioriza el régimen explícito del curso activo parvulario o del establecimiento
+    const regDefectoParv: '65_35' | '60_40' = cursoParvularioActivo?.regimenProporcion
+      ? cursoParvularioActivo.regimenProporcion
+      : (colegio.regimenProporcion ? colegio.regimenProporcion : (colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35'));
     const tramoTopeEducadora = obtenerTramoMineduc(horasContratoDisponiblesAula, regDefectoParv);
     const minsTopeEducadora = tramoTopeEducadora
       ? tramoTopeEducadora.lectivasMinutosCronologicos
@@ -2539,7 +2551,9 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
   // Lista exclusiva de Educadoras de Párvulos disponibles en el colegio con su capacidad de aula (60m) y contrato libre
   const educadorasDisponibles = useMemo(() => {
-    const regParv: '65_35' | '60_40' = colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35';
+    const regParv: '65_35' | '60_40' = cursoParvularioActivo?.regimenProporcion
+      ? cursoParvularioActivo.regimenProporcion
+      : (colegio.regimenProporcion ? colegio.regimenProporcion : (colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35'));
 
     const mapeados = docentes.map(d => {
       const esEdParv = d.estamento === 'EDUCADORA_PARVULO' ||
@@ -3347,7 +3361,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   const renderBotonNucleo = (b: typeof CATALOGO_BCEP_PARVULARIA[number]) => {
                     const hrsPlanNucleo = cursoInspeccion.regimen === 'JEC' ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas;
                     const hrsYaAsignadasNucleo = asigsCursoParv
-                      .filter(a => a.asignatura.trim().toLowerCase() === b.nucleo.toLowerCase())
+                      .filter(a => coincideAsignacionConNucleoBcep(a.asignatura, b))
                       .reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
 
                     const hrsRestantesNucleo = Math.max(0, Math.round((hrsPlanNucleo - hrsYaAsignadasNucleo) * 100) / 100);

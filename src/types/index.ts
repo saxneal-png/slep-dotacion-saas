@@ -16,6 +16,7 @@ export interface Establecimiento {
   comuna: ComunaValleDiguillin;
   regimen: RegimenJornada;
   porcentajePrioritarios: number; // >= 80% aplica 60/40
+  regimenProporcion?: '65_35' | '60_40';
   director?: string;
   asesorUatp?: string;
   telefono?: string;
