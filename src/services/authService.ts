@@ -1,5 +1,5 @@
-import { UsuarioSistema, UserRole, PermisosRol, AuthSession } from '../types/authTypes';
-import { normalizarRol } from '../security/rolesDefinitions';
+import { UsuarioSistema, UserRole, PermisosRol, AuthSession, RolId, EstadoPausaRevision, ResumenEstamentoPausa } from '../types/authTypes';
+import { normalizarRol, ROLES_DEFINICIONES } from '../security/rolesDefinitions';
 import { RolesPermisosService } from './rolesPermisosService';
 import { DIRECTORES_TERRITORIO, DirectorItem } from '../data/directoresTerritorio';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
@@ -20,6 +20,27 @@ import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 
 const STORAGE_USERS_KEY = 'slep_usuarios_sistema_v2';
 const STORAGE_SESSION_KEY = 'slep_auth_session_v1';
+export const STORAGE_PAUSA_KEY = 'slep_pausa_revision_interna_v1';
+
+/**
+ * Roles estrictamente excluidos y blindados de cualquier inactivación o pausa masiva.
+ * Garantiza que Super Usuarios, Asesores UATP, Coordinadores UATP y Subdirectores mantengan acceso ininterrumpido.
+ */
+export const ROLES_EXENTOS_PAUSA: readonly RolId[] = [
+  'super_usuario',
+  'subdirector_uatp',
+  'coordinador_uatp',
+  'asesor_uatp'
+] as const;
+
+/**
+ * Roles que corresponden al estamento de establecimientos escolares,
+ * cuyo trabajo de edición se congela temporalmente para iniciar la revisión interna UATP.
+ */
+export const ROLES_PAUSABLES_ESTAMENTO: readonly RolId[] = [
+  'director_establecimiento',
+  'jefe_utp_establecimiento'
+] as const;
 
 // FunciÃ³n para derivar hash criptogrÃ¡fico usando SHA-256 con Salt
 export async function hashPassword(password: string, salt: string): Promise<string> {
@@ -322,6 +343,13 @@ export class AuthService {
 
     // Si el usuario estÃ¡ registrado pero fue deshabilitado
     if (encontrado && !encontrado.activo) {
+      const pausa = this.getEstadoPausaRevision();
+      const rolNorm = normalizarRol(encontrado.role);
+      if (pausa?.activa && pausa.rolesAfectados.includes(rolNorm)) {
+        throw new Error(
+          `Acceso pausado por Revisión Interna UATP: El trabajo para su estamento se encuentra suspendido temporalmente mientras el equipo territorial realiza la auditoría de dotación. Motivo: ${pausa.motivo || 'Revisión técnica en curso'}.`
+        );
+      }
       throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
     }
     if (!encontrado) {
@@ -827,4 +855,216 @@ export class AuthService {
       errores
     };
   }
+
+  /**
+   * Obtiene el estado actual de la pausa de revisión interna territorial.
+   */
+  public static getEstadoPausaRevision(): EstadoPausaRevision | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_PAUSA_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as EstadoPausaRevision;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Retorna los roles excluidos/protegidos por diseño institucional de cualquier pausa.
+   */
+  public static getRolesExentosPausa(): RolId[] {
+    return [...ROLES_EXENTOS_PAUSA];
+  }
+
+  /**
+   * Retorna los roles de estamento escolar susceptibles de ser pausados.
+   */
+  public static getRolesPausables(): RolId[] {
+    return [...ROLES_PAUSABLES_ESTAMENTO];
+  }
+
+  /**
+   * Obtiene un resumen en vivo de usuarios totales, activos e inactivos por estamento/rol.
+   */
+  public static async getResumenEstamentos(): Promise<ResumenEstamentoPausa[]> {
+    const usuarios = await this.getUsuarios();
+    return ROLES_DEFINICIONES.map(def => {
+      const usersRol = usuarios.filter(u => normalizarRol(u.role) === def.id);
+      const activos = usersRol.filter(u => u.activo !== false).length;
+      const inactivos = usersRol.length - activos;
+      return {
+        rol: def.id,
+        nombre: def.nombre,
+        nombreCorto: def.nombreCorto,
+        total: usersRol.length,
+        activos,
+        inactivos,
+        esProtegido: ROLES_EXENTOS_PAUSA.includes(def.id),
+        alcance: def.alcance,
+        color: def.color
+      };
+    });
+  }
+
+  /**
+   * Pausa masivamente el acceso a los estamentos seleccionados para iniciar la revisión interna.
+   * Cierra las sesiones activas de dichos estamentos y bloquea nuevos accesos.
+   * GARANTÍA: Asesores UATP, Coordinadores UATP, Subdirectores y Super Usuarios son estrictamente preservados.
+   */
+  public static async pausarAccesoMasivo(
+    roles: RolId[],
+    motivo: string = 'Revisión técnica interna UATP',
+    usuarioEjecutor?: string
+  ): Promise<{ totalAfectados: number; rolesAfectados: RolId[] }> {
+    // Filtrar estrictamente excluyendo cualquier rol protegido
+    const rolesValidos = Array.from(new Set(roles)).filter(r => !ROLES_EXENTOS_PAUSA.includes(r));
+    if (rolesValidos.length === 0) {
+      throw new Error('No se seleccionó ningún estamento válido para pausar o todos los roles seleccionados están protegidos por diseño.');
+    }
+
+    const usuarios = await this.getUsuarios();
+    const modificados: UsuarioSistema[] = [];
+
+    const usuariosActualizados = usuarios.map(u => {
+      const emailNorm = (u.email || '').toLowerCase();
+      const rolNorm = normalizarRol(u.role);
+
+      // Nunca alterar al super usuario oficial ni a los roles protegidos
+      if (emailNorm === SUPER_USUARIO_EMAIL || ROLES_EXENTOS_PAUSA.includes(rolNorm)) {
+        return u;
+      }
+
+      if (rolesValidos.includes(rolNorm) && u.activo) {
+        const uModificado: UsuarioSistema = { ...u, activo: false };
+        modificados.push(uModificado);
+        return uModificado;
+      }
+      return u;
+    });
+
+    // Guardar estado de la pausa
+    const estadoPausa: EstadoPausaRevision = {
+      activa: true,
+      rolesAfectados: rolesValidos,
+      motivo: motivo.trim() || 'Revisión técnica interna territorial UATP',
+      activadoPor: usuarioEjecutor || 'Super Usuario',
+      fechaActivacion: new Date().toISOString()
+    };
+    localStorage.setItem(STORAGE_PAUSA_KEY, JSON.stringify(estadoPausa));
+    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuariosActualizados));
+
+    // Persistir en SQLite WASM y Supabase
+    if (modificados.length > 0) {
+      await guardarUsuariosBatchDb(modificados);
+    }
+
+    // Invalidar sesión activa local si el usuario autenticado pertenece al estamento pausado
+    const sesionActual = this.getSessionActual();
+    if (sesionActual) {
+      const miRol = normalizarRol(sesionActual.usuario.role);
+      const miEmail = (sesionActual.usuario.email || '').toLowerCase();
+      if (miEmail !== SUPER_USUARIO_EMAIL && rolesValidos.includes(miRol)) {
+        this.logout();
+      }
+    }
+
+    // Emitir evento para invalidación reactiva de sesiones en navegadores
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('slep:sesiones_pausadas', { detail: estadoPausa }));
+    }
+
+    return {
+      totalAfectados: modificados.length,
+      rolesAfectados: rolesValidos
+    };
+  }
+
+  /**
+   * Reactiva el acceso masivamente para los estamentos especificados (o todos los pausados).
+   */
+  public static async reactivarAccesoMasivo(
+    roles?: RolId[]
+  ): Promise<{ totalReactivados: number; rolesReactivados: RolId[] }> {
+    const estadoPrevio = this.getEstadoPausaRevision();
+    const rolesAReactivar = roles && roles.length > 0
+      ? Array.from(new Set(roles))
+      : (estadoPrevio?.rolesAfectados || ROLES_PAUSABLES_ESTAMENTO.slice());
+
+    const usuarios = await this.getUsuarios();
+    const modificados: UsuarioSistema[] = [];
+
+    const usuariosActualizados = usuarios.map(u => {
+      const rolNorm = normalizarRol(u.role);
+      if (rolesAReactivar.includes(rolNorm) && !u.activo) {
+        const uMod: UsuarioSistema = { ...u, activo: true };
+        modificados.push(uMod);
+        return uMod;
+      }
+      return u;
+    });
+
+    // Actualizar estado de pausa
+    const rolesRestantes = (estadoPrevio?.rolesAfectados || []).filter(r => !rolesAReactivar.includes(r));
+    if (rolesRestantes.length === 0) {
+      localStorage.removeItem(STORAGE_PAUSA_KEY);
+    } else {
+      localStorage.setItem(STORAGE_PAUSA_KEY, JSON.stringify({
+        ...estadoPrevio,
+        rolesAfectados: rolesRestantes
+      }));
+    }
+
+    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuariosActualizados));
+
+    if (modificados.length > 0) {
+      await guardarUsuariosBatchDb(modificados);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('slep:sesiones_reactivadas', { detail: { rolesReactivados: rolesAReactivar } }));
+    }
+
+    return {
+      totalReactivados: modificados.length,
+      rolesReactivados: rolesAReactivar
+    };
+  }
+
+  /**
+   * Verifica si una sesión activa sigue siendo válida en el sistema.
+   * Si la cuenta fue inactivada o el estamento fue pausado por revisión interna, retorna valida: false.
+   */
+  public static verificarSesionValida(session: AuthSession | null): { valida: boolean; motivo?: string } {
+    if (!session || !session.usuario) {
+      return { valida: false, motivo: 'Sesión no iniciada.' };
+    }
+
+    const emailNorm = (session.usuario.email || '').toLowerCase();
+    const rolNorm = normalizarRol(session.usuario.role);
+
+    // Super usuario oficial y roles de supervisión UATP siempre son válidos
+    if (emailNorm === SUPER_USUARIO_EMAIL || rolNorm === 'super_usuario') {
+      return { valida: true };
+    }
+
+    const usuarios = this.getUsuariosLocal();
+    const yo = usuarios.find(u => u.id === session.usuario.id || (u.email && u.email.toLowerCase() === emailNorm));
+
+    if (yo && !yo.activo) {
+      const pausa = this.getEstadoPausaRevision();
+      if (pausa?.activa && pausa.rolesAfectados.includes(rolNorm)) {
+        return {
+          valida: false,
+          motivo: 'Sesión pausada: El acceso a su estamento se encuentra suspendido temporalmente por inicio del período de Revisión Interna UATP (' + (pausa.motivo || 'Auditoría técnica') + ').'
+        };
+      }
+      return {
+        valida: false,
+        motivo: 'Su cuenta ha sido deshabilitada por el administrador del sistema.'
+      };
+    }
+
+    return { valida: true };
+  }
+
 }

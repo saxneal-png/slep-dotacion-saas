@@ -240,6 +240,53 @@ export const App: React.FC = () => {
     setTimeout(() => setNotificacion(null), 4000);
   };
 
+  // Validación reactiva y periódica de la vigencia de la sesión activa
+  useEffect(() => {
+    if (!session) return;
+
+    const verificarEstadoSesion = () => {
+      const sesionActual = AuthService.getSessionActual();
+      if (!sesionActual) {
+        setSession(null);
+        return;
+      }
+      const check = AuthService.verificarSesionValida(sesionActual);
+      if (!check.valida) {
+        AuthService.logout();
+        setSession(null);
+        mostrarMensaje(
+          check.motivo || 'Su sesión ha sido pausada temporalmente por período de revisión técnica interna UATP.',
+          'error'
+        );
+      }
+    };
+
+    const handleFocus = () => verificarEstadoSesion();
+    const handleEventoPausa = () => verificarEstadoSesion();
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === 'slep_pausa_revision_interna_v1' ||
+        e.key === 'slep_usuarios_sistema_v2' ||
+        e.key === 'slep_auth_session_v1'
+      ) {
+        verificarEstadoSesion();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('slep:sesiones_pausadas', handleEventoPausa);
+
+    const intervalo = setInterval(verificarEstadoSesion, 15000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('slep:sesiones_pausadas', handleEventoPausa);
+      clearInterval(intervalo);
+    };
+  }, [session]);
+
   const [sincronizandoNube, setSincronizandoNube] = useState(false);
 
   const handleRefrescarDesdeNube = async (apartadoEspecifico?: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general') => {

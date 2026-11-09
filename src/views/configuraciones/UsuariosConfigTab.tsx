@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle, Sparkles, RefreshCw, PauseCircle, PlayCircle, Clock } from 'lucide-react';
 import { AuthService, generateSalt, hashPassword, generarPasswordTemporalSegura } from '../../services/authService';
-import { UsuarioSistema, UserRole } from '../../types/authTypes';
+import { UsuarioSistema, UserRole, EstadoPausaRevision } from '../../types/authTypes';
+import { ModalControlSesionesEstamentos } from '../../components/auth/ModalControlSesionesEstamentos';
 import { Establecimiento } from '../../types';
 import { ROLES_DEFINICIONES, getDefinicionRol, rolesAsignablesPor, normalizarRol } from '../../security/rolesDefinitions';
 import { usePermisos } from '../../security/PermisosContext';
@@ -33,7 +34,8 @@ const CARGO_POR_ROL: Record<UserRole, string> = {
 const SUPER_EMAIL = 'saxneal@gmail.com';
 
 export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, onColegiosActualizados }) => {
-  const { can, rol: rolActor } = usePermisos();
+  const { can, rol: rolActor, esSuperUsuario } = usePermisos();
+  const esSuper = esSuperUsuario || rolActor === 'super_usuario';
   const puedeEditar = can('usuarios.editar');
   const puedeEliminar = can('usuarios.eliminar');
   const rolesAsignables = rolActor ? rolesAsignablesPor(rolActor) : [];
@@ -49,6 +51,8 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const [filtroRol, setFiltroRol] = useState<'todos' | UserRole>('todos');
   const [generandoDirectores, setGenerandoDirectores] = useState(false);
+  const [modalControlSesionesAbierto, setModalControlSesionesAbierto] = useState(false);
+  const [estadoPausaRevision, setEstadoPausaRevision] = useState<EstadoPausaRevision | null>(() => AuthService.getEstadoPausaRevision());
 
   // Form State
   const [username, setUsername] = useState('');
@@ -73,6 +77,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
       }
       const lista = await AuthService.getUsuarios();
       setUsuarios(lista);
+      setEstadoPausaRevision(AuthService.getEstadoPausaRevision());
     } catch (e) {
       console.error('[UsuariosConfigTab] Error cargando usuarios:', e);
     } finally {
@@ -493,7 +498,15 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                     <div className="flex items-center gap-2">
                       <Shield className="w-3.5 h-3.5 text-blue-400" />
                       <span>{u.username}</span>
-                      {!u.activo && <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">Inactivo</span>}
+                      {!u.activo && (
+                        estadoPausaRevision?.activa && estadoPausaRevision.rolesAfectados.includes(normalizarRol(u.role)) ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" /> Pausado
+                          </span>
+                        ) : (
+                          <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">Inactivo</span>
+                        )
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3">

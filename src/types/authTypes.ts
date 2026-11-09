@@ -106,3 +106,25 @@ export interface AuthSession {
   token: string;
   iniciadoEn: string;
 }
+
+/** Estado y bitácora del modo de pausa masiva para revisión interna UATP. */
+export interface EstadoPausaRevision {
+  activa: boolean;
+  rolesAfectados: RolId[];
+  motivo?: string;
+  activadoPor?: string;
+  fechaActivacion?: string;
+}
+
+/** Resumen de métricas de usuarios por estamento para el control de sesiones. */
+export interface ResumenEstamentoPausa {
+  rol: RolId;
+  nombre: string;
+  nombreCorto: string;
+  total: number;
+  activos: number;
+  inactivos: number;
+  esProtegido: boolean;
+  alcance: AlcanceRol;
+  color: string;
+}
