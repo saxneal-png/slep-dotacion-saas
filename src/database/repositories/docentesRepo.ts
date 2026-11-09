@@ -555,6 +555,8 @@ export async function guardarDocentesBatch(
 
 export async function eliminarDocente(id: string): Promise<void> {
   const db = await getDb();
+  // Eliminar asignaciones asociadas a este docente antes para preservar integridad referencial
+  db.run("DELETE FROM asignaciones_horarias WHERE docente_id = ? OR co_docente_id = ?", [id, id]);
   db.run("DELETE FROM docentes WHERE id = ?", [id]);
   await persistDb(true);
   SupabaseDotacionService.eliminarDocente(id).catch(err =>

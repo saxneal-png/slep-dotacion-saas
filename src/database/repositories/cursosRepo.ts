@@ -204,6 +204,8 @@ export async function guardarCursosBatch(cursos: CursoSae[], skipCloudSync: bool
 
 export async function eliminarCurso(id: string): Promise<void> {
   const db = await getDb();
+  // Eliminar asignaciones hijas asociadas antes para no violar la Foreign Key
+  db.run("DELETE FROM asignaciones_horarias WHERE curso_id = ?", [id]);
   db.run("DELETE FROM cursos_sae WHERE id = ?", [id]);
   persistDb();
   SupabaseDotacionService.eliminarCurso(id).catch(err =>
