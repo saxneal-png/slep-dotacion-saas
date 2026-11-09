@@ -354,12 +354,14 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     });
 
     expect(fila1B).toBeDefined();
-    // Horas cargadas no PIE: 8 + 8 + 4 = 20. El plan oficial de 1B JEC es 38. Fallback o cargadas:
-    expect(Number(fila1B.getCell(4).value)).toBe(25); // Matricula
-    expect(Number(fila1B.getCell(5).value)).toBe(1);  // Cursos
-    // Total horas docentes Col H calcula las horas contractuales reglamentarias con la tabla MINEDUC
-    // En 60/40 (est con 85% prioritarios): Math.ceil(20 * 44 / 35) = 26 horas de contrato
-    expect(Number(fila1B.getCell(8).value)).toBe(26);
+    // La matrícula por nivel es la proyectada por los datos de Base Completa adaptada al colegio (23)
+    expect(Number(fila1B.getCell(4).value)).toBe(23); // Matricula proyectada desde Base Completa
+    // Los cursos por nivel y las horas plan son los existentes y trabajados en el SaaS
+    expect(Number(fila1B.getCell(5).value)).toBe(1);  // Cursos del SaaS
+    expect(Number(fila1B.getCell(6).value)).toBe(38); // Horas Plan del SaaS (38h JEC)
+    // Total horas docentes Col H calcula las horas contractuales reglamentarias según tabla oficial
+    // En 60/40 (est con 85% prioritarios): Math.ceil(38 * 44 / 35) = 48 horas de contrato
+    expect(Number(fila1B.getCell(8).value)).toBe(48);
   }, 15000);
 
   it('calcula con precisión matemática las horas de contrato docente reglamentarias según tabla MINEDUC (65/35 y 60/40)', () => {

@@ -394,51 +394,57 @@ export async function generarExcelConsolidadoPalDEP(
     const estMap = new Map<number, Establecimiento>();
     establecimientos.forEach(e => estMap.set(Number(e.rbd), e));
 
-    // Indexar cursos por RBD y nivel canónico
-    // Clave: `${rbd}_${nivelCanónico}`
-    interface EstadisticaNivel {
-      cursos: number;
-      matricula: number;
-      horasPlanSemana: number;
-      horasDocentes: number;
-      regimenProporcion?: '65_35' | '60_40';
+    // Estructura de cursos reales del SaaS adaptados por RBD y nivel canónico
+    interface CursoSaaSEfectivo {
+      curso: CursoSae;
+      horasPlanEfectivas: number;
     }
-    const nivelesStats = new Map<string, EstadisticaNivel>();
+    const cursosPorClave = new Map<string, CursoSaaSEfectivo[]>();
+    const nivelesActivosPorColegio = new Map<number, Set<string>>();
 
     cursosTerritorio.forEach(c => {
       const rbdNum = Number(c.rbd);
       const canonico = homologarNivelExcelPal(c.nivel);
       const key = `${rbdNum}_${canonico}`;
 
-      const prev = nivelesStats.get(key) || {
-        cursos: 0,
-        matricula: 0,
-        horasPlanSemana: 0,
-        horasDocentes: 0,
-        regimenProporcion: c.regimenProporcion
-      };
+      if (!cursosPorClave.has(key)) {
+        cursosPorClave.set(key, []);
+      }
+      if (!nivelesActivosPorColegio.has(rbdNum)) {
+        nivelesActivosPorColegio.set(rbdNum, new Set());
+      }
+      nivelesActivosPorColegio.get(rbdNum)!.add(canonico);
 
-      // Cálculo de horas efectivas del plan de estudio cargado en este curso:
-      // Se toman las horas efectivamente cargadas en la malla/asignaciones del curso
-      // (asignaturas base + electivos + talleres JEC + asignaturas adicionales), EXCLUYENDO las horas PIE.
+      // Horas plan efectivas del SaaS:
+      // Se toma el plan oficial del curso + talleres JEC, y si hay asignaciones adicionales
+      // cargadas en la malla (no PIE), se respeta el valor mayor para no truncar planes en desarrollo.
       const horasCargadasCursoNoPie = horasNoPiePorCurso.get(c.id) || 0;
-
-      // Fallback a horas del plan curricular oficial + talleres JEC si no tuviese asignaciones aún
       let hPlanFallback = calcularHorasPlanCurso(c.nivel, c.regimen);
       const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
       hPlanFallback += hTalleres;
 
-      const hPlanEfectivoCurso = horasCargadasCursoNoPie > 0 ? horasCargadasCursoNoPie : hPlanFallback;
-      const regProp = c.regimenProporcion || prev.regimenProporcion;
+      const hPlanEfectivoCurso = Math.max(hPlanFallback, horasCargadasCursoNoPie);
 
-      nivelesStats.set(key, {
-        cursos: prev.cursos + 1,
-        matricula: prev.matricula + (c.matriculaProyectada || 0),
-        horasPlanSemana: Math.max(prev.horasPlanSemana, hPlanEfectivoCurso),
-        horasDocentes: prev.horasDocentes + horasCargadasCursoNoPie,
-        regimenProporcion: regProp
+      cursosPorClave.get(key)!.push({
+        curso: c,
+        horasPlanEfectivas: hPlanEfectivoCurso
       });
     });
+
+    // Pre-contar cuántas filas existen en Info Establecimiento para cada RBD y nivel canónico
+    const totalFilasPorClave = new Map<string, number>();
+    wsEst.eachRow((row, rowNumber) => {
+      if (rowNumber <= 3) return;
+      const rbd = Number(row.getCell(2).value || 0);
+      if (rbdsExportados.has(rbd)) {
+        const nivelRaw = String(row.getCell(3).text || '').trim();
+        const canonico = homologarNivelExcelPal(nivelRaw);
+        const key = `${rbd}_${canonico}`;
+        totalFilasPorClave.set(key, (totalFilasPorClave.get(key) || 0) + 1);
+      }
+    });
+
+    const filaIndexPorClave = new Map<string, number>();
 
     wsEst.eachRow((row, rowNumber) => {
       if (rowNumber <= 3) return; // Cabeceras
@@ -453,7 +459,13 @@ export async function generarExcelConsolidadoPalDEP(
       if (rbdsExportados.has(rbd)) {
         const nivelRaw = String(row.getCell(3).text || '').trim();
         const nivelCanonico = homologarNivelExcelPal(nivelRaw);
-        const match = nivelesStats.get(`${rbd}_${nivelCanonico}`);
+        const key = `${rbd}_${nivelCanonico}`;
+
+        const filaIdx = filaIndexPorClave.get(key) || 0;
+        filaIndexPorClave.set(key, filaIdx + 1);
+
+        const totalFilas = totalFilasPorClave.get(key) || 1;
+        const cursosReales = cursosPorClave.get(key) || [];
 
         const colE_cursosPrev = Number(row.getCell(5).value || 0);
         const colF_planPrev = Number(row.getCell(6).value || 0);
@@ -465,42 +477,95 @@ export async function generarExcelConsolidadoPalDEP(
 
         const estActual = estMap.get(rbd);
         let regimenNivel: '65_35' | '60_40' = '65_35';
-        if (match && match.regimenProporcion) {
-          regimenNivel = match.regimenProporcion;
+        const primerCurso = cursosReales[0]?.curso;
+        if (primerCurso && primerCurso.regimenProporcion) {
+          regimenNivel = primerCurso.regimenProporcion;
         } else if (estActual && estActual.porcentajePrioritarios !== undefined) {
           regimenNivel = determinarRegimenNormativo(estActual.porcentajePrioritarios, nivelRaw, 80);
         } else if (era60_40EnTemplate) {
           regimenNivel = '60_40';
         }
 
-        if (match && match.cursos > 0) {
-          // Proyectar matrícula según serie histórica (2021-2025) y agosto 2026 de BASE DE DATOS COMPLETA
-          // si el curso no tuviese matrícula cargada o se requiera alineación territorial.
-          let matriculaFinal = match.matricula;
-          if (matriculaFinal === 0) {
-            const proy = proyectarMatriculaNivel(rbd, nivelRaw);
-            matriculaFinal = proy.matriculaProyectada;
+        // Si el nivel NO existe o no tiene cursos en el SaaS para este colegio: vaciar a 0
+        if (cursosReales.length === 0) {
+          row.getCell(4).value = 0;
+          row.getCell(5).value = 0;
+          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
+          row.getCell(8).value = 0;
+          row.commit();
+          return;
+        }
+
+        // Si el nivel SÍ existe en el SaaS:
+        // Proyectar matrícula desde BASE COMPLETA adaptada a la estructura activa del colegio
+        const nivelesActivosColegio = nivelesActivosPorColegio.get(rbd);
+        const proyTotalNivel = proyectarMatriculaNivel(rbd, nivelRaw, {
+          cursosActivosSaaS: nivelesActivosColegio ? Array.from(nivelesActivosColegio) : undefined
+        });
+
+        let matProyectadaNivel = proyTotalNivel.matriculaProyectada;
+        // Fallback a matrícula de cursos del SaaS si no existieran antecedentes en Base Completa
+        if (matProyectadaNivel === 0) {
+          matProyectadaNivel = cursosReales.reduce((sum, c) => sum + (c.curso.matriculaProyectada || 0), 0);
+        }
+
+        // Caso 1: Nivel con una única fila en la plantilla (caso estándar 98% de la oferta)
+        if (totalFilas === 1) {
+          const numCursos = cursosReales.length;
+          // Las horas plan son las que existen y han sido trabajadas en el SaaS
+          const maxPlanSaaS = Math.max(...cursosReales.map(c => c.horasPlanEfectivas));
+          const hPlan = maxPlanSaaS > 0 ? maxPlanSaaS : (colF_planPrev > 0 ? colF_planPrev : 38);
+          const totalHA = numCursos * hPlan;
+          const horasContrato = calcularHorasContratoPorPlan(totalHA, regimenNivel);
+
+          row.getCell(4).value = matProyectadaNivel;
+          row.getCell(5).value = numCursos;
+          row.getCell(6).value = hPlan;
+          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
+          row.getCell(8).value = horasContrato;
+          row.commit();
+          return;
+        }
+
+        // Caso 2: Nivel con múltiples filas en la plantilla (ej. Liceos TP con especialidades)
+        if (filaIdx < cursosReales.length) {
+          const cursoActual = cursosReales[filaIdx];
+          const esUltimaFila = (filaIdx === totalFilas - 1);
+          // Si quedan cursos restantes no asignados, la última fila los absorbe
+          const cursosAsignados = esUltimaFila ? (cursosReales.length - filaIdx) : 1;
+          const hPlan = cursoActual.horasPlanEfectivas > 0 ? cursoActual.horasPlanEfectivas : (colF_planPrev > 0 ? colF_planPrev : 38);
+
+          // Proyección adaptada a esta sección / fila
+          const proyFila = proyectarMatriculaNivel(rbd, nivelRaw, {
+            indiceFila: filaIdx,
+            especialidad: cursoActual.curso.especialidadTp,
+            cursosActivosSaaS: nivelesActivosColegio ? Array.from(nivelesActivosColegio) : undefined
+          });
+
+          let matFila = proyFila.matriculaProyectada;
+          if (matFila === 0 || matFila === matProyectadaNivel) {
+            // Distribuir equitativamente la matrícula proyectada del nivel entre los cursos del SaaS
+            const cuotaBase = Math.floor(matProyectadaNivel / cursosReales.length);
+            const residuo = matProyectadaNivel % cursosReales.length;
+            matFila = cuotaBase + (filaIdx < residuo ? 1 : 0);
           }
 
-          const hPlanSemana = match.horasPlanSemana > 0 ? match.horasPlanSemana : (colF_planPrev > 0 ? colF_planPrev : 38);
-          const totalHA = match.cursos * hPlanSemana;
-          const horasContratoDocente = calcularHorasContratoPorPlan(totalHA, regimenNivel);
+          const totalHA = cursosAsignados * hPlan;
+          const horasContrato = calcularHorasContratoPorPlan(totalHA, regimenNivel);
 
-          // Datos reales desde el SaaS y proyección de base completa
-          row.getCell(4).value = matriculaFinal;
-          row.getCell(5).value = match.cursos;
-          row.getCell(6).value = hPlanSemana;
-          // Col G: Total Hrs Plan Estudio con fórmula nativa =+E*F
+          row.getCell(4).value = matFila;
+          row.getCell(5).value = cursosAsignados;
+          row.getCell(6).value = hPlan;
           row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          // Col H: Total Horas Docentes contractuales calculadas según tabla y proporción oficial
-          row.getCell(8).value = horasContratoDocente;
+          row.getCell(8).value = horasContrato;
         } else {
-          // El nivel no existe o fue cerrado en el SaaS para este colegio: vaciar a 0
+          // Fila sobrante en la plantilla sin cursos reales en el SaaS
           row.getCell(4).value = 0;
           row.getCell(5).value = 0;
           row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
           row.getCell(8).value = 0;
         }
+
         row.commit();
       }
     });

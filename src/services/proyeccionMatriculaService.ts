@@ -32,7 +32,56 @@ export interface ProyeccionNivelResultado {
   detalle: string;
 }
 
+export interface OpcionesProyeccionNivel {
+  especialidad?: string;
+  indiceFila?: number;
+  cursosActivosSaaS?: string[]; // lista de niveles canónicos activos en el SaaS para este colegio
+}
+
 const REGISTROS_BASE: RegistroMatriculaHistorica[] = datosHistoricosRaw as RegistroMatriculaHistorica[];
+
+/**
+ * Consolida múltiples registros históricos del mismo nivel (ej. especialidades TP en 3° y 4° Medio)
+ * sumando sus matrículas históricas, corte de agosto y cupos REX.
+ */
+function consolidarRegistrosNivel(registros: RegistroMatriculaHistorica[]): RegistroMatriculaHistorica {
+  if (registros.length === 1) return registros[0];
+  const primer = registros[0];
+  let m21 = 0, m22 = 0, m23 = 0, m24 = 0, m25 = 0, ago26 = 0, cur27 = 0, cupos27 = 0;
+  let cuposRex = 0;
+  let tieneRex = false;
+
+  for (const r of registros) {
+    m21 += r.m21 || 0;
+    m22 += r.m22 || 0;
+    m23 += r.m23 || 0;
+    m24 += r.m24 || 0;
+    m25 += r.m25 || 0;
+    ago26 += r.ago26 || 0;
+    cur27 += r.cur27 || 0;
+    cupos27 += r.cupos27 || 0;
+    if (r.cuposRex !== undefined && r.cuposRex > 0) {
+      cuposRex += r.cuposRex;
+      tieneRex = true;
+    }
+  }
+
+  return {
+    rbd: primer.rbd,
+    nivel: primer.nivel,
+    cod: primer.cod,
+    esp: 'Consolidado Nivel',
+    m21,
+    m22,
+    m23,
+    m24,
+    m25,
+    ago26,
+    cur27,
+    cupos27,
+    cuposRex: tieneRex ? cuposRex : undefined
+  };
+}
 
 // Mapeo canónico inverso de nivel previo para la promoción de cohortes
 const MAPA_NIVEL_PREVIO: Record<string, string> = {
@@ -75,18 +124,29 @@ export function obtenerRegistrosPorRbd(rbd: string | number): RegistroMatriculaH
  * 1. Resguardo de topes por Resolución Exenta (REX) de capacidad de salas.
  * 2. Nodos de entrada territorial y absorción externa (Pre-Kínder, 1° Básico con/sin Kínder, 7° Básico sin 6° básico, 1° Medio con demanda externa).
  * 3. Promoción natural de la cohorte anterior (Agosto 2026).
+ * 4. Adaptación a la estructura de cursos activa y trabajada en el SaaS.
  */
 export function proyectarMatriculaNivel(
   rbd: string | number,
-  nivelRaw: string
+  nivelRaw: string,
+  opciones?: OpcionesProyeccionNivel
 ): ProyeccionNivelResultado {
   const rbdStr = String(rbd).trim();
   const nivelCanonico = homologarNivelExcelPal(nivelRaw);
   const registrosEstablecimiento = obtenerRegistrosPorRbd(rbdStr);
 
-  const regNivelActual = registrosEstablecimiento.find(
+  const regsNivelActual = registrosEstablecimiento.filter(
     r => homologarNivelExcelPal(r.nivel) === nivelCanonico
   );
+
+  let regNivelActual: RegistroMatriculaHistorica | undefined;
+  if (opciones?.indiceFila !== undefined && regsNivelActual[opciones.indiceFila]) {
+    regNivelActual = regsNivelActual[opciones.indiceFila];
+  } else if (opciones?.especialidad) {
+    regNivelActual = regsNivelActual.find(r => r.esp?.toLowerCase().includes(opciones.especialidad!.toLowerCase())) || (regsNivelActual.length > 0 ? consolidarRegistrosNivel(regsNivelActual) : undefined);
+  } else if (regsNivelActual.length > 0) {
+    regNivelActual = consolidarRegistrosNivel(regsNivelActual);
+  }
 
   // Fallback si el establecimiento o nivel no está en la base de datos
   if (!regNivelActual && registrosEstablecimiento.length === 0) {
@@ -112,11 +172,20 @@ export function proyectarMatriculaNivel(
     };
   }
 
-  // Identificar si el colegio cuenta con los distintos niveles en su oferta
-  const tienePrekinder = registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === 'prekinder');
-  const tieneKinder = registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === 'kinder');
-  const tiene6toBasico = registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === '6 basico');
-  const tiene8voBasico = registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === '8 basico');
+  // Identificar si el colegio cuenta con los distintos niveles en su oferta (SaaS activo o base histórica)
+  const nivelesSaaS = opciones?.cursosActivosSaaS;
+  const tienePrekinder = nivelesSaaS
+    ? nivelesSaaS.includes('prekinder')
+    : registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === 'prekinder');
+  const tieneKinder = nivelesSaaS
+    ? nivelesSaaS.includes('kinder')
+    : registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === 'kinder');
+  const tiene6toBasico = nivelesSaaS
+    ? nivelesSaaS.includes('6 basico')
+    : registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === '6 basico');
+  const tiene8voBasico = nivelesSaaS
+    ? nivelesSaaS.includes('8 basico')
+    : registrosEstablecimiento.some(r => homologarNivelExcelPal(r.nivel) === '8 basico');
 
   // 2. Pre-Kínder (Nodo inicial puro: promedio histórico de absorción)
   if (nivelCanonico === 'prekinder') {
@@ -148,7 +217,8 @@ export function proyectarMatriculaNivel(
     }
 
     // Caso 3.2: Escuela con Kínder propio (absorbe Kínder interno + externos de escuelas de lenguaje)
-    const regKinder = registrosEstablecimiento.find(r => homologarNivelExcelPal(r.nivel) === 'kinder');
+    const regsKinder = registrosEstablecimiento.filter(r => homologarNivelExcelPal(r.nivel) === 'kinder');
+    const regKinder = regsKinder.length > 0 ? consolidarRegistrosNivel(regsKinder) : undefined;
     const agoKinder = regKinder?.ago26 || 0;
 
     // Si históricamente capta significativamente más alumnos de los que promueve su Kínder interno
@@ -193,7 +263,8 @@ export function proyectarMatriculaNivel(
     }
 
     // Caso 5.2: Liceo con 8° básico pero con alta captación externa comprobada
-    const reg8B = registrosEstablecimiento.find(r => homologarNivelExcelPal(r.nivel) === '8 basico');
+    const regs8B = registrosEstablecimiento.filter(r => homologarNivelExcelPal(r.nivel) === '8 basico');
+    const reg8B = regs8B.length > 0 ? consolidarRegistrosNivel(regs8B) : undefined;
     const ago8B = reg8B?.ago26 || 0;
     const mat1M = Math.max(ago8B, avg1M);
     return {
@@ -209,9 +280,10 @@ export function proyectarMatriculaNivel(
   // 6. Cursos con continuidad regular (Promoción natural de la cohorte previa de Agosto 2026)
   const nivelPrevioCanonico = MAPA_NIVEL_PREVIO[nivelCanonico];
   if (nivelPrevioCanonico) {
-    const regPrevio = registrosEstablecimiento.find(
+    const regsPrevio = registrosEstablecimiento.filter(
       r => homologarNivelExcelPal(r.nivel) === nivelPrevioCanonico
     );
+    const regPrevio = regsPrevio.length > 0 ? consolidarRegistrosNivel(regsPrevio) : undefined;
     if (regPrevio && regPrevio.ago26 !== undefined && regPrevio.ago26 > 0) {
       return {
         rbd: rbdStr,
