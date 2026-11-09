@@ -740,4 +740,80 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(f.hrsLectivasBasica + f.hrsLectivasMedia, f.proporcionHa);
     expect(lectivasCrono + noLectivasCrono + f.hrsPieCronologicas + f.hrsSepCronologicas + f.otrasFuncionesNoLectivas).toBe(20);
   });
+
+  it('asegura que las Columnas K y L sean números enteros no decimales y correspondan a horas aula normativas del SaaS', () => {
+    const est: Establecimiento = {
+      id: 'est_3659',
+      rbd: '3659',
+      nombre: 'ESCUELA ARTURO MERINO BENITEZ',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 75
+    };
+
+    const docNormativo: Docente = {
+      id: 'doc_norm_int',
+      rbd: '3659',
+      run: '17.890.123-4',
+      nombres: 'CAMILA',
+      apellidos: 'PARRA',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44
+    };
+
+    const cursoBasica: CursoSae = {
+      id: 'cur_4b',
+      rbd: '3659',
+      nivel: '4° Básico',
+      letra: 'A',
+      regimen: 'JEC',
+      cupoSae: 30,
+      matriculaProyectada: 28,
+      alumnosNeet: 0,
+      alumnosNeep: 0
+    };
+
+    const asigNormativa: any[] = [
+      {
+        id: 'asig_lenguaje_4b',
+        rbd: '3659',
+        cursoId: 'cur_4b',
+        docenteId: 'doc_norm_int',
+        asignatura: 'Lenguaje y Comunicación',
+        horasPedagogicasAula: 8
+      },
+      {
+        id: 'asig_matematica_4b',
+        rbd: '3659',
+        cursoId: 'cur_4b',
+        docenteId: 'doc_norm_int',
+        asignatura: 'Matemática',
+        horasPedagogicasAula: 8
+      },
+      {
+        id: 'asig_ciencias_4b',
+        rbd: '3659',
+        cursoId: 'cur_4b',
+        docenteId: 'doc_norm_int',
+        asignatura: 'Ciencias Naturales',
+        horasPedagogicasAula: 6
+      }
+    ];
+
+    const filas = homologarDocenteAPal(docNormativo, est, [cursoBasica], asigNormativa);
+    expect(filas.length).toBe(1);
+    const f = filas[0];
+
+    // Columna K debe ser exactamente 22 (8 + 8 + 6) y ser estrictamente un entero
+    expect(f.hrsLectivasBasica).toBe(22);
+    expect(Number.isInteger(f.hrsLectivasBasica)).toBe(true);
+    expect(f.hrsLectivasMedia).toBe(0);
+    expect(Number.isInteger(f.hrsLectivasMedia)).toBe(true);
+
+    // Verificación de cuadratura
+    const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(f.hrsLectivasBasica + f.hrsLectivasMedia, f.proporcionHa);
+    expect(lectivasCrono + noLectivasCrono + f.hrsPieCronologicas + f.hrsSepCronologicas + f.otrasFuncionesNoLectivas).toBe(44);
+  });
 });

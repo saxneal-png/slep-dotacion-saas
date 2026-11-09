@@ -369,12 +369,13 @@ export function homologarDocenteAPal(
       regProp = regNorm === '60_40' ? '60/40' : '65/35';
     }
 
+    const haAsig = Math.round(Number(a.horasPedagogicasAula) || 0);
     if (regProp === '60/40') {
-      if (esMedia) haMedia60 += a.horasPedagogicasAula;
-      else haBasica60 += a.horasPedagogicasAula;
+      if (esMedia) haMedia60 += haAsig;
+      else haBasica60 += haAsig;
     } else {
-      if (esMedia) haMedia65 += a.horasPedagogicasAula;
-      else haBasica65 += a.horasPedagogicasAula;
+      if (esMedia) haMedia65 += haAsig;
+      else haBasica65 += haAsig;
     }
   });
 
@@ -383,17 +384,18 @@ export function homologarDocenteAPal(
   if (totalHaAsigs === 0 && docente.horasAula && docente.horasAula > 0 && haCoDocNoPie === 0) {
     const regDefault: '65/35' | '60/40' = (establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35';
     const esMedia = nivelPal === 'Educación Media';
+    const haDoc = Math.round(Number(docente.horasAula) || 0);
     if (regDefault === '60/40') {
-      if (esMedia) haMedia60 = docente.horasAula;
-      else haBasica60 = docente.horasAula;
+      if (esMedia) haMedia60 = haDoc;
+      else haBasica60 = haDoc;
     } else {
-      if (esMedia) haMedia65 = docente.horasAula;
-      else haBasica65 = docente.horasAula;
+      if (esMedia) haMedia65 = haDoc;
+      else haBasica65 = haDoc;
     }
   }
 
-  const totalHa65 = haBasica65 + haMedia65;
-  const totalHa60 = haBasica60 + haMedia60;
+  const totalHa65 = Math.round(haBasica65 + haMedia65);
+  const totalHa60 = Math.round(haBasica60 + haMedia60);
   const tieneAmbasProporciones = totalHa65 > 0 && totalHa60 > 0;
 
   const totalTit = hSubvTit + hSepTit + hPieTit;
@@ -415,20 +417,25 @@ export function homologarDocenteAPal(
     const prop = proporcionEspecifica || ((establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35');
     const niv = nivelEspecifico || nivelPal;
 
+    // Regla Ministerial DEP: Las horas lectivas de Básica y Media (Cols K y L)
+    // DEBEN ser estrictamente números enteros no decimales
+    let kBasicaInt = Math.max(0, Math.round(Number(kBasica) || 0));
+    let lMediaInt = Math.max(0, Math.round(Number(lMedia) || 0));
+
     // Prevenir que el cruce de tablas VLOOKUP con jornadas compartidas exceda el total de la Columna J
     const dispJornada = Math.max(0, jornadaContrato - pieCrono - sepCrono);
     const maxHaPermitida = obtenerMaxHaParaJornada(dispJornada, prop);
-    let totalHa = kBasica + lMedia;
+    let totalHa = kBasicaInt + lMediaInt;
     if (totalHa > maxHaPermitida && maxHaPermitida >= 0) {
       if (totalHa > 0) {
-        const ratioBas = kBasica / totalHa;
-        kBasica = Math.floor(maxHaPermitida * ratioBas);
-        lMedia = maxHaPermitida - kBasica;
+        const ratioBas = kBasicaInt / totalHa;
+        kBasicaInt = Math.round(maxHaPermitida * ratioBas);
+        lMediaInt = Math.max(0, maxHaPermitida - kBasicaInt);
       } else {
-        kBasica = 0;
-        lMedia = 0;
+        kBasicaInt = 0;
+        lMediaInt = 0;
       }
-      totalHa = kBasica + lMedia;
+      totalHa = kBasicaInt + lMediaInt;
     }
 
     const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(totalHa, prop);
@@ -457,8 +464,8 @@ export function homologarDocenteAPal(
       calidadContrato: calidad,
       art69: docente.aplicaArticulo69 ? 'SI' : '',
       totalHrsContrato: jornadaContrato,
-      hrsLectivasBasica: kBasica,
-      hrsLectivasMedia: lMedia,
+      hrsLectivasBasica: kBasicaInt,
+      hrsLectivasMedia: lMediaInt,
       proporcionHa: prop,
       hrsPieCronologicas: pieCrono,
       hrsSepCronologicas: sepCrono,
@@ -547,8 +554,8 @@ export function homologarDocenteAPal(
       ? '65/35'
       : ((establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35'));
 
-  const haBasica = haBasica65 + haBasica60;
-  const haMedia = haMedia65 + haMedia60;
+  const haBasica = Math.round(haBasica65 + haBasica60);
+  const haMedia = Math.round(haMedia65 + haMedia60);
 
   // Regla 33 DEP: Si tiene contratos Titular y Contrata, desdoblar en 2 filas
   if (tieneContratosMixtos) {
@@ -561,11 +568,11 @@ export function homologarDocenteAPal(
     const maxHaCtta = obtenerMaxHaParaJornada(dispCtta, proporcionHa);
 
     const ratioTit = totalTit / (totalTit + totalCtta);
-    let kBasTit = Math.min(maxHaTit, round(haBasica * ratioTit, 0));
-    let lMedTit = Math.min(Math.max(0, maxHaTit - kBasTit), round(haMedia * ratioTit, 0));
+    let kBasTit = Math.min(maxHaTit, Math.round(haBasica * ratioTit));
+    let lMedTit = Math.min(Math.max(0, maxHaTit - kBasTit), Math.round(haMedia * ratioTit));
 
-    let kBasCtta = Math.min(maxHaCtta, haBasica - kBasTit);
-    let lMedCtta = Math.min(Math.max(0, maxHaCtta - kBasCtta), haMedia - lMedTit);
+    let kBasCtta = Math.max(0, Math.min(maxHaCtta, haBasica - kBasTit));
+    let lMedCtta = Math.max(0, Math.min(Math.max(0, maxHaCtta - kBasCtta), haMedia - lMedTit));
 
     const filaTit = armarFila('Titular', totalTit, kBasTit, lMedTit, hPieTit, sepTitEfectivo, 'Contrato Titular', proporcionHa);
     const filaCtta = armarFila('Plazo Fijo', totalCtta, kBasCtta, lMedCtta, hPieCtta, sepCttaEfectivo, 'Contrato Contrata', proporcionHa);

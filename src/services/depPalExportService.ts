@@ -277,8 +277,9 @@ export async function generarExcelConsolidadoPalDEP(
         row.getCell(8).value = f.calidadContrato;
         row.getCell(9).value = f.art69;
         row.getCell(10).value = f.totalHrsContrato;
-        row.getCell(11).value = f.hrsLectivasBasica;
-        row.getCell(12).value = f.hrsLectivasMedia;
+        // Columnas K y L: Horas lectivas Básica y Media DEBEN ser estrictamente números enteros no decimales
+        row.getCell(11).value = Math.max(0, Math.round(Number(f.hrsLectivasBasica) || 0));
+        row.getCell(12).value = Math.max(0, Math.round(Number(f.hrsLectivasMedia) || 0));
         row.getCell(13).value = f.proporcionHa;
 
         // FÓRMULAS NATIVAS DE EXCEL (Cols N y O) - NO quemar valores estáticos
