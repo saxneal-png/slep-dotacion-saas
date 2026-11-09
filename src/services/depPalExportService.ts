@@ -276,10 +276,14 @@ export async function generarExcelConsolidadoPalDEP(
         row.getCell(7).value = f.funcion;
         row.getCell(8).value = f.calidadContrato;
         row.getCell(9).value = f.art69;
-        row.getCell(10).value = f.totalHrsContrato;
+        row.getCell(10).value = Math.max(0, Math.round(Number(f.totalHrsContrato) || 0));
+        row.getCell(10).numFmt = '0';
         // Columnas K y L: Horas lectivas Básica y Media DEBEN ser estrictamente números enteros no decimales
+        // ya que la planilla DEP utiliza K+L como clave entera exacta para sus fórmulas VLOOKUP nativas
         row.getCell(11).value = Math.max(0, Math.round(Number(f.hrsLectivasBasica) || 0));
+        row.getCell(11).numFmt = '0';
         row.getCell(12).value = Math.max(0, Math.round(Number(f.hrsLectivasMedia) || 0));
+        row.getCell(12).numFmt = '0';
         row.getCell(13).value = f.proporcionHa;
 
         // FÓRMULAS NATIVAS DE EXCEL (Cols N y O) - NO quemar valores estáticos
