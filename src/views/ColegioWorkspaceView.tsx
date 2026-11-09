@@ -59,6 +59,7 @@ export interface ColegioWorkspaceViewProps {
   todosLosColegios?: Establecimiento[];
   todosLosDocentes?: Docente[];
   todasLasAsignaciones?: AsignacionHoraria[];
+  todosLosCursos?: CursoSae[];
   periodoActivo?: number;
   initialTab?: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas';
   onTogglePeriodo?: (p: number) => void;
@@ -103,6 +104,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   todosLosColegios = [],
   todosLosDocentes = [],
   todasLasAsignaciones = [],
+  todosLosCursos = [],
   periodoActivo = 2027,
   initialTab,
   onTogglePeriodo,
@@ -691,6 +693,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             todosLosColegios={todosLosColegios}
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
+            todosLosCursos={todosLosCursos}
             cursos={cursos}
             onGuardarAsignacion={onGuardarAsignacion}
             onEliminarAsignacion={onEliminarAsignacion}

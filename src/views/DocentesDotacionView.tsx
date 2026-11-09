@@ -62,6 +62,7 @@ interface DocentesDotacionViewProps {
   todosLosColegios?: Establecimiento[];
   todosLosDocentes?: Docente[];
   todasLasAsignaciones?: AsignacionHoraria[];
+  todosLosCursos?: CursoSae[];
   cursos?: CursoSae[];
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
@@ -78,6 +79,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   todosLosColegios = [],
   todosLosDocentes = [],
   todasLasAsignaciones = [],
+  todosLosCursos = [],
   cursos = [],
   onGuardarAsignacion,
   onEliminarAsignacion,
@@ -122,8 +124,9 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     const cols = todosLosColegios.length ? todosLosColegios : [colegio];
     const docs = todosLosDocentes.length ? todosLosDocentes : docentes;
     const asigs = todasLasAsignaciones.length ? todasLasAsignaciones : asignaciones;
-    return obtenerDocentesConsolidadosTerritorio(cols, docs, asigs);
-  }, [todosLosColegios, todosLosDocentes, todasLasAsignaciones, colegio, docentes, asignaciones]);
+    const curs = todosLosCursos.length ? todosLosCursos : cursos;
+    return obtenerDocentesConsolidadosTerritorio(cols, docs, asigs, curs);
+  }, [todosLosColegios, todosLosDocentes, todasLasAsignaciones, todosLosCursos, colegio, docentes, asignaciones, cursos]);
 
   const abrirModalNuevo = () => {
     setEditingDoc(null);
@@ -326,13 +329,20 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
         Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal));
 
+      const cursosParvulariosColegio = cursos.filter(x => esNivelParvulario(x.nivel));
+      const regimenParvularioPredominante: '65_35' | '60_40' =
+        cursosParvulariosColegio.find(x => x.regimenProporcion)?.regimenProporcion ||
+        colegio.regimenProporcion ||
+        '65_35';
+
       const esCurso60ParvORegular = (c: CursoSae | undefined): boolean => {
         const esParv = Boolean(c && esNivelParvulario(c.nivel));
         if (c?.regimenProporcion) return c.regimenProporcion === '60_40';
+        if (isEducadoraParvuloDoc && (esParv || !c)) {
+          return regimenParvularioPredominante === '60_40';
+        }
         if (colegio.regimenProporcion) return colegio.regimenProporcion === '60_40';
-        return (isEducadoraParvuloDoc && esParv)
-          ? colegio.porcentajePrioritarios >= 60
-          : colegio.porcentajePrioritarios >= 80;
+        return colegio.porcentajePrioritarios >= 80;
       };
 
       const ped65 = asigsDocenciaAulaEfectiva
@@ -369,6 +379,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         const saldoParv = Math.round((d.horasContrato - contratoCalcParv) * 10) / 10;
         const minHnlParv = match65.minutosHnl + match60.minutosHnl;
         const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+        const minAulaTablaParv = match65.minutosAula + match60.minutosAula;
         const totalHorasAulaParv = ped65 + ped60;
         const pctRealParv = horasParaDocencia > 0
           ? Math.round((totalHorasAulaParv / horasParaDocencia) * 1000) / 10
@@ -379,11 +390,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           ...auditMulti,
           req65_35: match65.horasContrato,
           req60_40: match60.horasContrato,
+          contratoPonderado65_35: match65.horasContrato,
+          contratoPonderado60_40: match60.horasContrato,
           contratoCalculadoTotal: contratoCalcParv,
           saldoHoras: saldoParv,
           esInfractorExcesoLectivo: saldoParv < 0,
           porcentajeLectivoReal: pctRealParv,
           porcentajeLimitePonderado: pctLimiteParv,
+          minutosLectivosTablaTotal: minAulaTablaParv,
+          minutosLimitePermitido: minAulaTablaParv,
           minutosHnlTotal: minHnlParv,
           minutosRecreoTotal: minRecParv,
           minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
@@ -418,19 +433,19 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
       const pedCurricular65 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
-          return c ? c.regimenProporcion !== '60_40' : (colegio.porcentajePrioritarios < 80);
+          return !esCurso60ParvORegular(c);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
       const pedCurricular60 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);
-          return c ? c.regimenProporcion === '60_40' : (colegio.porcentajePrioritarios >= 80);
+          return esCurso60ParvORegular(c);
         })
         .reduce((s, a) => s + a.horasPedagogicasAula, 0);
 
       const pedTitularTotal = pedCurricular65 + pedCurricular60;
-      const reqSubvDoc = (pedTitularTotal > 0 ? (buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40')) : 0) + sumFuncionesNoAulaSubvGen;
+      const reqSubvDoc = (pedTitularTotal > 0 ? (isEducadoraParvuloDoc ? (buscarContratoMinimoParvulariaPorMinutos(Math.round(pedCurricular65 * 60), '65_35').horasContrato + buscarContratoMinimoParvulariaPorMinutos(Math.round(pedCurricular60 * 60), '60_40').horasContrato) : (buscarContratoMinimoPorTabla(pedCurricular65, '65_35') + buscarContratoMinimoPorTabla(pedCurricular60, '60_40'))) : 0) + sumFuncionesNoAulaSubvGen;
       const esImprocedenteFinanciamiento = reqSubvDoc > subTotalDoc && sepPieTotalDoc > 0 && pedTitularTotal > 0;
       const deficitFinanciamiento = esImprocedenteFinanciamiento ? (reqSubvDoc - subTotalDoc) : 0;
 

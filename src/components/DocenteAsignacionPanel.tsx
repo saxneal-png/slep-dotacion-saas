@@ -2506,17 +2506,26 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     let minsAulaParvularia65 = 0;
     let minsAulaParvularia60 = 0;
 
+    // Régimen normativo de referencia para Educación Parvularia en el establecimiento:
+    // Prioridad: 1) Régimen explícito del curso parvulario activo, 2) Régimen de los cursos parvularios de la escuela,
+    // 3) Régimen explícito del colegio, 4) '65_35' por defecto (evitando que porcentajePrioritarios=75% fuerce '60_40' cuando no se definió en el colegio).
+    const regDefectoParv: '65_35' | '60_40' = cursoParvularioActivo?.regimenProporcion
+      ? cursoParvularioActivo.regimenProporcion
+      : (todosCursosParvulariosEscuela.find(cp => cp.regimenProporcion)?.regimenProporcion
+        || colegio.regimenProporcion
+        || '65_35');
+
     asigsProporcionales.forEach(a => {
       const c = cursos.find(cur => cur.id === a.cursoId);
-      const esParvCurso = Boolean(c && esNivelParvulario(c.nivel));
-      const es60 = (esEducadora && esParvCurso)
-        ? (c?.regimenProporcion ? c.regimenProporcion === '60_40' : (colegio.regimenProporcion ? colegio.regimenProporcion === '60_40' : colegio.porcentajePrioritarios >= 60))
+      const esParvCurso = Boolean((c && esNivelParvulario(c.nivel)) || a.esCoDocenciaParvularia);
+      const es60 = (esEducadora && (esParvCurso || !c))
+        ? (c?.regimenProporcion ? c.regimenProporcion === '60_40' : regDefectoParv === '60_40')
         : (c?.regimenProporcion ? c.regimenProporcion === '60_40' : (colegio.regimenProporcion ? colegio.regimenProporcion === '60_40' : colegio.porcentajePrioritarios >= 80));
       const ha = getHorasAulaLectivaAsig(a);
 
       // IMPORTANTE: Solo las Educadoras de Párvulos se calculan en horas cronológicas de 60 min (DTO 306).
       // Un docente de aula regular que dicta un taller en Pre-Kínder o Kínder se calcula SIEMPRE como docente de aula regular (45 min).
-      if (esEducadora && esParvCurso) {
+      if (esEducadora && (esParvCurso || !c)) {
         const mins = Math.round(ha * 60);
         if (es60) {
           minsAulaParvularia60 += mins;
@@ -2557,10 +2566,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const reqContratoAulaTotal = reqContrato65 + reqContrato60;
 
     // Tope máximo de horas de aula (60m) que la educadora puede hacer con su jornada contratada disponible
-    // Se prioriza el régimen explícito del curso activo parvulario o del establecimiento
-    const regDefectoParv: '65_35' | '60_40' = cursoParvularioActivo?.regimenProporcion
-      ? cursoParvularioActivo.regimenProporcion
-      : (colegio.regimenProporcion ? colegio.regimenProporcion : (colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35'));
+    // Se prioriza el régimen explícito del curso activo parvulario o de los cursos parvularios del establecimiento
     const tramoTopeEducadora = obtenerTramoMineduc(horasContratoDisponiblesAula, regDefectoParv);
     const minsTopeEducadora = tramoTopeEducadora
       ? tramoTopeEducadora.lectivasMinutosCronologicos
@@ -2612,13 +2618,15 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
         minutosHnlTotal
       }
     };
-  }, [asignacionesDocente, cursos, colegio.porcentajePrioritarios, docente, esEducadora, horasNoAulaDocente, horasContratoDisponiblesAula]);
+  }, [asignacionesDocente, cursos, cursoParvularioActivo, todosCursosParvulariosEscuela, colegio.porcentajePrioritarios, colegio.regimenProporcion, docente, esEducadora, horasNoAulaDocente, horasContratoDisponiblesAula]);
 
   // Lista exclusiva de Educadoras de Párvulos disponibles en el colegio con su capacidad de aula (60m) y contrato libre
   const educadorasDisponibles = useMemo(() => {
     const regParv: '65_35' | '60_40' = cursoParvularioActivo?.regimenProporcion
       ? cursoParvularioActivo.regimenProporcion
-      : (colegio.regimenProporcion ? colegio.regimenProporcion : (colegio.porcentajePrioritarios >= 60 ? '60_40' : '65_35'));
+      : (todosCursosParvulariosEscuela.find(cp => cp.regimenProporcion)?.regimenProporcion
+        || colegio.regimenProporcion
+        || '65_35');
 
     const mapeados = docentes.map(d => {
       const esEdParv = d.estamento === 'EDUCADORA_PARVULO' ||
@@ -2659,7 +2667,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     const listaFinal = soloEducadoras.length > 0 ? soloEducadoras : mapeados;
 
     return listaFinal.sort((a, b) => b.horasAulaLibres - a.horasAulaLibres);
-  }, [docentes, asignaciones, colegio.porcentajePrioritarios]);
+  }, [docentes, asignaciones, cursos, cursoParvularioActivo, todosCursosParvulariosEscuela, colegio.porcentajePrioritarios, colegio.regimenProporcion, desgloseHorasFueraAula, docente.id]);
 
   // Detección de posibles asignaciones duplicadas de este docente
   const idsDuplicadosSugeridos = useMemo(() => {
