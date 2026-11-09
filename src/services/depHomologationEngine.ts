@@ -222,6 +222,57 @@ export function homologarDocenteAPal(
     nivelPal = 'Educación Básica';
   }
 
+  // Helper para discriminar co-docencia y horas PIE
+  const esAsignacionPie = (a: AsignacionHoraria) => {
+    const ta = (a.tipoApoyo || '').toLowerCase();
+    const asig = (a.asignatura || '').toLowerCase();
+    return (
+      ta === 'pie' ||
+      ta.includes('pie') ||
+      ta.includes('recurso') ||
+      ta.includes('decreto 170') ||
+      asig.includes('pie') ||
+      asig.includes('decreto 170') ||
+      asig.includes('aula de recurso')
+    );
+  };
+
+  const esCoDocenciaNoPie = (a: AsignacionHoraria) => {
+    const esCo = Boolean(
+      a.esCoDocencia ||
+      a.esCoDocenciaParvularia ||
+      a.coDocenteId ||
+      (a.tipoApoyo && /co-?docencia|segunda educadora/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /co-?docencia/i.test(a.asignatura))
+    );
+    return esCo && !esAsignacionPie(a);
+  };
+
+  // Identificar horas técnicas de co-docencia (salvo PIE) y horas de plan de estudio cargadas en el SaaS con cargo a SEP
+  const horasTecnicasCoDocencia = asigsDoc
+    .filter(esCoDocenciaNoPie)
+    .reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
+
+  // Asignaciones del plan de estudio en el SaaS (no PIE)
+  const asigsPlanNoPie = asigsDoc.filter(a => !esAsignacionPie(a) && !esCoDocenciaNoPie(a));
+  const asigsSepExplicitas = asigsDoc.filter(a => a.esTallerSep || (a.tipoApoyo && /sep/i.test(a.tipoApoyo)));
+  const haSepExplicitas = asigsSepExplicitas.reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
+
+  const hSubvTit = Number(docente.horasSubvencionGeneralTitular || 0);
+  const hSubvCtta = Number(docente.horasSubvencionGeneralContrata || 0);
+  const hSepTit = Number(docente.horasSepTitular || 0);
+  const hSepCtta = Number(docente.horasSepContrata || 0);
+  const hPieTit = Number(docente.horasPieTitular || 0);
+  const hPieCtta = Number(docente.horasPieContrata || 0);
+
+  const contratoSepDoc = hSepTit + hSepCtta;
+  // Todas las horas cargadas en el SaaS como parte del plan de estudio con cargo a la subvención SEP
+  let sepPlanSaaSCrono = 0;
+  if (contratoSepDoc > 0 || haSepExplicitas > 0) {
+    const haPedagSep = haSepExplicitas > 0 ? haSepExplicitas : asigsPlanNoPie.reduce((sum, a) => sum + (Number(a.horasPedagogicasAula) || 0), 0);
+    sepPlanSaaSCrono = round(haPedagSep * 0.75, 2);
+  }
+
   // 2. Estamento y Función oficial DEP
   const esEducadora = tieneParvula && (docente.estamento === 'OTRA_ESTABLECIMIENTO' || /educadora|párvulo|parvulo/i.test(docente.titulo || docente.cargoInstitucional || ''));
   const estamentoPal: 'Docente' | 'Educadora de Parvulos' = esEducadora ? 'Educadora de Parvulos' : 'Docente';
@@ -229,21 +280,37 @@ export function homologarDocenteAPal(
   let funcionPal: 'Función Directiva' | 'Función Técnico Pedagógica' | 'Docente aula' | 'Otros (Talleristas / Apoyo / etc.)' = 'Docente aula';
   if (docente.horasDirectivas && docente.horasDirectivas > 0) {
     funcionPal = 'Función Directiva';
-  } else if ((docente.horasTecnicoPedagogicas && docente.horasTecnicoPedagogicas > 0) || (docente.horasCoordinacion && docente.horasCoordinacion > 0) || /utp|evaluador|orientador|curricul/i.test(docente.cargoInstitucional || docente.funcionPrincipal || '')) {
+  } else if (
+    (docente.horasTecnicoPedagogicas && docente.horasTecnicoPedagogicas > 0) ||
+    (docente.horasCoordinacion && docente.horasCoordinacion > 0) ||
+    horasTecnicasCoDocencia > 0 ||
+    /utp|evaluador|orientador|curricul|apoyo técnico/i.test(docente.cargoInstitucional || docente.funcionPrincipal || '')
+  ) {
+    // Co-docencia no PIE es clasificada como Función Técnico Pedagógica
     funcionPal = 'Función Técnico Pedagógica';
   } else if (asigsDoc.some(a => a.esTallerSep || a.esTallerJec)) {
     funcionPal = 'Docente aula';
   }
 
-  const cargoPal = docente.cargoInstitucional || docente.funcionPrincipal || (funcionPal === 'Función Directiva' ? 'DIRECTOR/A' : (funcionPal === 'Función Técnico Pedagógica' ? 'JEFE/A UTP' : 'DOCENTE DE AULA'));
+  let cargoPal = docente.cargoInstitucional || docente.funcionPrincipal;
+  if (!cargoPal) {
+    if (funcionPal === 'Función Directiva') cargoPal = 'DIRECTOR/A';
+    else if (horasTecnicasCoDocencia > 0 && funcionPal === 'Función Técnico Pedagógica') cargoPal = 'DOCENTE DE APOYO TÉCNICO / CO-DOCENCIA';
+    else if (funcionPal === 'Función Técnico Pedagógica') cargoPal = 'JEFE/A UTP';
+    else cargoPal = 'DOCENTE DE AULA';
+  }
 
   // 3. Horas pedagógicas clasificadas por proporción (65/35 vs 60/40) y ciclo (Básica vs Media)
+  // Nota: Las horas de co-docencia no PIE son técnicas y no forman parte del aula titular en K y L
   let haBasica65 = 0;
   let haMedia65 = 0;
   let haBasica60 = 0;
   let haMedia60 = 0;
 
   asigsDoc.forEach(a => {
+    // Si es co-docencia no PIE o es PIE, no se imputa a las horas lectivas de aula regular en K y L
+    if (esCoDocenciaNoPie(a) || esAsignacionPie(a)) return;
+
     const curso = cursosColegio.find(c => c.id === a.cursoId);
     const esMedia = curso ? /medio|media/i.test(curso.nivel) : false;
 
@@ -270,7 +337,7 @@ export function homologarDocenteAPal(
 
   // Si no tenía asignaciones directas por curso pero registra docente.horasAula
   const totalHaAsigs = haBasica65 + haMedia65 + haBasica60 + haMedia60;
-  if (totalHaAsigs === 0 && docente.horasAula && docente.horasAula > 0) {
+  if (totalHaAsigs === 0 && docente.horasAula && docente.horasAula > 0 && horasTecnicasCoDocencia === 0) {
     const regDefault: '65/35' | '60/40' = (establecimiento.porcentajePrioritarios >= 80) ? '60/40' : '65/35';
     const esMedia = nivelPal === 'Educación Media';
     if (regDefault === '60/40') {
@@ -285,13 +352,6 @@ export function homologarDocenteAPal(
   const totalHa65 = haBasica65 + haMedia65;
   const totalHa60 = haBasica60 + haMedia60;
   const tieneAmbasProporciones = totalHa65 > 0 && totalHa60 > 0;
-
-  const hSubvTit = Number(docente.horasSubvencionGeneralTitular || 0);
-  const hSubvCtta = Number(docente.horasSubvencionGeneralContrata || 0);
-  const hSepTit = Number(docente.horasSepTitular || 0);
-  const hSepCtta = Number(docente.horasSepContrata || 0);
-  const hPieTit = Number(docente.horasPieTitular || 0);
-  const hPieCtta = Number(docente.horasPieContrata || 0);
 
   const totalTit = hSubvTit + hSepTit + hPieTit;
   const totalCtta = hSubvCtta + hSepCtta + hPieCtta;
@@ -370,7 +430,7 @@ export function homologarDocenteAPal(
     const calidadUnica: 'Titular' | 'Plazo Fijo' = (totalTit > 0 || docente.calidadJuridica === 'TITULAR') ? 'Titular' : 'Plazo Fijo';
     const jornadaTotal = docente.horasContrato || (totalTit + totalCtta);
     const pieTotal = hPieTit + hPieCtta;
-    const sepTotal = hSepTit + hSepCtta;
+    const sepTotal = Math.max(hSepTit + hSepCtta, sepPlanSaaSCrono);
     const dispRegular = Math.max(0, jornadaTotal - pieTotal - sepTotal);
 
     // Requerimiento mínimo por tabla de cada tramo
@@ -449,9 +509,12 @@ export function homologarDocenteAPal(
 
   // Regla 33 DEP: Si tiene contratos Titular y Contrata, desdoblar en 2 filas
   if (tieneContratosMixtos) {
-    const dispTit = Math.max(0, totalTit - hPieTit - hSepTit);
+    const sepTitEfectivo = hSepTit;
+    const sepCttaEfectivo = Math.min(Math.max(0, totalCtta - hPieCtta), Math.max(hSepCtta, sepPlanSaaSCrono));
+
+    const dispTit = Math.max(0, totalTit - hPieTit - sepTitEfectivo);
     const maxHaTit = obtenerMaxHaParaJornada(dispTit, proporcionHa);
-    const dispCtta = Math.max(0, totalCtta - hPieCtta - hSepCtta);
+    const dispCtta = Math.max(0, totalCtta - hPieCtta - sepCttaEfectivo);
     const maxHaCtta = obtenerMaxHaParaJornada(dispCtta, proporcionHa);
 
     const ratioTit = totalTit / (totalTit + totalCtta);
@@ -461,15 +524,17 @@ export function homologarDocenteAPal(
     let kBasCtta = Math.min(maxHaCtta, haBasica - kBasTit);
     let lMedCtta = Math.min(Math.max(0, maxHaCtta - kBasCtta), haMedia - lMedTit);
 
-    const filaTit = armarFila('Titular', totalTit, kBasTit, lMedTit, hPieTit, hSepTit, 'Contrato Titular', proporcionHa);
-    const filaCtta = armarFila('Plazo Fijo', totalCtta, kBasCtta, lMedCtta, hPieCtta, hSepCtta, 'Contrato Contrata', proporcionHa);
+    const filaTit = armarFila('Titular', totalTit, kBasTit, lMedTit, hPieTit, sepTitEfectivo, 'Contrato Titular', proporcionHa);
+    const filaCtta = armarFila('Plazo Fijo', totalCtta, kBasCtta, lMedCtta, hPieCtta, sepCttaEfectivo, 'Contrato Contrata', proporcionHa);
     return [filaTit, filaCtta];
   }
 
   // Fila única
   const calidadUnica = (totalTit > 0 || docente.calidadJuridica === 'TITULAR') ? 'Titular' : 'Plazo Fijo';
   const jornada = docente.horasContrato || (totalTit + totalCtta);
-  return [armarFila(calidadUnica, jornada, haBasica, haMedia, hPieTit + hPieCtta, hSepTit + hSepCtta, '', proporcionHa)];
+  const pieTotal = hPieTit + hPieCtta;
+  const sepTotal = Math.min(Math.max(0, jornada - pieTotal), Math.max(hSepTit + hSepCtta, sepPlanSaaSCrono));
+  return [armarFila(calidadUnica, jornada, haBasica, haMedia, pieTotal, sepTotal, '', proporcionHa)];
 }
 
 /**

@@ -408,10 +408,10 @@ export async function generarExcelConsolidadoPalDEP(
       } catch (_) {}
     }
 
-    // Helper para obtener las horas de plan de estudio efectivas 100% del SaaS
-    const calcularPlanEfectivoCurso = (c: CursoSae, hDocNoPie: number): number => {
+    // Helper para obtener las horas de plan de estudio normativas de cada curso en el SaaS
+    const calcularPlanNormativoCurso = (c: CursoSae): number => {
       let hPlan = 0;
-      // 1. Plan personalizado en base de datos si el curso tiene planEstudioId
+      // 1. Plan personalizado normativo en base de datos si el curso tiene planEstudioId
       if (c.planEstudioId) {
         const planDb = planesEstudioDb.find(p => p.id === c.planEstudioId);
         if (planDb) {
@@ -423,7 +423,7 @@ export async function generarExcelConsolidadoPalDEP(
           }
         }
       }
-      // 2. Plan oficial MINEDUC considerando nivel, régimen (JEC/No JEC) y especialidad TP
+      // 2. Plan oficial normativo MINEDUC considerando nivel, régimen (JEC/No JEC) y especialidad TP
       if (hPlan <= 0) {
         const planMineduc = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
         if (planMineduc && typeof planMineduc.totalHorasPlan === 'number' && planMineduc.totalHorasPlan > 0) {
@@ -432,14 +432,7 @@ export async function generarExcelConsolidadoPalDEP(
           hPlan = calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
         }
       }
-      // 3. Sumar talleres JEC explícitos si están configurados
-      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (Number(t.horas) || 0), 0);
-      hPlan += hTalleres;
-      // 4. Si en la malla curricular las asignaciones docentes no PIE superan el plan base, respetar la carga real
-      if (hDocNoPie > 0 && hDocNoPie > hPlan) {
-        hPlan = hDocNoPie;
-      }
-      // 5. Fallback normativo seguro si aún fuera 0
+      // 3. Fallback normativo seguro según régimen MINEDUC
       if (hPlan <= 0) {
         const esParv = /pre-?kinder|kinder|nt1|nt2|transicion|parvul|medio menor|medio mayor/i.test(c.nivel);
         const esTP = /tp|tecnico|profesional|especialidad/i.test(c.nivel) || Boolean(c.especialidadTp);
@@ -502,7 +495,7 @@ export async function generarExcelConsolidadoPalDEP(
 
       for (const c of cursosColegio) {
         const hDocNoPie = horasNoPiePorCurso.get(c.id) || 0;
-        const hPlan = calcularPlanEfectivoCurso(c, hDocNoPie);
+        const hPlan = calcularPlanNormativoCurso(c);
         const esCombinadoOMulti = Boolean(c.esMultigrado || c.esCombinado || (c.gradosCombinados && c.gradosCombinados.length > 0));
         const grados = extraerGradosDeCurso(c);
         const regimenProp: '65_35' | '60_40' = c.regimenProporcion || estRegimen;

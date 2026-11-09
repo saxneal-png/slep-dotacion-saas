@@ -518,4 +518,114 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     // R4 debe tener la fórmula de % inversión
     expect((wsSep.getCell('R4').value as any).formula).toBe('P5/D4');
   });
+
+  it('clasifica la co-docencia no PIE como Técnica (Función Técnico Pedagógica) y no como aula regular en Cols K/L', () => {
+    const est: Establecimiento = {
+      id: 'est_3659',
+      rbd: '3659',
+      nombre: 'ESCUELA ARTURO MERINO BENITEZ',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 75
+    };
+
+    const docCoDoc: Docente = {
+      id: 'doc_codoc_1',
+      rbd: '3659',
+      run: '15.678.901-2',
+      nombres: 'CAMILA',
+      apellidos: 'PARRA',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralContrata: 30
+    };
+
+    const asigCoDoc: any[] = [
+      {
+        id: 'asig_codoc',
+        rbd: '3659',
+        cursoId: 'cur_1',
+        docenteId: 'doc_codoc_1',
+        asignatura: 'Segunda Educadora / Co-docencia en Aula Regular',
+        horasPedagogicasAula: 20,
+        esCoDocencia: true,
+        tipoApoyo: 'Co-docencia Aula Regular'
+      }
+    ];
+
+    const filas = homologarDocenteAPal(docCoDoc, est, [], asigCoDoc);
+    expect(filas.length).toBe(1);
+    const f = filas[0];
+
+    // Función debe ser clasificada como Técnico Pedagógica
+    expect(f.funcion).toBe('Función Técnico Pedagógica');
+    // Las horas de co-docencia técnica NO van a K y L (aula regular titular)
+    expect(f.hrsLectivasBasica).toBe(0);
+    expect(f.hrsLectivasMedia).toBe(0);
+    // Cuadratura exacta de contrato en Col J = N + O + P + Q + R
+    expect(f.totalHrsContrato).toBe(30);
+    const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(f.hrsLectivasBasica + f.hrsLectivasMedia, f.proporcionHa);
+    expect(lectivasCrono + noLectivasCrono + f.hrsPieCronologicas + f.hrsSepCronologicas + f.otrasFuncionesNoLectivas).toBe(30);
+  });
+
+  it('exporta las horas de plan de estudio cargadas en el SaaS con cargo a la subvención SEP (Columna Q)', () => {
+    const est: Establecimiento = {
+      id: 'est_3659',
+      rbd: '3659',
+      nombre: 'ESCUELA ARTURO MERINO BENITEZ',
+      comuna: 'Chillán',
+      regimen: 'JEC',
+      porcentajePrioritarios: 75
+    };
+
+    const docSep: Docente = {
+      id: 'doc_sep_1',
+      rbd: '3659',
+      run: '16.789.012-3',
+      nombres: 'RODRIGO',
+      apellidos: 'VILLALOBOS',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 20,
+      horasSepContrata: 20
+    };
+
+    const curso: CursoSae = {
+      id: 'cur_5b',
+      rbd: '3659',
+      nivel: '5° Básico',
+      letra: 'A',
+      regimen: 'JEC',
+      cupoSae: 30,
+      matriculaProyectada: 25,
+      alumnosNeet: 0,
+      alumnosNeep: 0
+    };
+
+    // 16 horas pedagógicas de Taller de Refuerzo SEP cargadas al curso
+    const asigSep: any[] = [
+      {
+        id: 'asig_sep_ref',
+        rbd: '3659',
+        cursoId: 'cur_5b',
+        docenteId: 'doc_sep_1',
+        asignatura: 'Taller Nivelación y Refuerzo SEP',
+        horasPedagogicasAula: 16,
+        esTallerSep: true,
+        tipoApoyo: 'SEP'
+      }
+    ];
+
+    const filas = homologarDocenteAPal(docSep, est, [curso], asigSep);
+    expect(filas.length).toBe(1);
+    const f = filas[0];
+
+    // Columna Q (SEP) debe reflejar las horas con cargo a SEP (al menos 12h cronológicas por las 16 HA, o el contrato de 20h)
+    expect(f.hrsSepCronologicas).toBeGreaterThanOrEqual(12);
+    expect(f.totalHrsContrato).toBe(20);
+    // Balance estricto
+    const { lectivasCrono, noLectivasCrono } = evaluarVlookupPal(f.hrsLectivasBasica + f.hrsLectivasMedia, f.proporcionHa);
+    expect(lectivasCrono + noLectivasCrono + f.hrsPieCronologicas + f.hrsSepCronologicas + f.otrasFuncionesNoLectivas).toBe(20);
+  });
 });
