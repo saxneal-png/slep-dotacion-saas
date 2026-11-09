@@ -1915,8 +1915,18 @@ export function obtenerPlanPorCurso(
   const raw = (cursoNombre || '').trim();
   const espRaw = (especialidadTp || '').trim();
 
-  // 0. Si se pasa especialidad directa que coincida exactamente con un nivel
-  if (espRaw) {
+  // 0. Si se pasa especialidad directa que coincida exactamente con un nivel,
+  // verificar primero si el cursoNombre no contradice el nivel 3° vs 4° Medio
+  const rawNorm = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const espNorm = espRaw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const cursoEs4Medio = rawNorm.includes('4°') || rawNorm.includes('4o') || rawNorm.includes('4 ') || rawNorm.includes('cuarto') || rawNorm.includes('4to');
+  const cursoEs3Medio = rawNorm.includes('3°') || rawNorm.includes('3o') || rawNorm.includes('3 ') || rawNorm.includes('tercer') || rawNorm.includes('3er');
+  const espEs3 = espNorm.includes('3°') || espNorm.includes('3o') || espNorm.includes('3 ') || espNorm.includes('tercer');
+  const espEs4 = espNorm.includes('4°') || espNorm.includes('4o') || espNorm.includes('4 ') || espNorm.includes('cuarto');
+
+  const hayConflictoNivelTp = (cursoEs4Medio && espEs3) || (cursoEs3Medio && espEs4);
+
+  if (espRaw && !hayConflictoNivelTp) {
     const matchEsp = PLANES_MINEDUC.find(p => p.nivel === espRaw && p.regimen === regimen) ||
                      PLANES_MINEDUC.find(p => p.nivel === espRaw);
     if (matchEsp) return matchEsp;

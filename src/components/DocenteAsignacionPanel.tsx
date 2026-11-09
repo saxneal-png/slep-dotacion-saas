@@ -19,6 +19,7 @@ import { Docente, AsignacionHoraria, CursoSae, Establecimiento, PlanEstudioCurri
 import { 
   obtenerPlanPorCurso, 
   PlanEstudioNivel,
+  PLANES_MINEDUC,
   CATALOGO_PROFUNDIZACION_HC_27,
   CATALOGO_PLAN_COMUN_ELECTIVO_3_4,
   buscarContratoMinimoPorTabla,
@@ -188,6 +189,13 @@ export function normalizarNombreAsignatura(nombre: string): string {
   n = n.replace(/^idioma extranjero:\s*/i, '');
   n = n.replace(/\s+/g, ' ').trim();
 
+  // Si es un módulo de Formación Diferenciada Técnico-Profesional, PRESERVAR SU IDENTIDAD INTACTA
+  // para que JAMÁS colisione con Matemática ("materias primas", "materiales"), Educación Física ("salud"),
+  // Ciencias Naturales ("química"), Música, etc.
+  if (/^m[oó]dulo\b/i.test(n)) {
+    return `modulo_${n.replace(/^m[oó]dulo\s*(menci[oó]n|com[uú]n)?\s*:?\s*/i, '').replace(/[^a-z0-9]/g, '_')}`;
+  }
+
   // Si es un taller, refuerzo o libre disposición (y no es el electivo oficial 'Taller de Literatura' ni 'Taller Laboral'),
   // preservar su identidad como taller para que NUNCA colisione ni descuente de las asignaturas troncales del plan
   if (
@@ -207,7 +215,7 @@ export function normalizarNombreAsignatura(nombre: string): string {
     n.includes('educacion y salud') ||
     n.includes('deporte') ||
     n.includes('motricidad') ||
-    (n.includes('salud') && !n.includes('ciencias de la salud'))
+    (/\bsalud\b/i.test(n) && !n.includes('ciencias de la salud'))
   ) {
     return 'educacion fisica y salud';
   }
@@ -259,15 +267,15 @@ export function normalizarNombreAsignatura(nombre: string): string {
 
   // 4. Lenguaje y Comunicación / Lengua y Literatura (excluyendo electivos específicos)
   if (
-    (n.includes('lengua') || n.includes('lenguaje') || n.includes('comunicacion')) &&
+    (n.includes('lengua') || n.includes('lenguaje') || /\bcomunicacion\b/i.test(n)) &&
     !n.includes('taller de literatura') && !n.includes('lectura y escritura') && !n.includes('argumentacion')
   ) {
     return 'lenguaje y comunicacion';
   }
 
-  // 5. Matemática (excluyendo electivos específicos de profundización)
+  // 5. Matemática (excluyendo electivos específicos de profundización y usando límites de palabra)
   if (
-    (n.includes('mate') || n.includes('matematica') || n.includes('algebra') || n.includes('geometria') || n.includes('calculo')) &&
+    (/\b(mate|matematica|matematicas|algebra|geometria|calculo)\b/i.test(n)) &&
     !n.includes('limites') && !n.includes('probabilidades') && !n.includes('pensamiento computacional') && !n.includes('geometria 3d')
   ) {
     return 'matematica';
@@ -333,6 +341,19 @@ export function sonAsignaturasEquivalentes(asigA: string, asigB: string): boolea
 
   const aNorm = asigA.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const bNorm = asigB.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  // NUNCA considerar equivalente una asignatura troncal regular (Matemática, Lenguaje, etc.) con un Módulo TP
+  const esModuloA = /^m[oó]dulo\b/i.test(aNorm);
+  const esModuloB = /^m[oó]dulo\b/i.test(bNorm);
+  if ((esModuloA && !esModuloB) || (esModuloB && !esModuloA)) {
+    // Excepción única: Si el plan del curso tiene el bloque genérico de Formación Diferenciada TP (22 HA)
+    const esBloqueGenericoTpA = aNorm.includes('formacion diferenciada') && (aNorm.includes('tecnico') || aNorm.includes('tp') || aNorm.includes('especialidad'));
+    const esBloqueGenericoTpB = bNorm.includes('formacion diferenciada') && (bNorm.includes('tecnico') || bNorm.includes('tp') || bNorm.includes('especialidad'));
+    if ((esBloqueGenericoTpA && esModuloB) || (esBloqueGenericoTpB && esModuloA)) {
+      return true;
+    }
+    return false;
+  }
 
   // NUNCA considerar equivalentes Ciencias para la Ciudadanía con Educación Ciudadana
   const esCienciasCiudadaniaA = aNorm.includes('cienc') && aNorm.includes('ciudadan');
@@ -448,14 +469,14 @@ export function calcularDisponibilidadCurso(
       esDiferenciadoCompartido: a.esDiferenciadoCompartido
     });
 
-    if (infoCanonica.ambito === 'DIFERENCIADA_HC' || infoCanonica.ambito === 'PLAN_COMUN_ELECTIVO' || infoCanonica.ambito === 'PLAN_COMUN') {
+    if (infoCanonica.ambito === 'DIFERENCIADA_HC' || infoCanonica.ambito === 'DIFERENCIADA_TP' || infoCanonica.ambito === 'PLAN_COMUN_ELECTIVO' || infoCanonica.ambito === 'PLAN_COMUN') {
       return false;
     }
-    if (a.ambitoCurricular === 'DIFERENCIADA_HC' || a.ambitoCurricular === 'PLAN_COMUN_ELECTIVO' || a.ambitoCurricular === 'PLAN_COMUN') {
+    if (a.ambitoCurricular === 'DIFERENCIADA_HC' || a.ambitoCurricular === 'DIFERENCIADA_TP' || a.ambitoCurricular === 'PLAN_COMUN_ELECTIVO' || a.ambitoCurricular === 'PLAN_COMUN') {
       return false;
     }
 
-    const esOficial = /taller de literatura|taller laboral/i.test(a.asignatura) || esAsignaturaProfundizacionHc(a.asignatura);
+    const esOficial = /taller de literatura|taller laboral/i.test(a.asignatura) || esAsignaturaProfundizacionHc(a.asignatura) || /^m[oó]dulo\b/i.test(a.asignatura);
     if (!esOficial && (a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))) return true;
     const coincideConBase = infoPlan.asignaturas.some(asigPlan => sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre));
     return !coincideConBase;
@@ -479,7 +500,7 @@ export function calcularDisponibilidadCurso(
           esTallerSep: a.esTallerSep,
           esTrabajoColaborativo: a.esTrabajoColaborativo
         });
-        const esMateriaOficial = infoCanonicaA.esOficial && (infoCanonicaA.ambito === 'DIFERENCIADA_HC' || infoCanonicaA.ambito === 'PLAN_COMUN' || infoCanonicaA.ambito === 'PLAN_COMUN_ELECTIVO');
+        const esMateriaOficial = infoCanonicaA.esOficial && (infoCanonicaA.ambito === 'DIFERENCIADA_HC' || infoCanonicaA.ambito === 'DIFERENCIADA_TP' || infoCanonicaA.ambito === 'PLAN_COMUN' || infoCanonicaA.ambito === 'PLAN_COMUN_ELECTIVO');
 
         if (a.esTallerJec && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
         if (a.esTallerSep) return false;
@@ -678,6 +699,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   });
   const esOficialProfundizacionOPlan = infoCanonicaFila.esOficial && (
     infoCanonicaFila.ambito === 'DIFERENCIADA_HC' ||
+    infoCanonicaFila.ambito === 'DIFERENCIADA_TP' ||
     infoCanonicaFila.ambito === 'PLAN_COMUN' ||
     infoCanonicaFila.ambito === 'PLAN_COMUN_ELECTIVO'
   );
@@ -701,6 +723,9 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   const matchProfActual = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === a.asignatura.toLowerCase());
   const matchPlanComunActual = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => a.asignatura.toLowerCase().includes(c.nombre.toLowerCase()));
 
+  // Si es un módulo TP oficial, preservar su valor exacto para que el select no lo colapse a OTRA_MANUAL o Matemática
+  const esModuloTpActual = /^m[oó]dulo\b/i.test(a.asignatura || '');
+
   const valorSelectFila = matchBcepActual
     ? matchBcepActual.nucleo
     : esCoDocDto306Nombre
@@ -712,7 +737,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
           ? matchProfActual.nombre
           : (matchPlanComunActual && a.asignatura.toLowerCase().includes('electivo')
               ? `${matchPlanComunActual.nombre} (Electivo)`
-              : (asigEnPlan?.nombre || 'OTRA_MANUAL')
+              : (asigEnPlan?.nombre || (esModuloTpActual ? a.asignatura : 'OTRA_MANUAL'))
             )
       );
 
@@ -730,9 +755,11 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
               if (nuevoCurso) {
                 const planNuevo = resolverPlanCurso(nuevoCurso, planesDb);
                 const dispNuevo = calcularDisponibilidadCurso(nuevoCurso, planNuevo, asignacionesColegio);
-                // Si la asignatura actual no existe en el nuevo curso, sugerir la primera disponible
+                // Si la asignatura actual no existe en el nuevo curso, sugerir la primera disponible (salvo si es módulo TP en curso TP)
+                const esTpActual = /^m[oó]dulo\b/i.test(a.asignatura);
+                const esTpDestino = nuevoCurso.nivel.toLowerCase().includes('tp') || Boolean(nuevoCurso.especialidadTp);
                 if (!planNuevo.asignaturas.some(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura))) {
-                  if (dispNuevo.disponibles.length > 0) {
+                  if (!(esTpActual && esTpDestino) && dispNuevo.disponibles.length > 0) {
                     nuevaAsig = dispNuevo.disponibles[0].nombre;
                   }
                 }
@@ -857,6 +884,15 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                     ))}
                     <option value="Atención Directa y Co-Docencia Parvularia (DTO 306)">
                       👶 Atención Directa y Co-Docencia Parvularia (DTO 306)
+                    </option>
+                  </optgroup>
+                )}
+
+                {/* Si la fila tiene un módulo TP asignado pero no está en disponibilidad.disponibles (o ya está cubierto), incluirlo para que el select lo muestre fielmente */}
+                {esModuloTpActual && !disponibilidad.disponibles.some(d => d.nombre === a.asignatura) && (
+                  <optgroup label="🛠️ Módulo de Especialidad TP Asignado">
+                    <option value={a.asignatura}>
+                      🛠️ {a.asignatura}
                     </option>
                   </optgroup>
                 )}
@@ -1266,6 +1302,16 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     return Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
   }, [cursoSeleccionado]);
 
+  const esCursoTpForm = useMemo(() => {
+    return Boolean(
+      cursoSeleccionado && (
+        cursoSeleccionado.nivel.toLowerCase().includes('tp') ||
+        Boolean(cursoSeleccionado.especialidadTp) ||
+        infoPlan.categoria === 'MEDIA_TP'
+      )
+    );
+  }, [cursoSeleccionado, infoPlan.categoria]);
+
   const esModoPersonalizado = 
     regCursoId === 'TRANSVERSAL' ||
     tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ||
@@ -1484,7 +1530,33 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                 </>
               )}
 
-              {esMedio34Form && (
+              {/* En cursos TP o que tengan módulos en su plan, listar los módulos de la especialidad */}
+              {esCursoTpForm && (
+                <optgroup label="🛠️ Módulos de Especialidad Técnico-Profesional">
+                  {infoPlan.asignaturas
+                    .filter(a => /^m[oó]dulo\b/i.test(a.nombre))
+                    .map((mod, idx) => (
+                      <option key={`tp-mod-${idx}`} value={mod.nombre}>
+                        🛠️ {mod.nombre} ({mod.horas} HA)
+                      </option>
+                    ))}
+                  {/* Si el plan no tiene módulos desplegados (ej: curso TP genérico), ofrecer acceso a módulos oficiales de Gastronomía u otras especialidades */}
+                  {!infoPlan.asignaturas.some(a => /^m[oó]dulo\b/i.test(a.nombre)) && (
+                    PLANES_MINEDUC
+                      .filter((p: PlanEstudioNivel) => p.categoria === 'MEDIA_TP' && p.asignaturasBase.some(a => /^m[oó]dulo\b/i.test(a.nombre)))
+                      .flatMap((p: PlanEstudioNivel) => p.asignaturasBase.filter(a => /^m[oó]dulo\b/i.test(a.nombre)))
+                      .filter((val, idx, self) => self.findIndex(v => v.nombre === val.nombre) === idx)
+                      .slice(0, 25)
+                      .map((mod, idx) => (
+                        <option key={`tp-cat-${idx}`} value={mod.nombre}>
+                          🛠️ {mod.nombre} ({mod.horasSugeridas} HA)
+                        </option>
+                      ))
+                  )}
+                </optgroup>
+              )}
+
+              {esMedio34Form && !esCursoTpForm && (
                 <>
                   <optgroup label="✨ Plan Común Electivo (3° y 4° Medio - 2 HA)">
                     {CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(elec => (

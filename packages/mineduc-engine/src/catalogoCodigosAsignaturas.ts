@@ -595,6 +595,20 @@ export function resolverCodigoYAmbitoAsignatura(
 } {
   const norm = normalizarCadenaBusqueda(nombreAsignatura);
 
+  // 0. Detección especial prioritaria para Módulos de Especialidad Técnico-Profesional (Decreto 0876/2019)
+  if (
+    /^(modulo|modulo mencion|modulo comun)\b/i.test(norm) ||
+    /^(modulo|modulo mencion|modulo comun):/i.test(nombreAsignatura.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+  ) {
+    const slugMod = norm.replace(/^modulo\s*(mencion|comun)?\s*:?\s*/i, '').replace(/\s+/g, '_').substring(0, 32).toUpperCase();
+    return {
+      codigo: `DIF-TP-${slugMod || 'MODULO'}`,
+      ambito: 'DIFERENCIADA_TP',
+      nombreOficial: nombreAsignatura.trim(),
+      esOficial: true
+    };
+  }
+
   // 1. Detección especial prioritaria para evitar colisión de Ciudadanía
   if (norm.includes('cienc') && norm.includes('ciudadan')) {
     const asig = MAPA_POR_CODIGO.get('PC-MED34-CIEN')!;
