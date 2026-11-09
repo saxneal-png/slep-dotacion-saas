@@ -677,33 +677,52 @@ export function homologarNivelExcelPal(raw: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (/pre-?kinder|nt1/i.test(s)) return 'prekinder';
-  if (/kinder|nt2/i.test(s)) return 'kinder';
+  // 1. Educación Parvularia
+  if (/pre-?kinder|nt1|transicion menor/i.test(s)) return 'prekinder';
+  if (/kinder|nt2|transicion mayor/i.test(s)) return 'kinder';
   if (/medio menor/i.test(s)) return 'medio menor y mayor';
   if (/nt1 nt2/i.test(s)) return 'nt1 nt2';
 
-  for (let i = 1; i <= 8; i++) {
-    if (new RegExp(`^${i}[°º]?\\s*basico`, 'i').test(s)) {
-      return `${i} basico`;
+  // 2. EPJA (Educación de Personas Jóvenes y Adultas)
+  if (/(?:pimer|primer|1[°º]?)\s*nivel\s*b[aá]sico/i.test(s)) return '1 nivel basico';
+  if (/(?:segundo|2[°º]?)\s*nivel\s*b[aá]sico/i.test(s)) return '2 nivel basico';
+  if (/(?:tercer|3[°º]?)\s*nivel\s*b[aá]sico/i.test(s)) return '3 nivel basico';
+  if (/(?:primer|1[°º]?)\s*nivel\s*(?:medio|m\b)/i.test(s)) return '1 nivel medio';
+  if (/(?:segundo|2[°º]?)\s*nivel\s*(?:medio|m\b)/i.test(s)) return '2 nivel medio';
+
+  // 3. Pares combinados de básica específicos (plantillas DEP rurales)
+  if (/(?:^|\b)1[°º]?\s*(?:y|-|a)\s*2[°º]?\b/i.test(s) && !/nivel/i.test(s)) return '1 y 2';
+  if (/(?:^|\b)3[°º]?\s*(?:y|-|a)\s*4[°º]?\b/i.test(s) && !/nivel/i.test(s)) return '3 y 4';
+
+  // 4. Mapeo ordinal de Básica (1° a 8°) tolerante a prefijos/letras (ej: "1° Básico A", "Primero Básico", "Básica 1°")
+  const mapWordToNum: { [key: string]: number } = {
+    primer: 1, primero: 1, '1': 1, '1ro': 1, '1°': 1,
+    segundo: 2, '2': 2, '2do': 2, '2°': 2,
+    tercer: 3, tercero: 3, '3': 3, '3ro': 3, '3°': 3,
+    cuarto: 4, '4': 4, '4to': 4, '4°': 4,
+    quinto: 5, '5': 5, '5to': 5, '5°': 5,
+    sexto: 6, '6': 6, '6to': 6, '6°': 6,
+    septimo: 7, '7': 7, '7mo': 7, '7°': 7,
+    octavo: 8, '8': 8, '8vo': 8, '8°': 8
+  };
+
+  for (const [w, num] of Object.entries(mapWordToNum)) {
+    const regex = new RegExp(`(?:^|\\b)${w}[°º]?\\s*(?:ano|ano)?\\s*b[aá]sico`, 'i');
+    if (regex.test(s)) {
+      return `${num} basico`;
     }
   }
 
-  for (let i = 1; i <= 4; i++) {
-    if (new RegExp(`^${i}[°º]?\\s*medio`, 'i').test(s)) {
-      return `${i} medio`;
+  // 5. Mapeo ordinal de Media (1° a 4°) tolerante a especialidades (ej: "3° Medio TP Gastronomía", "4° Medio HC")
+  for (const [w, num] of Object.entries(mapWordToNum)) {
+    if (num > 4) continue;
+    const regex = new RegExp(`(?:^|\\b)${w}[°º]?\\s*(?:ano|ano)?\\s*medio`, 'i');
+    if (regex.test(s)) {
+      return `${num} medio`;
     }
   }
 
-  if (/1[°º]?\s*(?:y|-)\s*2/i.test(s)) return '1 y 2';
-  if (/3[°º]?\s*(?:y|-)\s*4/i.test(s)) return '3 y 4';
-
-  if (/pimer|primer|1[°º]?\s*nivel\s*basico/i.test(s)) return '1 nivel basico';
-  if (/segundo|2[°º]?\s*nivel\s*basico/i.test(s)) return '2 nivel basico';
-  if (/tercer|3[°º]?\s*nivel\s*basico/i.test(s)) return '3 nivel basico';
-
-  if (/primer|1[°º]?\s*nivel\s*m/i.test(s)) return '1 nivel medio';
-  if (/segundo|2[°º]?\s*nivel\s*m/i.test(s)) return '2 nivel medio';
-
+  // 6. Educación Especial y Talleres Laborales
   if (/servicios menores/i.test(s)) return 'taller laboral servicios menores';
   if (/asistencia al hogar/i.test(s)) return 'taller laboral asistencia al hogar';
   if (/invernadero/i.test(s)) return 'taller laboral invernadero y reciclaje';

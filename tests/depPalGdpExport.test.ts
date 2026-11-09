@@ -364,6 +364,103 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     expect(Number(fila1B.getCell(8).value)).toBe(48);
   }, 15000);
 
+  it('exporta cursos multigrado / combinados asignando la titularidad sin duplicar cursos ni perder matrícula', async () => {
+    const estRural: Establecimiento = {
+      id: 'est_3691',
+      rbd: '3691',
+      nombre: 'ESCUELA PAUL HARRIS',
+      comuna: 'CHILLAN',
+      porcentajePrioritarios: 85
+    };
+
+    const cursoCombinado: CursoSae = {
+      id: 'cur_comb_1_2',
+      rbd: '3691',
+      nivel: 'Combinado 1°-2° Básico',
+      letra: 'U',
+      regimen: 'JEC',
+      cupoSae: 20,
+      matriculaProyectada: 16,
+      alumnosNeet: 0,
+      alumnosNeep: 0,
+      esCombinado: true,
+      gradosCombinados: ['1° Básico', '2° Básico']
+    };
+
+    const bytes = await generarExcelConsolidadoPalDEP([estRural], [], [], [cursoCombinado]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(bytes as any);
+    const wsEst = wb.getWorksheet('Info Establecimiento')!;
+
+    let f1B: any = null;
+    let f2B: any = null;
+
+    wsEst.eachRow((r, n) => {
+      if (n > 3 && Number(r.getCell(2).value) === 3691) {
+        if (r.getCell(3).text.includes('1° Básico')) f1B = r;
+        if (r.getCell(3).text.includes('2° Básico')) f2B = r;
+      }
+    });
+
+    expect(f1B).toBeDefined();
+    expect(f2B).toBeDefined();
+
+    // El curso combinado es computado en el grado titular (1 curso, 38 hrs plan)
+    expect(Number(f1B.getCell(5).value)).toBe(1);
+    expect(Number(f1B.getCell(6).value)).toBe(38);
+    // El grado secundario mantiene cursos = 0 para no duplicar dotación
+    expect(Number(f2B.getCell(5).value)).toBe(0);
+    // Pero ambos grados mantienen su matrícula proyectada adaptada desde Base Completa
+    expect(Number(f1B.getCell(4).value)).toBeGreaterThan(0);
+    expect(Number(f2B.getCell(4).value)).toBeGreaterThan(0);
+  }, 15000);
+
+  it('incluye dinámicamente colegios ausentes en la plantilla ministerial base preservando fórmulas nativas', async () => {
+    // RBD 34591 es uno de los 47 colegios que no venían originalmente en la hoja Info Establecimiento del template DEP
+    const estNuevo: Establecimiento = {
+      id: 'est_34591',
+      rbd: '34591',
+      nombre: 'SALA CUNA Y JARDIN INFANTIL EL MANZANITO',
+      comuna: 'SAN CARLOS',
+      porcentajePrioritarios: 82
+    };
+
+    const cursoParv: CursoSae = {
+      id: 'cur_manzanito_1',
+      rbd: '34591',
+      nivel: 'Medio Menor y Mayor',
+      letra: 'A',
+      regimen: 'No JEC',
+      cupoSae: 24,
+      matriculaProyectada: 20,
+      alumnosNeet: 0,
+      alumnosNeep: 0
+    };
+
+    const bytes = await generarExcelConsolidadoPalDEP([estNuevo], [], [], [cursoParv]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(bytes as any);
+    const wsEst = wb.getWorksheet('Info Establecimiento')!;
+
+    let filaNueva: any = null;
+    wsEst.eachRow((r, n) => {
+      if (n > 3 && Number(r.getCell(2).value) === 34591) {
+        filaNueva = r;
+      }
+    });
+
+    expect(filaNueva).toBeDefined();
+    expect(filaNueva.getCell(1).text).toContain('EL MANZANITO');
+    expect(Number(filaNueva.getCell(2).value)).toBe(34591);
+    expect(filaNueva.getCell(3).text).toBe('Medio Menor y Mayor');
+    expect(Number(filaNueva.getCell(4).value)).toBe(20);
+    expect(Number(filaNueva.getCell(5).value)).toBe(1);
+    expect(Number(filaNueva.getCell(6).value)).toBeGreaterThan(0);
+    // La fórmula nativa =+E*F debe estar presente y referenciar a su fila
+    const formulaCell = filaNueva.getCell(7).value;
+    expect(typeof formulaCell === 'object' && 'formula' in formulaCell).toBe(true);
+  }, 15000);
+
   it('calcula con precisión matemática las horas de contrato docente reglamentarias según tabla MINEDUC (65/35 y 60/40)', () => {
     // Régimen Regular 65/35 (Max HA = 38 por 44 hrs)
     expect(calcularHorasContratoPorPlan(0, '65_35')).toBe(0);

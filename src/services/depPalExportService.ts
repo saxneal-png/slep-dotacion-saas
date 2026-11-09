@@ -11,11 +11,15 @@ import {
   sanitizeExcelText,
   homologarNivelExcelPal
 } from './depHomologationEngine';
-import { calcularHorasPlanCurso, determinarRegimenNormativo } from '@slep/mineduc-engine';
+import { calcularHorasPlanCurso, determinarRegimenNormativo, obtenerPlanPorCurso } from '@slep/mineduc-engine';
 import { proyectarMatriculaNivel } from './proyeccionMatriculaService';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
+import { listarPlanesEstudio, PlanEstudioCurricular } from '../database/repositories/planesEstudioRepo';
+import { listarTodosLosCursos } from '../database/repositories/cursosRepo';
+import { listarTodasLasAsignaciones } from '../database/repositories/asignacionesRepo';
+import { extraerGradosDeCurso } from './combinacionCursosService';
 import { cargarPlantillaOficialBuffer } from './templateLoaderService';
 
 /**
@@ -390,6 +394,40 @@ export async function generarExcelConsolidadoPalDEP(
       }
     }
 
+    // Cargar planes de estudio registrados en la BD (planes personalizados creados o asociados a cursos)
+    let planesEstudioDb: PlanEstudioCurricular[] = [];
+    try {
+      planesEstudioDb = await listarPlanesEstudio();
+    } catch (_) {}
+
+    // Fallback de seguridad si cursosTerritorio o asignacionesTerritorio vienen vacíos
+    if (cursosTerritorio.length === 0) {
+      try {
+        cursosTerritorio = await listarTodosLosCursos(2027);
+      } catch (_) {}
+    }
+    if (asignacionesTerritorio.length === 0) {
+      try {
+        asignacionesTerritorio = await listarTodasLasAsignaciones(2027);
+      } catch (_) {}
+    }
+
+    // Helper para obtener las horas de plan de estudio efectivas trabajadas en el SaaS
+    const calcularPlanEfectivoCurso = (c: CursoSae, hDocNoPie: number): number => {
+      // 1. Plan personalizado en base de datos si el curso tiene planEstudioId
+      const planDb = c.planEstudioId ? planesEstudioDb.find(p => p.id === c.planEstudioId) : undefined;
+      // 2. Plan oficial MINEDUC considerando nivel, régimen (JEC/No JEC) y especialidad TP
+      const planMineduc = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
+      let hPlan = planDb && planDb.totalHorasPlan > 0
+        ? planDb.totalHorasPlan
+        : (planMineduc ? planMineduc.totalHorasPlan : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp));
+      // Sumar talleres JEC explícitos si están configurados
+      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
+      hPlan += hTalleres;
+      // Si en la malla curricular las asignaciones docentes no PIE ya superan el plan base, respetar el mayor
+      return Math.max(hPlan, hDocNoPie);
+    };
+
     // Mapa de establecimientos por RBD
     const estMap = new Map<number, Establecimiento>();
     establecimientos.forEach(e => estMap.set(Number(e.rbd), e));
@@ -398,49 +436,75 @@ export async function generarExcelConsolidadoPalDEP(
     interface CursoSaaSEfectivo {
       curso: CursoSae;
       horasPlanEfectivas: number;
+      esMultiSecundario?: boolean;
     }
     const cursosPorClave = new Map<string, CursoSaaSEfectivo[]>();
     const nivelesActivosPorColegio = new Map<number, Set<string>>();
 
     cursosTerritorio.forEach(c => {
       const rbdNum = Number(c.rbd);
-      const canonico = homologarNivelExcelPal(c.nivel);
-      const key = `${rbdNum}_${canonico}`;
-
-      if (!cursosPorClave.has(key)) {
-        cursosPorClave.set(key, []);
-      }
       if (!nivelesActivosPorColegio.has(rbdNum)) {
         nivelesActivosPorColegio.set(rbdNum, new Set());
       }
-      nivelesActivosPorColegio.get(rbdNum)!.add(canonico);
 
-      // Horas plan efectivas del SaaS:
-      // Se toma el plan oficial del curso + talleres JEC, y si hay asignaciones adicionales
-      // cargadas en la malla (no PIE), se respeta el valor mayor para no truncar planes en desarrollo.
       const horasCargadasCursoNoPie = horasNoPiePorCurso.get(c.id) || 0;
-      let hPlanFallback = calcularHorasPlanCurso(c.nivel, c.regimen);
-      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
-      hPlanFallback += hTalleres;
+      const hPlanEfectivoCurso = calcularPlanEfectivoCurso(c, horasCargadasCursoNoPie);
 
-      const hPlanEfectivoCurso = Math.max(hPlanFallback, horasCargadasCursoNoPie);
+      const esCombinadoOMulti = Boolean(c.esMultigrado || c.esCombinado || (c.gradosCombinados && c.gradosCombinados.length > 0));
+      const gradosCurso = extraerGradosDeCurso(c);
 
-      cursosPorClave.get(key)!.push({
-        curso: c,
-        horasPlanEfectivas: hPlanEfectivoCurso
-      });
+      if (!esCombinadoOMulti || gradosCurso.length <= 1) {
+        const canonico = homologarNivelExcelPal(c.nivel);
+        const key = `${rbdNum}_${canonico}`;
+        if (!cursosPorClave.has(key)) cursosPorClave.set(key, []);
+        cursosPorClave.get(key)!.push({
+          curso: c,
+          horasPlanEfectivas: hPlanEfectivoCurso,
+          esMultiSecundario: false
+        });
+        nivelesActivosPorColegio.get(rbdNum)!.add(canonico);
+      } else {
+        // Curso multigrado o combinado que abarca varios grados (ej: 1° a 6° Básico)
+        // Se registra en cada uno de los grados cubiertos
+        gradosCurso.forEach((g, idx) => {
+          const canGrado = homologarNivelExcelPal(g);
+          const keyGrado = `${rbdNum}_${canGrado}`;
+          if (!cursosPorClave.has(keyGrado)) cursosPorClave.set(keyGrado, []);
+          cursosPorClave.get(keyGrado)!.push({
+            curso: c,
+            horasPlanEfectivas: hPlanEfectivoCurso,
+            esMultiSecundario: idx > 0
+          });
+          nivelesActivosPorColegio.get(rbdNum)!.add(canGrado);
+        });
+        // Registrar también la clave compuesta por si la plantilla contiene la fila combinada explícita (ej: "1 y 2")
+        const canCompuesto = homologarNivelExcelPal(c.nivel);
+        const keyCompuesto = `${rbdNum}_${canCompuesto}`;
+        if (!cursosPorClave.has(keyCompuesto)) cursosPorClave.set(keyCompuesto, []);
+        cursosPorClave.get(keyCompuesto)!.push({
+          curso: c,
+          horasPlanEfectivas: hPlanEfectivoCurso,
+          esMultiSecundario: false
+        });
+        nivelesActivosPorColegio.get(rbdNum)!.add(canCompuesto);
+      }
     });
 
     // Pre-contar cuántas filas existen en Info Establecimiento para cada RBD y nivel canónico
+    const rbdsEncontradosEnWs = new Set<number>();
     const totalFilasPorClave = new Map<string, number>();
+
     wsEst.eachRow((row, rowNumber) => {
       if (rowNumber <= 3) return;
       const rbd = Number(row.getCell(2).value || 0);
-      if (rbdsExportados.has(rbd)) {
-        const nivelRaw = String(row.getCell(3).text || '').trim();
-        const canonico = homologarNivelExcelPal(nivelRaw);
-        const key = `${rbd}_${canonico}`;
-        totalFilasPorClave.set(key, (totalFilasPorClave.get(key) || 0) + 1);
+      if (rbd) {
+        rbdsEncontradosEnWs.add(rbd);
+        if (rbdsExportados.has(rbd)) {
+          const nivelRaw = String(row.getCell(3).text || '').trim();
+          const canonico = homologarNivelExcelPal(nivelRaw);
+          const key = `${rbd}_${canonico}`;
+          totalFilasPorClave.set(key, (totalFilasPorClave.get(key) || 0) + 1);
+        }
       }
     });
 
@@ -509,11 +573,27 @@ export async function generarExcelConsolidadoPalDEP(
           matProyectadaNivel = cursosReales.reduce((sum, c) => sum + (c.curso.matriculaProyectada || 0), 0);
         }
 
+        // Detectar si todos los cursos mapeados a este nivel son secundarios en un multigrado
+        const soloSecundarios = cursosReales.length > 0 && cursosReales.every(c => c.esMultiSecundario);
+        if (soloSecundarios) {
+          // Grado secundario en un multigrado: mantiene su matrícula propia pero el curso se computa en el grado titular
+          row.getCell(4).value = matProyectadaNivel;
+          row.getCell(5).value = 0;
+          row.getCell(6).value = colF_planPrev > 0 ? colF_planPrev : 0;
+          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
+          row.getCell(8).value = 0;
+          row.commit();
+          return;
+        }
+
+        const cursosTitulares = cursosReales.filter(c => !c.esMultiSecundario);
+        const cursosValidos = cursosTitulares.length > 0 ? cursosTitulares : cursosReales;
+
         // Caso 1: Nivel con una única fila en la plantilla (caso estándar 98% de la oferta)
         if (totalFilas === 1) {
-          const numCursos = cursosReales.length;
+          const numCursos = cursosValidos.length;
           // Las horas plan son las que existen y han sido trabajadas en el SaaS
-          const maxPlanSaaS = Math.max(...cursosReales.map(c => c.horasPlanEfectivas));
+          const maxPlanSaaS = Math.max(...cursosValidos.map(c => c.horasPlanEfectivas));
           const hPlan = maxPlanSaaS > 0 ? maxPlanSaaS : (colF_planPrev > 0 ? colF_planPrev : 38);
           const totalHA = numCursos * hPlan;
           const horasContrato = calcularHorasContratoPorPlan(totalHA, regimenNivel);
@@ -528,11 +608,11 @@ export async function generarExcelConsolidadoPalDEP(
         }
 
         // Caso 2: Nivel con múltiples filas en la plantilla (ej. Liceos TP con especialidades)
-        if (filaIdx < cursosReales.length) {
-          const cursoActual = cursosReales[filaIdx];
+        if (filaIdx < cursosValidos.length) {
+          const cursoActual = cursosValidos[filaIdx];
           const esUltimaFila = (filaIdx === totalFilas - 1);
           // Si quedan cursos restantes no asignados, la última fila los absorbe
-          const cursosAsignados = esUltimaFila ? (cursosReales.length - filaIdx) : 1;
+          const cursosAsignados = esUltimaFila ? (cursosValidos.length - filaIdx) : 1;
           const hPlan = cursoActual.horasPlanEfectivas > 0 ? cursoActual.horasPlanEfectivas : (colF_planPrev > 0 ? colF_planPrev : 38);
 
           // Proyección adaptada a esta sección / fila
@@ -545,8 +625,8 @@ export async function generarExcelConsolidadoPalDEP(
           let matFila = proyFila.matriculaProyectada;
           if (matFila === 0 || matFila === matProyectadaNivel) {
             // Distribuir equitativamente la matrícula proyectada del nivel entre los cursos del SaaS
-            const cuotaBase = Math.floor(matProyectadaNivel / cursosReales.length);
-            const residuo = matProyectadaNivel % cursosReales.length;
+            const cuotaBase = Math.floor(matProyectadaNivel / cursosValidos.length);
+            const residuo = matProyectadaNivel % cursosValidos.length;
             matFila = cuotaBase + (filaIdx < residuo ? 1 : 0);
           }
 
@@ -569,6 +649,53 @@ export async function generarExcelConsolidadoPalDEP(
         row.commit();
       }
     });
+
+    // Inclusión dinámica de los establecimientos faltantes en la plantilla oficial de la DEP
+    // (47 establecimientos del territorio de Valle Diguillín no venían en la hoja Info Establecimiento original)
+    for (const est of establecimientos) {
+      const rbdNum = Number(est.rbd);
+      if (!rbdsEncontradosEnWs.has(rbdNum)) {
+        const cursosColegio = cursosTerritorio.filter(c => Number(c.rbd) === rbdNum);
+        const estRegimen: '65_35' | '60_40' = (est.porcentajePrioritarios || 0) >= 80 ? '60_40' : '65_35';
+
+        if (cursosColegio.length > 0) {
+          const porNivel = new Map<string, typeof cursosColegio>();
+          cursosColegio.forEach(c => {
+            const nivelKey = c.nivel;
+            if (!porNivel.has(nivelKey)) porNivel.set(nivelKey, []);
+            porNivel.get(nivelKey)!.push(c);
+          });
+
+          for (const [nivelNombre, listaCursos] of porNivel.entries()) {
+            const r = wsEst.rowCount + 1;
+            const proy = proyectarMatriculaNivel(rbdNum, nivelNombre);
+            let mat = proy.matriculaProyectada;
+            if (mat === 0) {
+              mat = listaCursos.reduce((sum, c) => sum + (c.matriculaProyectada || 0), 0);
+            }
+            const numCur = listaCursos.length;
+            const hPlan = Math.max(...listaCursos.map(c => {
+              const hDocNoPie = horasNoPiePorCurso.get(c.id) || 0;
+              return calcularPlanEfectivoCurso(c, hDocNoPie);
+            }));
+
+            const horasContrato = calcularHorasContratoPorPlan(numCur * hPlan, estRegimen);
+
+            const newRow = wsEst.addRow([
+              est.nombre.toUpperCase(),
+              rbdNum,
+              nivelNombre,
+              mat,
+              numCur,
+              hPlan,
+              { formula: `+E${r}*F${r}` },
+              horasContrato
+            ]);
+            newRow.commit();
+          }
+        }
+      }
+    }
   }
 
   const outBuffer = await workbook.xlsx.writeBuffer();

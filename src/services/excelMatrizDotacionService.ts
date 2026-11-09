@@ -267,11 +267,11 @@ export async function generarExcelMatrizDotacionColegio(
   });
 
   // Preparar y ordenar los cursos de la escuela
-  let cursosOrdenados = ordenarCursosEstablecimiento(cursos.filter(c => c.rbd === establecimiento.rbd));
+  let cursosOrdenados = ordenarCursosEstablecimiento(cursos.filter(c => String(c.rbd) === String(establecimiento.rbd)));
   if (cursosOrdenados.length === 0) {
     const cursoIdsUnicos = new Set<string>();
     for (const a of asignaciones) {
-      if (a.rbd === establecimiento.rbd && a.cursoId) {
+      if (String(a.rbd) === String(establecimiento.rbd) && a.cursoId) {
         cursoIdsUnicos.add(a.cursoId);
       }
     }
