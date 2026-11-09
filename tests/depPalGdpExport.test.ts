@@ -354,8 +354,8 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     });
 
     expect(fila1B).toBeDefined();
-    // La matrícula por nivel es la proyectada por los datos de Base Completa adaptada al colegio (23)
-    expect(Number(fila1B.getCell(4).value)).toBe(23); // Matricula proyectada desde Base Completa
+    // Alternativa 1: La matrícula por nivel es la del SaaS ingresada/proyectada por el director (25)
+    expect(Number(fila1B.getCell(4).value)).toBe(25); // Matricula directa del SaaS
     // Los cursos por nivel y las horas plan son los existentes y trabajados en el SaaS
     expect(Number(fila1B.getCell(5).value)).toBe(1);  // Cursos del SaaS
     expect(Number(fila1B.getCell(6).value)).toBe(38); // Horas Plan del SaaS (38h JEC)
@@ -364,7 +364,7 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
     expect(Number(fila1B.getCell(8).value)).toBe(48);
   }, 15000);
 
-  it('exporta cursos multigrado / combinados asignando la titularidad sin duplicar cursos ni perder matrícula', async () => {
+  it('exporta cursos multigrado / combinados asignando la titularidad sin duplicar cursos, sin matrícula externa y erradicando horas residuales', async () => {
     const estRural: Establecimiento = {
       id: 'est_3691',
       rbd: '3691',
@@ -394,25 +394,38 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
 
     let f1B: any = null;
     let f2B: any = null;
+    let f3B: any = null;
 
     wsEst.eachRow((r, n) => {
       if (n > 3 && Number(r.getCell(2).value) === 3691) {
-        if (r.getCell(3).text.includes('1° Básico')) f1B = r;
+        if (r.getCell(3).text.includes('1°') || r.getCell(3).text.includes('Combinado')) f1B = r;
         if (r.getCell(3).text.includes('2° Básico')) f2B = r;
+        if (r.getCell(3).text.includes('3° Básico')) f3B = r;
       }
     });
 
     expect(f1B).toBeDefined();
     expect(f2B).toBeDefined();
 
-    // El curso combinado es computado en el grado titular (1 curso, 38 hrs plan)
-    expect(Number(f1B.getCell(5).value)).toBe(1);
-    expect(Number(f1B.getCell(6).value)).toBe(38);
-    // El grado secundario mantiene cursos = 0 para no duplicar dotación
+    // El curso combinado es computado en el grado titular con su matrícula y horas 100% reales del SaaS
+    expect(Number(f1B.getCell(4).value)).toBe(16); // Matrícula real del SaaS
+    expect(Number(f1B.getCell(5).value)).toBe(1);  // 1 curso combinado
+    expect(Number(f1B.getCell(6).value)).toBe(38); // 38 hrs plan del SaaS
+    expect(Number(f1B.getCell(8).value)).toBe(48); // 48 hrs docente contrato (60/40)
+
+    // El grado secundario integrado en el multigrado queda en 0 absoluto para no duplicar dotación ni arrastrar residuos
+    expect(Number(f2B.getCell(4).value)).toBe(0);
     expect(Number(f2B.getCell(5).value)).toBe(0);
-    // Pero ambos grados mantienen su matrícula proyectada adaptada desde Base Completa
-    expect(Number(f1B.getCell(4).value)).toBeGreaterThan(0);
-    expect(Number(f2B.getCell(4).value)).toBeGreaterThan(0);
+    expect(Number(f2B.getCell(6).value)).toBe(0); // Sin residuos de 40 hrs
+    expect(Number(f2B.getCell(8).value)).toBe(0);
+
+    // Filas no existentes en el SaaS (ej: 3° Básico) quedan purgadas a 0
+    if (f3B) {
+      expect(Number(f3B.getCell(4).value)).toBe(0);
+      expect(Number(f3B.getCell(5).value)).toBe(0);
+      expect(Number(f3B.getCell(6).value)).toBe(0); // Sin residuos de 40 hrs
+      expect(Number(f3B.getCell(8).value)).toBe(0);
+    }
   }, 15000);
 
   it('incluye dinámicamente colegios ausentes en la plantilla ministerial base preservando fórmulas nativas', async () => {

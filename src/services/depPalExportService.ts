@@ -11,8 +11,7 @@ import {
   sanitizeExcelText,
   homologarNivelExcelPal
 } from './depHomologationEngine';
-import { calcularHorasPlanCurso, determinarRegimenNormativo, obtenerPlanPorCurso } from '@slep/mineduc-engine';
-import { proyectarMatriculaNivel } from './proyeccionMatriculaService';
+import { calcularHorasPlanCurso, obtenerPlanPorCurso } from '@slep/mineduc-engine';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
@@ -362,11 +361,8 @@ export async function generarExcelConsolidadoPalDEP(
     }
   }
 
-  // 3. Sincronización Integral de Info Establecimiento con Datos Reales del SaaS
+  // 3. Sincronización Integral de Info Establecimiento con Datos Reales del SaaS (Alternativa 1: Single Source of Truth)
   if (wsEst) {
-    const rbdsExportados = new Set(establecimientos.map(e => Number(e.rbd)));
-    const esExportacionTerritorialCompleta = establecimientos.length > 20;
-
     // Helper para discriminar si una asignación es de Apoyo PIE (Decreto 170 / Aula de Recursos / Co-docencia PIE)
     const esAsignacionPie = (a: AsignacionHoraria) => {
       const ta = (a.tipoApoyo || '').toLowerCase();
@@ -412,289 +408,222 @@ export async function generarExcelConsolidadoPalDEP(
       } catch (_) {}
     }
 
-    // Helper para obtener las horas de plan de estudio efectivas trabajadas en el SaaS
+    // Helper para obtener las horas de plan de estudio efectivas 100% del SaaS
     const calcularPlanEfectivoCurso = (c: CursoSae, hDocNoPie: number): number => {
+      let hPlan = 0;
       // 1. Plan personalizado en base de datos si el curso tiene planEstudioId
-      const planDb = c.planEstudioId ? planesEstudioDb.find(p => p.id === c.planEstudioId) : undefined;
+      if (c.planEstudioId) {
+        const planDb = planesEstudioDb.find(p => p.id === c.planEstudioId);
+        if (planDb) {
+          if (typeof planDb.totalHorasPlan === 'number' && planDb.totalHorasPlan > 0) {
+            hPlan = planDb.totalHorasPlan;
+          } else if (planDb.asignaturas && planDb.asignaturas.length > 0) {
+            const suma = planDb.asignaturas.reduce((acc, a) => acc + (Number(a.horasSemanales) || 0), 0);
+            hPlan = suma + (Number(planDb.horasLibreDisposicion) || 0);
+          }
+        }
+      }
       // 2. Plan oficial MINEDUC considerando nivel, régimen (JEC/No JEC) y especialidad TP
-      const planMineduc = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
-      let hPlan: number = (planDb && typeof planDb.totalHorasPlan === 'number' && planDb.totalHorasPlan > 0)
-        ? planDb.totalHorasPlan
-        : (planMineduc && typeof planMineduc.totalHorasPlan === 'number'
-          ? planMineduc.totalHorasPlan
-          : calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp));
-      // Sumar talleres JEC explícitos si están configurados
-      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (t.horas || 0), 0);
+      if (hPlan <= 0) {
+        const planMineduc = obtenerPlanPorCurso(c.nivel, c.regimen, c.especialidadTp);
+        if (planMineduc && typeof planMineduc.totalHorasPlan === 'number' && planMineduc.totalHorasPlan > 0) {
+          hPlan = planMineduc.totalHorasPlan;
+        } else {
+          hPlan = calcularHorasPlanCurso(c.nivel, c.regimen, c.especialidadTp);
+        }
+      }
+      // 3. Sumar talleres JEC explícitos si están configurados
+      const hTalleres = (c.talleresJec || []).reduce((sum, t) => sum + (Number(t.horas) || 0), 0);
       hPlan += hTalleres;
-      // Si en la malla curricular las asignaciones docentes no PIE ya superan el plan base, respetar el mayor
-      return Math.max(hPlan, hDocNoPie);
+      // 4. Si en la malla curricular las asignaciones docentes no PIE superan el plan base, respetar la carga real
+      if (hDocNoPie > 0 && hDocNoPie > hPlan) {
+        hPlan = hDocNoPie;
+      }
+      // 5. Fallback normativo seguro si aún fuera 0
+      if (hPlan <= 0) {
+        const esParv = /pre-?kinder|kinder|nt1|nt2|transicion|parvul|medio menor|medio mayor/i.test(c.nivel);
+        const esTP = /tp|tecnico|profesional|especialidad/i.test(c.nivel) || Boolean(c.especialidadTp);
+        if (esParv) {
+          hPlan = c.regimen === 'JEC' ? 38 : 22;
+        } else if (esTP) {
+          hPlan = c.regimen === 'JEC' ? 42 : 36;
+        } else {
+          hPlan = c.regimen === 'JEC' ? 38 : 30;
+        }
+      }
+      return hPlan;
     };
 
-    // Mapa de establecimientos por RBD
-    const estMap = new Map<number, Establecimiento>();
-    establecimientos.forEach(e => estMap.set(Number(e.rbd), e));
-
-    // Estructura de cursos reales del SaaS adaptados por RBD y nivel canónico
-    interface CursoSaaSEfectivo {
-      curso: CursoSae;
-      horasPlanEfectivas: number;
-      esMultiSecundario?: boolean;
+    // Mapear todas las filas preexistentes en wsEst por RBD
+    interface FilaWsEst {
+      rowNumber: number;
+      row: ExcelJS.Row;
+      nivelRaw: string;
+      canonico: string;
     }
-    const cursosPorClave = new Map<string, CursoSaaSEfectivo[]>();
-    const nivelesActivosPorColegio = new Map<number, Set<string>>();
-
-    cursosTerritorio.forEach(c => {
-      const rbdNum = Number(c.rbd);
-      if (!nivelesActivosPorColegio.has(rbdNum)) {
-        nivelesActivosPorColegio.set(rbdNum, new Set());
-      }
-
-      const horasCargadasCursoNoPie = horasNoPiePorCurso.get(c.id) || 0;
-      const hPlanEfectivoCurso = calcularPlanEfectivoCurso(c, horasCargadasCursoNoPie);
-
-      const esCombinadoOMulti = Boolean(c.esMultigrado || c.esCombinado || (c.gradosCombinados && c.gradosCombinados.length > 0));
-      const gradosCurso = extraerGradosDeCurso(c);
-
-      if (!esCombinadoOMulti || gradosCurso.length <= 1) {
-        const canonico = homologarNivelExcelPal(c.nivel);
-        const key = `${rbdNum}_${canonico}`;
-        if (!cursosPorClave.has(key)) cursosPorClave.set(key, []);
-        cursosPorClave.get(key)!.push({
-          curso: c,
-          horasPlanEfectivas: hPlanEfectivoCurso,
-          esMultiSecundario: false
-        });
-        nivelesActivosPorColegio.get(rbdNum)!.add(canonico);
-      } else {
-        // Curso multigrado o combinado que abarca varios grados (ej: 1° a 6° Básico)
-        // Se registra en cada uno de los grados cubiertos
-        gradosCurso.forEach((g, idx) => {
-          const canGrado = homologarNivelExcelPal(g);
-          const keyGrado = `${rbdNum}_${canGrado}`;
-          if (!cursosPorClave.has(keyGrado)) cursosPorClave.set(keyGrado, []);
-          cursosPorClave.get(keyGrado)!.push({
-            curso: c,
-            horasPlanEfectivas: hPlanEfectivoCurso,
-            esMultiSecundario: idx > 0
-          });
-          nivelesActivosPorColegio.get(rbdNum)!.add(canGrado);
-        });
-        // Registrar también la clave compuesta por si la plantilla contiene la fila combinada explícita (ej: "1 y 2")
-        const canCompuesto = homologarNivelExcelPal(c.nivel);
-        const keyCompuesto = `${rbdNum}_${canCompuesto}`;
-        if (!cursosPorClave.has(keyCompuesto)) cursosPorClave.set(keyCompuesto, []);
-        cursosPorClave.get(keyCompuesto)!.push({
-          curso: c,
-          horasPlanEfectivas: hPlanEfectivoCurso,
-          esMultiSecundario: false
-        });
-        nivelesActivosPorColegio.get(rbdNum)!.add(canCompuesto);
-      }
-    });
-
-    // Pre-contar cuántas filas existen en Info Establecimiento para cada RBD y nivel canónico
-    const rbdsEncontradosEnWs = new Set<number>();
-    const totalFilasPorClave = new Map<string, number>();
+    const filasPorRbd = new Map<number, FilaWsEst[]>();
 
     wsEst.eachRow((row, rowNumber) => {
-      if (rowNumber <= 3) return;
+      if (rowNumber <= 3) return; // Omitir 3 filas de cabecera ministerial
       const rbd = Number(row.getCell(2).value || 0);
       if (rbd) {
-        rbdsEncontradosEnWs.add(rbd);
-        if (rbdsExportados.has(rbd)) {
-          const nivelRaw = String(row.getCell(3).text || '').trim();
-          const canonico = homologarNivelExcelPal(nivelRaw);
-          const key = `${rbd}_${canonico}`;
-          totalFilasPorClave.set(key, (totalFilasPorClave.get(key) || 0) + 1);
-        }
-      }
-    });
-
-    const filaIndexPorClave = new Map<string, number>();
-
-    wsEst.eachRow((row, rowNumber) => {
-      if (rowNumber <= 3) return; // Cabeceras
-      const rbd = Number(row.getCell(2).value || 0);
-
-      // Si se exporta un colegio individual o subconjunto, no alterar los RBDs ajenos
-      if (!esExportacionTerritorialCompleta && !rbdsExportados.has(rbd)) {
-        return;
-      }
-
-      // Si el RBD está en el alcance de los establecimientos exportados
-      if (rbdsExportados.has(rbd)) {
+        if (!filasPorRbd.has(rbd)) filasPorRbd.set(rbd, []);
         const nivelRaw = String(row.getCell(3).text || '').trim();
-        const nivelCanonico = homologarNivelExcelPal(nivelRaw);
-        const key = `${rbd}_${nivelCanonico}`;
-
-        const filaIdx = filaIndexPorClave.get(key) || 0;
-        filaIndexPorClave.set(key, filaIdx + 1);
-
-        const totalFilas = totalFilasPorClave.get(key) || 1;
-        const cursosReales = cursosPorClave.get(key) || [];
-
-        const colE_cursosPrev = Number(row.getCell(5).value || 0);
-        const colF_planPrev = Number(row.getCell(6).value || 0);
-        const colH_docPrev = Number(row.getCell(8).value || 0);
-
-        // Detectar si la plantilla base ministerial de la DEP tenía régimen 60/40 para esta fila
-        const totPlanPrev = colE_cursosPrev * colF_planPrev;
-        const era60_40EnTemplate = totPlanPrev > 0 && colH_docPrev === Math.ceil(totPlanPrev * 44 / 35);
-
-        const estActual = estMap.get(rbd);
-        let regimenNivel: '65_35' | '60_40' = '65_35';
-        const primerCurso = cursosReales[0]?.curso;
-        if (primerCurso && primerCurso.regimenProporcion) {
-          regimenNivel = primerCurso.regimenProporcion;
-        } else if (estActual && estActual.porcentajePrioritarios !== undefined) {
-          regimenNivel = determinarRegimenNormativo(estActual.porcentajePrioritarios, nivelRaw, 80);
-        } else if (era60_40EnTemplate) {
-          regimenNivel = '60_40';
-        }
-
-        // Si el nivel NO existe o no tiene cursos en el SaaS para este colegio: vaciar a 0
-        if (cursosReales.length === 0) {
-          row.getCell(4).value = 0;
-          row.getCell(5).value = 0;
-          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          row.getCell(8).value = 0;
-          row.commit();
-          return;
-        }
-
-        // Si el nivel SÍ existe en el SaaS:
-        // Proyectar matrícula desde BASE COMPLETA adaptada a la estructura activa del colegio
-        const nivelesActivosColegio = nivelesActivosPorColegio.get(rbd);
-        const proyTotalNivel = proyectarMatriculaNivel(rbd, nivelRaw, {
-          cursosActivosSaaS: nivelesActivosColegio ? Array.from(nivelesActivosColegio) : undefined
+        const canonico = homologarNivelExcelPal(nivelRaw);
+        filasPorRbd.get(rbd)!.push({
+          rowNumber,
+          row,
+          nivelRaw,
+          canonico
         });
-
-        let matProyectadaNivel = proyTotalNivel.matriculaProyectada;
-        // Fallback a matrícula de cursos del SaaS si no existieran antecedentes en Base Completa
-        if (matProyectadaNivel === 0) {
-          matProyectadaNivel = cursosReales.reduce((sum, c) => sum + (c.curso.matriculaProyectada || 0), 0);
-        }
-
-        // Detectar si todos los cursos mapeados a este nivel son secundarios en un multigrado
-        const soloSecundarios = cursosReales.length > 0 && cursosReales.every(c => c.esMultiSecundario);
-        if (soloSecundarios) {
-          // Grado secundario en un multigrado: mantiene su matrícula propia pero el curso se computa en el grado titular
-          row.getCell(4).value = matProyectadaNivel;
-          row.getCell(5).value = 0;
-          row.getCell(6).value = colF_planPrev > 0 ? colF_planPrev : 0;
-          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          row.getCell(8).value = 0;
-          row.commit();
-          return;
-        }
-
-        const cursosTitulares = cursosReales.filter(c => !c.esMultiSecundario);
-        const cursosValidos = cursosTitulares.length > 0 ? cursosTitulares : cursosReales;
-
-        // Caso 1: Nivel con una única fila en la plantilla (caso estándar 98% de la oferta)
-        if (totalFilas === 1) {
-          const numCursos = cursosValidos.length;
-          // Las horas plan son las que existen y han sido trabajadas en el SaaS
-          const maxPlanSaaS = Math.max(...cursosValidos.map(c => c.horasPlanEfectivas));
-          const hPlan = maxPlanSaaS > 0 ? maxPlanSaaS : (colF_planPrev > 0 ? colF_planPrev : 38);
-          const totalHA = numCursos * hPlan;
-          const horasContrato = calcularHorasContratoPorPlan(totalHA, regimenNivel);
-
-          row.getCell(4).value = matProyectadaNivel;
-          row.getCell(5).value = numCursos;
-          row.getCell(6).value = hPlan;
-          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          row.getCell(8).value = horasContrato;
-          row.commit();
-          return;
-        }
-
-        // Caso 2: Nivel con múltiples filas en la plantilla (ej. Liceos TP con especialidades)
-        if (filaIdx < cursosValidos.length) {
-          const cursoActual = cursosValidos[filaIdx];
-          const esUltimaFila = (filaIdx === totalFilas - 1);
-          // Si quedan cursos restantes no asignados, la última fila los absorbe
-          const cursosAsignados = esUltimaFila ? (cursosValidos.length - filaIdx) : 1;
-          const hPlan = cursoActual.horasPlanEfectivas > 0 ? cursoActual.horasPlanEfectivas : (colF_planPrev > 0 ? colF_planPrev : 38);
-
-          // Proyección adaptada a esta sección / fila
-          const proyFila = proyectarMatriculaNivel(rbd, nivelRaw, {
-            indiceFila: filaIdx,
-            especialidad: cursoActual.curso.especialidadTp,
-            cursosActivosSaaS: nivelesActivosColegio ? Array.from(nivelesActivosColegio) : undefined
-          });
-
-          let matFila = proyFila.matriculaProyectada;
-          if (matFila === 0 || matFila === matProyectadaNivel) {
-            // Distribuir equitativamente la matrícula proyectada del nivel entre los cursos del SaaS
-            const cuotaBase = Math.floor(matProyectadaNivel / cursosValidos.length);
-            const residuo = matProyectadaNivel % cursosValidos.length;
-            matFila = cuotaBase + (filaIdx < residuo ? 1 : 0);
-          }
-
-          const totalHA = cursosAsignados * hPlan;
-          const horasContrato = calcularHorasContratoPorPlan(totalHA, regimenNivel);
-
-          row.getCell(4).value = matFila;
-          row.getCell(5).value = cursosAsignados;
-          row.getCell(6).value = hPlan;
-          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          row.getCell(8).value = horasContrato;
-        } else {
-          // Fila sobrante en la plantilla sin cursos reales en el SaaS
-          row.getCell(4).value = 0;
-          row.getCell(5).value = 0;
-          row.getCell(7).value = { formula: `+E${rowNumber}*F${rowNumber}` };
-          row.getCell(8).value = 0;
-        }
-
-        row.commit();
       }
     });
 
-    // Inclusión dinámica de los establecimientos faltantes en la plantilla oficial de la DEP
-    // (47 establecimientos del territorio de Valle Diguillín no venían en la hoja Info Establecimiento original)
+    // Procesar cada establecimiento del territorio
     for (const est of establecimientos) {
       const rbdNum = Number(est.rbd);
-      if (!rbdsEncontradosEnWs.has(rbdNum)) {
-        const cursosColegio = cursosTerritorio.filter(c => Number(c.rbd) === rbdNum);
-        const estRegimen: '65_35' | '60_40' = (est.porcentajePrioritarios || 0) >= 80 ? '60_40' : '65_35';
+      const cursosColegio = cursosTerritorio.filter(c => Number(c.rbd) === rbdNum);
+      const estRegimen: '65_35' | '60_40' = (est.porcentajePrioritarios || 0) >= 80 ? '60_40' : '65_35';
 
-        if (cursosColegio.length > 0) {
-          const porNivel = new Map<string, typeof cursosColegio>();
-          cursosColegio.forEach(c => {
-            const nivelKey = c.nivel;
-            if (!porNivel.has(nivelKey)) porNivel.set(nivelKey, []);
-            porNivel.get(nivelKey)!.push(c);
-          });
+      interface GrupoCursoSaaS {
+        id: string;
+        nivelDisplay: string;
+        canonico: string;
+        gradosCubiertos: string[];
+        matriculaTotal: number;
+        numCursos: number;
+        horasPlan: number;
+        regimenProporcion: '65_35' | '60_40';
+        esCombinadoOMulti: boolean;
+      }
 
-          for (const [nivelNombre, listaCursos] of porNivel.entries()) {
-            const r = wsEst.rowCount + 1;
-            const proy = proyectarMatriculaNivel(rbdNum, nivelNombre);
-            let mat = proy.matriculaProyectada;
-            if (mat === 0) {
-              mat = listaCursos.reduce((sum, c) => sum + (c.matriculaProyectada || 0), 0);
-            }
-            const numCur = listaCursos.length;
-            const hPlan = Math.max(...listaCursos.map(c => {
-              const hDocNoPie = horasNoPiePorCurso.get(c.id) || 0;
-              return calcularPlanEfectivoCurso(c, hDocNoPie);
-            }));
+      const gruposColegio: GrupoCursoSaaS[] = [];
+      const gradosSecundariosDeCombinados = new Set<string>();
 
-            const horasContrato = calcularHorasContratoPorPlan(numCur * hPlan, estRegimen);
+      for (const c of cursosColegio) {
+        const hDocNoPie = horasNoPiePorCurso.get(c.id) || 0;
+        const hPlan = calcularPlanEfectivoCurso(c, hDocNoPie);
+        const esCombinadoOMulti = Boolean(c.esMultigrado || c.esCombinado || (c.gradosCombinados && c.gradosCombinados.length > 0));
+        const grados = extraerGradosDeCurso(c);
+        const regimenProp: '65_35' | '60_40' = c.regimenProporcion || estRegimen;
 
-            const newRow = wsEst.addRow([
-              est.nombre.toUpperCase(),
-              rbdNum,
-              nivelNombre,
-              mat,
-              numCur,
-              hPlan,
-              { formula: `+E${r}*F${r}` },
-              horasContrato
-            ]);
-            newRow.commit();
+        if (esCombinadoOMulti && grados.length > 1) {
+          // Multigrado o Combinado que abarca múltiples grados
+          const primerGrado = grados[0];
+          const canPrincipal = homologarNivelExcelPal(primerGrado);
+          const gradosCan = grados.map(g => homologarNivelExcelPal(g));
+
+          // Registrar los grados secundarios (desde el 2do) para no asignarles cursos ni horas fantasmas
+          for (let i = 1; i < gradosCan.length; i++) {
+            gradosSecundariosDeCombinados.add(gradosCan[i]);
           }
+
+          gruposColegio.push({
+            id: c.id,
+            nivelDisplay: c.nivel,
+            canonico: canPrincipal,
+            gradosCubiertos: gradosCan,
+            matriculaTotal: c.matriculaProyectada || 0,
+            numCursos: 1,
+            horasPlan: hPlan,
+            regimenProporcion: regimenProp,
+            esCombinadoOMulti: true
+          });
+        } else {
+          // Curso regular o multigrado de 1 solo grado
+          const can = homologarNivelExcelPal(c.nivel);
+          const clave = `${can}_${c.especialidadTp || ''}`;
+          const existente = gruposColegio.find(g => !g.esCombinadoOMulti && g.id === clave);
+
+          if (existente) {
+            existente.matriculaTotal += (c.matriculaProyectada || 0);
+            existente.numCursos += 1;
+            existente.horasPlan = Math.max(existente.horasPlan, hPlan);
+          } else {
+            gruposColegio.push({
+              id: clave,
+              nivelDisplay: c.nivel,
+              canonico: can,
+              gradosCubiertos: [can],
+              matriculaTotal: c.matriculaProyectada || 0,
+              numCursos: 1,
+              horasPlan: hPlan,
+              regimenProporcion: regimenProp,
+              esCombinadoOMulti: false
+            });
+          }
+        }
+      }
+
+      const filasColegio = filasPorRbd.get(rbdNum) || [];
+      const filasAsignadas = new Set<number>();
+      const gruposAsignados = new Set<GrupoCursoSaaS>();
+
+      // PASADA 1: Coincidencia canónica directa
+      for (const grupo of gruposColegio) {
+        const filaLibre = filasColegio.find(f => !filasAsignadas.has(f.rowNumber) && f.canonico === grupo.canonico);
+        if (filaLibre) {
+          if (grupo.esCombinadoOMulti) {
+            filaLibre.row.getCell(3).value = grupo.nivelDisplay;
+          }
+          filaLibre.row.getCell(4).value = grupo.matriculaTotal;
+          filaLibre.row.getCell(5).value = grupo.numCursos;
+          filaLibre.row.getCell(6).value = grupo.horasPlan;
+          filaLibre.row.getCell(7).value = { formula: `+E${filaLibre.rowNumber}*F${filaLibre.rowNumber}` };
+          filaLibre.row.getCell(8).value = calcularHorasContratoPorPlan(grupo.numCursos * grupo.horasPlan, grupo.regimenProporcion);
+          filaLibre.row.commit();
+
+          filasAsignadas.add(filaLibre.rowNumber);
+          gruposAsignados.add(grupo);
+        }
+      }
+
+      // PASADA 2: Grupos restantes que no coincidieron con fila exacta
+      for (const grupo of gruposColegio) {
+        if (gruposAsignados.has(grupo)) continue;
+
+        // Buscar una fila del colegio disponible (no asignada y no marcada como grado secundario)
+        const filaDisponible = filasColegio.find(f => !filasAsignadas.has(f.rowNumber) && !gradosSecundariosDeCombinados.has(f.canonico));
+        if (filaDisponible) {
+          filaDisponible.row.getCell(3).value = grupo.nivelDisplay;
+          filaDisponible.row.getCell(4).value = grupo.matriculaTotal;
+          filaDisponible.row.getCell(5).value = grupo.numCursos;
+          filaDisponible.row.getCell(6).value = grupo.horasPlan;
+          filaDisponible.row.getCell(7).value = { formula: `+E${filaDisponible.rowNumber}*F${filaDisponible.rowNumber}` };
+          filaDisponible.row.getCell(8).value = calcularHorasContratoPorPlan(grupo.numCursos * grupo.horasPlan, grupo.regimenProporcion);
+          filaDisponible.row.commit();
+
+          filasAsignadas.add(filaDisponible.rowNumber);
+          gruposAsignados.add(grupo);
+        } else {
+          // Si el colegio no tiene más filas en la plantilla, agregar una fila nueva
+          const r = wsEst.rowCount + 1;
+          const newRow = wsEst.addRow([
+            est.nombre.toUpperCase(),
+            rbdNum,
+            grupo.nivelDisplay,
+            grupo.matriculaTotal,
+            grupo.numCursos,
+            grupo.horasPlan,
+            { formula: `+E${r}*F${r}` },
+            calcularHorasContratoPorPlan(grupo.numCursos * grupo.horasPlan, grupo.regimenProporcion)
+          ]);
+          newRow.commit();
+          gruposAsignados.add(grupo);
+        }
+      }
+
+      // PASADA 3: Purgar a CERO ABSOLUTO todas las filas no asignadas de este colegio en la plantilla
+      // Esto elimina por completo las 40 o 46 hrs pre-impresas, los grados secundarios de multigrados
+      // y cualquier curso residual ministerial que el colegio no tenga en el SaaS
+      for (const f of filasColegio) {
+        if (!filasAsignadas.has(f.rowNumber)) {
+          f.row.getCell(4).value = 0; // Matrícula = 0
+          f.row.getCell(5).value = 0; // Cursos = 0
+          f.row.getCell(6).value = 0; // Horas Plan = 0
+          f.row.getCell(7).value = { formula: `+E${f.rowNumber}*F${f.rowNumber}` }; // Total HA = 0
+          f.row.getCell(8).value = 0; // Horas Contrato = 0
+          f.row.commit();
         }
       }
     }
