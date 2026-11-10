@@ -448,7 +448,7 @@ export async function consultarCopilotGemini(
   contexto: DotacionContextoCompleto,
   historial: { role: 'user' | 'model'; text: string }[] = [],
   apiKey?: string,
-  modelName: string = 'gemini-2.5-flash-lite'
+  modelName: string = 'gemini-flash-lite-latest'
 ): Promise<string> {
   const config = cargarConfiguracionGeneral();
 

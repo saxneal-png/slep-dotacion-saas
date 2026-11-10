@@ -70,7 +70,7 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
     return typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_api_key') || '' : '';
   });
   const [modelName, setModelName] = useState<string>(() => {
-    return typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_copilot_model') || 'gemini-2.5-flash-lite' : 'gemini-2.5-flash-lite';
+    return typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_copilot_model') || 'gemini-flash-lite-latest' : 'gemini-flash-lite-latest';
   });
 
   // Sincronizar automáticamente la API Key general cada vez que se abre el drawer
@@ -78,7 +78,7 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
     if (isOpen && typeof localStorage !== 'undefined') {
       const globalKey = localStorage.getItem('gemini_api_key') || '';
       setApiKey(globalKey);
-      const savedModel = localStorage.getItem('gemini_copilot_model') || 'gemini-2.5-flash-lite';
+      const savedModel = localStorage.getItem('gemini_copilot_model') || 'gemini-flash-lite-latest';
       setModelName(savedModel);
     }
   }, [isOpen]);
@@ -546,8 +546,8 @@ export const DotacionCopilotDrawer: React.FC<DotacionCopilotDrawerProps> = ({
                   onChange={e => setModelName(e.target.value)}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 >
-                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Ultrarrápido y Económico - Predeterminado)</option>
-                  <option value="gemini-flash-lite-latest">Gemini Flash Lite Latest</option>
+                  <option value="gemini-flash-lite-latest">Gemini Flash Lite Latest (Ultrarrápido y Económico - Predeterminado)</option>
+                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
                   <option value="gemini-2.5-flash">Gemini 2.5 Flash (Estándar)</option>
                   <option value="gemini-2.5-pro">Gemini 2.5 Pro (Razonamiento Complejo)</option>
                 </select>
