@@ -662,6 +662,7 @@ export function resolverCodigoYAmbitoAsignatura(
     esTrabajoColaborativo?: boolean;
     esCoDocencia?: boolean;
     esDiferenciadoCompartido?: boolean;
+    ambitoExplicito?: AmbitoCurricular;
   }
 ): {
   codigo: string;
@@ -674,6 +675,47 @@ export function resolverCodigoYAmbitoAsignatura(
   const nivelNorm = normalizarCadenaBusqueda(contexto?.nivelCurso || '');
   const esContextoEpja = /\b(epja|adulto|adultos|tercera jornada|vespertin|nocturn)\b/i.test(nivelNorm) ||
     (/\bnivel\s*[123]\b/i.test(nivelNorm) && !/\b(nt[12]|transicion|parvulo)\b/i.test(nivelNorm));
+
+  const esTextoTaller = /\b(taller(?:es)?|reforzamientos?|refuerzos?|academias?|club(?:es)?|jec|libre\s+disposicion)\b/i.test(norm);
+  const esTallerOficial = (norm.includes('taller') && norm.includes('literatura')) || norm.includes('taller laboral');
+  const slug = norm.replace(/\s+/g, '_').substring(0, 30).toUpperCase();
+
+  // Prioridad absoluta: si la asignación pertenece a SEP o Trabajo Colaborativo Art. 86, nunca debe colisionar con malla oficial
+  if (contexto?.esTallerSep || /\bsep\b|subvencion escolar/i.test(norm)) {
+    return {
+      codigo: `ADICIONAL-SEP-${slug || 'TALLER'}`,
+      ambito: 'ADICIONAL_EXTRA',
+      nombreOficial: nombreAsignatura.trim(),
+      esOficial: false
+    };
+  }
+
+  if (contexto?.esTrabajoColaborativo || /colaborativo|co planificacion|art 86/i.test(norm)) {
+    return {
+      codigo: `ADICIONAL-COLAB-${slug || 'TRABAJO'}`,
+      ambito: 'ADICIONAL_EXTRA',
+      nombreOficial: nombreAsignatura.trim(),
+      esOficial: false
+    };
+  }
+
+  // Si el ámbito fue especificado explícitamente como LIBRE_DISPOSICION_JEC (o es taller/JEC en contexto no EPJA ni taller oficial):
+  // debe prevalecer sobre el catálogo general para que "Talleres de educación física y deporte" nunca sea secuestrado por "Física" ni "Ed. Física".
+  if (
+    !esContextoEpja &&
+    (
+      contexto?.ambitoExplicito === 'LIBRE_DISPOSICION_JEC' ||
+      (contexto?.esJec === true && !esTallerOficial) ||
+      (esTextoTaller && !esTallerOficial && contexto?.ambitoExplicito !== 'PLAN_COMUN' && contexto?.ambitoExplicito !== 'DIFERENCIADA_HC')
+    )
+  ) {
+    return {
+      codigo: `JEC-${slug || 'TALLER'}`,
+      ambito: 'LIBRE_DISPOSICION_JEC',
+      nombreOficial: nombreAsignatura.trim(),
+      esOficial: false
+    };
+  }
 
   // 0. Detección especial prioritaria para Módulos y Formación Diferenciada Técnico-Profesional / Oficios (Decreto 0876/2019 y EPJA D.S. 10/2022)
   if (
@@ -729,17 +771,23 @@ export function resolverCodigoYAmbitoAsignatura(
   }
 
   // 4. Búsqueda flexible por catálogo de 27 asignaturas de profundización HC
-  for (const item of CATALOGO_CODIGOS_ASIGNATURAS) {
-    if (item.ambito === 'DIFERENCIADA_HC') {
-      const itemNorm = normalizarCadenaBusqueda(item.nombreOficial);
-      if (norm === itemNorm || norm.includes(itemNorm) || itemNorm.includes(norm)) {
-        return {
-          codigo: item.codigo,
-          ambito: item.ambito,
-          nombreOficial: item.nombreOficial,
-          esOficial: true,
-          horasSugeridas: item.horasSugeridas
-        };
+  // Exige coincidencia exacta o subfrase multi-palabra con límites de palabra (nunca "fisica" dentro de un taller de educación física)
+  if (!esTextoTaller) {
+    for (const item of CATALOGO_CODIGOS_ASIGNATURAS) {
+      if (item.ambito === 'DIFERENCIADA_HC') {
+        const itemNorm = normalizarCadenaBusqueda(item.nombreOficial);
+        const esCoincidenciaSegura =
+          norm === itemNorm ||
+          (itemNorm.includes(' ') && new RegExp(`\\b${itemNorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(norm));
+        if (esCoincidenciaSegura) {
+          return {
+            codigo: item.codigo,
+            ambito: item.ambito,
+            nombreOficial: item.nombreOficial,
+            esOficial: true,
+            horasSugeridas: item.horasSugeridas
+          };
+        }
       }
     }
   }
@@ -760,27 +808,7 @@ export function resolverCodigoYAmbitoAsignatura(
     }
   }
 
-  // 6. Si no es oficial, generar un código identificando si es JEC, SEP, Colaborativo o Personalizada
-  const slug = norm.replace(/\s+/g, '_').substring(0, 30).toUpperCase();
-
-  if (contexto?.esTallerSep || /sep|subvencion escolar/i.test(nombreAsignatura)) {
-    return {
-      codigo: `ADICIONAL-SEP-${slug || 'TALLER'}`,
-      ambito: 'ADICIONAL_EXTRA',
-      nombreOficial: nombreAsignatura.trim(),
-      esOficial: false
-    };
-  }
-
-  if (contexto?.esTrabajoColaborativo || /colaborativo|co-planificacion|art 86/i.test(nombreAsignatura)) {
-    return {
-      codigo: `ADICIONAL-COLAB-${slug || 'TRABAJO'}`,
-      ambito: 'ADICIONAL_EXTRA',
-      nombreOficial: nombreAsignatura.trim(),
-      esOficial: false
-    };
-  }
-
+  // 6. Si no es oficial, generar un código identificando si es EPJA o Personalizada
   // En contexto EPJA (Adultos), NUNCA existe régimen JEC (D.S. N° 10/2022).
   // Las asignaturas/módulos de especialidad u oficios creados con nombres propios pertenecen a Formación Diferenciada TP.
   if (esContextoEpja) {
@@ -792,8 +820,7 @@ export function resolverCodigoYAmbitoAsignatura(
     };
   }
 
-  // Si tiene la palabra "taller", "reforzamiento", "jec", o "libre" y NO es oficial
-  if (/\b(taller|reforzamiento|refuerzo|jec|libre disposicion)\b/i.test(norm) || contexto?.esJec) {
+  if (esTextoTaller || contexto?.esJec) {
     return {
       codigo: `JEC-${slug || 'TALLER'}`,
       ambito: 'LIBRE_DISPOSICION_JEC',

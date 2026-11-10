@@ -1240,6 +1240,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           cursos={cursos}
                           asignaciones={asignaciones}
                           docentes={docentes}
+                          periodoActivo={periodoActivo}
                           onGuardarAsignacion={onGuardarAsignacion}
                           onEliminarAsignacion={onEliminarAsignacion}
                         />

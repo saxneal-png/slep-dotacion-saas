@@ -1,3 +1,5 @@
+import type { Establecimiento } from './index';
+
 export type EstamentoAsistente = 
   | 'PROFESIONAL'
   | 'TECNICO'
@@ -105,4 +107,56 @@ export interface DiagnosticoAsistentesColegio {
     coberturaSalas: boolean;
   };
   alertas: string[];
+}
+
+export interface ContratoAsistenteColegio {
+  colegio: Establecimiento;
+  asistente: AsistenteEducacion;
+  horasContrato: number;
+  fuentesFinanciamiento: {
+    subvencionGeneralIndefinido: number;
+    subvencionGeneralPlazoFijo: number;
+    sepIndefinido: number;
+    sepPlazoFijo: number;
+    pieIndefinido: number;
+    piePlazoFijo: number;
+    honorarios: number;
+    proRetencion: number;
+    total: number;
+  };
+}
+
+export interface AsistenteConsolidadoTerritorial {
+  idKey: string;
+  run: string;
+  nombres: string;
+  apellidos: string;
+  estamentoPrincipal: EstamentoAsistente;
+  cargosPrincipales: string[];
+  contratos: ContratoAsistenteColegio[];
+  colegiosNombres: string[];
+  horasTotalesSlep: number;
+  excedeLimiteSlep: boolean; // > 44 hrs en el SLEP
+  excesoHorasSlep: number;
+  esDuplaPsicosocial: boolean;
+  esEquipoPie: boolean;
+  esTecnicoParvulo: boolean;
+  esAuxiliarServicio: boolean;
+  esInspectorPatio: boolean;
+  resumenFinanciamiento: {
+    subvencionGeneralIndefinido: number;
+    subvencionGeneralPlazoFijo: number;
+    sepIndefinido: number;
+    sepPlazoFijo: number;
+    pieIndefinido: number;
+    piePlazoFijo: number;
+    honorarios: number;
+    proRetencion: number;
+    subvencionGeneral: number;
+    sep: number;
+    pie: number;
+    indefinido: number;
+    plazoFijo: number;
+    total: number;
+  };
 }

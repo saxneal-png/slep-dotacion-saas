@@ -12,12 +12,20 @@ export async function autoIndexarAsignacionesHistoricas(dbParam?: any): Promise<
   try {
     const res = db.exec(`
       SELECT a.id, a.asignatura, a.es_taller_jec, a.es_taller_sep, a.es_trabajo_colaborativo, 
-             a.es_diferenciado_compartido, c.nivel, a.codigo_asignatura, a.ambito_curricular
+             a.es_diferenciado_compartido, c.nivel, a.codigo_asignatura, a.ambito_curricular, c.regimen
       FROM asignaciones_horarias a
       LEFT JOIN cursos_sae c ON a.curso_id = c.id
       WHERE a.codigo_asignatura IS NULL 
          OR a.ambito_curricular IS NULL 
          OR (LOWER(a.asignatura) LIKE '%taller de literatura%' AND a.es_taller_jec = 1)
+         OR (
+           a.es_taller_sep = 0 AND a.es_trabajo_colaborativo = 0 AND (
+             LOWER(a.asignatura) LIKE '%taller%' OR
+             LOWER(a.asignatura) LIKE '%academia%' OR
+             LOWER(a.asignatura) LIKE '%reforz%' OR
+             LOWER(a.asignatura) LIKE '%libre dispos%'
+           ) AND (a.es_taller_jec = 0 OR a.ambito_curricular IN ('DIFERENCIADA_HC', 'PLAN_COMUN'))
+         )
     `);
 
     if (!res.length || !res[0].values.length) return 0;
@@ -31,24 +39,36 @@ export async function autoIndexarAsignacionesHistoricas(dbParam?: any): Promise<
       const esTrabajoColaborativo = Boolean(row[4]);
       const esDiferenciadoCompartido = Boolean(row[5]);
       const nivel = row[6] ? String(row[6]) : undefined;
+      const regimen = row[9] ? String(row[9]) : undefined;
+      const esTallerOficialLitOLab = /taller\s+de\s+literatura|taller\s+laboral/i.test(asignatura);
+      const normAsig = asignatura.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const esTextoTallerLibre = /\b(taller(?:es)?|reforzamientos?|refuerzos?|academias?|club(?:es)?|jec|libre\s+disposicion)\b/i.test(normAsig) && !esTallerOficialLitOLab;
+      const esCursoEpja = /\b(epja|adulto|adultos|vespertin|nocturn)\b/i.test((nivel || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+
+      const esJecSugerido = !esCursoEpja && !esTallerSep && !esTrabajoColaborativo && (esTallerJecActual || (esTextoTallerLibre && regimen !== 'No JEC'));
 
       const resCod = resolverCodigoYAmbitoAsignatura(asignatura, {
         nivelCurso: nivel,
-        esJec: esTallerJecActual,
+        esJec: esJecSugerido,
         esTallerSep,
         esTrabajoColaborativo,
-        esDiferenciadoCompartido
+        esDiferenciadoCompartido,
+        ambitoExplicito: (!esCursoEpja && esTextoTallerLibre && !esTallerSep && !esTrabajoColaborativo) ? 'LIBRE_DISPOSICION_JEC' : undefined
       });
 
       const nuevoEsTallerJec = resCod.ambito === 'LIBRE_DISPOSICION_JEC' 
         ? 1 
         : (esTallerJecActual && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO' ? 1 : 0);
 
-      db.run(
-        "UPDATE asignaciones_horarias SET codigo_asignatura = ?, ambito_curricular = ?, es_taller_jec = ? WHERE id = ?",
-        [resCod.codigo, resCod.ambito, nuevoEsTallerJec, id]
-      );
-      actualizadas++;
+      const codigoActual = row[7] ? String(row[7]) : null;
+      const ambitoActual = row[8] ? String(row[8]) : null;
+      if (codigoActual !== resCod.codigo || ambitoActual !== resCod.ambito || (esTallerJecActual ? 1 : 0) !== nuevoEsTallerJec) {
+        db.run(
+          "UPDATE asignaciones_horarias SET codigo_asignatura = ?, ambito_curricular = ?, es_taller_jec = ? WHERE id = ?",
+          [resCod.codigo, resCod.ambito, nuevoEsTallerJec, id]
+        );
+        actualizadas++;
+      }
     }
 
     if (actualizadas > 0) {

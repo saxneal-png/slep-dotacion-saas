@@ -24,7 +24,8 @@ import {
   X,
   Check,
   Settings,
-  Filter
+  Filter,
+  Briefcase
 } from 'lucide-react';
 import { 
   Establecimiento, 
@@ -33,15 +34,21 @@ import {
   InconsistenciaTerritorial,
   DocenteConsolidadoTerritorial,
   AsistenteEducacion,
+  AsistenteConsolidadoTerritorial,
+  EstamentoAsistente,
   CursoSae
 } from '../types';
 import { 
   DiagnosticoColegioCompleto, 
   consolidarCarteraTerritorial,
-  obtenerDocentesConsolidadosTerritorio
+  obtenerDocentesConsolidadosTerritorio,
+  obtenerAsistentesConsolidadosTerritorio
 } from '../services/dotacionCalculationService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
+import { AsistenteFichaDetalleModal } from '../components/AsistenteFichaDetalleModal';
+import { ConsolidadorBuscadorFuncionarios } from '../components/ConsolidadorBuscadorFuncionarios';
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
+import { coincideBusquedaFuncionario } from '../utils/searchUtils';
 import { importarPlanillaPalDEP, generarExcelConsolidadoPalDEP } from '../services/depPalExportService';
 import { generarExcelGdpColegio } from '../services/depGdpExportService';
 import { guardarArchivoNativoOEnNavegador } from '../services/excelReportService';
@@ -71,9 +78,13 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
   onRecargarDatos,
   onGuardarColegio
 }) => {
-  const [tabActiva, setTabActiva] = useState<'balance' | 'docentes'>('balance');
+  const [tabActiva, setTabActiva] = useState<'balance' | 'docentes' | 'asistentes'>('balance');
   const [filtroDocentes, setFiltroDocentes] = useState('');
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
+  const [asistenteFicha, setAsistenteFicha] = useState<AsistenteConsolidadoTerritorial | null>(null);
+  const [filtroAsistentes, setFiltroAsistentes] = useState('');
+  const [filtroTipoAsistente, setFiltroTipoAsistente] = useState<'todos' | 'multicontrato' | 'exceso'>('todos');
+  const [filtroEstamentoAsistente, setFiltroEstamentoAsistente] = useState<'TODOS' | 'PROFESIONAL' | 'TECNICO' | 'ADMINISTRATIVO' | 'AUXILIAR'>('TODOS');
   const [procesandoPal, setProcesandoPal] = useState(false);
   const [recargandoDatos, setRecargandoDatos] = useState(false);
   const [feedbackPal, setFeedbackPal] = useState<{ tipo: 'success' | 'error'; texto: string } | null>(null);
@@ -303,15 +314,110 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
       filtrados = filtrados.filter(d => d.excedeLimiteSlep);
     }
 
-    const q = filtroDocentes.toLowerCase().trim();
+    const q = filtroDocentes.trim();
     if (!q) return filtrados;
-    return filtrados.filter(d => 
-      d.nombres.toLowerCase().includes(q) ||
-      d.apellidos.toLowerCase().includes(q) ||
-      d.run.toLowerCase().includes(q) ||
-      d.colegiosNombres.some(cn => cn.toLowerCase().includes(q))
-    );
+
+    return filtrados.filter((d) => {
+      const extras = [
+        d.titulo,
+        d.estamentoPrincipal.replace(/_/g, ' '),
+        ...d.colegiosNombres,
+        ...d.contratos.flatMap((c) => [
+          c.docente.cargoInstitucional,
+          c.docente.tipoCoordinacion,
+          ...(c.funcionesNoAula || c.docente.funcionesNoAula || []).map((f) => `${f.tipo} ${f.nombre || ''}`),
+          ...c.asignaciones.map((a) => a.asignatura)
+        ])
+      ];
+      return coincideBusquedaFuncionario(q, {
+        run: d.run,
+        nombres: d.nombres,
+        apellidos: d.apellidos,
+        extras
+      }).match;
+    });
   }, [docentesConsolidados, filtroDocentes, filtroTipoDocente]);
+
+  // Nómina Territorial Consolidada de Asistentes de la Educación por RUN
+  const asistentesConsolidados = useMemo(() => {
+    return obtenerAsistentesConsolidadosTerritorio(establecimientos, asistentes);
+  }, [establecimientos, asistentes]);
+
+  const {
+    asistentesMultiEscuelaCount,
+    asistentesExceso44hCount,
+    totalHorasAsistentesSlep,
+    totalIndefinidoAsistentesSlep,
+    totalPlazoFijoAsistentesSlep,
+    totalHonorariosAsistentesSlep
+  } = useMemo(() => {
+    let multi = 0;
+    let exceso = 0;
+    let totalH = 0;
+    let indef = 0;
+    let pf = 0;
+    let hon = 0;
+
+    for (const a of asistentesConsolidados) {
+      if (a.contratos.length > 1) multi++;
+      if (a.excedeLimiteSlep) exceso++;
+      totalH += a.horasTotalesSlep;
+      indef += a.resumenFinanciamiento.indefinido;
+      pf += a.resumenFinanciamiento.plazoFijo;
+      hon += a.resumenFinanciamiento.honorarios;
+    }
+
+    return {
+      asistentesMultiEscuelaCount: multi,
+      asistentesExceso44hCount: exceso,
+      totalHorasAsistentesSlep: totalH,
+      totalIndefinidoAsistentesSlep: indef,
+      totalPlazoFijoAsistentesSlep: pf,
+      totalHonorariosAsistentesSlep: hon
+    };
+  }, [asistentesConsolidados]);
+
+  const asistentesFiltrados = useMemo(() => {
+    let filtrados = asistentesConsolidados;
+
+    if (filtroTipoAsistente === 'multicontrato') {
+      filtrados = filtrados.filter(a => a.contratos.length > 1);
+    } else if (filtroTipoAsistente === 'exceso') {
+      filtrados = filtrados.filter(a => a.excedeLimiteSlep);
+    }
+
+    if (filtroEstamentoAsistente !== 'TODOS') {
+      filtrados = filtrados.filter((a) => {
+        if (filtroEstamentoAsistente === 'ADMINISTRATIVO') {
+          return a.estamentoPrincipal === 'ADMINISTRATIVO' || a.estamentoPrincipal === 'PARADOCENTE_INSPECTORIA';
+        }
+        return a.estamentoPrincipal === filtroEstamentoAsistente;
+      });
+    }
+
+    const q = filtroAsistentes.trim();
+    if (!q) return filtrados;
+
+    return filtrados.filter((a) => {
+      const extras = [
+        ...a.cargosPrincipales,
+        ...a.colegiosNombres,
+        a.estamentoPrincipal,
+        ...a.contratos.flatMap((c) => [
+          c.asistente.descripcionFuncionGdp,
+          c.asistente.accionPmeSep,
+          c.asistente.accionPme,
+          c.asistente.observaciones
+        ])
+      ];
+      return coincideBusquedaFuncionario(q, {
+        run: a.run,
+        nombres: a.nombres,
+        apellidos: a.apellidos,
+        extras
+      }).match;
+    });
+  }, [asistentesConsolidados, filtroAsistentes, filtroTipoAsistente, filtroEstamentoAsistente]);
 
   return (
     <div className="space-y-6">
@@ -492,8 +598,16 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
         )}
       </div>
 
+      {/* Buscador Global Unificado de Docentes y Asistentes de la Educación */}
+      <ConsolidadorBuscadorFuncionarios
+        docentesConsolidados={docentesConsolidados}
+        asistentesConsolidados={asistentesConsolidados}
+        onSelectDocente={(doc) => setDocenteFicha(doc)}
+        onSelectAsistente={(asis) => setAsistenteFicha(asis)}
+      />
+
       {/* Selector de Pestañas del Consolidador */}
-      <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setTabActiva('balance')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -524,13 +638,33 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>Nómina Territorial & Multi-Contratos</span>
+          <span>Nómina Docentes & Multi-Contratos</span>
           <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-0.5 rounded-full font-bold ml-1 border">
             {docentesConsolidados.length} docentes
           </span>
           {docentesExceso44hCount > 0 && (
             <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1 animate-pulse">
               {docentesExceso44hCount} &gt;44h
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setTabActiva('asistentes')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            tabActiva === 'asistentes'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Briefcase className="w-4 h-4" />
+          <span>Nómina Asistentes de la Educación</span>
+          <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-0.5 rounded-full font-bold ml-1 border">
+            {asistentesConsolidados.length} asistentes
+          </span>
+          {asistentesExceso44hCount > 0 && (
+            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1 animate-pulse">
+              {asistentesExceso44hCount} &gt;44h
             </span>
           )}
         </button>
@@ -984,7 +1118,7 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
               <Search className="w-4 h-4 text-slate-400 shrink-0" />
               <input
                 type="text"
-                placeholder="Buscar docente por nombre, apellidos, RUN o establecimiento..."
+                placeholder="Buscar docente por nombre completo, apellidos, RUN (con o sin puntos), función o establecimiento..."
                 value={filtroDocentes}
                 onChange={e => setFiltroDocentes(e.target.value)}
                 className="flex-1 text-xs text-slate-800 placeholder-slate-400 bg-transparent focus:outline-none"
@@ -1122,11 +1256,293 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
         </div>
       )}
 
+      {/* VISTA 3: NÓMINA TERRITORIAL DE ASISTENTES DE LA EDUCACIÓN */}
+      {tabActiva === 'asistentes' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          {/* Tarjetas KPI de Asistentes Territoriales */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="text-slate-500 text-xs font-medium">Total Asistentes SLEP</div>
+              <div className="text-2xl font-black text-slate-800 mt-1">
+                {asistentesConsolidados.length}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Funcionarios consolidados en cartera
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="text-slate-500 text-xs font-medium">Asistentes Multi-Escuela</div>
+              <div className="text-2xl font-black text-indigo-600 mt-1">
+                {asistentesMultiEscuelaCount}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Con contratos en 2 o más colegios
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="text-slate-500 text-xs font-medium">Distribución Contractual SLEP</div>
+              <div className="text-xs text-slate-700 mt-1 space-y-0.5 font-mono">
+                <div className="flex justify-between">
+                  <span className="text-[11px] font-sans">Total SLEP:</span>
+                  <strong>{totalHorasAsistentesSlep}h</strong>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="font-sans text-emerald-700">Indefinido:</span>
+                  <strong className="text-emerald-700">{totalIndefinidoAsistentesSlep}h</strong>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="font-sans text-amber-700">Plazo Fijo:</span>
+                  <strong className="text-amber-700">{totalPlazoFijoAsistentesSlep}h</strong>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <span className="font-sans text-teal-700">Honorarios:</span>
+                  <strong className="text-teal-700">{totalHonorariosAsistentesSlep}h</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className={`p-5 rounded-xl border shadow-sm ${
+              asistentesExceso44hCount > 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'
+            }`}>
+              <div className={`text-xs font-bold ${asistentesExceso44hCount > 0 ? 'text-red-800' : 'text-emerald-800'}`}>
+                Fiscalización Límite SLEP (&gt;44h)
+              </div>
+              <div className={`text-2xl font-black mt-1 ${asistentesExceso44hCount > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                {asistentesExceso44hCount} {asistentesExceso44hCount === 1 ? 'caso' : 'casos'}
+              </div>
+              <div className={`text-[11px] font-semibold mt-1 ${asistentesExceso44hCount > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                {asistentesExceso44hCount > 0 ? '⚠️ Supera tope semanal 44h' : '✓ Cero infracciones territoriales'}
+              </div>
+            </div>
+          </div>
+
+          {/* Barra de Búsqueda y Filtros Rápidos de Asistentes */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+                  <Filter className="w-3.5 h-3.5" />
+                  Filtrar asistentes:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoAsistente('todos')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    filtroTipoAsistente === 'todos'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  Todos ({asistentesConsolidados.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoAsistente('multicontrato')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    filtroTipoAsistente === 'multicontrato'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Solo Multicontrato ({asistentesMultiEscuelaCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipoAsistente('exceso')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    filtroTipoAsistente === 'exceso'
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>Con Infracción &gt;44h ({asistentesExceso44hCount})</span>
+                </button>
+
+                <select
+                  value={filtroEstamentoAsistente}
+                  onChange={e => setFiltroEstamentoAsistente(e.target.value as any)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="TODOS">Todos los Estamentos</option>
+                  <option value="PROFESIONAL">Profesionales</option>
+                  <option value="TECNICO">Técnicos</option>
+                  <option value="ADMINISTRATIVO">Administrativos / Paradocentes</option>
+                  <option value="AUXILIAR">Auxiliares de Servicios</option>
+                </select>
+              </div>
+
+              <div className="text-[11px] text-slate-500 font-medium self-end lg:self-auto">
+                Mostrando <strong className="text-slate-800">{asistentesFiltrados.length}</strong> de {asistentesConsolidados.length} asistentes
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2 rounded-lg border border-slate-200 focus-within:border-amber-500 focus-within:bg-white transition-all">
+              <Search className="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                placeholder="Buscar asistente por nombre completo, apellidos, RUN (con o sin puntos), cargo, función o establecimiento..."
+                value={filtroAsistentes}
+                onChange={e => setFiltroAsistentes(e.target.value)}
+                className="flex-1 text-xs text-slate-800 placeholder-slate-400 bg-transparent focus:outline-none"
+              />
+              {filtroAsistentes && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroAsistentes('')}
+                  className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Tabla de Asistentes Territoriales */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-600">
+                <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[11px] border-b">
+                  <tr>
+                    <th className="px-4 py-3">Asistente / RUN</th>
+                    <th className="px-4 py-3">Estamento & Cargo / Función</th>
+                    <th className="px-4 py-3">Establecimientos & Horas</th>
+                    <th className="px-4 py-3 text-center">Total SLEP</th>
+                    <th className="px-4 py-3">Financiamiento (Subv/SEP/PIE)</th>
+                    <th className="px-4 py-3 text-center">Estado Legal</th>
+                    <th className="px-4 py-3 text-center">Ficha 360°</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {asistentesFiltrados.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-10 text-center text-slate-400 text-xs">
+                        No se encontraron asistentes de la educación con los filtros aplicados.
+                      </td>
+                    </tr>
+                  ) : (
+                    asistentesFiltrados.map((asis) => {
+                      const esMulti = asis.contratos.length > 1;
+                      const rf = asis.resumenFinanciamiento;
+                      const estLabelMap: Record<EstamentoAsistente, string> = {
+                        PROFESIONAL: 'Profesional',
+                        TECNICO: 'Técnico',
+                        ADMINISTRATIVO: 'Administrativo',
+                        AUXILIAR: 'Auxiliar',
+                        PARADOCENTE_INSPECTORIA: 'Administrativo'
+                      };
+
+                      return (
+                        <tr key={asis.idKey} className="hover:bg-slate-50/80">
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-slate-900">
+                              {asis.nombres} {asis.apellidos}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono">
+                              RUN: {asis.run}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 mb-1">
+                              {estLabelMap[asis.estamentoPrincipal] || asis.estamentoPrincipal}
+                            </span>
+                            <div className="text-xs font-semibold text-slate-800">
+                              {asis.cargosPrincipales.join(' • ') || 'Sin cargo especificado'}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="space-y-1">
+                              {asis.contratos.map((c, cIdx) => (
+                                <div key={cIdx} className="flex items-center gap-2 text-[11px]">
+                                  <span className="font-semibold text-slate-800">
+                                    {c.colegio.nombre}:
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 font-bold text-slate-700 font-mono">
+                                    {c.horasContrato}h
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3 text-center">
+                            <span className={`text-sm font-black ${
+                              asis.excedeLimiteSlep ? 'text-red-600' : 'text-slate-900'
+                            }`}>
+                              {asis.horasTotalesSlep} hrs
+                            </span>
+                            {esMulti && (
+                              <span className="block text-[10px] text-indigo-600 font-semibold">
+                                {asis.contratos.length} colegios
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="text-[11px] font-mono space-y-0.5">
+                              <div>Subv: <strong>{rf.subvencionGeneralIndefinido}I</strong> / <strong>{rf.subvencionGeneralPlazoFijo}PF</strong></div>
+                              <div className="text-purple-700">SEP: <strong>{rf.sepIndefinido}I</strong> / <strong>{rf.sepPlazoFijo}PF</strong></div>
+                              <div className="text-blue-700">PIE: <strong>{rf.pieIndefinido}I</strong> / <strong>{rf.piePlazoFijo}PF</strong></div>
+                              {rf.honorarios > 0 && (
+                                <div className="text-teal-700">Hon: <strong>{rf.honorarios}h</strong></div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3 text-center">
+                            {asis.excedeLimiteSlep ? (
+                              <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-50 border border-red-200 px-2 py-0.5 rounded text-[10px] animate-pulse">
+                                <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
+                                Exceso SLEP (+{asis.excesoHorasSlep}h)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[10px]">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Legal (&le;44h)
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setAsistenteFicha(asis)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-xs font-semibold transition-colors border border-amber-200"
+                              title="Ver Ficha y Funciones 360°"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Ver Ficha</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Ficha 360° del Docente */}
       <DocenteFichaDetalleModal
         isOpen={Boolean(docenteFicha)}
         onClose={() => setDocenteFicha(null)}
         docenteConsolidado={docenteFicha}
+        cursos={cursos}
+      />
+
+      {/* Modal Ficha 360° del Asistente de la Educación */}
+      <AsistenteFichaDetalleModal
+        isOpen={Boolean(asistenteFicha)}
+        onClose={() => setAsistenteFicha(null)}
+        asistenteConsolidado={asistenteFicha}
       />
 
       {/* ── MODAL EXPORTACIÓN PLANILLA OFICIAL GDP (INDIVIDUAL O MASIVA) ── */}

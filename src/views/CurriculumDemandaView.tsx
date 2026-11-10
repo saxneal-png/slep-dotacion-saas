@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   BookOpen, Plus, Clock, Trash2, Layers, ShieldCheck, Users,
   Edit2, AlertCircle, CheckCircle2, UserCheck, Sparkles,
@@ -10,7 +10,8 @@ import {
   CursoSae,
   Docente,
   AsignacionHoraria,
-  EstamentoDocente
+  EstamentoDocente,
+  PlanEstudioCurricular
 } from '../types';
 import {
   PLANES_MINEDUC,
@@ -29,6 +30,15 @@ import {
   resolverCodigoYAmbitoAsignatura,
   coincideAsignacionConNucleoBcep
 } from '@slep/mineduc-engine';
+import { listarPlanesEstudio } from '../database/db';
+import {
+  resolverPlanCurso,
+  convertirInfoPlanANivelMineduc,
+  calcularDisponibilidadCurso,
+  esAsignacionLibreDisposicionJec,
+  esCursoModalidadEpja,
+  esCursoNivelMedio34
+} from '../services/curricularPlanService';
 import {
   ModalAsignarDocencia,
   ModalAsignarCoDocencia,
@@ -123,6 +133,18 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
   // Modal de Reconciliación Nómina-Malla
   const [modalReconciliarOpen, setModalReconciliarOpen] = useState(false);
+  // Planes personalizados desde SQLite para mantener Single Source of Truth con Nómina Docente
+  const [planesDb, setPlanesDb] = useState<PlanEstudioCurricular[]>([]);
+
+  useEffect(() => {
+    let cancel = false;
+    listarPlanesEstudio()
+      .then(res => {
+        if (!cancel && res) setPlanesDb(res);
+      })
+      .catch(err => console.warn('[CurriculumDemandaView] Error al cargar planes:', err));
+    return () => { cancel = true; };
+  }, []);
 
   // Diagnóstico en tiempo real de coherencia Nómina vs Malla
   const diagSincronizacion = useMemo(() => {
@@ -266,19 +288,36 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   const esModoTransversal = cursoSeleccionadoPlan === 'TRANSVERSAL';
   const cursoActivo = esModoTransversal ? null : (cursos.find(c => c.id === cursoSeleccionadoPlan) || cursos[0]);
+  const infoPlanActivo = useMemo(() => {
+    return resolverPlanCurso(cursoActivo || null, planesDb);
+  }, [cursoActivo, planesDb]);
+
   const esCursoTp = Boolean(
     cursoActivo && (
       esModalidadTp(cursoActivo.nivel) ||
       (cursoActivo.especialidadTp && esModalidadTp(cursoActivo.especialidadTp)) ||
+      infoPlanActivo.categoria === 'MEDIA_TP' ||
       /\btp\b/i.test(cursoActivo.nivel) ||
       /t[eé]cnico/i.test(cursoActivo.nivel) ||
       (colegio && /t[eé]cnico|industrial|comercial|polit[eé]cnico|agr[ií]cola/i.test(colegio.nombre) && /^[34]°?\s*medio/i.test(cursoActivo.nivel))
     )
   );
-  const planActivo = cursoActivo ? obtenerPlanPorCurso(cursoActivo.nivel, cursoActivo.regimen, cursoActivo.especialidadTp) : null;
+  const planActivo = useMemo(() => {
+    if (!cursoActivo) return null;
+    if (infoPlanActivo.esPersonalizadoBd) {
+      return convertirInfoPlanANivelMineduc(infoPlanActivo, cursoActivo);
+    }
+    return obtenerPlanPorCurso(cursoActivo.nivel, cursoActivo.regimen, cursoActivo.especialidadTp) ||
+      convertirInfoPlanANivelMineduc(infoPlanActivo, cursoActivo);
+  }, [cursoActivo, infoPlanActivo]);
+
   const horasPlanCurso = planActivo ? planActivo.totalHorasPlan : (
     cursoActivo ? calcularHorasPlanCurso(cursoActivo.nivel, cursoActivo.regimen, cursoActivo.especialidadTp) : 30
   );
+
+  const es34MedioCurso = useMemo(() => {
+    return esCursoNivelMedio34(cursoActivo || null, infoPlanActivo);
+  }, [cursoActivo, infoPlanActivo]);
 
   // Asignaciones transversales / institucionales (sin curso asociado)
   const asignacionesTransversales = useMemo(() => {
@@ -286,15 +325,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   }, [asignaciones]);
 
   const totalHorasTransversales = asignacionesTransversales.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
-
-  const es34MedioCurso = Boolean(
-    cursoActivo &&
-    !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoActivo.nivel) &&
-    (
-      /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoActivo.nivel) ||
-      (((planActivo?.categoria as string) === 'MEDIA_HC' || (planActivo?.categoria as string) === 'MEDIA_TP') && /[34]/i.test(planActivo?.nivel || ''))
-    )
-  );
 
   const esCursoParvulario = Boolean(cursoActivo && esNivelParvulario(cursoActivo.nivel));
 
@@ -424,6 +454,10 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
            a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
     );
   }, [asignacionesCurso]);
+
+  const disponibilidadCursoActivo = useMemo(() => {
+    return calcularDisponibilidadCurso(cursoActivo || null, infoPlanActivo, asignacionesPlanRegularCurso);
+  }, [cursoActivo, infoPlanActivo, asignacionesPlanRegularCurso]);
 
   // Asignaciones de Co-Docencia No PIE y Agrupaciones Flexibles
   const asignacionesCoDocenciaCurso = useMemo(() => {
@@ -1805,9 +1839,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                   {a.horasPedagogicasAula} HA
                                 </td>
                                 <td className="px-4 py-2.5 text-center">
-                                  {a.esTallerJec ? (
-                                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                                      Taller JEC
+                                  {esAsignacionLibreDisposicionJec(a, cursoActivo || null, infoPlanActivo) ? (
+                                    <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                                      ⚡ Libre Disposición JEC
                                     </span>
                                   ) : (
                                     <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">
@@ -1905,19 +1939,10 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           );
                         })
                       ) : (
-                        planActivo.asignaturasBase.map((asig, i) => {
-                        const esAsigTallerOficial = /taller de literatura|taller laboral/i.test(asig.nombre);
-                        const asigsDeEstaMateria = asignacionesPlanRegularCurso.filter(a => {
-                          if (a.esTallerJec && !esAsigTallerOficial) return false;
-                          if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigTallerOficial) return false;
-                          return (
-                            a.asignatura.toLowerCase().includes(asig.nombre.toLowerCase()) ||
-                            asig.nombre.toLowerCase().includes(a.asignatura.toLowerCase())
-                          );
-                        });
-                        const yaAsignada = asigsDeEstaMateria.length > 0;
-                        const horasAsignadasEstaMateria = asigsDeEstaMateria.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-                        const deltaJecCompensado = horasAsignadasEstaMateria > asig.horasSugeridas ? (horasAsignadasEstaMateria - asig.horasSugeridas) : 0;
+                        disponibilidadCursoActivo.todas.map((asigDisp, i) => {
+                        const yaAsignada = asigDisp.estado !== 'DISPONIBLE';
+                        const horasRestantesAsig = asigDisp.horasDisponibles > 0 ? asigDisp.horasDisponibles : asigDisp.horasPlan;
+                        const deltaJecCompensado = asigDisp.horasCompensadasLibreDisposicion || 0;
 
                         return (
                           <div
@@ -1925,26 +1950,30 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                             className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
                               yaAsignada
                                 ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900'
+                                : asigDisp.horasAsignadas > 0
+                                ? 'bg-amber-50/60 border-amber-300 text-amber-950'
                                 : 'bg-white border-slate-200 hover:border-orange-400'
                             }`}
                           >
                             <div>
                               <div className="font-bold flex items-center gap-1">
                                 {yaAsignada ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : null}
-                                <span className="truncate max-w-[130px]">{asig.nombre}</span>
+                                <span className="truncate max-w-[130px]" title={asigDisp.nombre}>{asigDisp.nombre}</span>
                               </div>
                               <div className="text-[10px] text-slate-500">
-                                Plan: {asig.horasSugeridas} HA{deltaJecCompensado > 0 ? ` (+${deltaJecCompensado}h JEC)` : ''}
+                                Plan: {asigDisp.horasPlan} HA
+                                {asigDisp.horasAsignadas > 0 && !yaAsignada ? ` • Faltan ${asigDisp.horasDisponibles} HA` : ''}
+                                {deltaJecCompensado > 0 ? ` (+${deltaJecCompensado}h JEC)` : ''}
                               </div>
                             </div>
 
                             {!yaAsignada && (
                               <button
                                 type="button"
-                                onClick={() => abrirModalNuevaDocencia(asig.nombre, asig.horasSugeridas)}
-                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-800 text-[10px] font-bold rounded transition-colors"
+                                onClick={() => abrirModalNuevaDocencia(asigDisp.nombre, horasRestantesAsig)}
+                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-800 text-[10px] font-bold rounded transition-colors shrink-0"
                               >
-                                + Asignar
+                                + Asignar ({horasRestantesAsig}h)
                               </button>
                             )}
                           </div>
@@ -1952,51 +1981,13 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       })
                       )}
 
-                      {/* Si el plan cuenta con horas de libre disposición JEC (y no es parvulario que ya lo integra en BCEP), mostrar tarjeta rápida para asignarlas */}
-                      {!esCursoParvulario && planActivo.horasLibreDisposicion > 0 && (
+                      {/* Si el plan cuenta con horas de libre disposición JEC (y no es parvulario ni EPJA), mostrar tarjeta rápida para asignarlas */}
+                      {!esCursoParvulario && !esCursoModalidadEpja(cursoActivo, infoPlanActivo) && disponibilidadCursoActivo.horasLibrePlan > 0 && (
                         (() => {
-                          const horasTalleresJec = asignacionesPlanRegularCurso
-                            .filter(a => {
-                              const infoCan = resolverCodigoYAmbitoAsignatura(a.asignatura, {
-                                nivelCurso: cursoActivo?.nivel,
-                                esJec: a.esTallerJec,
-                                esTallerSep: a.esTallerSep,
-                                esTrabajoColaborativo: a.esTrabajoColaborativo,
-                                esDiferenciadoCompartido: a.esDiferenciadoCompartido
-                              });
-                              if (infoCan.ambito === 'DIFERENCIADA_HC' || infoCan.ambito === 'PLAN_COMUN' || infoCan.ambito === 'PLAN_COMUN_ELECTIVO') {
-                                return false;
-                              }
-                              if (a.ambitoCurricular === 'DIFERENCIADA_HC' || a.ambitoCurricular === 'PLAN_COMUN' || a.ambitoCurricular === 'PLAN_COMUN_ELECTIVO') {
-                                return false;
-                              }
-                              return a.esTallerJec || /taller|jec|libre/i.test(a.asignatura);
-                            })
-                            .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-
-                          // Calcular excedente de asignaturas base absorbido legítimamente por Libre Disposición JEC (ej: Orientación de 0.5 a 1 o 2 HA)
-                          let excesoCompensadoBase = 0;
-                          for (const asigBase of planActivo.asignaturasBase) {
-                            const esTallerOficial = /taller de literatura|taller laboral/i.test(asigBase.nombre);
-                            const asigsDeEstaMateria = asignacionesPlanRegularCurso.filter(a => {
-                              const infoCan = resolverCodigoYAmbitoAsignatura(a.asignatura, {
-                                nivelCurso: cursoActivo?.nivel,
-                                esJec: a.esTallerJec
-                              });
-                              if (infoCan.ambito === 'DIFERENCIADA_HC') return false;
-                              if (a.esTallerJec && !esTallerOficial) return false;
-                              if (/taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esTallerOficial) return false;
-                              return a.asignatura.toLowerCase().includes(asigBase.nombre.toLowerCase()) || asigBase.nombre.toLowerCase().includes(a.asignatura.toLowerCase());
-                            });
-                            const totalAsig = asigsDeEstaMateria.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-                            if (totalAsig > asigBase.horasSugeridas) {
-                              excesoCompensadoBase += (totalAsig - asigBase.horasSugeridas);
-                            }
-                          }
-
-                          const horasJecAsignadas = horasTalleresJec + excesoCompensadoBase;
-                          const horasJecRestantes = Math.max(0, planActivo.horasLibreDisposicion - horasJecAsignadas);
-                          const yaCompletada = horasJecRestantes === 0;
+                          const horasJecPlan = disponibilidadCursoActivo.horasLibrePlan;
+                          const horasJecAsignadas = disponibilidadCursoActivo.horasLibreAsignadas;
+                          const horasJecRestantes = disponibilidadCursoActivo.horasLibreDisponibles;
+                          const yaCompletada = horasJecRestantes <= 0.01;
 
                           return (
                             <div
@@ -2012,14 +2003,14 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                   <span className="truncate max-w-[140px]">⚡ Libre Disposición JEC</span>
                                 </div>
                                 <div className="text-[10px] text-amber-700">
-                                  Plan: {planActivo.horasLibreDisposicion} HA ({horasJecAsignadas} HA asignadas{horasJecRestantes > 0 ? `, ${horasJecRestantes} HA disp.` : ''})
+                                  Plan: {horasJecPlan} HA ({horasJecAsignadas} HA asignadas{horasJecRestantes > 0 ? `, ${horasJecRestantes} HA disp.` : ''})
                                 </div>
                               </div>
 
                               {horasJecRestantes > 0 && (
                                 <button
                                   type="button"
-                                  onClick={() => abrirModalNuevaDocencia('Taller JEC / Libre Disposición', horasJecRestantes)}
+                                  onClick={() => abrirModalNuevaDocencia('Taller JEC / Libre Disposición', Math.min(horasJecRestantes, 2))}
                                   className="px-2 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[10px] font-bold rounded transition-colors"
                                   title="Asignar horas de libre disposición / Taller JEC"
                                 >

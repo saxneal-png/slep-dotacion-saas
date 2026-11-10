@@ -9,6 +9,7 @@ import {
   esNivelParvulario,
   resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
+import { esTextoTallerOLibreDisposicion } from '../services/curricularPlanService';
 
 export const TIPOS_APOYO_PIE = [
   { id: 'Co-Docencia en Aula Regular', label: 'Co-Docencia en Aula Regular (Docente Diferencial)', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
@@ -88,9 +89,14 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
         setTipoFuncion('CURRICULAR');
       }
     } else {
-      setAsignatura(asignaturaSugerida || (esModoTransversal ? 'Taller de Robótica / Extraescolar' : (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación')));
+      const sug = asignaturaSugerida || (esModoTransversal ? 'Taller de Robótica / Extraescolar' : (planActivo?.asignaturasBase[0]?.nombre || 'Lenguaje y Comunicación'));
+      setAsignatura(sug);
       setHoras(horasSugeridas || (esModoTransversal ? 4 : (planActivo?.asignaturasBase[0]?.horasSugeridas || 4)));
-      setTipoFuncion(esModoTransversal ? 'TALLER_SEP' : 'CURRICULAR');
+      setTipoFuncion(
+        esModoTransversal
+          ? 'TALLER_SEP'
+          : (esTextoTallerOLibreDisposicion(sug) ? 'TALLER_JEC' : 'CURRICULAR')
+      );
       setCompartirElectivo(false);
       setCursosCompartidos([]);
       const docSugerido = docentes.find(d => d.estamento === 'DOCENTE_AULA') || docentes[0];
@@ -113,8 +119,11 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
       esJec,
       esTallerSep: esSep,
       esTrabajoColaborativo: esColab,
-      esDiferenciadoCompartido: compartirElectivo && cursosCompartidos.length > 0
+      esDiferenciadoCompartido: compartirElectivo && cursosCompartidos.length > 0,
+      ambitoExplicito: (esJec && !esModoTransversal) ? 'LIBRE_DISPOSICION_JEC' : ((esSep || esColab) ? 'ADICIONAL_EXTRA' : undefined)
     });
+
+    const esLibreFinal = !esModoTransversal && !esSep && !esColab && (esJec || infoCanonica.ambito === 'LIBRE_DISPOSICION_JEC');
 
     const asig: AsignacionHoraria = {
       id: editandoAsig ? editandoAsig.id : `asig-doc-${Date.now()}`,
@@ -124,13 +133,13 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
       docenteId,
       asignatura: asignatura.trim(),
       codigoAsignatura: infoCanonica.codigo,
-      ambitoCurricular: infoCanonica.ambito,
+      ambitoCurricular: esLibreFinal ? 'LIBRE_DISPOSICION_JEC' : infoCanonica.ambito,
       horasPedagogicasAula: Number(horas),
       esCoDocencia: false,
-      esTallerJec: (infoCanonica.ambito === 'LIBRE_DISPOSICION_JEC' || (esJec && infoCanonica.ambito !== 'DIFERENCIADA_HC' && infoCanonica.ambito !== 'PLAN_COMUN' && infoCanonica.ambito !== 'PLAN_COMUN_ELECTIVO')) && !esModoTransversal,
+      esTallerJec: esLibreFinal,
       esTallerSep: esSep,
       esTrabajoColaborativo: esColab,
-      tipoApoyo: esColab ? 'TRABAJO_COLABORATIVO' : (esSep ? 'TALLER_SEP' : (esJec ? 'TALLER_JEC' : 'AULA_REGULAR')),
+      tipoApoyo: esColab ? 'TRABAJO_COLABORATIVO' : (esSep ? 'TALLER_SEP' : (esLibreFinal ? 'TALLER_JEC' : 'AULA_REGULAR')),
       cursosCompartidosIds: compartirElectivo && cursosCompartidos.length > 0 ? cursosCompartidos : undefined,
       esDiferenciadoCompartido: compartirElectivo && cursosCompartidos.length > 0
     };
@@ -178,6 +187,9 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
               onChange={e => {
                 const val = e.target.value;
                 setAsignatura(val);
+                if (!esModoTransversal && esTextoTallerOLibreDisposicion(val) && tipoFuncion === 'CURRICULAR') {
+                  setTipoFuncion('TALLER_JEC');
+                }
                 const match = planActivo?.asignaturasBase.find(a => a.nombre.toLowerCase() === val.toLowerCase());
                 if (match && !editandoAsig) {
                   setHoras(match.horasSugeridas);
@@ -238,11 +250,12 @@ export const ModalAsignarDocencia: React.FC<ModalDocenciaProps> = ({
             <label className="block font-semibold text-slate-700 mb-1">Horas Pedagógicas Semanales (HA) *</label>
             <input
               type="number"
-              min="1"
+              min="0.5"
+              step="0.5"
               max="44"
               required
               value={horas}
-              onChange={e => setHoras(parseInt(e.target.value) || 0)}
+              onChange={e => setHoras(parseFloat(e.target.value) || 0)}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none text-center font-bold text-orange-600 text-base"
             />
             <p className="text-[10px] text-slate-400 mt-1">1 hora pedagógica = 45 minutos de aula.</p>

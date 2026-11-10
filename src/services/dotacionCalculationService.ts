@@ -26,9 +26,18 @@ import {
   InconsistenciaTerritorial,
   DocenteCompartidoTerritorial,
   DocenteConsolidadoTerritorial,
-  ContratoDocenteColegio
+  ContratoDocenteColegio,
+  PlanEstudioCurricular,
+  AsistenteEducacion,
+  AsistenteConsolidadoTerritorial,
+  ContratoAsistenteColegio
 } from '../types';
 import { normalizarRut } from '../utils/rutUtils';
+import {
+  resolverPlanCurso,
+  esAsignacionLibreDisposicionJec,
+  sonAsignaturasEquivalentes
+} from './curricularPlanService';
 
 export interface DiagnosticoEspecialidad {
   asignatura: string;
@@ -75,7 +84,8 @@ export function calcularDiagnosticoColegio(
   salas: SalaInfraestructura[],
   cursos: CursoSae[],
   docentes: Docente[],
-  asignaciones: AsignacionHoraria[]
+  asignaciones: AsignacionHoraria[],
+  planesDb: PlanEstudioCurricular[] = []
 ): DiagnosticoColegioCompleto {
   const regimenTabla = est.porcentajePrioritarios >= 80 ? '60_40' : '65_35';
   const regimenProporcion = est.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
@@ -140,21 +150,28 @@ export function calcularDiagnosticoColegio(
     }
   }
 
-  // 2. Demanda Curricular según Planes MINEDUC y Talleres JEC
+  // 2. Demanda Curricular según Planes MINEDUC/Personalizados y Talleres JEC
   let horasAulaDemandadasCurriculo = 0;
   const demandaPorAsignatura: { [asig: string]: number } = {};
+  const infoPlanPorCurso = new Map<string, ReturnType<typeof resolverPlanCurso>>();
 
   for (const curso of cursos) {
-    const plan = obtenerPlanPorCurso(curso.nivel, curso.regimen, curso.especialidadTp);
-    const horasPlan = plan ? plan.totalHorasPlan : calcularHorasPlanCurso(curso.nivel, curso.regimen, curso.especialidadTp);
+    const infoPlan = resolverPlanCurso(curso, planesDb);
+    infoPlanPorCurso.set(curso.id, infoPlan);
+    const planMineduc = obtenerPlanPorCurso(curso.nivel, curso.regimen, curso.especialidadTp);
+    const horasPlan = infoPlan.esPersonalizadoBd && infoPlan.totalHorasPlan
+      ? infoPlan.totalHorasPlan
+      : (planMineduc ? planMineduc.totalHorasPlan : calcularHorasPlanCurso(curso.nivel, curso.regimen, curso.especialidadTp));
     const horasTalleres = (curso.talleresJec || []).reduce((sum, t) => sum + t.horas, 0);
 
     horasAulaDemandadasCurriculo += (horasPlan + horasTalleres);
 
-    if (plan) {
-      for (const asig of plan.asignaturasBase) {
-        demandaPorAsignatura[asig.nombre] = (demandaPorAsignatura[asig.nombre] || 0) + asig.horasSugeridas;
-      }
+    for (const asig of infoPlan.asignaturas) {
+      demandaPorAsignatura[asig.nombre] = (demandaPorAsignatura[asig.nombre] || 0) + asig.horas;
+    }
+
+    if (infoPlan.horasLibreDisposicion > 0 && (!curso.talleresJec || curso.talleresJec.length === 0)) {
+      demandaPorAsignatura['Libre Disposición JEC'] = (demandaPorAsignatura['Libre Disposición JEC'] || 0) + infoPlan.horasLibreDisposicion;
     }
 
     if (curso.talleresJec && curso.talleresJec.length > 0) {
@@ -695,7 +712,8 @@ export function calcularDiagnosticoColegio(
     };
   });
 
-  // 5. Diagnóstico por Especialidad (solo docencia del plan regular; la co-docencia, independiente de su financiamiento, y los talleres exentos no suman a las horas del plan de estudio)
+  // 5. Diagnóstico por Especialidad (unificado por equivalencia curricular y separado de Libre Disposición JEC)
+  const demandaKeys = Object.keys(demandaPorAsignatura);
   const asignadoPorAsignatura: { [asig: string]: { horas: number; docentes: string[] } } = {};
   for (const asig of asignaciones) {
     const esCoDoc = Boolean(
@@ -717,15 +735,28 @@ export function calcularDiagnosticoColegio(
       continue;
     }
 
-    if (!asignadoPorAsignatura[asig.asignatura]) {
-      asignadoPorAsignatura[asig.asignatura] = { horas: 0, docentes: [] };
+    const cursoAsig = cursosMap.get(asig.cursoId) || null;
+    const infoPlanAsig = cursoAsig ? (infoPlanPorCurso.get(cursoAsig.id) || resolverPlanCurso(cursoAsig, planesDb)) : null;
+
+    let claveAsig = asig.asignatura;
+    if (cursoAsig && infoPlanAsig && esAsignacionLibreDisposicionJec(asig, cursoAsig, infoPlanAsig)) {
+      claveAsig = demandaPorAsignatura[asig.asignatura] !== undefined ? asig.asignatura : 'Libre Disposición JEC';
+    } else if (demandaPorAsignatura[asig.asignatura] === undefined) {
+      const claveEquiv = demandaKeys.find(k => k !== 'Libre Disposición JEC' && sonAsignaturasEquivalentes(k, asig.asignatura));
+      if (claveEquiv) {
+        claveAsig = claveEquiv;
+      }
     }
-    asignadoPorAsignatura[asig.asignatura].horas += asig.horasPedagogicasAula;
+
+    if (!asignadoPorAsignatura[claveAsig]) {
+      asignadoPorAsignatura[claveAsig] = { horas: 0, docentes: [] };
+    }
+    asignadoPorAsignatura[claveAsig].horas += asig.horasPedagogicasAula;
     const doc = docentesMap.get(asig.docenteId);
     if (doc) {
       const nombreD = `${doc.nombres} ${doc.apellidos}`;
-      if (!asignadoPorAsignatura[asig.asignatura].docentes.includes(nombreD)) {
-        asignadoPorAsignatura[asig.asignatura].docentes.push(nombreD);
+      if (!asignadoPorAsignatura[claveAsig].docentes.includes(nombreD)) {
+        asignadoPorAsignatura[claveAsig].docentes.push(nombreD);
       }
     }
   }
@@ -1505,6 +1536,174 @@ export function obtenerDocentesConsolidadosTerritorio(
   }
 
   // Ordenar por apellidos, nombres
+  return resultado.sort((a, b) => {
+    const ap = a.apellidos.localeCompare(b.apellidos);
+    if (ap !== 0) return ap;
+    return a.nombres.localeCompare(b.nombres);
+  });
+}
+
+/**
+ * Consolida la nómina territorial de Asistentes de la Educación agrupando por RUN válido
+ * (o por ID individual si el registro no posee RUN válido para evitar fusiones erróneas),
+ * calculando total de horas SLEP, infracciones >44h y desglose financiero/contractual.
+ */
+export function obtenerAsistentesConsolidadosTerritorio(
+  establecimientos: Establecimiento[],
+  asistentes: AsistenteEducacion[]
+): AsistenteConsolidadoTerritorial[] {
+  const estMap = new Map<string, Establecimiento>(
+    establecimientos.map(e => [String(e.rbd), e])
+  );
+
+  const grupos = new Map<string, { tieneRunValido: boolean; runVisual: string; items: AsistenteEducacion[] }>();
+
+  for (const a of asistentes) {
+    if (a.activo === false) continue;
+
+    const cleanRun = normalizarRut(a.run);
+    const tieneRunValido = /^\d{5,9}-[0-9K]$/.test(cleanRun);
+    const key = tieneRunValido ? `RUN:${cleanRun}` : `ID:${a.id}`;
+
+    const existente = grupos.get(key);
+    if (existente) {
+      existente.items.push(a);
+    } else {
+      grupos.set(key, {
+        tieneRunValido,
+        runVisual: tieneRunValido ? cleanRun : (a.run || '').trim(),
+        items: [a]
+      });
+    }
+  }
+
+  const resultado: AsistenteConsolidadoTerritorial[] = [];
+
+  for (const [idKey, grupo] of grupos.entries()) {
+    const lista = grupo.items;
+    const primero = lista[0];
+    const contratos: ContratoAsistenteColegio[] = [];
+
+    let totalHorasSlep = 0;
+    let totalSubGenInd = 0;
+    let totalSubGenPf = 0;
+    let totalSepInd = 0;
+    let totalSepPf = 0;
+    let totalPieInd = 0;
+    let totalPiePf = 0;
+    let totalHonorarios = 0;
+    let totalProRetencion = 0;
+
+    let esDuplaPsicosocial = false;
+    let esEquipoPie = false;
+    let esTecnicoParvulo = false;
+    let esAuxiliarServicio = false;
+    let esInspectorPatio = false;
+
+    const cargosSet = new Set<string>();
+
+    for (const asis of lista) {
+      const rbdStr = String(asis.rbd);
+      const colegio = estMap.get(rbdStr) || {
+        id: `est-${rbdStr}`,
+        rbd: rbdStr,
+        nombre: `Establecimiento RBD ${rbdStr}`,
+        comuna: 'Bulnes' as any,
+        regimen: 'JEC' as any,
+        porcentajePrioritarios: 70
+      };
+
+      const subInd = Number(asis.horasSubvencionGeneralIndefinido || 0);
+      const subPf = Number(asis.horasSubvencionGeneralPlazoFijo || 0);
+      const sepInd = Number(asis.horasSepIndefinido || 0);
+      const sepPf = Number(asis.horasSepPlazoFijo || 0);
+      const pieInd = Number(asis.horasPieIndefinido || 0);
+      const piePf = Number(asis.horasPiePlazoFijo || 0);
+      const hon = Number(asis.horasHonorarios || 0);
+      const proRet = Number(asis.horasProRetencion || 0);
+      const horasContrato = Number(asis.horasContrato || 0);
+
+      totalHorasSlep += horasContrato;
+      totalSubGenInd += subInd;
+      totalSubGenPf += subPf;
+      totalSepInd += sepInd;
+      totalSepPf += sepPf;
+      totalPieInd += pieInd;
+      totalPiePf += piePf;
+      totalHonorarios += hon;
+      totalProRetencion += proRet;
+
+      if (asis.cargoFuncion && asis.cargoFuncion.trim()) {
+        cargosSet.add(asis.cargoFuncion.trim());
+      }
+
+      if (asis.esDuplaPsicosocial) esDuplaPsicosocial = true;
+      if (asis.esEquipoPie || pieInd + piePf > 0) esEquipoPie = true;
+      if (asis.esTecnicoParvulo) esTecnicoParvulo = true;
+      if (asis.esAuxiliarServicio) esAuxiliarServicio = true;
+      if (asis.esInspectorPatio) esInspectorPatio = true;
+
+      contratos.push({
+        colegio,
+        asistente: asis,
+        horasContrato,
+        fuentesFinanciamiento: {
+          subvencionGeneralIndefinido: subInd,
+          subvencionGeneralPlazoFijo: subPf,
+          sepIndefinido: sepInd,
+          sepPlazoFijo: sepPf,
+          pieIndefinido: pieInd,
+          piePlazoFijo: piePf,
+          honorarios: hon,
+          proRetencion: proRet,
+          total: horasContrato
+        }
+      });
+    }
+
+    const excedeLimiteSlep = totalHorasSlep > 44;
+    const excesoHorasSlep = Math.max(0, totalHorasSlep - 44);
+    const colegiosNombres = Array.from(new Set(contratos.map(c => c.colegio.nombre)));
+    const estamentoPrincipal = primero.estamento === 'PARADOCENTE_INSPECTORIA'
+      ? 'ADMINISTRATIVO'
+      : primero.estamento;
+
+    resultado.push({
+      idKey,
+      run: grupo.runVisual || 'Sin RUN',
+      nombres: primero.nombres || '',
+      apellidos: primero.apellidos || '',
+      estamentoPrincipal,
+      cargosPrincipales: Array.from(cargosSet),
+      contratos,
+      colegiosNombres,
+      horasTotalesSlep: totalHorasSlep,
+      excedeLimiteSlep,
+      excesoHorasSlep,
+      esDuplaPsicosocial,
+      esEquipoPie,
+      esTecnicoParvulo,
+      esAuxiliarServicio,
+      esInspectorPatio,
+      resumenFinanciamiento: {
+        subvencionGeneralIndefinido: totalSubGenInd,
+        subvencionGeneralPlazoFijo: totalSubGenPf,
+        sepIndefinido: totalSepInd,
+        sepPlazoFijo: totalSepPf,
+        pieIndefinido: totalPieInd,
+        piePlazoFijo: totalPiePf,
+        honorarios: totalHonorarios,
+        proRetencion: totalProRetencion,
+        subvencionGeneral: totalSubGenInd + totalSubGenPf,
+        sep: totalSepInd + totalSepPf,
+        pie: totalPieInd + totalPiePf,
+        indefinido: totalSubGenInd + totalSepInd + totalPieInd,
+        plazoFijo: totalSubGenPf + totalSepPf + totalPiePf,
+        total: totalHorasSlep
+      }
+    });
+  }
+
   return resultado.sort((a, b) => {
     const ap = a.apellidos.localeCompare(b.apellidos);
     if (ap !== 0) return ap;

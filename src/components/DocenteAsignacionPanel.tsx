@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { Docente, AsignacionHoraria, CursoSae, Establecimiento, PlanEstudioCurricular } from '../types';
 import { 
-  obtenerPlanPorCurso, 
   PlanEstudioNivel,
   PLANES_MINEDUC,
   CATALOGO_PROFUNDIZACION_HC_27,
@@ -35,6 +34,35 @@ import {
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
 import { calcularHorasFueraAulaDocente } from '../services/auditoriaDocenteService';
+import {
+  InfoPlanResuelto,
+  DisponibilidadAsignatura,
+  esCursoModalidadEpja,
+  esCursoNivelMedio34,
+  esCursoModalidadTp,
+  esTextoTallerOLibreDisposicion,
+  resolverPlanCurso,
+  esAsignaturaProfundizacionHc,
+  esAsignaturaPlanComunElectivo,
+  normalizarNombreAsignatura,
+  sonAsignaturasEquivalentes,
+  esAsignacionCoDocenciaOApoyo,
+  esAsignacionLibreDisposicionJec,
+  calcularDisponibilidadCurso,
+  calcularSaldoDocentePorFuente
+} from '../services/curricularPlanService';
+
+export {
+  esCursoModalidadEpja,
+  resolverPlanCurso,
+  esAsignaturaProfundizacionHc,
+  esAsignaturaPlanComunElectivo,
+  normalizarNombreAsignatura,
+  sonAsignaturasEquivalentes,
+  esAsignacionCoDocenciaOApoyo,
+  calcularDisponibilidadCurso
+};
+export type { DisponibilidadAsignatura, InfoPlanResuelto };
 
 interface DocenteAsignacionPanelProps {
   docente: Docente;
@@ -42,592 +70,13 @@ interface DocenteAsignacionPanelProps {
   cursos: CursoSae[];
   asignaciones: AsignacionHoraria[];
   docentes?: Docente[];
+  periodoActivo?: number;
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
 }
 
 type TipoFormularioActivo = 'REGULAR' | 'CO_DOCENCIA' | 'PIE' | null;
-
-// ============================================================================
-// Helper para detectar modalidad EPJA (Adultos D.S. N° 10/2022 y D.S. N° 452/2013)
-// Los cursos EPJA jamás poseen régimen JEC ni horas de Libre Disposición JEC
-// ============================================================================
-export function esCursoModalidadEpja(
-  curso?: CursoSae | null,
-  infoPlan?: { nombrePlan?: string; categoria?: string } | null
-): boolean {
-  if (!curso && !infoPlan) return false;
-  if (infoPlan?.categoria === 'EPJA') return true;
-  const txt = `${curso?.nivel || ''} ${infoPlan?.nombrePlan || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  if (/\b(epja|adulto|adultos|tercera jornada|vespertin|nocturn)\b/i.test(txt)) return true;
-  if (/\bnivel\s*[123]\b/i.test(txt) && !/\b(nt[12]|transicion|parvulo)\b/i.test(txt)) return true;
-  if (txt.includes('formacion en oficios') || txt.includes('formacion en especialidades')) return true;
-  return false;
-}
-
-// ============================================================================
-// Helper para resolver plan y asignaturas de un curso
-// ============================================================================
-interface InfoPlanResuelto {
-  asignaturas: { nombre: string; horas: number; caracter?: string }[];
-  horasLibreDisposicion: number;
-  esJec: boolean;
-  talleresJecPredefinidos: { nombre: string; horas?: number }[];
-  nombrePlan: string;
-  categoria?: string;
-}
-
-export function resolverPlanCurso(
-  curso: CursoSae | null,
-  planesDb: PlanEstudioCurricular[]
-): InfoPlanResuelto {
-  if (!curso) {
-    return {
-      asignaturas: [],
-      horasLibreDisposicion: 0,
-      esJec: false,
-      talleresJecPredefinidos: [],
-      nombrePlan: 'Sin curso'
-    };
-  }
-
-  const esNivelEpja = esCursoModalidadEpja(curso, null);
-  const esJec = !esNivelEpja && curso.regimen === 'JEC';
-  const talleresCurso = esNivelEpja ? [] : (curso.talleresJec || []);
-
-  // 1. Si el curso tiene un plan de estudio personalizado asignado en la BD
-  if (curso.planEstudioId) {
-    const planDb = planesDb.find(p => p.id === curso.planEstudioId);
-    if (planDb && planDb.asignaturas && planDb.asignaturas.length > 0) {
-      const esPlanEpja = esNivelEpja || planDb.categoria === 'EPJA' || esCursoModalidadEpja(curso, { nombrePlan: planDb.nivel, categoria: planDb.categoria });
-      const esJecReal = !esPlanEpja && (planDb.regimen === 'JEC' || esJec);
-      return {
-        asignaturas: planDb.asignaturas.map(a => ({
-          nombre: a.nombre,
-          horas: Number(a.horasSemanales) || 2,
-          caracter: a.caracter || 'Obligatoria'
-        })),
-        horasLibreDisposicion: esPlanEpja ? 0 : (planDb.horasLibreDisposicion ?? (esJecReal ? 6 : 0)),
-        esJec: esJecReal,
-        talleresJecPredefinidos: esPlanEpja ? [] : talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
-        nombrePlan: planDb.nivel,
-        categoria: planDb.categoria
-      };
-    }
-  }
-
-  // 2. Si no, consultar el motor normativo de MINEDUC
-  const planMineduc: PlanEstudioNivel | null = obtenerPlanPorCurso(
-    curso.nivel,
-    esNivelEpja ? 'No JEC' : curso.regimen,
-    curso.especialidadTp
-  );
-
-  if (planMineduc && planMineduc.asignaturasBase && planMineduc.asignaturasBase.length > 0) {
-    const esPlanEpja = esNivelEpja || planMineduc.categoria === 'EPJA' || esCursoModalidadEpja(curso, { nombrePlan: planMineduc.nivel, categoria: planMineduc.categoria });
-    const esJecReal = !esPlanEpja && (planMineduc.regimen === 'JEC' || esJec);
-
-    const asignaturasBase = planMineduc.asignaturasBase.map(a => ({
-      nombre: a.nombre,
-      horas: a.horasSugeridas,
-      caracter: 'Obligatoria'
-    }));
-
-    // En 3° y 4° Medio TP Regular (no EPJA), si el plan no tiene explícito el Plan Común Electivo, incluirlo
-    // para que el establecimiento pueda seleccionarlo y asignarlo con cargo a sus horas de libre disposición (2 HA)
-    const esMedio34 = !esPlanEpja && !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(curso.nivel) && (
-      /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(curso.nivel) ||
-      ((planMineduc.categoria === 'MEDIA_HC' || planMineduc.categoria === 'MEDIA_TP') && /[34]/i.test(planMineduc.nivel))
-    );
-    const esModalidadTecnica = planMineduc.categoria === 'MEDIA_TP' || curso.nivel.toLowerCase().includes('tp') || Boolean(curso.especialidadTp);
-    if (esMedio34 && esModalidadTecnica && !asignaturasBase.some(a => a.nombre.toLowerCase().includes('electivo'))) {
-      asignaturasBase.push({
-        nombre: 'Plan Común Electivo (Historia / Artes / Ed. Física / Religión)',
-        horas: 2,
-        caracter: 'Electiva en Libre Disposición'
-      });
-    }
-
-    return {
-      asignaturas: asignaturasBase,
-      horasLibreDisposicion: esPlanEpja ? 0 : (planMineduc.horasLibreDisposicion ?? (esJecReal ? 6 : 0)),
-      esJec: esJecReal,
-      talleresJecPredefinidos: esPlanEpja ? [] : talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
-      nombrePlan: planMineduc.nivel,
-      categoria: planMineduc.categoria
-    };
-  }
-
-  // 3. Fallback estándar si no hay coincidencia directa
-  const fallback = [
-    { nombre: 'Lenguaje y Comunicación', horas: 6, caracter: 'Obligatoria' },
-    { nombre: 'Matemática', horas: 6, caracter: 'Obligatoria' },
-    { nombre: 'Ciencias Naturales', horas: 3, caracter: 'Obligatoria' },
-    { nombre: 'Historia, Geografía y Ciencias Sociales', horas: 3, caracter: 'Obligatoria' },
-    { nombre: 'Inglés', horas: 3, caracter: 'Obligatoria' },
-    { nombre: 'Educación Física y Salud', horas: 3, caracter: 'Obligatoria' },
-    { nombre: 'Artes Visuales', horas: 2, caracter: 'Obligatoria' },
-    { nombre: 'Música', horas: 2, caracter: 'Obligatoria' },
-    { nombre: 'Tecnología', horas: 1, caracter: 'Obligatoria' },
-    { nombre: 'Orientación', horas: 1, caracter: 'Obligatoria' },
-    { nombre: 'Religión', horas: 2, caracter: 'Opcional' }
-  ];
-
-  return {
-    asignaturas: fallback,
-    horasLibreDisposicion: esJec ? 6 : 0,
-    esJec,
-    talleresJecPredefinidos: talleresCurso.map(t => ({ nombre: t.nombre, horas: t.horas })),
-    nombrePlan: `${curso.nivel} (${esNivelEpja ? 'No JEC' : curso.regimen})`
-  };
-}
-
-// Helper de verificación para asignaturas de Formación Diferenciada HC y Plan Común Electivo
-export function esAsignaturaProfundizacionHc(nombre: string): boolean {
-  if (!nombre) return false;
-  const n = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  // Nunca confundir con Educación Física y Salud general
-  if (n.includes('educacion fisica') || n.includes('ed. fisica') || n.includes('ed fisica') || n.includes('ed.fisica')) {
-    return false;
-  }
-  return CATALOGO_PROFUNDIZACION_HC_27.some(p => {
-    const pn = p.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    return n === pn;
-  });
-}
-
-export function esAsignaturaPlanComunElectivo(nombre: string): boolean {
-  if (!nombre) return false;
-  const n = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  if (n.includes('plan comun electivo') || n.includes('electivo comun')) return true;
-  if (n.includes('electivo') && (n.includes('historia') || n.includes('artes') || n.includes('fisica') || n.includes('religion'))) return true;
-  return false;
-}
-
-// Normalizador de nombres de asignaturas para conciliación de cobertura
-export function normalizarNombreAsignatura(nombre: string): string {
-  if (!nombre) return '';
-  let n = nombre.toLowerCase().trim();
-  // Quitar acentos
-  n = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  // Quitar prefijos comunes
-  n = n.replace(/^idioma extranjero:\s*/i, '');
-  n = n.replace(/\s+/g, ' ').trim();
-
-  // Si es un módulo de Formación Diferenciada Técnico-Profesional u Oficio/Especialidad EPJA, PRESERVAR SU IDENTIDAD INTACTA
-  // para que JAMÁS colisione con Matemática ("materias primas", "materiales"), Educación Física ("salud"),
-  // Ciencias Naturales ("química"), Música, etc.
-  if (
-    /^m[oó]dulo\b/i.test(n) ||
-    (n.includes('formacion diferenciada') && (n.includes('especializacion') || n.includes('oficio') || n.includes('tp') || n.includes('tecnico') || n.includes('especialidad')))
-  ) {
-    if (n.includes('formacion diferenciada') && (n.includes('especializacion') || n.includes('tp') || n.includes('tecnico') || n.includes('especialidad'))) {
-      return 'formacion diferenciada con especializacion';
-    }
-    if (n.includes('formacion diferenciada') && n.includes('oficio')) {
-      return 'formacion diferenciada en oficios';
-    }
-    return `modulo_${n.replace(/^m[oó]dulo\s*(menci[oó]n|com[uú]n)?\s*:?\s*/i, '').replace(/[^a-z0-9]/g, '_')}`;
-  }
-
-  // Formación Instrumental EPJA (D.S. N° 10/2022 - 2 HA)
-  if (
-    n.startsWith('formacion instrumental') ||
-    n === 'pensamiento computacional' ||
-    n === 'responsabilidad personal y social' ||
-    n === 'emprendimiento y empleabilidad' ||
-    n === 'educacion financiera'
-  ) {
-    return 'formacion instrumental';
-  }
-
-  // Si es un taller, refuerzo o libre disposición (y no es el electivo oficial 'Taller de Literatura' ni 'Taller Laboral'),
-  // preservar su identidad como taller para que NUNCA colisione ni descuente de las asignaturas troncales del plan
-  if (
-    /\b(taller|reforzamiento|refuerzo|jec|libre disposicion)\b/i.test(n) &&
-    !n.includes('taller de literatura') &&
-    !n.includes('taller laboral')
-  ) {
-    return `taller_${n.replace(/[^a-z0-9]/g, '_')}`;
-  }
-
-  // 1. EDUCACIÓN FÍSICA Y SALUD (DEBE evaluarse estrictamente primero para evitar que "fisica" colisione)
-  if (
-    n.includes('educacion fisica') ||
-    n.includes('ed. fisica') ||
-    n.includes('ed fisica') ||
-    n.includes('ed.fisica') ||
-    n.includes('educacion y salud') ||
-    n.includes('deporte') ||
-    n.includes('motricidad') ||
-    (/\bsalud\b/i.test(n) && !n.includes('ciencias de la salud'))
-  ) {
-    return 'educacion fisica y salud';
-  }
-
-  // 1.1 Ámbitos y Núcleos de Educación Parvularia (Bases Curriculares Dto. 28/2019)
-  if (
-    n.includes('desarrollo personal') ||
-    n.includes('personal y social') ||
-    n.includes('identidad y autonomia') ||
-    n.includes('convivencia y ciudadania') ||
-    n.includes('corporalidad y movimiento')
-  ) {
-    return 'ambito desarrollo personal y social';
-  }
-  if (
-    n.includes('comunicacion integral') ||
-    n.includes('lenguaje verbal') ||
-    n.includes('lenguajes artisticos')
-  ) {
-    return 'ambito comunicacion integral';
-  }
-  if (
-    n.includes('interaccion y comprension') ||
-    n.includes('comprension del entorno') ||
-    n.includes('interaccion con el entorno') ||
-    n.includes('exploracion del entorno natural') ||
-    n.includes('comprension del entorno sociocultural') ||
-    n.includes('pensamiento matematico')
-  ) {
-    return 'ambito interaccion y comprension del entorno';
-  }
-  if (
-    n.includes('experiencias de aprendizaje') ||
-    n.includes('aprendizaje integrad') ||
-    n.includes('experiencias integradas') ||
-    n.includes('juego libre guiado') ||
-    n.includes('desarrollo integral')
-  ) {
-    return 'experiencias de aprendizaje integradas';
-  }
-
-  // 2. Plan Común Electivo (3° y 4° Medio)
-  if (esAsignaturaPlanComunElectivo(n)) {
-    return 'plan comun electivo';
-  }
-
-  // 3. Idioma Extranjero / Inglés
-  if (n.includes('ingles')) return 'ingles';
-
-  // 4. Lenguaje y Comunicación / Lengua y Literatura (excluyendo electivos específicos)
-  if (
-    (n.includes('lengua') || n.includes('lenguaje') || /\bcomunicacion\b/i.test(n)) &&
-    !n.includes('taller de literatura') && !n.includes('lectura y escritura') && !n.includes('argumentacion')
-  ) {
-    return 'lenguaje y comunicacion';
-  }
-
-  // 5. Matemática (excluyendo electivos específicos de profundización y usando límites de palabra)
-  if (
-    (/\b(mate|matematica|matematicas|algebra|geometria|calculo)\b/i.test(n)) &&
-    !n.includes('limites') && !n.includes('probabilidades') && !n.includes('pensamiento computacional') && !n.includes('geometria 3d')
-  ) {
-    return 'matematica';
-  }
-
-  // 6. Historia, Geografía y Ciencias Sociales (excluyendo electivos específicos)
-  if (
-    (n.includes('historia') || n.includes('geograf') || (n.includes('sociales') && !n.includes('ciencias naturales'))) &&
-    !n.includes('comprension historica') && !n.includes('socioambientales') && !n.includes('economia y sociedad')
-  ) {
-    return 'historia, geografia y ciencias sociales';
-  }
-
-  // 7. Ciencias Naturales y sus ramas en Media (Biología, Física de ciencias, Química)
-  // Se excluye estrictamente cualquier referencia a Educación Física y Ciencias para la Ciudadanía
-  if (
-    (
-      n.includes('ciencias naturales') ||
-      n.includes('naturales') ||
-      n.includes('biolog') ||
-      n.includes('quimic') ||
-      /\b(fisica|ciencias fisicas)\b/i.test(n)
-    ) &&
-    !n.includes('celular y molecular') && !n.includes('ecosistemas') && !n.includes('ciencias de la salud') && !n.includes('ciudadan')
-  ) {
-    return 'ciencias naturales';
-  }
-
-  if (n.includes('visual') || n.includes('plastica') || (n.includes('artes') && !n.includes('musical'))) return 'artes visuales';
-  if (n.includes('musica') || n.includes('musical')) return 'musica';
-  if (n.includes('tecno') || n.includes('tecnologia')) return 'tecnologia';
-  if (n.includes('orienta')) return 'orientacion';
-  if (n.includes('relig')) return 'religion';
-  if (n.includes('filosof')) return 'filosofia';
-
-  // 8. CIENCIAS PARA LA CIUDADANÍA (3° y 4° Medio) - NUNCA debe colisionar con Educación Ciudadana
-  if (
-    n.includes('ciencias para la ciudadania') ||
-    n.includes('ciencia para la ciudadania') ||
-    n.includes('ciencias ciudadania') ||
-    (n.includes('cienc') && n.includes('ciudadan'))
-  ) {
-    return 'ciencias para la ciudadania';
-  }
-
-  // 9. EDUCACIÓN CIUDADANA (3° y 4° Medio) - NUNCA debe colisionar con Ciencias para la Ciudadanía
-  if (
-    n.includes('educacion ciudadana') ||
-    n.includes('formacion ciudadana') ||
-    n.includes('ed. ciudadana') ||
-    n.includes('ed ciudadana') ||
-    (n.includes('ciudadan') && !n.includes('cienc'))
-  ) {
-    return 'educacion ciudadana';
-  }
-
-  return n;
-}
-
-export function sonAsignaturasEquivalentes(asigA: string, asigB: string): boolean {
-  if (!asigA || !asigB) return false;
-  if (asigA.trim().toLowerCase() === asigB.trim().toLowerCase()) return true;
-
-  const aNorm = asigA.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  const bNorm = asigB.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-
-  // NUNCA considerar equivalente una asignatura troncal regular (Matemática, Lenguaje, etc.) con un Módulo TP
-  const esModuloA = /^(m[oó]dulo|oficio|especialidad)\b/i.test(aNorm);
-  const esModuloB = /^(m[oó]dulo|oficio|especialidad)\b/i.test(bNorm);
-  const esBloqueGenericoTpA = aNorm.includes('formacion diferenciada') && (aNorm.includes('tecnico') || aNorm.includes('tp') || aNorm.includes('especialidad') || aNorm.includes('especializacion') || aNorm.includes('oficio'));
-  const esBloqueGenericoTpB = bNorm.includes('formacion diferenciada') && (bNorm.includes('tecnico') || bNorm.includes('tp') || bNorm.includes('especialidad') || bNorm.includes('especializacion') || bNorm.includes('oficio'));
-
-  // Si uno de los dos es el bloque de Formación Diferenciada TP / con Especialización / en Oficios (ej. EPJA 12 HA o 4 HA o Regular 22 HA):
-  // equivale a cualquier módulo o asignatura de especialidad/oficio que NO sea una asignatura troncal de Formación General ni Formación Instrumental.
-  if (esBloqueGenericoTpA || esBloqueGenericoTpB) {
-    const otroNorm = esBloqueGenericoTpA ? normalizarNombreAsignatura(asigB) : normalizarNombreAsignatura(asigA);
-    const troncalesNorm = new Set([
-      'lenguaje y comunicacion',
-      'matematica',
-      'historia, geografia y ciencias sociales',
-      'ciencias naturales',
-      'ingles',
-      'educacion fisica y salud',
-      'artes visuales',
-      'musica',
-      'tecnologia',
-      'orientacion',
-      'religion',
-      'filosofia',
-      'ciencias para la ciudadania',
-      'educacion ciudadana',
-      'plan comun electivo',
-      'formacion instrumental',
-      'ambito desarrollo personal y social',
-      'ambito comunicacion integral',
-      'ambito interaccion y comprension del entorno',
-      'experiencias de aprendizaje integradas'
-    ]);
-    if (!troncalesNorm.has(otroNorm) && !otroNorm.startsWith('taller_')) {
-      return true;
-    }
-    return false;
-  }
-
-  if ((esModuloA && !esModuloB) || (esModuloB && !esModuloA)) {
-    return false;
-  }
-
-  // NUNCA considerar equivalentes Ciencias para la Ciudadanía con Educación Ciudadana
-  const esCienciasCiudadaniaA = aNorm.includes('cienc') && aNorm.includes('ciudadan');
-  const esCienciasCiudadaniaB = bNorm.includes('cienc') && bNorm.includes('ciudadan');
-  const esEdCiudadanaA = !esCienciasCiudadaniaA && aNorm.includes('ciudadan');
-  const esEdCiudadanaB = !esCienciasCiudadaniaB && bNorm.includes('ciudadan');
-
-  if ((esCienciasCiudadaniaA && esEdCiudadanaB) || (esEdCiudadanaA && esCienciasCiudadaniaB)) {
-    return false;
-  }
-
-  // NUNCA considerar equivalente un Taller / Refuerzo / Libre Disposición con una asignatura regular del plan de estudio
-  // (salvo la excepción normativa oficial de 'Taller de Literatura' en 3°/4° Medio y 'Taller Laboral' en Especial)
-  const esTallerA = /\b(taller|reforzamiento|refuerzo|jec|libre disposicion)\b/i.test(aNorm);
-  const esTallerB = /\b(taller|reforzamiento|refuerzo|jec|libre disposicion)\b/i.test(bNorm);
-  const esTallerOficialA = aNorm.includes('taller de literatura') || aNorm.includes('taller laboral');
-  const esTallerOficialB = bNorm.includes('taller de literatura') || bNorm.includes('taller laboral');
-
-  if ((esTallerA && !esTallerOficialA && !esTallerB) || (esTallerB && !esTallerOficialB && !esTallerA)) {
-    return false;
-  }
-
-  // Formación Diferenciada HC (18 HA) equivale a cualquiera de las 27 asignaturas de profundización
-  const esDiferenciadaA = aNorm.includes('formacion diferenciada') || aNorm.includes('diferenciado hc');
-  const esDiferenciadaB = bNorm.includes('formacion diferenciada') || bNorm.includes('diferenciado hc');
-
-  if (esDiferenciadaA && esAsignaturaProfundizacionHc(asigB)) return true;
-  if (esDiferenciadaB && esAsignaturaProfundizacionHc(asigA)) return true;
-
-  // Plan Común Electivo (2 HA)
-  const esPlanComunA = aNorm.includes('plan comun electivo') || aNorm.includes('electivo comun');
-  const esPlanComunB = bNorm.includes('plan comun electivo') || bNorm.includes('electivo comun');
-
-  if (esPlanComunA && esAsignaturaPlanComunElectivo(asigB)) return true;
-  if (esPlanComunB && esAsignaturaPlanComunElectivo(asigA)) return true;
-
-  const normA = normalizarNombreAsignatura(asigA);
-  const normB = normalizarNombreAsignatura(asigB);
-  return normA === normB;
-}
-
-// ============================================================================
-// Helper de Disponibilidad y Cobertura de Asignaturas en Curso
-// ============================================================================
-export interface DisponibilidadAsignatura {
-  nombre: string;
-  horasPlan: number;
-  horasAsignadas: number;
-  horasDisponibles: number;
-  estado: 'DISPONIBLE' | 'CUBIERTA' | 'EXCEDIDA';
-  caracter?: string;
-  horasCompensadasLibreDisposicion?: number;
-}
-
-export function esAsignacionCoDocenciaOApoyo(a: AsignacionHoraria): boolean {
-  return Boolean(
-    a.esCoDocencia ||
-    a.esAgrupacionFlexible ||
-    a.tipoApoyo === 'CO_DOCENCIA' ||
-    a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
-    a.tipoApoyo === 'REFUERZO_AULA' ||
-    a.tipoApoyo === 'APOYO_DOCENTE' ||
-    (a.tipoApoyo && /co-docencia|codocencia|refuerzo|agrupaci[oó]n|apoyo|decreto 170/i.test(a.tipoApoyo)) ||
-    (a.asignatura && /co-docencia|codocencia|refuerzo aula|agrupaci[oó]n|apoyo pie/i.test(a.asignatura))
-  );
-}
-
-export function calcularDisponibilidadCurso(
-  curso: CursoSae | null,
-  infoPlan: InfoPlanResuelto,
-  asignacionesColegio: AsignacionHoraria[]
-): {
-  disponibles: DisponibilidadAsignatura[];
-  cubiertas: DisponibilidadAsignatura[];
-  todas: DisponibilidadAsignatura[];
-  horasLibreDisponibles: number;
-  horasLibrePlan: number;
-  horasLibreAsignadas: number;
-  horasCoDocenciaApoyoCurso: number;
-} {
-  if (!curso) {
-    return {
-      disponibles: [],
-      cubiertas: [],
-      todas: [],
-      horasLibreDisponibles: 0,
-      horasLibrePlan: 0,
-      horasLibreAsignadas: 0,
-      horasCoDocenciaApoyoCurso: 0
-    };
-  }
-
-  // Filtrar asignaciones regulares de aula (incluyendo asignaciones compartidas con este curso y excluyendo co-docencia y apoyos paralelos)
-  const asigsCurso = asignacionesColegio.filter(a => 
-    (a.cursoId === curso.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(curso.id))) && 
-    !esAsignacionCoDocenciaOApoyo(a)
-  );
-  const horasCoDocenciaApoyoCurso = asignacionesColegio
-    .filter(a => (a.cursoId === curso.id || (a.cursosCompartidosIds && a.cursosCompartidosIds.includes(curso.id))) && esAsignacionCoDocenciaOApoyo(a))
-    .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-
-  const esCursoEpja = esCursoModalidadEpja(curso, infoPlan);
-  // Libre Disposición / JEC: calcular las horas asignadas a talleres o asignaturas no presentes en el plan base
-  const horasLibrePlan = esCursoEpja ? 0 : (infoPlan.horasLibreDisposicion ?? (infoPlan.esJec ? 6 : 0));
-  
-  // Asignaciones que no coincidieron con ninguna asignatura obligatoria/base del plan son consideradas JEC/Libre Disposición (salvo en EPJA donde no existe JEC)
-  const asigsLibres = esCursoEpja ? [] : asigsCurso.filter(a => {
-    // Si la asignación tiene código/ámbito canónico o es oficial de profundización HC / Electivo, NUNCA es Libre Disposición
-    const infoCanonica = resolverCodigoYAmbitoAsignatura(a.asignatura, {
-      nivelCurso: curso.nivel,
-      esJec: a.esTallerJec,
-      esTallerSep: a.esTallerSep,
-      esTrabajoColaborativo: a.esTrabajoColaborativo,
-      esDiferenciadoCompartido: a.esDiferenciadoCompartido
-    });
-
-    if (infoCanonica.ambito === 'DIFERENCIADA_HC' || infoCanonica.ambito === 'DIFERENCIADA_TP' || infoCanonica.ambito === 'PLAN_COMUN_ELECTIVO' || infoCanonica.ambito === 'PLAN_COMUN') {
-      return false;
-    }
-    if (a.ambitoCurricular === 'DIFERENCIADA_HC' || a.ambitoCurricular === 'DIFERENCIADA_TP' || a.ambitoCurricular === 'PLAN_COMUN_ELECTIVO' || a.ambitoCurricular === 'PLAN_COMUN') {
-      return false;
-    }
-
-    const esOficial = /taller de literatura|taller laboral/i.test(a.asignatura) || esAsignaturaProfundizacionHc(a.asignatura) || /^m[oó]dulo\b/i.test(a.asignatura);
-    if (!esOficial && (a.esTallerJec || /taller|jec|libre/i.test(a.asignatura))) return true;
-    const coincideConBase = infoPlan.asignaturas.some(asigPlan => sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre));
-    return !coincideConBase;
-  });
-
-  const horasTalleresJecAsignadas = asigsLibres.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-
-  // Compensación con Libre Disposición para cursos JEC (ej: Orientación de 0.5 HA a 1 o 2 HA)
-  // Según Ley N° 19.532, los establecimientos pueden destinar horas de Libre Disposición para fortalecer asignaturas del plan común.
-  let saldoLibreDisponible = Math.max(0, horasLibrePlan - horasTalleresJecAsignadas);
-  let totalCompensadoLibre = 0;
-
-  const todas: DisponibilidadAsignatura[] = infoPlan.asignaturas.map(asigPlan => {
-    const esAsigPlanTallerOficial = /taller de literatura|taller laboral/i.test(asigPlan.nombre) || esAsignaturaProfundizacionHc(asigPlan.nombre);
-    const horasAsig = asigsCurso
-      .filter(a => {
-        // Un taller JEC, taller SEP o libre disposición NUNCA debe descontar horas del plan regular (salvo asignaturas oficiales como Taller de Literatura, electivos o en cursos EPJA donde no existe JEC)
-        const infoCanonicaA = resolverCodigoYAmbitoAsignatura(a.asignatura, {
-          nivelCurso: curso.nivel,
-          esJec: esCursoEpja ? false : a.esTallerJec,
-          esTallerSep: a.esTallerSep,
-          esTrabajoColaborativo: a.esTrabajoColaborativo
-        });
-        const esMateriaOficial = esCursoEpja || (infoCanonicaA.esOficial && (infoCanonicaA.ambito === 'DIFERENCIADA_HC' || infoCanonicaA.ambito === 'DIFERENCIADA_TP' || infoCanonicaA.ambito === 'PLAN_COMUN' || infoCanonicaA.ambito === 'PLAN_COMUN_ELECTIVO'));
-
-        if (!esCursoEpja && a.esTallerJec && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
-        if (a.esTallerSep) return false;
-        if (!esCursoEpja && /taller|reforzamiento|refuerzo|libre disposicion/i.test(a.asignatura) && !esAsigPlanTallerOficial && !esMateriaOficial) return false;
-        return sonAsignaturasEquivalentes(a.asignatura, asigPlan.nombre);
-      })
-      .reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
-
-    const horasDisp = Math.max(0, asigPlan.horas - horasAsig);
-    const horasExceso = Math.max(0, horasAsig - asigPlan.horas);
-
-    // Compensación automática con cargo a Libre Disposición para cursos JEC (especialmente Orientación o refuerzos)
-    let horasCompensadas = 0;
-    if (!esCursoEpja && infoPlan.esJec && horasExceso > 0 && saldoLibreDisponible > 0) {
-      horasCompensadas = Math.min(horasExceso, saldoLibreDisponible);
-      saldoLibreDisponible -= horasCompensadas;
-      totalCompensadoLibre += horasCompensadas;
-    }
-
-    const excesoNoCubierto = horasExceso - horasCompensadas;
-    const estado: 'DISPONIBLE' | 'CUBIERTA' | 'EXCEDIDA' = 
-      horasAsig < asigPlan.horas 
-        ? 'DISPONIBLE' 
-        : (excesoNoCubierto > 0 ? 'EXCEDIDA' : 'CUBIERTA');
-
-    return {
-      nombre: asigPlan.nombre,
-      horasPlan: asigPlan.horas,
-      horasAsignadas: horasAsig,
-      horasDisponibles: horasDisp,
-      estado,
-      caracter: asigPlan.caracter,
-      horasCompensadasLibreDisposicion: horasCompensadas
-    };
-  });
-
-  const disponibles = todas.filter(a => a.estado === 'DISPONIBLE');
-  const cubiertas = todas.filter(a => a.estado !== 'DISPONIBLE');
-
-  const horasLibreAsignadas = horasTalleresJecAsignadas + totalCompensadoLibre;
-  const horasLibreDisponibles = Math.max(0, horasLibrePlan - horasLibreAsignadas);
-
-  return {
-    disponibles,
-    cubiertas,
-    todas,
-    horasLibreDisponibles,
-    horasLibrePlan,
-    horasLibreAsignadas,
-    horasCoDocenciaApoyoCurso
-  };
-}
+export type AmbitoFormRegular = 'PLAN_COMUN' | 'DIFERENCIADA_HC_ELEC' | 'LIBRE_DISPOSICION' | 'OTRO';
 
 function obtenerMateriasPreferentesDocente(docenteId: string, asignaciones: AsignacionHoraria[]): string[] {
   const asigsDoc = asignaciones.filter(a => a.docenteId === docenteId && !a.esCoDocencia);
@@ -765,39 +214,11 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
 
   const esCursoEpjaFila = esCursoModalidadEpja(cursoActual, infoPlan);
 
-  // Verificar si la asignatura actual coincide con alguna del plan
-  const asigEnPlan = infoPlan.asignaturas.find(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura));
-  const infoCanonicaFila = resolverCodigoYAmbitoAsignatura(a.asignatura, {
-    nivelCurso: cursoActual?.nivel,
-    esJec: esCursoEpjaFila ? false : a.esTallerJec,
-    esTallerSep: a.esTallerSep,
-    esTrabajoColaborativo: a.esTrabajoColaborativo,
-    esDiferenciadoCompartido: a.esDiferenciadoCompartido
-  });
-  const esOficialProfundizacionOPlan = infoCanonicaFila.esOficial && (
-    infoCanonicaFila.ambito === 'DIFERENCIADA_HC' ||
-    infoCanonicaFila.ambito === 'DIFERENCIADA_TP' ||
-    infoCanonicaFila.ambito === 'PLAN_COMUN' ||
-    infoCanonicaFila.ambito === 'PLAN_COMUN_ELECTIVO'
-  );
+  // Verificar si la asignatura actual coincide con alguna del plan (solo si no es Libre Disposición)
+  const esLibreDisposicion = esAsignacionLibreDisposicionJec(a, cursoActual, infoPlan);
+  const asigEnPlan = esLibreDisposicion ? undefined : infoPlan.asignaturas.find(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura));
 
-  // En cursos sin JEC o en cursos EPJA (Adultos D.S. 10/2022), JAMÁS existe Libre Disposición JEC
-  const esLibreDisposicion = Boolean(
-    infoPlan.esJec &&
-    !esCursoEpjaFila &&
-    !esPie &&
-    !esCoDoc &&
-    !esOficialProfundizacionOPlan &&
-    !matchBcepActual &&
-    !esCoDocDto306Nombre &&
-    (
-      a.esTallerJec || 
-      (/taller|jec|libre/i.test(a.asignatura) && !esParvulariaFila) || 
-      (!asigEnPlan && a.cursoId !== 'TRANSVERSAL' && !esParvulariaFila)
-    )
-  );
-
-  // Autocorrección reactiva: si la fila pertenecía a un curso EPJA o sin JEC y tenía esTallerJec: true por error previo, limpiarlo
+  // Autocorrección reactiva: si la fila pertenecía a un curso EPJA y tenía esTallerJec: true por error previo, limpiarlo
   useEffect(() => {
     if (esCursoEpjaFila && a.esTallerJec && onGuardarAsignacion) {
       const resCod = resolverCodigoYAmbitoAsignatura(a.asignatura, { nivelCurso: cursoActual?.nivel, esJec: false });
@@ -810,19 +231,10 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     }
   }, [a.id, esCursoEpjaFila, a.esTallerJec]);
 
-  const esMedio34Fila = Boolean(
-    cursoActual &&
-    !esCursoEpjaFila &&
-    !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoActual.nivel) &&
-    (
-      /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoActual.nivel) ||
-      (infoPlan.nombrePlan.toLowerCase().includes('medio') && /[34]/i.test(infoPlan.nombrePlan)) ||
-      ((infoPlan.categoria === 'MEDIA_HC' || infoPlan.categoria === 'MEDIA_TP') && /[34]/i.test(infoPlan.nombrePlan))
-    )
-  );
+  const esMedio34Fila = esCursoNivelMedio34(cursoActual, infoPlan);
 
-  const matchProfActual = CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === a.asignatura.toLowerCase());
-  const matchPlanComunActual = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => a.asignatura.toLowerCase().includes(c.nombre.toLowerCase()));
+  const matchProfActual = !esLibreDisposicion ? CATALOGO_PROFUNDIZACION_HC_27.find(p => p.nombre.toLowerCase() === a.asignatura.toLowerCase()) : undefined;
+  const matchPlanComunActual = !esLibreDisposicion ? CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => a.asignatura.toLowerCase().includes(c.nombre.toLowerCase())) : undefined;
 
   // Si es un módulo TP oficial o un módulo/especialidad personalizado en EPJA, preservar su valor exacto para que el select no lo colapse a Lengua y Literatura
   const esModuloTpActual = /^(m[oó]dulo|oficio|especialidad)\b/i.test(a.asignatura || '') ||
@@ -927,9 +339,17 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   if (sel === 'LIBRE_DISPOSICION') {
                     setEditandoManual(true);
                     if (onGuardarAsignacion) {
+                      const nuevoNom = /taller/i.test(a.asignatura) ? a.asignatura : 'Taller JEC / Libre Disposición';
+                      const resCod = resolverCodigoYAmbitoAsignatura(nuevoNom, {
+                        nivelCurso: cursoActual?.nivel,
+                        esJec: true,
+                        ambitoExplicito: 'LIBRE_DISPOSICION_JEC'
+                      });
                       await onGuardarAsignacion({ 
                         ...a, 
-                        asignatura: a.asignatura.includes('Taller') ? a.asignatura : 'Taller JEC / Libre Disposición', 
+                        asignatura: nuevoNom,
+                        codigoAsignatura: resCod.codigo,
+                        ambitoCurricular: 'LIBRE_DISPOSICION_JEC',
                         esTallerJec: true 
                       });
                     }
@@ -1046,7 +466,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   </>
                 )}
 
-                {infoPlan.esJec && !esParvulariaFila && (
+                {(infoPlan.esJec || disponibilidad.horasLibrePlan > 0) && !esCursoEpjaFila && !esParvulariaFila && (
                   <optgroup label="⚡ Libre Disposición / JEC (Nombre Flexible)">
                     <option value="LIBRE_DISPOSICION">
                       ⚡ Taller JEC / Libre Disposición ({disponibilidad.horasLibreDisponibles} HA libres)
@@ -1095,20 +515,21 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                   onBlur={async () => {
                     const val = nombreManual.trim();
                     if (val && val !== a.asignatura && onGuardarAsignacion) {
+                      const mantenerLibre = !esCursoEpjaFila && (esLibreDisposicion || esTextoTallerOLibreDisposicion(val));
                       const resCod = resolverCodigoYAmbitoAsignatura(val, {
                         nivelCurso: cursoActual?.nivel,
-                        esJec: esCursoEpjaFila ? false : esLibreDisposicion,
-                        esTallerSep: a.esTallerSep
+                        esJec: mantenerLibre,
+                        esTallerSep: a.esTallerSep,
+                        ambitoExplicito: mantenerLibre ? 'LIBRE_DISPOSICION_JEC' : undefined
                       });
-                      const nuevoEsJec = !esCursoEpjaFila && infoPlan.esJec && (
-                        resCod.ambito === 'LIBRE_DISPOSICION_JEC' ||
-                        (esLibreDisposicion && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'DIFERENCIADA_TP' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO')
+                      const nuevoEsJec = !esCursoEpjaFila && (infoPlan.esJec || disponibilidad.horasLibrePlan > 0) && (
+                        resCod.ambito === 'LIBRE_DISPOSICION_JEC' || mantenerLibre
                       );
                       await onGuardarAsignacion({
                         ...a,
                         asignatura: val,
                         codigoAsignatura: resCod.codigo,
-                        ambitoCurricular: resCod.ambito,
+                        ambitoCurricular: nuevoEsJec ? 'LIBRE_DISPOSICION_JEC' : resCod.ambito,
                         esTallerJec: nuevoEsJec
                       });
                       setEditandoManual(false);
@@ -1170,9 +591,9 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
             <input
               type="number"
               value={localHoras}
-              min={1}
+              min={0.5}
               max={44}
-              step={esApoyoAulaCurso ? '1' : '0.5'}
+              step={esParvulariaFila ? '0.1' : '0.5'}
               onChange={(e) => setLocalHoras(e.target.value === '' ? '' : Number(e.target.value))}
               onBlur={async () => {
                 const h = Number(localHoras);
@@ -1305,6 +726,9 @@ interface FormRegularProps {
   cursos: CursoSae[];
   planesDb: PlanEstudioCurricular[];
   asignacionesColegio: AsignacionHoraria[];
+  periodoActivo: number;
+  initialCursoId?: string;
+  initialAmbito?: AmbitoFormRegular;
   onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
   onCerrar: () => void;
 }
@@ -1315,17 +739,25 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   cursos,
   planesDb,
   asignacionesColegio,
+  periodoActivo,
+  initialCursoId,
+  initialAmbito,
   onGuardar,
   onCerrar
 }) => {
-  const [regCursoId, setRegCursoId] = useState(cursos[0]?.id || 'TRANSVERSAL');
+  const [regCursoId, setRegCursoId] = useState(initialCursoId || cursos[0]?.id || 'TRANSVERSAL');
+  const [ambitoActivo, setAmbitoActivo] = useState<AmbitoFormRegular>(initialAmbito || 'PLAN_COMUN');
   const [tipoAsignaturaSeleccionada, setTipoAsignaturaSeleccionada] = useState<string>('');
   const [regNombreCustom, setRegNombreCustom] = useState('');
   const [regHoras, setRegHoras] = useState(4);
   const [regEsTallerSep, setRegEsTallerSep] = useState(false);
   const [regCompartir, setRegCompartir] = useState(false);
   const [regCursosCompartidos, setRegCursosCompartidos] = useState<string[]>([]);
-  const cursoPrevioRef = React.useRef(regCursoId);
+
+  useEffect(() => {
+    if (initialCursoId) setRegCursoId(initialCursoId);
+    if (initialAmbito) setAmbitoActivo(initialAmbito);
+  }, [initialCursoId, initialAmbito]);
 
   // Obtener plan resuelto del curso seleccionado
   const cursoSeleccionado = useMemo(() => {
@@ -1336,7 +768,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     return resolverPlanCurso(cursoSeleccionado, planesDb);
   }, [cursoSeleccionado, planesDb]);
 
-  // Materias preferentes del docente (ej: Alejandra Ferrada -> Inglés)
+  // Materias preferentes del docente
   const materiasPreferentes = useMemo(() => {
     return obtenerMateriasPreferentesDocente(docente.id, asignacionesColegio);
   }, [docente.id, asignacionesColegio]);
@@ -1346,14 +778,26 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     return calcularDisponibilidadCurso(cursoSeleccionado, infoPlan, asignacionesColegio);
   }, [cursoSeleccionado, infoPlan, asignacionesColegio]);
 
-  // Info de la asignatura actualmente seleccionada
-  const infoAsigSeleccionada = useMemo(() => {
-    return datosDisp.todas.find(a => a.nombre.toLowerCase() === tipoAsignaturaSeleccionada.toLowerCase()) || null;
-  }, [datosDisp.todas, tipoAsignaturaSeleccionada]);
+  const saldoDocente = useMemo(() => {
+    return calcularSaldoDocentePorFuente(docente, asignacionesColegio, colegio.porcentajePrioritarios || 0);
+  }, [docente, asignacionesColegio, colegio.porcentajePrioritarios]);
 
-  // Al cambiar de curso, precargar inteligentemente la asignatura DISPONIBLE o afín al docente (SOLO cuando cambia regCursoId)
+  const esCursoEpjaForm = useMemo(() => esCursoModalidadEpja(cursoSeleccionado, infoPlan), [cursoSeleccionado, infoPlan]);
+  const esMedio34Form = useMemo(() => esCursoNivelMedio34(cursoSeleccionado, infoPlan), [cursoSeleccionado, infoPlan]);
+  const esParvularioForm = useMemo(() => Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel)), [cursoSeleccionado]);
+  const esCursoTpForm = useMemo(() => esCursoModalidadTp(cursoSeleccionado, infoPlan, colegio), [cursoSeleccionado, infoPlan, colegio]);
+  const puedeLibreDisposicion = !esCursoEpjaForm && !esParvularioForm && (infoPlan.esJec || datosDisp.horasLibrePlan > 0);
+
+  // Info de la asignatura actualmente seleccionada (solo si pertenece al plan)
+  const infoAsigSeleccionada = useMemo(() => {
+    if (ambitoActivo === 'LIBRE_DISPOSICION' || ambitoActivo === 'OTRO') return null;
+    return datosDisp.todas.find(a => a.nombre.toLowerCase() === tipoAsignaturaSeleccionada.toLowerCase()) || null;
+  }, [datosDisp.todas, tipoAsignaturaSeleccionada, ambitoActivo]);
+
+  // Al cambiar de curso, actualizar disponibilidad y preselección según el ámbito
   useEffect(() => {
     if (regCursoId === 'TRANSVERSAL') {
+      setAmbitoActivo('OTRO');
       setTipoAsignaturaSeleccionada('__TRANSVERSAL__');
       setRegNombreCustom('Taller Institucional Transversal');
       setRegHoras(2);
@@ -1362,11 +806,33 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       return;
     }
 
-    // 1. Prioridad: ¿El docente ya dicta una materia habitual que esté DISPONIBLE en este curso?
-    const materiaAfinDisponible = datosDisp.disponibles.find(d => 
+    if (ambitoActivo === 'LIBRE_DISPOSICION' && puedeLibreDisposicion) {
+      setTipoAsignaturaSeleccionada('__LIBRE_DISPOSICION__');
+      setRegHoras(datosDisp.horasLibreDisponibles >= 2 ? 2 : (datosDisp.horasLibreDisponibles > 0 ? datosDisp.horasLibreDisponibles : 2));
+      return;
+    }
+
+    if (ambitoActivo === 'DIFERENCIADA_HC_ELEC' && esMedio34Form) {
+      if (esCursoTpForm) {
+        const primerElec = `${CATALOGO_PLAN_COMUN_ELECTIVO_3_4[0].nombre} (Electivo)`;
+        setTipoAsignaturaSeleccionada(primerElec);
+        setRegHoras(2);
+      } else {
+        setTipoAsignaturaSeleccionada(CATALOGO_PROFUNDIZACION_HC_27[0].nombre);
+        setRegHoras(6);
+      }
+      return;
+    }
+
+    // Si estaba en ámbito no disponible para este curso, volver a PLAN_COMUN
+    if ((ambitoActivo === 'LIBRE_DISPOSICION' && !puedeLibreDisposicion) || (ambitoActivo === 'DIFERENCIADA_HC_ELEC' && !esMedio34Form)) {
+      setAmbitoActivo('PLAN_COMUN');
+    }
+
+    // 1. Prioridad: ¿El docente dicta una materia habitual disponible en este curso?
+    const materiaAfinDisponible = datosDisp.disponibles.find(d =>
       materiasPreferentes.some(pref => pref.toLowerCase() === d.nombre.toLowerCase())
     );
-
     if (materiaAfinDisponible) {
       setTipoAsignaturaSeleccionada(materiaAfinDisponible.nombre);
       setRegNombreCustom('');
@@ -1374,79 +840,72 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       return;
     }
 
-    // 2. Si no, seleccionar la primera asignatura DISPONIBLE del curso con su saldo restante
+    // 2. Primera asignatura disponible del plan
     if (datosDisp.disponibles.length > 0) {
-      const primeraDisp = datosDisp.disponibles[0];
-      setTipoAsignaturaSeleccionada(primeraDisp.nombre);
+      setTipoAsignaturaSeleccionada(datosDisp.disponibles[0].nombre);
       setRegNombreCustom('');
-      setRegHoras(primeraDisp.horasDisponibles);
+      setRegHoras(datosDisp.disponibles[0].horasDisponibles);
       return;
     }
 
-    // 3. Si no hay troncales disponibles pero hay horas de Libre Disposición JEC
-    if (datosDisp.horasLibreDisponibles > 0) {
+    // 3. Si el plan obligatorio está 100% cubierto y queda Libre Disposición JEC
+    if (puedeLibreDisposicion && datosDisp.horasLibreDisponibles > 0) {
+      setAmbitoActivo('LIBRE_DISPOSICION');
       setTipoAsignaturaSeleccionada('__LIBRE_DISPOSICION__');
       setRegNombreCustom('');
       setRegHoras(Math.min(datosDisp.horasLibreDisponibles, 2));
       return;
     }
 
-    // 4. Si todo el curso está cubierto al 100%, tomar la primera del plan como referencia
     if (infoPlan.asignaturas.length > 0) {
-      const primera = infoPlan.asignaturas[0];
-      setTipoAsignaturaSeleccionada(primera.nombre);
+      setTipoAsignaturaSeleccionada(infoPlan.asignaturas[0].nombre);
       setRegNombreCustom('');
-      setRegHoras(primera.horas || 2);
+      setRegHoras(infoPlan.asignaturas[0].horas || 2);
     } else {
+      setAmbitoActivo('OTRO');
       setTipoAsignaturaSeleccionada('__OTRO_PERSONALIZADO__');
       setRegNombreCustom('');
       setRegHoras(2);
     }
   }, [regCursoId]);
 
-  const esCursoEpjaForm = useMemo(() => {
-    return esCursoModalidadEpja(cursoSeleccionado, infoPlan);
-  }, [cursoSeleccionado, infoPlan]);
+  const handleCambioAmbito = (nuevoAmbito: AmbitoFormRegular) => {
+    setAmbitoActivo(nuevoAmbito);
+    setRegCompartir(false);
+    setRegCursosCompartidos([]);
 
-  const esMedio34Form = useMemo(() => {
-    return Boolean(
-      cursoSeleccionado &&
-      !esCursoEpjaForm &&
-      !/b[aá]sic[oa]|parvulari|k[ií]nder|transici[oó]n|nt[12]|sala\s*cuna/i.test(cursoSeleccionado.nivel) &&
-      (
-        /([34][°ºo]?\s*(medio|em|tp)|tercer[oa]?\s*(medio|em)|cuart[oa]?\s*(medio|em))/i.test(cursoSeleccionado.nivel) ||
-        (infoPlan.nombrePlan.toLowerCase().includes('medio') && /[34]/i.test(infoPlan.nombrePlan)) ||
-        ((infoPlan.categoria === 'MEDIA_HC' || infoPlan.categoria === 'MEDIA_TP') && /[34]/i.test(infoPlan.nombrePlan))
-      )
-    );
-  }, [cursoSeleccionado, esCursoEpjaForm, infoPlan.nombrePlan, infoPlan.categoria]);
-
-  const esParvularioForm = useMemo(() => {
-    return Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
-  }, [cursoSeleccionado]);
-
-  const esCursoTpForm = useMemo(() => {
-    return Boolean(
-      cursoSeleccionado && (
-        cursoSeleccionado.nivel.toLowerCase().includes('tp') ||
-        Boolean(cursoSeleccionado.especialidadTp) ||
-        infoPlan.categoria === 'MEDIA_TP' ||
-        (esCursoEpjaForm && /tp|t[eé]cnico|especialidad|oficio/i.test(`${cursoSeleccionado.nivel} ${infoPlan.nombrePlan}`))
-      )
-    );
-  }, [cursoSeleccionado, infoPlan.categoria, infoPlan.nombrePlan, esCursoEpjaForm]);
+    if (nuevoAmbito === 'LIBRE_DISPOSICION') {
+      setTipoAsignaturaSeleccionada('__LIBRE_DISPOSICION__');
+      setRegNombreCustom('');
+      setRegHoras(datosDisp.horasLibreDisponibles >= 2 ? 2 : (datosDisp.horasLibreDisponibles > 0 ? datosDisp.horasLibreDisponibles : 2));
+    } else if (nuevoAmbito === 'DIFERENCIADA_HC_ELEC') {
+      setRegNombreCustom('');
+      if (esCursoTpForm) {
+        setTipoAsignaturaSeleccionada(`${CATALOGO_PLAN_COMUN_ELECTIVO_3_4[0].nombre} (Electivo)`);
+        setRegHoras(2);
+      } else {
+        setTipoAsignaturaSeleccionada(CATALOGO_PROFUNDIZACION_HC_27[0].nombre);
+        setRegHoras(6);
+      }
+    } else if (nuevoAmbito === 'OTRO') {
+      setTipoAsignaturaSeleccionada('__OTRO_PERSONALIZADO__');
+      setRegNombreCustom('');
+      setRegHoras(2);
+    } else {
+      setRegNombreCustom('');
+      const disp0 = datosDisp.disponibles[0] || datosDisp.todas[0];
+      if (disp0) {
+        setTipoAsignaturaSeleccionada(disp0.nombre);
+        setRegHoras(disp0.horasDisponibles > 0 ? disp0.horasDisponibles : disp0.horasPlan);
+      }
+    }
+  };
 
   const esSeleccionDiferenciadaEpja = useMemo(() => {
     if (!esCursoEpjaForm) return false;
     const t = tipoAsignaturaSeleccionada.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return t.includes('formacion diferenciada') && (t.includes('especializacion') || t.includes('oficio') || t.includes('tp') || t.includes('especialidad'));
   }, [esCursoEpjaForm, tipoAsignaturaSeleccionada]);
-
-  const esModoPersonalizado = 
-    regCursoId === 'TRANSVERSAL' ||
-    tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ||
-    tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__' ||
-    esSeleccionDiferenciadaEpja;
 
   const handleSeleccionAsignatura = (valor: string) => {
     setTipoAsignaturaSeleccionada(valor);
@@ -1455,19 +914,7 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     const matchComunElec = CATALOGO_PLAN_COMUN_ELECTIVO_3_4.find(c => valor.toLowerCase().includes(c.nombre.toLowerCase()));
     const matchBcep = CATALOGO_BCEP_PARVULARIA.find(b => b.nucleo.toLowerCase() === valor.toLowerCase());
 
-    if (valor.startsWith('__TALLER_EXISTENTE__:')) {
-      const nombreTaller = valor.replace('__TALLER_EXISTENTE__:', '');
-      const tallerObj = infoPlan.talleresJecPredefinidos.find(t => t.nombre === nombreTaller);
-      setRegNombreCustom(nombreTaller);
-      setRegHoras(tallerObj?.horas || 2);
-    } else if (valor === '__LIBRE_DISPOSICION__') {
-      setRegNombreCustom('');
-      const sugeridas = datosDisp.horasLibreDisponibles >= 2 ? 2 : (datosDisp.horasLibreDisponibles > 0 ? datosDisp.horasLibreDisponibles : 2);
-      setRegHoras(sugeridas);
-    } else if (valor === '__OTRO_PERSONALIZADO__') {
-      setRegNombreCustom('');
-      setRegHoras(2);
-    } else if (matchBcep) {
+    if (matchBcep) {
       setRegNombreCustom('');
       const hrsBcep = infoPlan.esJec ? matchBcep.horasJecCronologicas : matchBcep.horasMediaJornadaCronologicas;
       setRegHoras(hrsBcep);
@@ -1478,7 +925,6 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       setRegNombreCustom('');
       setRegHoras(2);
     } else {
-      // Es una asignatura del plan de estudio (verificar disponibilidad)
       setRegNombreCustom('');
       const dispObj = datosDisp.todas.find(a => a.nombre === valor);
       if (dispObj) {
@@ -1495,24 +941,29 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
     if (!regCursoId) return;
 
     let nombreFinal = '';
+    let ambitoExplicito: 'LIBRE_DISPOSICION_JEC' | 'PLAN_COMUN' | 'DIFERENCIADA_HC' | 'PLAN_COMUN_ELECTIVO' | 'ADICIONAL_EXTRA' | undefined;
     let esJec = false;
 
     if (regCursoId === 'TRANSVERSAL') {
       nombreFinal = regNombreCustom.trim() || 'Taller Institucional Transversal';
+      ambitoExplicito = 'ADICIONAL_EXTRA';
       esJec = false;
-    } else if (tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__') {
-      nombreFinal = regNombreCustom.trim() || 'Taller de Libre Disposición';
-      esJec = !esCursoEpjaForm && infoPlan.esJec;
-    } else if (tipoAsignaturaSeleccionada === '__OTRO_PERSONALIZADO__') {
+    } else if (ambitoActivo === 'LIBRE_DISPOSICION') {
       nombreFinal = regNombreCustom.trim();
-      esJec = !esCursoEpjaForm && infoPlan.esJec && /taller|jec|libre/i.test(nombreFinal);
-    } else if (esSeleccionDiferenciadaEpja) {
+      if (!nombreFinal) {
+        alert('Escribe o selecciona el nombre del Taller / Libre Disposición (ej: Talleres de Educación Física y Deporte).');
+        return;
+      }
+      esJec = !esCursoEpjaForm && (infoPlan.esJec || datosDisp.horasLibrePlan > 0);
+      ambitoExplicito = esJec ? 'LIBRE_DISPOSICION_JEC' : undefined;
+    } else if (ambitoActivo === 'OTRO' || esSeleccionDiferenciadaEpja) {
       nombreFinal = regNombreCustom.trim() || tipoAsignaturaSeleccionada.trim();
       esJec = false;
-    } else if (tipoAsignaturaSeleccionada.startsWith('__TALLER_EXISTENTE__:')) {
-      nombreFinal = tipoAsignaturaSeleccionada.replace('__TALLER_EXISTENTE__:', '').trim();
-      esJec = !esCursoEpjaForm && infoPlan.esJec;
+    } else if (ambitoActivo === 'DIFERENCIADA_HC_ELEC') {
+      nombreFinal = tipoAsignaturaSeleccionada.trim();
+      esJec = false;
     } else {
+      // PLAN_COMUN
       nombreFinal = tipoAsignaturaSeleccionada.trim();
       esJec = false;
     }
@@ -1526,20 +977,26 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
       nivelCurso: cursoSeleccionado?.nivel,
       esJec,
       esTallerSep: regEsTallerSep,
-      esDiferenciadoCompartido: regCompartir && regCursosCompartidos.length > 0
+      esDiferenciadoCompartido: regCompartir && regCursosCompartidos.length > 0,
+      ambitoExplicito: regEsTallerSep ? 'ADICIONAL_EXTRA' : ambitoExplicito
     });
+
+    const esLibreFinal = !esCursoEpjaForm && regCursoId !== 'TRANSVERSAL' && !regEsTallerSep && (
+      ambitoActivo === 'LIBRE_DISPOSICION' ||
+      resCod.ambito === 'LIBRE_DISPOSICION_JEC'
+    );
 
     const newAsig: AsignacionHoraria = {
       id: `asig-${Date.now()}`,
       rbd: colegio.rbd,
-      periodo: 2027,
+      periodo: periodoActivo,
       cursoId: regCursoId,
       docenteId: docente.id,
       asignatura: nombreFinal,
       codigoAsignatura: resCod.codigo,
-      ambitoCurricular: resCod.ambito,
+      ambitoCurricular: esLibreFinal ? 'LIBRE_DISPOSICION_JEC' : resCod.ambito,
       horasPedagogicasAula: Number(regHoras),
-      esTallerJec: !esCursoEpjaForm && infoPlan.esJec && (resCod.ambito === 'LIBRE_DISPOSICION_JEC' || (esJec && resCod.ambito !== 'DIFERENCIADA_HC' && resCod.ambito !== 'DIFERENCIADA_TP' && resCod.ambito !== 'PLAN_COMUN' && resCod.ambito !== 'PLAN_COMUN_ELECTIVO')),
+      esTallerJec: esLibreFinal,
       esTallerSep: regEsTallerSep,
       esProporcionDocente: regCursoId !== 'TRANSVERSAL',
       cursosCompartidosIds: regCompartir && regCursosCompartidos.length > 0 ? regCursosCompartidos : undefined,
@@ -1551,14 +1008,13 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-3 bg-white border border-orange-200 rounded-xl shadow-xs transition-all space-y-2">
-      <div className="flex flex-wrap items-end gap-2.5 text-xs">
-        
-        {/* 1. SELECCIÓN DE CURSO (PRIMER PASO) */}
-        <div className="min-w-[190px] flex-1 sm:flex-none">
+    <form onSubmit={handleSubmit} className="p-3.5 bg-white border border-orange-200 rounded-xl shadow-xs transition-all space-y-3">
+      {/* Selector de Curso + Ámbito Curricular en 2 pasos inequívocos */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-2.5 pb-2 border-b border-slate-100 text-xs">
+        <div className="min-w-[210px] flex-1">
           <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
             <GraduationCap className="w-3.5 h-3.5 text-orange-600" />
-            <span>1. Curso o Modalidad</span>
+            <span>1. Curso / Nivel ({infoPlan.nombrePlan})</span>
           </label>
           <select
             value={regCursoId}
@@ -1574,97 +1030,115 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           </select>
         </div>
 
-        {/* 2. SELECCIÓN DE ASIGNATURA SEGÚN PLAN (SEGUNDO PASO) */}
+        {/* Selector Explícito de Ámbito Curricular */}
         {regCursoId !== 'TRANSVERSAL' && (
-          <div className="min-w-[240px] flex-1">
-            <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-              <span className="flex items-center gap-1">
-                <BookOpen className="w-3.5 h-3.5 text-orange-600" />
-                <span>2. Asignatura según Plan ({infoPlan.nombrePlan})</span>
-              </span>
-              {datosDisp.disponibles.length > 0 && (
-                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full border border-emerald-300">
-                  {datosDisp.disponibles.length} disponibles
-                </span>
+          <div className="flex-1">
+            <span className="block text-[10px] font-bold text-slate-700 mb-1">
+              2. Tipo / Ámbito de la Asignación
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleCambioAmbito('PLAN_COMUN')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                  ambitoActivo === 'PLAN_COMUN'
+                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50'
+                }`}
+              >
+                <span>📚 Plan Obligatorio</span>
+                {datosDisp.disponibles.length > 0 && (
+                  <span className={`px-1 rounded text-[9px] font-black ${
+                    ambitoActivo === 'PLAN_COMUN' ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {datosDisp.disponibles.length}
+                  </span>
+                )}
+              </button>
+
+              {esMedio34Form && (
+                <button
+                  type="button"
+                  onClick={() => handleCambioAmbito('DIFERENCIADA_HC_ELEC')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                    ambitoActivo === 'DIFERENCIADA_HC_ELEC'
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50'
+                  }`}
+                >
+                  <span>🎓 {esCursoTpForm ? 'Electivo Común 3°-4°' : 'Diferenciada HC & Electivos'}</span>
+                </button>
               )}
+
+              {puedeLibreDisposicion && (
+                <button
+                  type="button"
+                  onClick={() => handleCambioAmbito('LIBRE_DISPOSICION')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                    ambitoActivo === 'LIBRE_DISPOSICION'
+                      ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                      : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  <span>⚡ Libre Disposición JEC</span>
+                  <span className={`px-1 rounded text-[9px] font-black ${
+                    ambitoActivo === 'LIBRE_DISPOSICION' ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-950'
+                  }`}>
+                    {datosDisp.horasLibreDisponibles} HA
+                  </span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => handleCambioAmbito('OTRO')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                  ambitoActivo === 'OTRO'
+                    ? 'bg-slate-800 text-white border-slate-900 shadow-xs'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>✏️ Otra / Personalizada</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Fila de Inputs según el Ámbito Elegido */}
+      <div className="flex flex-wrap items-end gap-2.5 text-xs">
+        {/* ÁMBITO 1: PLAN OBLIGATORIO */}
+        {regCursoId !== 'TRANSVERSAL' && ambitoActivo === 'PLAN_COMUN' && (
+          <div className="min-w-[250px] flex-1">
+            <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+              <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+              <span>3. Asignatura del Plan de Estudio</span>
             </label>
             <select
               value={tipoAsignaturaSeleccionada}
               onChange={(e) => handleSeleccionAsignatura(e.target.value)}
-              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             >
               {datosDisp.disponibles.length > 0 && (
-                <optgroup label={`🟢 Asignaturas Disponibles con Horas Pendientes (${datosDisp.disponibles.length})`}>
+                <optgroup label={`🟢 Con Horas Pendientes (${datosDisp.disponibles.length})`}>
                   {datosDisp.disponibles.map((asig, idx) => (
                     <option key={`disp-${idx}`} value={asig.nombre}>
-                      🟢 {asig.nombre} — {asig.horasDisponibles} HA disponibles (Plan: {asig.horasPlan} HA)
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-
-              {infoPlan.talleresJecPredefinidos.length > 0 && (
-                <optgroup label="🎨 Talleres JEC Registrados en Curso">
-                  {infoPlan.talleresJecPredefinidos.map((tj, idx) => (
-                    <option key={`tj-${idx}`} value={`__TALLER_EXISTENTE__:${tj.nombre}`}>
-                      {tj.nombre} {tj.horas ? `(${tj.horas} HA)` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-
-              {(infoPlan.esJec || datosDisp.horasLibrePlan > 0) && (
-                <optgroup label="⚡ Horas de Libre Disposición (JEC / PEI)">
-                  <option value="__LIBRE_DISPOSICION__">
-                    ✨ Libre Disposición / Taller JEC ({datosDisp.horasLibreDisponibles} HA disponibles de {datosDisp.horasLibrePlan} HA)
-                  </option>
-                </optgroup>
-              )}
-
-              {datosDisp.cubiertas.length > 0 && (
-                <optgroup label={`⚪ Asignaturas Cubiertas al 100% (${datosDisp.cubiertas.length})`}>
-                  {datosDisp.cubiertas.map((asig, idx) => (
-                    <option key={`cub-${idx}`} value={asig.nombre}>
-                      ⚪ {asig.nombre} (Cubierta: {asig.horasAsignadas}/{asig.horasPlan} HA{asig.horasCompensadasLibreDisposicion ? ` [+${asig.horasCompensadasLibreDisposicion}h JEC]` : ''})
+                      🟢 {asig.nombre} — {asig.horasDisponibles} {esParvularioForm ? 'h (60m)' : 'HA'} disponibles (Plan: {asig.horasPlan})
                     </option>
                   ))}
                 </optgroup>
               )}
 
               {esParvularioForm && (
-                <>
-                  <optgroup label="👶 BCEP - Ámbito Desarrollo Personal y Social">
-                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Desarrollo Personal y Social').map(b => (
-                      <option key={b.id} value={b.nucleo}>
-                        🌱 {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="🗣️ BCEP - Ámbito Comunicación Integral">
-                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Comunicación Integral').map(b => (
-                      <option key={b.id} value={b.nucleo}>
-                        🗣️ {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="🔍 BCEP - Ámbito Interacción y Comprensión del Entorno">
-                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Interacción y Comprensión del Entorno').map(b => (
-                      <option key={b.id} value={b.nucleo}>
-                        🔍 {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="🧩 BCEP - Experiencias Integradas & Libre Disposición">
-                    {CATALOGO_BCEP_PARVULARIA.filter(b => b.ambito === 'Experiencias Integradas y Libre Disposición').map(b => (
-                      <option key={b.id} value={b.nucleo}>
-                        🧩 {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cronológicas)
-                      </option>
-                    ))}
-                  </optgroup>
-                </>
+                <optgroup label="👶 Núcleos BCEP Educación Parvularia (60 min)">
+                  {CATALOGO_BCEP_PARVULARIA.map(b => (
+                    <option key={b.id} value={b.nucleo}>
+                      👶 {b.nucleo} ({infoPlan.esJec ? b.horasJecCronologicas : b.horasMediaJornadaCronologicas}h cron.)
+                    </option>
+                  ))}
+                </optgroup>
               )}
 
-              {/* En cursos TP o que tengan módulos en su plan, listar los módulos de la especialidad */}
               {esCursoTpForm && (
                 <optgroup label="🛠️ Módulos de Especialidad Técnico-Profesional">
                   {infoPlan.asignaturas
@@ -1674,7 +1148,6 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                         🛠️ {mod.nombre} ({mod.horas} HA)
                       </option>
                     ))}
-                  {/* Si el plan no tiene módulos desplegados (ej: curso TP genérico), ofrecer acceso a módulos oficiales de Gastronomía u otras especialidades */}
                   {!infoPlan.asignaturas.some(a => /^m[oó]dulo\b/i.test(a.nombre)) && (
                     PLANES_MINEDUC
                       .filter((p: PlanEstudioNivel) => p.categoria === 'MEDIA_TP' && p.asignaturasBase.some(a => /^m[oó]dulo\b/i.test(a.nombre)))
@@ -1690,33 +1163,75 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                 </optgroup>
               )}
 
-              {esMedio34Form && !esCursoTpForm && (
-                <>
-                  <optgroup label="✨ Plan Común Electivo (3° y 4° Medio - 2 HA)">
-                    {CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(elec => (
-                      <option key={elec.id} value={`${elec.nombre} (Electivo)`}>
-                        ✨ {elec.nombre} (Electivo - 2 HA)
-                      </option>
-                    ))}
-                  </optgroup>
+              {datosDisp.cubiertas.length > 0 && (
+                <optgroup label={`⚪ Ya Cubiertas (${datosDisp.cubiertas.length})`}>
+                  {datosDisp.cubiertas.map((asig, idx) => (
+                    <option key={`cub-${idx}`} value={asig.nombre}>
+                      ⚪ {asig.nombre} ({asig.horasAsignadas}/{asig.horasPlan} {esParvularioForm ? 'h' : 'HA'})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
 
-                  <optgroup label="🎓 Formación Diferenciada HC - Área A: Lengua, Filosofía, Cs. Sociales (6 HA)">
+            {/* Desglose rápido para Ciencias Naturales (Biología / Física / Química) */}
+            {tipoAsignaturaSeleccionada === 'Ciencias Naturales' && (
+              <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                <span className="text-[10px] font-bold text-slate-500">¿Dividir Ciencias en eje específico?:</span>
+                {['Biología', 'Física', 'Química'].map(eje => (
+                  <button
+                    key={eje}
+                    type="button"
+                    onClick={() => {
+                      setTipoAsignaturaSeleccionada(eje);
+                      setRegHoras(2);
+                    }}
+                    className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold"
+                  >
+                    + {eje} (2 HA)
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ÁMBITO 2: DIFERENCIADA HC & PLAN COMÚN ELECTIVO (3° y 4° Medio) */}
+        {regCursoId !== 'TRANSVERSAL' && ambitoActivo === 'DIFERENCIADA_HC_ELEC' && esMedio34Form && (
+          <div className="min-w-[250px] flex-1">
+            <label className="block text-[10px] font-bold text-indigo-900 mb-1 flex items-center gap-1">
+              <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+              <span>3. Profundización HC (6 HA) o Plan Común Electivo (2 HA)</span>
+            </label>
+            <select
+              value={tipoAsignaturaSeleccionada}
+              onChange={(e) => handleSeleccionAsignatura(e.target.value)}
+              className="w-full px-2.5 py-1.5 border border-indigo-300 rounded-lg text-xs bg-white font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            >
+              <optgroup label="✨ Plan Común Electivo (3° y 4° Medio - 2 HA)">
+                {CATALOGO_PLAN_COMUN_ELECTIVO_3_4.map(elec => (
+                  <option key={elec.id} value={`${elec.nombre} (Electivo)`}>
+                    ✨ {elec.nombre} (Electivo - 2 HA)
+                  </option>
+                ))}
+              </optgroup>
+              {!esCursoTpForm && (
+                <>
+                  <optgroup label="🎓 Área A: Lengua, Filosofía, Cs. Sociales (6 HA)">
                     {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'A').map(p => (
                       <option key={p.id} value={p.nombre}>
                         📘 {p.nombre} ({p.disciplina} - 6 HA)
                       </option>
                     ))}
                   </optgroup>
-
-                  <optgroup label="🎓 Formación Diferenciada HC - Área B: Matemática y Ciencias (6 HA)">
+                  <optgroup label="🎓 Área B: Matemática y Ciencias (6 HA)">
                     {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'B').map(p => (
                       <option key={p.id} value={p.nombre}>
                         🔬 {p.nombre} ({p.disciplina} - 6 HA)
                       </option>
                     ))}
                   </optgroup>
-
-                  <optgroup label="🎓 Formación Diferenciada HC - Área C: Artes y Ed. Física (6 HA)">
+                  <optgroup label="🎓 Área C: Artes y Ed. Física (6 HA)">
                     {CATALOGO_PROFUNDIZACION_HC_27.filter(p => p.area === 'C').map(p => (
                       <option key={p.id} value={p.nombre}>
                         🎨 {p.nombre} ({p.disciplina} - 6 HA)
@@ -1725,29 +1240,76 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                   </optgroup>
                 </>
               )}
-
-              <optgroup label="✏️ Otros">
-                <option value="__OTRO_PERSONALIZADO__">
-                  ✏️ Otra Asignatura / Taller Específico...
-                </option>
-              </optgroup>
             </select>
           </div>
         )}
 
-        {/* 3. CAMPO DE NOMBRE PERSONALIZADO (CONDICIONAL PARA JEC, MÓDULOS EPJA O ASIGNATURA ESPECÍFICA) */}
-        {esModoPersonalizado && (
-          <div className="min-w-[200px] flex-1">
-            <label className="block text-[10px] font-bold text-amber-700 mb-1 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+        {/* ÁMBITO 3: LIBRE DISPOSICIÓN JEC (Explícito y Protegido) */}
+        {regCursoId !== 'TRANSVERSAL' && ambitoActivo === 'LIBRE_DISPOSICION' && (
+          <div className="min-w-[260px] flex-1 space-y-1.5">
+            <label className="block text-[10px] font-bold text-amber-800 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span>3. Nombre del Taller / Libre Disposición JEC</span>
+              </span>
+              <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-1.5 rounded">
+                Saldo: {datosDisp.horasLibreDisponibles} / {datosDisp.horasLibrePlan} HA
+              </span>
+            </label>
+            <input
+              type="text"
+              autoFocus
+              value={regNombreCustom}
+              onChange={(e) => setRegNombreCustom(e.target.value)}
+              placeholder="Ej: Talleres de Educación Física y Deporte, Taller de Robótica..."
+              className="w-full px-2.5 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-slate-900 bg-amber-50/40 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              required
+            />
+            <div className="flex flex-wrap gap-1">
+              {infoPlan.talleresJecPredefinidos.map((tj, idx) => (
+                <button
+                  key={`tj-chip-${idx}`}
+                  type="button"
+                  onClick={() => {
+                    setRegNombreCustom(tj.nombre);
+                    if (tj.horas) setRegHoras(tj.horas);
+                  }}
+                  className="px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-bold"
+                >
+                  {tj.nombre} {tj.horas ? `(${tj.horas} HA)` : ''}
+                </button>
+              ))}
+              {[
+                'Talleres de Educación Física y Deporte',
+                'Taller de Reforzamiento Matemática',
+                'Taller de Comprensión Lectora',
+                'Taller de Inglés Comunicativo',
+                'Taller Artístico / Música'
+              ].map(sug => (
+                <button
+                  key={sug}
+                  type="button"
+                  onClick={() => setRegNombreCustom(sug)}
+                  className="px-2 py-0.5 rounded bg-white hover:bg-amber-50 text-slate-700 border border-slate-200 text-[10px] font-medium"
+                >
+                  + {sug}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ÁMBITO 4: PERSONALIZADA / TRANSVERSAL / EPJA */}
+        {(regCursoId === 'TRANSVERSAL' || ambitoActivo === 'OTRO' || esSeleccionDiferenciadaEpja) && (
+          <div className="min-w-[230px] flex-1">
+            <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-slate-500" />
               <span>
                 {regCursoId === 'TRANSVERSAL'
-                  ? 'Nombre del Taller Transversal'
-                  : esSeleccionDiferenciadaEpja
-                  ? 'Nombre del Módulo / Especialidad / Oficio EPJA (Opcional)'
+                  ? 'Nombre del Taller Transversal (Sin Curso)'
                   : esCursoEpjaForm
-                  ? 'Nombre del Módulo o Asignatura EPJA'
-                  : 'Nombre del Taller JEC / Asignatura Específica'}
+                  ? 'Nombre del Módulo / Especialidad / Oficio EPJA'
+                  : 'Nombre de la Asignatura / Subsector Específico'}
               </span>
             </label>
             <input
@@ -1755,25 +1317,25 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
               autoFocus={!esSeleccionDiferenciadaEpja}
               value={regNombreCustom}
               onChange={(e) => setRegNombreCustom(e.target.value)}
-              placeholder={esCursoEpjaForm ? 'Ej: Módulo Instalaciones Eléctricas, Contabilidad, Mecánica...' : 'Ej: Taller de Robótica, Refuerzo Matemático, Ajedrez...'}
-              className="w-full px-2.5 py-1.5 border border-amber-300 rounded-lg text-xs font-bold text-slate-900 bg-amber-50/40 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              placeholder={esCursoEpjaForm ? 'Ej: Módulo Instalaciones Eléctricas, Contabilidad...' : 'Ej: Lengua Indígena, Astronomía, Taller Transversal...'}
+              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 bg-slate-50/70 focus:ring-2 focus:ring-orange-500 focus:outline-none"
               required={!esSeleccionDiferenciadaEpja}
             />
           </div>
         )}
 
-        {/* 4. HORAS PEDAGÓGICAS DE AULA / CRONOLÓGICAS PARVULARIA */}
+        {/* HORAS PEDAGÓGICAS (Soporta 0.5 HA y 0.1h en Parvularia) */}
         <div className={esParvularioForm ? 'w-28' : 'w-24'}>
           <label className="block text-[10px] font-bold text-slate-700 mb-1 flex items-center gap-1">
             <Clock className="w-3.5 h-3.5 text-slate-500" />
-            <span>{esParvularioForm ? 'Horas Aula (60m)' : 'Horas Aula'}</span>
+            <span>{esParvularioForm ? 'Horas (60m)' : 'Horas Aula'}</span>
           </label>
           <div className="flex items-center gap-1">
             <input
               type="number"
-              step={esParvularioForm ? '0.1' : '1'}
+              step={esParvularioForm ? '0.1' : '0.5'}
               value={regHoras}
-              onChange={(e) => setRegHoras(Number(e.target.value))}
+              onChange={(e) => setRegHoras(parseFloat(e.target.value) || 0)}
               onFocus={(e) => e.target.select()}
               className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs text-center font-black focus:ring-2 focus:ring-orange-500 focus:outline-none"
               min={0.5}
@@ -1784,21 +1346,8 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           </div>
         </div>
 
-        {/* 5. FINANCIAMIENTO SEP */}
-        <div className="flex items-center pb-1">
-          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 select-none">
-            <input
-              type="checkbox"
-              checked={regEsTallerSep}
-              onChange={(e) => setRegEsTallerSep(e.target.checked)}
-              className="rounded text-orange-600 focus:ring-orange-500"
-            />
-            <span>Financiamiento SEP</span>
-          </label>
-        </div>
-
-        {/* 6. COMPARTIR CON OTRO CURSO (FORMACIÓN DIFERENCIADA / ELECTIVOS EN PARALELO) */}
-        {regCursoId !== 'TRANSVERSAL' && (
+        {/* COMPARTIR EN PARALELO (Decreto 193/2019) */}
+        {regCursoId !== 'TRANSVERSAL' && (ambitoActivo === 'DIFERENCIADA_HC_ELEC' || ambitoActivo === 'LIBRE_DISPOSICION' || ambitoActivo === 'OTRO') && (
           <div className="flex items-center pb-1">
             <label className={`flex items-center gap-1.5 cursor-pointer text-[11px] font-bold px-2.5 py-1.5 rounded-lg select-none border transition-colors ${
               regCompartir ? 'bg-blue-50 text-blue-800 border-blue-300' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
@@ -1812,16 +1361,34 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                 }}
                 className="rounded text-blue-600 focus:ring-blue-500"
               />
-              <span>🤝 Compartir en paralelo</span>
+              <span>🤝 Compartir paralelo</span>
             </label>
           </div>
         )}
 
-        {/* 7. BOTONES ACCIONES */}
-        <div className="flex items-center gap-2 pb-0.5">
+        {/* FINANCIAMIENTO SEP (Solo cuando corresponde a Taller SEP extracurricular o Transversal) */}
+        {(regCursoId === 'TRANSVERSAL' || ambitoActivo === 'OTRO' || ambitoActivo === 'LIBRE_DISPOSICION') && (
+          <div className="flex items-center pb-1">
+            <label
+              className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 select-none"
+              title="Marca esta opción solo si es un taller extracurricular financiado con SEP (exento de la malla regular y libre disposición JEC)"
+            >
+              <input
+                type="checkbox"
+                checked={regEsTallerSep}
+                onChange={(e) => setRegEsTallerSep(e.target.checked)}
+                className="rounded text-orange-600 focus:ring-orange-500"
+              />
+              <span>Taller SEP (Exento)</span>
+            </label>
+          </div>
+        )}
+
+        {/* BOTONES */}
+        <div className="flex items-center gap-2 pb-0.5 ml-auto">
           <button
             type="submit"
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1 shadow-xs"
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
           >
             <Check className="w-3.5 h-3.5" />
             <span>Guardar</span>
@@ -1829,23 +1396,19 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
           <button
             type="button"
             onClick={onCerrar}
-            className="px-2.5 py-1.5 text-slate-500 hover:text-slate-800 text-xs font-semibold"
+            className="px-2.5 py-1.5 text-slate-500 hover:text-slate-800 text-xs font-semibold cursor-pointer"
           >
             Cancelar
           </button>
         </div>
       </div>
 
-      {/* Selector de Cursos Paralelos para Asignatura Compartida */}
+      {/* Selector de Cursos Paralelos */}
       {regCompartir && regCursoId !== 'TRANSVERSAL' && (
         <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="font-bold text-blue-900 flex items-center gap-1">
-              <span>🤝 Formación Diferenciada / Electivo Compartido</span>
-            </span>
-            <span className="text-[10px] text-blue-700">
-              Cubre las horas en ambos cursos pero computa 1 sola vez en el contrato docente
-            </span>
+            <span className="font-bold text-blue-900">🤝 Formación Diferenciada / Electivo Compartido</span>
+            <span className="text-[10px] text-blue-700">Cubre ambos cursos pero computa 1 sola vez en el contrato docente</span>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
             {cursos.filter(c => c.id !== regCursoId).map(c => {
@@ -1855,16 +1418,11 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
                   key={c.id}
                   type="button"
                   onClick={() => {
-                    if (estaMarcado) {
-                      setRegCursosCompartidos(prev => prev.filter(id => id !== c.id));
-                    } else {
-                      setRegCursosCompartidos(prev => [...prev, c.id]);
-                    }
+                    if (estaMarcado) setRegCursosCompartidos(prev => prev.filter(id => id !== c.id));
+                    else setRegCursosCompartidos(prev => [...prev, c.id]);
                   }}
                   className={`px-2.5 py-1 rounded text-xs font-semibold transition-all border flex items-center gap-1.5 ${
-                    estaMarcado 
-                      ? 'bg-blue-600 text-white border-blue-700 shadow-xs' 
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50 hover:border-blue-300'
+                    estaMarcado ? 'bg-blue-600 text-white border-blue-700 shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50'
                   }`}
                 >
                   <span>{estaMarcado ? '✓' : '+'}</span>
@@ -1876,35 +1434,53 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
         </div>
       )}
 
-      {/* Banner Informativo Dinámico de Disponibilidad de la Asignatura */}
-      {regCursoId !== 'TRANSVERSAL' && (
-        <div className="pt-0.5">
-          {infoAsigSeleccionada ? (
-            infoAsigSeleccionada.estado === 'DISPONIBLE' ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px]">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>
-                  <strong>{infoAsigSeleccionada.nombre}:</strong> Quedan <strong>{infoAsigSeleccionada.horasDisponibles} HA disponibles</strong> para este curso (Plan Oficial: {infoAsigSeleccionada.horasPlan} HA • Asignadas a otros docentes: {infoAsigSeleccionada.horasAsignadas} HA).
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>
-                  <strong>{infoAsigSeleccionada.nombre} (Cubierta):</strong> Esta materia ya tiene sus <strong>{infoAsigSeleccionada.horasAsignadas}/{infoAsigSeleccionada.horasPlan} HA cubiertas</strong> en el plan de este curso{infoAsigSeleccionada.horasCompensadasLibreDisposicion ? ` (${infoAsigSeleccionada.horasCompensadasLibreDisposicion} HA financiadas con cargo a Libre Disposición JEC)` : ''}.
-                </span>
-              </div>
-            )
-          ) : tipoAsignaturaSeleccionada === '__LIBRE_DISPOSICION__' ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px]">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+      {/* Barra Informativa de Cobertura del Curso y Saldo Preventivo por Fuente */}
+      <div className="space-y-1.5 pt-0.5">
+        {regCursoId !== 'TRANSVERSAL' && infoAsigSeleccionada && (
+          infoAsigSeleccionada.estado === 'DISPONIBLE' ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px]">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               <span>
-                <strong>Horas de Libre Disposición JEC:</strong> Quedan <strong>{datosDisp.horasLibreDisponibles} HA disponibles</strong> para talleres en este curso (Plan: {datosDisp.horasLibrePlan} HA • Asignadas: {datosDisp.horasLibreAsignadas} HA). Puedes fraccionarlas en múltiples talleres (ej: 3 talleres de 2 HA c/u).
+                <strong>{infoAsigSeleccionada.nombre}:</strong> Quedan <strong>{infoAsigSeleccionada.horasDisponibles} HA disponibles</strong> en el plan (Plan Oficial: {infoAsigSeleccionada.horasPlan} HA • Cubiertas: {infoAsigSeleccionada.horasAsignadas} HA).
               </span>
             </div>
-          ) : null}
-        </div>
-      )}
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>
+                <strong>{infoAsigSeleccionada.nombre} (Cubierta):</strong> Ya tiene <strong>{infoAsigSeleccionada.horasAsignadas}/{infoAsigSeleccionada.horasPlan} HA</strong> cubiertas{infoAsigSeleccionada.horasCompensadasLibreDisposicion ? ` (+${infoAsigSeleccionada.horasCompensadasLibreDisposicion}h con cargo a Libre Disposición)` : ''}.
+              </span>
+            </div>
+          )
+        )}
+
+        {regCursoId !== 'TRANSVERSAL' && ambitoActivo === 'LIBRE_DISPOSICION' && (
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11px] ${
+            Number(regHoras) > datosDisp.horasLibreDisponibles
+              ? 'bg-amber-50 border-amber-300 text-amber-950'
+              : 'bg-blue-50 border-blue-200 text-blue-900'
+          }`}>
+            <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span>
+              <strong>Libre Disposición JEC:</strong> Se registrará explícitamente como Taller/Libre Disposición (<strong>{datosDisp.horasLibreDisponibles} HA disponibles</strong> de {datosDisp.horasLibrePlan} HA en {cursoSeleccionado?.nivel} {cursoSeleccionado?.letra}).
+              {Number(regHoras) > datosDisp.horasLibreDisponibles && (
+                <strong className="ml-1 text-amber-800">⚠️ Excede el saldo libre del curso en {Math.round((Number(regHoras) - datosDisp.horasLibreDisponibles) * 100) / 100} HA.</strong>
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* Alerta Preventiva de Financiamiento del Docente */}
+        {((saldoDocente.esDocentePiePuro && ambitoActivo === 'PLAN_COMUN') ||
+          (saldoDocente.esDocenteSepPuro && ambitoActivo === 'PLAN_COMUN' && !regEsTallerSep)) && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[11px]">
+            <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+            <span>
+              <strong>Alerta de Financiamiento:</strong> Este docente es 100% <strong>{saldoDocente.esDocentePiePuro ? 'PIE' : 'SEP'}</strong> (Subv. General: 0h). Asignarle Malla Obligatoria del Plan Común generará descuadre normativo; utiliza el botón <strong>Co-Docencia / SEP</strong> o <strong>Apoyo PIE</strong>.
+            </span>
+          </div>
+        )}
+      </div>
     </form>
   );
 });
@@ -1914,6 +1490,7 @@ interface FormCoDocenciaProps {
   colegio: Establecimiento;
   cursos: CursoSae[];
   planesDb: PlanEstudioCurricular[];
+  periodoActivo: number;
   onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
   onCerrar: () => void;
 }
@@ -1923,6 +1500,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
   colegio,
   cursos,
   planesDb,
+  periodoActivo,
   onGuardar,
   onCerrar
 }) => {
@@ -1975,7 +1553,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
     const newAsig: AsignacionHoraria = {
       id: `asig-codoc-${Date.now()}`,
       rbd: colegio.rbd,
-      periodo: 2027,
+      periodo: periodoActivo,
       cursoId: coDocCursoId,
       docenteId: docente.id,
       asignatura: nombreFinal,
@@ -2129,6 +1707,7 @@ interface FormPieProps {
   docente: Docente;
   colegio: Establecimiento;
   cursos: CursoSae[];
+  periodoActivo: number;
   onGuardar: (asig: AsignacionHoraria) => Promise<void> | void;
   onCerrar: () => void;
 }
@@ -2137,6 +1716,7 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
   docente,
   colegio,
   cursos,
+  periodoActivo,
   onGuardar,
   onCerrar
 }) => {
@@ -2158,7 +1738,7 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
     const newAsig: AsignacionHoraria = {
       id: `asig-pie-${Date.now()}`,
       rbd: colegio.rbd,
-      periodo: 2027,
+      periodo: periodoActivo,
       cursoId: pieCursoId,
       docenteId: docente.id,
       asignatura: pieAsignatura.trim() || `Apoyo Especializado PIE (${pieTipo})`,
@@ -2284,10 +1864,13 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
   cursos,
   asignaciones,
   docentes = [],
+  periodoActivo = 2027,
   onGuardarAsignacion,
   onEliminarAsignacion
 }) => {
   const [formActivo, setFormActivo] = useState<TipoFormularioActivo>(null);
+  const [formRegularCursoId, setFormRegularCursoId] = useState<string | undefined>(undefined);
+  const [formRegularAmbito, setFormRegularAmbito] = useState<AmbitoFormRegular | undefined>(undefined);
   const [planesDb, setPlanesDb] = useState<PlanEstudioCurricular[]>([]);
   const [modalSegundaEducadoraOpen, setModalSegundaEducadoraOpen] = useState(false);
   const [docenteSeleccionada2daId, setDocenteSeleccionada2daId] = useState<string>('');
@@ -2855,7 +2438,11 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setFormActivo(formActivo === 'REGULAR' ? null : 'REGULAR')}
+            onClick={() => {
+              setFormRegularCursoId(undefined);
+              setFormRegularAmbito(undefined);
+              setFormActivo(formActivo === 'REGULAR' ? null : 'REGULAR');
+            }}
             className={`px-2.5 py-1 text-[11px] font-bold rounded-md flex items-center gap-1 shadow-xs transition-colors ${
               formActivo === 'REGULAR'
                 ? 'bg-orange-700 text-white'
@@ -3222,7 +2809,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                       asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
                       cursoId: cursoParvularioActivo.id,
                       horasPedagogicasAula: hrsFaltantesCurso,
-                      periodo: 2027,
+                      periodo: periodoActivo,
                       esCoDocencia: true,
                       esCoDocenciaParvularia: true,
                       tipoApoyo: 'CO_DOCENCIA',
@@ -3435,7 +3022,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                               asignatura: `Co-Docencia SEP`,
                               cursoId: cursoInspeccion.id,
                               horasPedagogicasAula: h,
-                              periodo: 2027,
+                              periodo: periodoActivo,
                               esCoDocencia: true,
                               esTallerSep: true,
                               tipoApoyo: 'CO_DOCENCIA'
@@ -3467,7 +3054,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                                 asignatura: nombreTaller.trim(),
                                 cursoId: cursoInspeccion.id,
                                 horasPedagogicasAula: h,
-                                periodo: 2027,
+                                periodo: periodoActivo,
                                 esTallerSep: true,
                                 tipoApoyo: 'TALLER_SEP'
                               };
@@ -3502,7 +3089,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             cursoId: cursoInspeccion.id,
                             horasPedagogicasAula: h,
                             horasCronologicasPie: Math.round(h * 0.75 * 10) / 10,
-                            periodo: 2027,
+                            periodo: periodoActivo,
                             esCoDocencia: true,
                             esProporcionDocente: true,
                             tipoApoyo: 'Co-Docencia en Aula Regular'
@@ -3541,7 +3128,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
                             cursoId: cursoInspeccion.id,
                             horasPedagogicasAula: h,
-                            periodo: 2027,
+                            periodo: periodoActivo,
                             esCoDocencia: true,
                             esCoDocenciaParvularia: true,
                             tipoApoyo: 'CO_DOCENCIA',
@@ -3612,7 +3199,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                               asignatura: b.nucleo,
                               cursoId: cursoInspeccion.id,
                               horasPedagogicasAula: horasAAsignar,
-                              periodo: 2027,
+                              periodo: periodoActivo,
                               esProporcionDocente: true,
                               ...(comoCoDocencia ? {
                                 esCoDocencia: true,
@@ -3741,7 +3328,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                           ambitoCurricular: resCod.ambito,
                           cursoId: cursoInspeccion.id,
                           horasPedagogicasAula: asig.horasDisponibles,
-                          periodo: 2027,
+                          periodo: periodoActivo,
                           esTallerJec: false
                         };
                         await onGuardarAsignacion(nuevaAsig);
@@ -3761,33 +3348,16 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 {!isDocenteSepPuro && !isDocentePiePuro && (!esEducadora || !cursoInspeccion || !esNivelParvulario(cursoInspeccion.nivel)) && (dispCursoInspeccion.horasLibreDisponibles > 0 || (!esEducadora && cursoInspeccion && esNivelParvulario(cursoInspeccion.nivel))) && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (onGuardarAsignacion) {
-                        const nombreTaller = prompt(`Nombre del Taller / Asignatura (45 min HA) para ${cursoInspeccion.nivel} ${cursoInspeccion.letra}:`, 'Taller de Educación Física / Música / Inglés');
-                        if (nombreTaller && nombreTaller.trim()) {
-                          const dispSugerida = dispCursoInspeccion.horasLibreDisponibles > 0 ? dispCursoInspeccion.horasLibreDisponibles : 2;
-                          const horasInput = prompt(`Horas Pedagógicas (45 min HA) a asignar:`, String(dispSugerida));
-                          const h = Number(horasInput) || dispSugerida;
-                          const nuevaAsig: AsignacionHoraria = {
-                            id: `asig_auto_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                            rbd: colegio.rbd,
-                            docenteId: docente.id,
-                            asignatura: nombreTaller.trim(),
-                            cursoId: cursoInspeccion.id,
-                            horasPedagogicasAula: h,
-                            periodo: 2027,
-                            esTallerJec: true,
-                            esProporcionDocente: true
-                          };
-                          await onGuardarAsignacion(nuevaAsig);
-                        }
-                      }
+                    onClick={() => {
+                      setFormRegularCursoId(cursoInspeccion.id);
+                      setFormRegularAmbito('LIBRE_DISPOSICION');
+                      setFormActivo('REGULAR');
                     }}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded text-[11px] font-semibold transition-all hover:scale-105 shadow-xs"
-                    title={`Haz clic para asignar un Taller o Asignatura en bloques de 45 min (HA)`}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded text-[11px] font-semibold transition-all hover:scale-105 shadow-xs cursor-pointer"
+                    title={`Abrir formulario guiado de Libre Disposición JEC para ${cursoInspeccion.nivel} ${cursoInspeccion.letra}`}
                   >
                     <Plus className="w-2.5 h-2.5 text-amber-600" />
-                    <span>⚡ Taller JEC / Especialidad (45m)</span>
+                    <span>⚡ Taller JEC / Libre Disposición</span>
                     <span className="bg-amber-200 text-amber-950 px-1 rounded text-[10px] font-extrabold">
                       {dispCursoInspeccion.horasLibreDisponibles > 0 ? `${dispCursoInspeccion.horasLibreDisponibles} HA` : '2 HA'}
                     </span>
@@ -3814,6 +3384,9 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           cursos={cursos}
           planesDb={planesDb}
           asignacionesColegio={asignaciones}
+          periodoActivo={periodoActivo}
+          initialCursoId={formRegularCursoId}
+          initialAmbito={formRegularAmbito}
           onGuardar={onGuardarAsignacion}
           onCerrar={() => setFormActivo(null)}
         />
@@ -3826,6 +3399,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           colegio={colegio}
           cursos={cursos}
           planesDb={planesDb}
+          periodoActivo={periodoActivo}
           onGuardar={onGuardarAsignacion}
           onCerrar={() => setFormActivo(null)}
         />
@@ -3837,6 +3411,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           docente={docente}
           colegio={colegio}
           cursos={cursos}
+          periodoActivo={periodoActivo}
           onGuardar={onGuardarAsignacion}
           onCerrar={() => setFormActivo(null)}
         />
@@ -3923,7 +3498,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                     asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
                     cursoId: cursoParvularioActivo.id,
                     horasPedagogicasAula: horas2daEducadoraInput,
-                    periodo: 2027,
+                    periodo: periodoActivo,
                     esCoDocencia: true,
                     esCoDocenciaParvularia: true,
                     tipoApoyo: 'CO_DOCENCIA',
