@@ -52,6 +52,10 @@ import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalcu
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
 import { DocenteAsignacionPanel } from '../components/DocenteAsignacionPanel';
+import {
+  FILTRO_ESTAMENTO_FUERA_AULA,
+  tieneFuncionesFueraDeAulaSinColaborativo
+} from '../utils/docenteFiltrosUtils';
 
 interface DocentesDotacionViewProps {
   colegio: Establecimiento | null;
@@ -483,6 +487,10 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
   const sobreasignadosCount = docentesAuditados.filter(item => item.valSobre.estaSobreasignado).length;
 
+  const cantidadFuncionesFueraAula = useMemo(() => {
+    return docentes.filter(tieneFuncionesFueraDeAulaSinColaborativo).length;
+  }, [docentes]);
+
   const hayFiltrosDocenteActivos = busquedaDocente !== '' || filtroEstamento !== 'TODOS' || filtroEstadoCarga !== 'TODOS' || filtroCalidad !== 'TODOS' || filtroFinanciamiento !== 'TODOS' || filtroMultiEscuela;
 
   const limpiarFiltrosDocentes = () => {
@@ -505,7 +513,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         (d.asignaturaPrincipal || '').toLowerCase().includes(q) ||
         (d.titulo || '').toLowerCase().includes(q);
 
-      const matchEstamento = filtroEstamento === 'TODOS' || d.estamento === filtroEstamento;
+      const matchEstamento =
+        filtroEstamento === 'TODOS' ||
+        (filtroEstamento === FILTRO_ESTAMENTO_FUERA_AULA
+          ? tieneFuncionesFueraDeAulaSinColaborativo(d)
+          : d.estamento === filtroEstamento);
       const matchCalidad = filtroCalidad === 'TODOS' || d.calidadJuridica === filtroCalidad;
 
       let matchFinanciamiento = true;
@@ -882,6 +894,9 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                 className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
               >
                 <option value="TODOS">Todos los Estamentos ({docentes.length})</option>
+                <option value={FILTRO_ESTAMENTO_FUERA_AULA}>
+                  Funciones Fuera del Aula (sin Trab. Colab.) ({cantidadFuncionesFueraAula})
+                </option>
                 {ESTAMENTOS.map(est => (
                   <option key={est.id} value={est.id}>{est.label}</option>
                 ))}
