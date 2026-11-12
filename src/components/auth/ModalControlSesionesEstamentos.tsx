@@ -191,7 +191,7 @@ export const ModalControlSesionesEstamentos: React.FC<ModalControlSesionesEstame
   const hayPausaGlobal = Boolean(estadoPausa?.activa && estadoPausa.rolesAfectados.length > 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto">
       <div className="relative w-full max-w-3xl overflow-hidden rounded-3xl bg-slate-900 border border-slate-700/80 shadow-2xl my-8">
         {/* Header Decorativo */}
         <div className="relative p-6 bg-gradient-to-r from-slate-900 via-rose-950/40 to-slate-900 border-b border-slate-800">

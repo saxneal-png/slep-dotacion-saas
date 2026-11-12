@@ -367,3 +367,50 @@ export async function eliminarUsuarioDb(id: string, skipCloudSync: boolean = fal
     }
   }
 }
+
+/**
+ * Actualiza masivamente el campo `activo` de una lista de usuarios por ID
+ * en SQLite local y Supabase sin sobreescribir credenciales ni provocar conflictos FK/UNIQUE.
+ */
+export async function actualizarEstadoUsuariosMasivoDb(
+  ids: string[],
+  activo: boolean,
+  skipCloudSync: boolean = false
+): Promise<void> {
+  if (!ids.length) return;
+  const activoInt = activo ? 1 : 0;
+
+  try {
+    const db = await getDb();
+    db.run('BEGIN TRANSACTION;');
+    try {
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const placeholders = chunk.map(() => '?').join(',');
+        db.run(`UPDATE usuarios_sistema SET activo = ? WHERE id IN (${placeholders})`, [activoInt, ...chunk]);
+      }
+      db.run('COMMIT;');
+      await persistDb();
+    } catch (txErr) {
+      db.run('ROLLBACK;');
+      throw txErr;
+    }
+  } catch (err) {
+    console.warn('[usuariosRepo] Error actualizando estado masivo en SQLite:', err);
+  }
+
+  if (!skipCloudSync && isSupabaseEnabled()) {
+    const nowIso = new Date().toISOString();
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const { error } = await supabase
+        .from('usuarios_sistema')
+        .update({ activo, updated_at: nowIso })
+        .in('id', chunk);
+      if (error) {
+        console.error('[usuariosRepo] Error actualizando estado masivo en Supabase:', error);
+        throw new Error(`No se pudo sincronizar el estado masivo en Supabase: ${error.message}`);
+      }
+    }
+  }
+}

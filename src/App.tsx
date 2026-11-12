@@ -75,7 +75,7 @@ import {
 
 import { checkAndSeedInitialData } from './database/seedData';
 import { SupabaseDotacionService } from './services/supabaseDotacionService';
-import { isSupabaseEnabled } from './services/supabaseClient';
+import { isSupabaseEnabled, supabase } from './services/supabaseClient';
 import { notificarMutacionLocalEmitida } from './services/colaboracionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota } from './services/configuracionGeneralService';
@@ -89,6 +89,7 @@ import { LoginModal } from './components/auth/LoginModal';
 import { CambiarPasswordModal } from './components/auth/CambiarPasswordModal';
 import { OlvidoPasswordModal } from './components/auth/OlvidoPasswordModal';
 import { PrimerAccesoModal } from './components/auth/PrimerAccesoModal';
+import { ModalControlSesionesEstamentos } from './components/auth/ModalControlSesionesEstamentos';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
@@ -104,6 +105,9 @@ export const App: React.FC = () => {
   }, [session?.usuario.id]);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
   const [modalOlvidoPassword, setModalOlvidoPassword] = useState(false);
+  const [modalControlSesionesAbierto, setModalControlSesionesAbierto] = useState(false);
+  const [pausaRevisionActiva, setPausaRevisionActiva] = useState<boolean>(() => Boolean(AuthService.getEstadoPausaRevision()?.activa));
+  const [avisoSesionPausada, setAvisoSesionPausada] = useState<string | null>(null);
   const [colegios, setColegios] = useState<Establecimiento[]>([]);
   const [colegioActivo, setColegioActivo] = useState<Establecimiento | null>(null);
 
@@ -240,50 +244,118 @@ export const App: React.FC = () => {
     setTimeout(() => setNotificacion(null), 4000);
   };
 
-  // Validación reactiva y periódica de la vigencia de la sesión activa
+  // Validación reactiva, remota y en tiempo real de la vigencia de la sesión activa
   useEffect(() => {
+    const actualizarBadgePausa = async () => {
+      const pausa = isSupabaseEnabled()
+        ? await AuthService.sincronizarEstadoPausaDesdeNube().catch(() => AuthService.getEstadoPausaRevision())
+        : AuthService.getEstadoPausaRevision();
+      setPausaRevisionActiva(Boolean(pausa?.activa && (pausa.rolesAfectados || []).length > 0));
+    };
+
+    actualizarBadgePausa();
+
     if (!session) return;
 
-    const verificarEstadoSesion = () => {
+    let cancelado = false;
+
+    const verificarEstadoSesion = async (remoto: boolean = true) => {
+      if (cancelado) return;
       const sesionActual = AuthService.getSessionActual();
       if (!sesionActual) {
         setSession(null);
         return;
       }
-      const check = AuthService.verificarSesionValida(sesionActual);
+      const check = remoto
+        ? await AuthService.verificarSesionRemota(sesionActual)
+        : AuthService.verificarSesionValida(sesionActual);
+
+      if (cancelado) return;
+
+      const pausaActual = AuthService.getEstadoPausaRevision();
+      setPausaRevisionActiva(Boolean(pausaActual?.activa && (pausaActual.rolesAfectados || []).length > 0));
+
       if (!check.valida) {
+        const motivoMsg =
+          check.motivo || 'Su sesión ha sido pausada temporalmente por período de revisión técnica interna UATP.';
         AuthService.logout();
         setSession(null);
-        mostrarMensaje(
-          check.motivo || 'Su sesión ha sido pausada temporalmente por período de revisión técnica interna UATP.',
-          'error'
-        );
+        setAvisoSesionPausada(motivoMsg);
+        mostrarMensaje(motivoMsg, 'error');
       }
     };
 
-    const handleFocus = () => verificarEstadoSesion();
-    const handleEventoPausa = () => verificarEstadoSesion();
+    // Verificación inicial contra Supabase al cargar sesión
+    verificarEstadoSesion(true);
+
+    const handleFocus = () => verificarEstadoSesion(true);
+    const handleEventoPausa = () => {
+      actualizarBadgePausa();
+      verificarEstadoSesion(false);
+    };
+    const handleEventoReactivada = () => {
+      actualizarBadgePausa();
+    };
     const handleStorage = (e: StorageEvent) => {
       if (
         e.key === 'slep_pausa_revision_interna_v1' ||
         e.key === 'slep_usuarios_sistema_v2' ||
         e.key === 'slep_auth_session_v1'
       ) {
-        verificarEstadoSesion();
+        verificarEstadoSesion(false);
       }
     };
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('storage', handleStorage);
     window.addEventListener('slep:sesiones_pausadas', handleEventoPausa);
+    window.addEventListener('slep:sesiones_reactivadas', handleEventoReactivada);
 
-    const intervalo = setInterval(verificarEstadoSesion, 15000);
+    // Respaldo periódico ligero (30s) por si Realtime no está disponible en redes escolares
+    const intervalo = setInterval(() => verificarEstadoSesion(true), 30000);
+
+    // Suscripción en tiempo real de Supabase para cierre inmediato al pausar un estamento
+    let canalControl: any = null;
+    if (isSupabaseEnabled()) {
+      canalControl = supabase
+        .channel(`control_sesion_${session.usuario.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'configuracion_general',
+            filter: 'id=eq.pausa_revision_interna'
+          },
+          () => {
+            verificarEstadoSesion(true);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'usuarios_sistema',
+            filter: `id=eq.${session.usuario.id}`
+          },
+          () => {
+            verificarEstadoSesion(true);
+          }
+        )
+        .subscribe();
+    }
 
     return () => {
+      cancelado = true;
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('slep:sesiones_pausadas', handleEventoPausa);
+      window.removeEventListener('slep:sesiones_reactivadas', handleEventoReactivada);
       clearInterval(intervalo);
+      if (canalControl) {
+        supabase.removeChannel(canalControl).catch(() => {});
+      }
     };
   }, [session]);
 
@@ -1126,7 +1198,10 @@ export const App: React.FC = () => {
       {!session && (
         <>
           <LoginModal
+            avisoExterno={avisoSesionPausada}
+            onLimpiarAvisoExterno={() => setAvisoSesionPausada(null)}
             onLoginSuccess={(newSession) => {
+              setAvisoSesionPausada(null);
               setSession(newSession);
               mostrarMensaje(`¡Bienvenido, ${newSession.usuario.nombreCompleto}!`);
               const defRol = getDefinicionRol(normalizarRol(newSession.usuario.role));
@@ -1186,6 +1261,8 @@ export const App: React.FC = () => {
         onAbrirCopilot={() => setModalCopilotAbierto(true)}
         onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
         onAbrirGestionEstablecimientos={() => setModalGestionEstablecimientosAbierto(true)}
+        onAbrirControlSesiones={() => setModalControlSesionesAbierto(true)}
+        pausaRevisionActiva={pausaRevisionActiva}
         onGuardarCambiosEnNube={handleGuardarCambiosEnNube}
         guardandoEnNube={guardandoEnNube}
         sincronizandoNube={sincronizandoNube}
@@ -1596,6 +1673,21 @@ export const App: React.FC = () => {
         onGuardarColegio={handleGuardarColegio}
         onEliminarColegio={handleEliminarColegio}
       />
+
+      {/* Modal Exclusivo Super Usuario: Pausa / Inactivación Masiva de Sesiones por Estamento */}
+      {session?.usuario.role === 'super_usuario' && (
+        <ModalControlSesionesEstamentos
+          isOpen={modalControlSesionesAbierto}
+          onClose={() => setModalControlSesionesAbierto(false)}
+          usuarioEjecutor={session.usuario.nombreCompleto}
+          onActualizacionExitosa={(msg) => {
+            mostrarMensaje(msg, 'success');
+            const pausa = AuthService.getEstadoPausaRevision();
+            setPausaRevisionActiva(Boolean(pausa?.activa && (pausa.rolesAfectados || []).length > 0));
+            AuthService.getUsuarios().then(setUsuariosSistema).catch(() => {});
+          }}
+        />
+      )}
 
       {/* Botón Flotante Solo en Pantallas Móviles (en Desktop/Notebooks vive en la barra superior) */}
       {(!permisos || permisos.puedeUsarCopilotIa) && (

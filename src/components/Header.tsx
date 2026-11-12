@@ -4,7 +4,7 @@ import {
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
   Database, Search, Sparkles, BarChart3, CheckCircle2, CloudUpload, RefreshCw,
   UserCheck, Settings, Palette, Moon, Sun, Leaf, Eye, Menu, X, Globe,
-  LogOut, ShieldAlert, KeyRound, Loader2, CloudOff, Cloud
+  LogOut, ShieldAlert, KeyRound, Loader2, CloudOff, Cloud, PauseCircle
 } from 'lucide-react';
 import { Establecimiento } from '../types';
 import { AuthSession } from '../types/authTypes';
@@ -34,6 +34,8 @@ interface HeaderProps {
   onAbrirCopilot?: () => void;
   onAbrirConfiguraciones?: () => void;
   onAbrirGestionEstablecimientos?: () => void;
+  onAbrirControlSesiones?: () => void;
+  pausaRevisionActiva?: boolean;
   onGuardarCambiosEnNube?: (apartado?: any) => Promise<void>;
   guardandoEnNube?: boolean;
   onRefrescarNube?: (apartado?: any) => Promise<void>;
@@ -63,6 +65,8 @@ export const Header: React.FC<HeaderProps> = ({
   onAbrirCopilot,
   onAbrirConfiguraciones,
   onAbrirGestionEstablecimientos,
+  onAbrirControlSesiones,
+  pausaRevisionActiva = false,
   onGuardarCambiosEnNube,
   guardandoEnNube = false,
   onRefrescarNube,
@@ -465,6 +469,25 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
+            {/* Botón Control de Sesiones / Pausa Revisión Interna (Exclusivo Super Usuario) */}
+            {onAbrirControlSesiones && session?.usuario.role === 'super_usuario' && (
+              <button
+                onClick={onAbrirControlSesiones}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-black transition-all shadow-sm group ${
+                  pausaRevisionActiva
+                    ? 'border-amber-400 bg-amber-500/25 hover:bg-amber-500/40 text-amber-200 animate-pulse'
+                    : 'border-amber-500/40 bg-amber-950/40 hover:bg-amber-900/60 text-amber-200 hover:text-white'
+                }`}
+                title="Pausar o reactivar masivamente sesiones por estamento para Revisión Interna UATP (Super Usuario)"
+              >
+                <PauseCircle className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                <span className="hidden xl:inline">{pausaRevisionActiva ? 'Revisión Activa' : 'Pausa Sesiones'}</span>
+                {pausaRevisionActiva && (
+                  <span className="w-2 h-2 rounded-full bg-amber-300 animate-ping" />
+                )}
+              </button>
+            )}
+
             {/* Configuraciones (Solo usuarios con permiso o admin) */}
             {onAbrirConfiguraciones && (!permisos || permisos.puedeConfigurarSistema) && (
               <button
@@ -540,6 +563,23 @@ export const Header: React.FC<HeaderProps> = ({
                       >
                         <ShieldAlert className="w-4 h-4 text-rose-400" />
                         <span>Gestión de Establecimientos (Super Usuario)</span>
+                      </button>
+                    )}
+
+                    {onAbrirControlSesiones && session?.usuario.role === 'super_usuario' && (
+                      <button
+                        onClick={() => { onAbrirControlSesiones(); setToolsOpen(false); }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-amber-300 hover:bg-amber-950/60 transition-colors"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <PauseCircle className="w-4 h-4 text-amber-400" />
+                          <span>Pausa Revisión Interna (Sesiones)</span>
+                        </div>
+                        {pausaRevisionActiva && (
+                          <span className="px-1.5 py-0.5 text-[9px] uppercase rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            Activa
+                          </span>
+                        )}
                       </button>
                     )}
 

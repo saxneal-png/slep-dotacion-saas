@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, User, KeyRound, AlertCircle, Building2, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Lock, User, KeyRound, AlertCircle, Building2, Eye, EyeOff, Clock } from 'lucide-react';
 import { AuthService } from '../../services/authService';
 import { AuthSession } from '../../types/authTypes';
 
 interface LoginModalProps {
   onLoginSuccess: (session: AuthSession) => void;
   onAbrirOlvidoPassword?: () => void;
+  avisoExterno?: string | null;
+  onLimpiarAvisoExterno?: () => void;
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess, onAbrirOlvidoPassword }) => {
+export const LoginModal: React.FC<LoginModalProps> = ({
+  onLoginSuccess,
+  onAbrirOlvidoPassword,
+  avisoExterno,
+  onLimpiarAvisoExterno
+}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [mostrarPassword, setMostrarPassword] = useState(false);
@@ -59,6 +66,26 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess, onAbrirO
 
         {/* Formulario */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {avisoExterno && !error && (
+            <div className="flex items-start gap-2.5 p-3.5 text-xs text-amber-200 rounded-xl bg-amber-950/60 border border-amber-600/60 shadow-inner">
+              <Clock className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <p className="font-bold text-amber-300">Sesión Pausada por Revisión Interna UATP</p>
+                <p className="text-amber-200/90 leading-relaxed">{avisoExterno}</p>
+              </div>
+              {onLimpiarAvisoExterno && (
+                <button
+                  type="button"
+                  onClick={onLimpiarAvisoExterno}
+                  className="text-amber-400 hover:text-amber-200 text-xs font-bold px-1"
+                  title="Cerrar aviso"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )}
+
           {error && (
             <div className="flex items-center gap-2 p-3 text-xs text-red-300 rounded-lg bg-red-950/50 border border-red-800/60 animate-shake">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />

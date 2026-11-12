@@ -8,6 +8,7 @@ import {
   guardarUsuarioDb,
   guardarUsuariosBatchDb,
   eliminarUsuarioDb,
+  actualizarEstadoUsuariosMasivoDb,
   parseJsonArray
 } from '../database/repositories/usuariosRepo';
 import {
@@ -350,16 +351,21 @@ export class AuthService {
         (u.email && u.email.toLowerCase().split('@')[0] === cleanInput)
     );
 
-    // Si el usuario estÃ¡ registrado pero fue deshabilitado
-    if (encontrado && !encontrado.activo) {
-      const pausa = this.getEstadoPausaRevision();
+    // Si el usuario está registrado pero fue deshabilitado o su estamento está en pausa de revisión interna
+    if (encontrado) {
       const rolNorm = normalizarRol(encontrado.role);
-      if (pausa?.activa && pausa.rolesAfectados.includes(rolNorm)) {
-        throw new Error(
-          `Acceso pausado por Revisión Interna UATP: El trabajo para su estamento se encuentra suspendido temporalmente mientras el equipo territorial realiza la auditoría de dotación. Motivo: ${pausa.motivo || 'Revisión técnica en curso'}.`
-        );
+      const esProtegido = (encontrado.email || '').toLowerCase() === SUPER_USUARIO_EMAIL || ROLES_EXENTOS_PAUSA.includes(rolNorm);
+      if (!encontrado.activo || !esProtegido) {
+        const pausa = (await this.sincronizarEstadoPausaDesdeNube().catch(() => null)) || this.getEstadoPausaRevision();
+        if (pausa?.activa && pausa.rolesAfectados.includes(rolNorm) && !esProtegido) {
+          throw new Error(
+            `Acceso pausado por Revisión Interna UATP: El trabajo para su estamento se encuentra suspendido temporalmente mientras el equipo territorial realiza la auditoría de dotación. Motivo: ${pausa.motivo || 'Revisión técnica en curso'}.`
+          );
+        }
+        if (!encontrado.activo) {
+          throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
+        }
       }
-      throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
     }
     if (!encontrado) {
       throw new Error('Usuario no encontrado o cuenta deshabilitada.');
@@ -866,7 +872,7 @@ export class AuthService {
   }
 
   /**
-   * Obtiene el estado actual de la pausa de revisión interna territorial.
+   * Obtiene el estado actual de la pausa de revisión interna territorial desde caché local.
    */
   public static getEstadoPausaRevision(): EstadoPausaRevision | null {
     try {
@@ -876,6 +882,72 @@ export class AuthService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Persiste el estado de pausa en Supabase (configuracion_general id='pausa_revision_interna')
+   * para sincronizar entre todos los equipos del territorio.
+   */
+  public static async guardarEstadoPausaEnNube(estadoPausa: EstadoPausaRevision | null): Promise<void> {
+    if (!isSupabaseEnabled()) return;
+    try {
+      const payloadPausa: EstadoPausaRevision = estadoPausa && estadoPausa.activa
+        ? estadoPausa
+        : { activa: false, rolesAfectados: [] };
+      const { error } = await supabase
+        .from('configuracion_general')
+        .upsert(
+          {
+            id: 'pausa_revision_interna',
+            ui_config_json: payloadPausa,
+            actualizado_por: payloadPausa.activadoPor || 'Super Usuario',
+            ultima_modificacion: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        );
+      if (error) {
+        console.warn('[AuthService] Aviso guardando estado de pausa en Supabase:', error.message);
+      }
+    } catch (err) {
+      console.warn('[AuthService] Aviso sincronizando pausa en Supabase:', err);
+    }
+  }
+
+  /**
+   * Descarga y sincroniza el estado de pausa de revisión interna desde Supabase.
+   */
+  public static async sincronizarEstadoPausaDesdeNube(): Promise<EstadoPausaRevision | null> {
+    if (!isSupabaseEnabled()) {
+      return this.getEstadoPausaRevision();
+    }
+    try {
+      const { data, error } = await supabase
+        .from('configuracion_general')
+        .select('ui_config_json')
+        .eq('id', 'pausa_revision_interna')
+        .maybeSingle();
+
+      if (!error && data && data.ui_config_json) {
+        const raw = data.ui_config_json as Partial<EstadoPausaRevision>;
+        if (raw.activa && Array.isArray(raw.rolesAfectados) && raw.rolesAfectados.length > 0) {
+          const estado: EstadoPausaRevision = {
+            activa: true,
+            rolesAfectados: raw.rolesAfectados,
+            motivo: raw.motivo,
+            activadoPor: raw.activadoPor,
+            fechaActivacion: raw.fechaActivacion
+          };
+          localStorage.setItem(STORAGE_PAUSA_KEY, JSON.stringify(estado));
+          return estado;
+        } else {
+          localStorage.removeItem(STORAGE_PAUSA_KEY);
+          return null;
+        }
+      }
+    } catch (err) {
+      console.warn('[AuthService] Aviso leyendo estado de pausa desde Supabase:', err);
+    }
+    return this.getEstadoPausaRevision();
   }
 
   /**
@@ -896,7 +968,10 @@ export class AuthService {
    * Obtiene un resumen en vivo de usuarios totales, activos e inactivos por estamento/rol.
    */
   public static async getResumenEstamentos(): Promise<ResumenEstamentoPausa[]> {
-    const usuarios = await this.getUsuarios();
+    const [usuarios] = await Promise.all([
+      this.getUsuarios(),
+      this.sincronizarEstadoPausaDesdeNube().catch(() => null)
+    ]);
     return ROLES_DEFINICIONES.map(def => {
       const usersRol = usuarios.filter(u => normalizarRol(u.role) === def.id);
       const activos = usersRol.filter(u => u.activo !== false).length;
@@ -951,10 +1026,15 @@ export class AuthService {
       return u;
     });
 
-    // Guardar estado de la pausa
+    // Acumular con cualquier estamento ya pausado previamente
+    const estadoPrevio = this.getEstadoPausaRevision();
+    const rolesAcumulados = Array.from(
+      new Set([...(estadoPrevio?.activa ? estadoPrevio.rolesAfectados : []), ...rolesValidos])
+    );
+
     const estadoPausa: EstadoPausaRevision = {
       activa: true,
-      rolesAfectados: rolesValidos,
+      rolesAfectados: rolesAcumulados,
       motivo: motivo.trim() || 'Revisión técnica interna territorial UATP',
       activadoPor: usuarioEjecutor || 'Super Usuario',
       fechaActivacion: new Date().toISOString()
@@ -962,17 +1042,18 @@ export class AuthService {
     localStorage.setItem(STORAGE_PAUSA_KEY, JSON.stringify(estadoPausa));
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuariosActualizados));
 
-    // Persistir en SQLite WASM y Supabase
+    // Persistir en SQLite WASM y Supabase (UPDATE directo del campo activo + estado global en configuracion_general)
     if (modificados.length > 0) {
-      await guardarUsuariosBatchDb(modificados);
+      await actualizarEstadoUsuariosMasivoDb(modificados.map(m => m.id), false);
     }
+    await this.guardarEstadoPausaEnNube(estadoPausa);
 
     // Invalidar sesión activa local si el usuario autenticado pertenece al estamento pausado
     const sesionActual = this.getSessionActual();
     if (sesionActual) {
       const miRol = normalizarRol(sesionActual.usuario.role);
       const miEmail = (sesionActual.usuario.email || '').toLowerCase();
-      if (miEmail !== SUPER_USUARIO_EMAIL && rolesValidos.includes(miRol)) {
+      if (miEmail !== SUPER_USUARIO_EMAIL && !ROLES_EXENTOS_PAUSA.includes(miRol) && rolesValidos.includes(miRol)) {
         this.logout();
       }
     }
@@ -995,9 +1076,10 @@ export class AuthService {
     roles?: RolId[]
   ): Promise<{ totalReactivados: number; rolesReactivados: RolId[] }> {
     const estadoPrevio = this.getEstadoPausaRevision();
-    const rolesAReactivar = roles && roles.length > 0
+    const rolesAReactivar = (roles && roles.length > 0
       ? Array.from(new Set(roles))
-      : (estadoPrevio?.rolesAfectados || ROLES_PAUSABLES_ESTAMENTO.slice());
+      : (estadoPrevio?.rolesAfectados || ROLES_PAUSABLES_ESTAMENTO.slice())
+    ).filter(r => !ROLES_EXENTOS_PAUSA.includes(r));
 
     const usuarios = await this.getUsuarios();
     const modificados: UsuarioSistema[] = [];
@@ -1014,20 +1096,24 @@ export class AuthService {
 
     // Actualizar estado de pausa
     const rolesRestantes = (estadoPrevio?.rolesAfectados || []).filter(r => !rolesAReactivar.includes(r));
+    let nuevoEstadoPausa: EstadoPausaRevision | null = null;
     if (rolesRestantes.length === 0) {
       localStorage.removeItem(STORAGE_PAUSA_KEY);
     } else {
-      localStorage.setItem(STORAGE_PAUSA_KEY, JSON.stringify({
-        ...estadoPrevio,
+      nuevoEstadoPausa = {
+        ...(estadoPrevio || { activa: true, rolesAfectados: rolesRestantes }),
+        activa: true,
         rolesAfectados: rolesRestantes
-      }));
+      };
+      localStorage.setItem(STORAGE_PAUSA_KEY, JSON.stringify(nuevoEstadoPausa));
     }
 
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuariosActualizados));
 
     if (modificados.length > 0) {
-      await guardarUsuariosBatchDb(modificados);
+      await actualizarEstadoUsuariosMasivoDb(modificados.map(m => m.id), true);
     }
+    await this.guardarEstadoPausaEnNube(nuevoEstadoPausa);
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('slep:sesiones_reactivadas', { detail: { rolesReactivados: rolesAReactivar } }));
@@ -1040,7 +1126,7 @@ export class AuthService {
   }
 
   /**
-   * Verifica si una sesión activa sigue siendo válida en el sistema.
+   * Verifica de forma síncrona/local si una sesión activa sigue siendo válida en el sistema.
    * Si la cuenta fue inactivada o el estamento fue pausado por revisión interna, retorna valida: false.
    */
   public static verificarSesionValida(session: AuthSession | null): { valida: boolean; motivo?: string } {
@@ -1051,22 +1137,24 @@ export class AuthService {
     const emailNorm = (session.usuario.email || '').toLowerCase();
     const rolNorm = normalizarRol(session.usuario.role);
 
-    // Super usuario oficial y roles de supervisión UATP siempre son válidos
+    // Super usuario oficial siempre es válido
     if (emailNorm === SUPER_USUARIO_EMAIL || rolNorm === 'super_usuario') {
       return { valida: true };
     }
 
     const usuarios = this.getUsuariosLocal();
     const yo = usuarios.find(u => u.id === session.usuario.id || (u.email && u.email.toLowerCase() === emailNorm));
+    const pausa = this.getEstadoPausaRevision();
+
+    // Si hay pausa activa para su rol y no es un rol protegido UATP, invalidar de inmediato
+    if (!ROLES_EXENTOS_PAUSA.includes(rolNorm) && pausa?.activa && pausa.rolesAfectados.includes(rolNorm)) {
+      return {
+        valida: false,
+        motivo: 'Sesión pausada: El acceso a su estamento se encuentra suspendido temporalmente por inicio del período de Revisión Interna UATP (' + (pausa.motivo || 'Auditoría técnica') + ').'
+      };
+    }
 
     if (yo && !yo.activo) {
-      const pausa = this.getEstadoPausaRevision();
-      if (pausa?.activa && pausa.rolesAfectados.includes(rolNorm)) {
-        return {
-          valida: false,
-          motivo: 'Sesión pausada: El acceso a su estamento se encuentra suspendido temporalmente por inicio del período de Revisión Interna UATP (' + (pausa.motivo || 'Auditoría técnica') + ').'
-        };
-      }
       return {
         valida: false,
         motivo: 'Su cuenta ha sido deshabilitada por el administrador del sistema.'
@@ -1076,4 +1164,60 @@ export class AuthService {
     return { valida: true };
   }
 
+  /**
+   * Verifica contra Supabase (en la nube) si la sesión activa sigue habilitada
+   * o si el Super Usuario activó una pausa de revisión interna desde otro equipo.
+   */
+  public static async verificarSesionRemota(session: AuthSession | null): Promise<{ valida: boolean; motivo?: string }> {
+    const checkLocal = this.verificarSesionValida(session);
+    if (!checkLocal.valida) {
+      return checkLocal;
+    }
+    if (!session || !session.usuario || !isSupabaseEnabled()) {
+      return checkLocal;
+    }
+
+    const emailNorm = (session.usuario.email || '').toLowerCase();
+    const rolNorm = normalizarRol(session.usuario.role);
+    if (emailNorm === SUPER_USUARIO_EMAIL || rolNorm === 'super_usuario') {
+      return { valida: true };
+    }
+
+    try {
+      const [userResp, pausaRemota] = await Promise.all([
+        supabase
+          .from('usuarios_sistema')
+          .select('activo, role')
+          .eq('id', session.usuario.id)
+          .maybeSingle(),
+        this.sincronizarEstadoPausaDesdeNube().catch(() => this.getEstadoPausaRevision())
+      ]);
+
+      const rolEfectivo = userResp.data?.role ? normalizarRol(userResp.data.role) : rolNorm;
+
+      if (!ROLES_EXENTOS_PAUSA.includes(rolEfectivo) && pausaRemota?.activa && pausaRemota.rolesAfectados.includes(rolEfectivo)) {
+        return {
+          valida: false,
+          motivo: 'Sesión pausada: El acceso a su estamento se encuentra suspendido temporalmente por inicio del período de Revisión Interna UATP (' + (pausaRemota.motivo || 'Auditoría técnica') + ').'
+        };
+      }
+
+      if (!userResp.error && userResp.data && userResp.data.activo === false) {
+        // Actualizar caché local
+        const locales = this.getUsuariosLocal();
+        if (locales.length > 0) {
+          const actualizados = locales.map(u => (u.id === session.usuario.id ? { ...u, activo: false } : u));
+          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(actualizados));
+        }
+        return {
+          valida: false,
+          motivo: 'Su cuenta ha sido deshabilitada por el administrador del sistema.'
+        };
+      }
+    } catch (err) {
+      console.warn('[AuthService] Aviso verificando sesión remota:', err);
+    }
+
+    return { valida: true };
+  }
 }

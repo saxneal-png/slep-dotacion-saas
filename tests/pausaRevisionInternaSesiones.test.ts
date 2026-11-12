@@ -180,4 +180,73 @@ describe('Control de Sesiones Masivo y Pausa por Revisión Interna UATP', () => 
     expect(session.usuario.email).toBe(primerDirector.email);
     expect(session.usuario.activo).toBe(true);
   });
+
+  it('acumula múltiples estamentos pausados secuencialmente y permite reactivar solo uno manteniendo el otro en pausa', async () => {
+    await AuthService.guardarUsuario({
+      id: 'user-utp-prueba-1',
+      username: 'utp.prueba@slepvallediguillin.cl',
+      email: 'utp.prueba@slepvallediguillin.cl',
+      nombreCompleto: 'Jefe UTP Prueba',
+      role: 'jefe_utp_establecimiento',
+      cargo: 'Jefe UTP',
+      rbdAsignado: DIRECTORES_TERRITORIO[0].rbd,
+      passwordHash: 'hash',
+      salt: 'salt',
+      activo: true
+    });
+
+    await AuthService.pausarAccesoMasivo(['director_establecimiento'], 'Etapa 1');
+    await AuthService.pausarAccesoMasivo(['jefe_utp_establecimiento'], 'Etapa 2');
+
+    let pausa = AuthService.getEstadoPausaRevision();
+    expect(pausa?.activa).toBe(true);
+    expect(pausa?.rolesAfectados).toContain('director_establecimiento');
+    expect(pausa?.rolesAfectados).toContain('jefe_utp_establecimiento');
+
+    // Reactivar solo directores
+    await AuthService.reactivarAccesoMasivo(['director_establecimiento']);
+    pausa = AuthService.getEstadoPausaRevision();
+    expect(pausa?.activa).toBe(true);
+    expect(pausa?.rolesAfectados).not.toContain('director_establecimiento');
+    expect(pausa?.rolesAfectados).toContain('jefe_utp_establecimiento');
+
+    // Reactivar jefes UTP limpia la pausa
+    await AuthService.reactivarAccesoMasivo(['jefe_utp_establecimiento']);
+    expect(AuthService.getEstadoPausaRevision()).toBeNull();
+  });
+
+  it('mantiene válidas las sesiones de asesor_uatp y coordinador_uatp durante pausa total escolar', async () => {
+    await AuthService.pausarAccesoMasivo(['director_establecimiento', 'jefe_utp_establecimiento']);
+
+    const sesionAsesor: AuthSession = {
+      usuario: {
+        id: 'user-asesor-uatp-1',
+        username: 'asesor@slepvallediguillin.cl',
+        email: 'asesor@slepvallediguillin.cl',
+        nombreCompleto: 'Asesor UATP',
+        role: 'asesor_uatp',
+        cargo: 'Asesor UATP',
+        activo: true
+      },
+      token: 'tok-asesor',
+      iniciadoEn: new Date().toISOString()
+    };
+
+    const sesionCoord: AuthSession = {
+      usuario: {
+        id: 'user-coord-uatp-1',
+        username: 'coordinador@slepvallediguillin.cl',
+        email: 'coordinador@slepvallediguillin.cl',
+        nombreCompleto: 'Coordinador UATP',
+        role: 'coordinador_uatp',
+        cargo: 'Coordinador UATP',
+        activo: true
+      },
+      token: 'tok-coord',
+      iniciadoEn: new Date().toISOString()
+    };
+
+    expect(AuthService.verificarSesionValida(sesionAsesor).valida).toBe(true);
+    expect(AuthService.verificarSesionValida(sesionCoord).valida).toBe(true);
+  });
 });

@@ -75,9 +75,12 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
       if (AuthService.getUsuariosLocal().length === 0) {
         setCargando(true);
       }
-      const lista = await AuthService.getUsuarios();
+      const [lista, pausaNube] = await Promise.all([
+        AuthService.getUsuarios(),
+        AuthService.sincronizarEstadoPausaDesdeNube().catch(() => AuthService.getEstadoPausaRevision())
+      ]);
       setUsuarios(lista);
-      setEstadoPausaRevision(AuthService.getEstadoPausaRevision());
+      setEstadoPausaRevision(pausaNube);
     } catch (e) {
       console.error('[UsuariosConfigTab] Error cargando usuarios:', e);
     } finally {
@@ -87,6 +90,15 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
 
   useEffect(() => {
     cargarLista();
+    const handleEventoPausa = () => {
+      cargarLista();
+    };
+    window.addEventListener('slep:sesiones_pausadas', handleEventoPausa);
+    window.addEventListener('slep:sesiones_reactivadas', handleEventoPausa);
+    return () => {
+      window.removeEventListener('slep:sesiones_pausadas', handleEventoPausa);
+      window.removeEventListener('slep:sesiones_reactivadas', handleEventoPausa);
+    };
   }, []);
 
   const asesoresDisponibles = useMemo(
@@ -415,6 +427,20 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                 {generandoDirectores ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-amber-200" />}
                 <span>Generar Usuarios Directores</span>
               </button>
+              {esSuper && (
+                <button
+                  type="button"
+                  onClick={() => setModalControlSesionesAbierto(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-gradient-to-r from-rose-600 via-rose-700 to-amber-700 hover:from-rose-500 hover:to-amber-600 rounded-xl shadow-md shadow-rose-950/40 border border-rose-500/40 transition"
+                  title="Inactivar o pausar sesiones masivamente por estamento para iniciar revisión interna territorial"
+                >
+                  <PauseCircle className="w-4 h-4 text-amber-200" />
+                  <span>Pausa Revisión Interna</span>
+                  {estadoPausaRevision?.activa && (estadoPausaRevision.rolesAfectados || []).length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-amber-300 animate-ping" />
+                  )}
+                </button>
+              )}
               <button
                 onClick={abrirModalNuevo}
                 className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md shadow-blue-600/30 transition"
@@ -433,6 +459,37 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
         }`}>
           {mensaje.tipo === 'ok' ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
           <span>{mensaje.texto}</span>
+        </div>
+      )}
+
+      {/* Banner de Revisión Interna Activa */}
+      {estadoPausaRevision?.activa && (estadoPausaRevision.rolesAfectados || []).length > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-950/50 border border-amber-600/60 shadow-lg flex items-center justify-between gap-4 flex-wrap animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-amber-200 uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
+                <span>Período de Revisión Interna Territorial UATP Activo</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  Sesiones Escolares Pausadas
+                </span>
+              </h4>
+              <p className="text-xs text-amber-300/90 mt-0.5">
+                El acceso está pausado para: <strong>{estadoPausaRevision.rolesAfectados.map(r => getDefinicionRol(r).nombre).join(', ')}</strong>. Los Asesores UATP, Coordinadores y Super Usuarios mantienen acceso pleno. Motivo: &quot;{estadoPausaRevision.motivo || 'Revisión territorial'}&quot;.
+              </p>
+            </div>
+          </div>
+          {esSuper && (
+            <button
+              type="button"
+              onClick={() => setModalControlSesionesAbierto(true)}
+              className="px-3.5 py-1.5 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-xl shadow transition"
+            >
+              Administrar / Reactivar Pausa
+            </button>
+          )}
         </div>
       )}
 
@@ -541,6 +598,11 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                           <>
                             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                             <span>Habilitado</span>
+                          </>
+                        ) : estadoPausaRevision?.activa && estadoPausaRevision.rolesAfectados.includes(normalizarRol(u.role)) ? (
+                          <>
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            <span>Pausado (Revisión)</span>
                           </>
                         ) : (
                           <>
@@ -876,6 +938,17 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
           </div>
         </div>
       )}
+
+      {/* Modal Control Masivo de Sesiones y Pausa por Revisión Interna */}
+      <ModalControlSesionesEstamentos
+        isOpen={modalControlSesionesAbierto}
+        onClose={() => setModalControlSesionesAbierto(false)}
+        usuarioEjecutor={AuthService.getSessionActual()?.usuario?.nombreCompleto || 'Super Usuario'}
+        onActualizacionExitosa={(msg) => {
+          setMensaje({ tipo: 'ok', texto: msg });
+          cargarLista();
+        }}
+      />
     </div>
   );
 };
