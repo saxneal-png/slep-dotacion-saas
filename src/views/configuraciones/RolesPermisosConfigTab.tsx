@@ -158,7 +158,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
             <select
               value={rolSimulado || 'real'}
               onChange={e => setRolSimulado(e.target.value === 'real' ? null : (e.target.value as RolId))}
-              className="text-xs bg-slate-900 border border-slate-700 rounded-lg text-white font-semibold px-2 py-1"
+              className="text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-semibold px-2 py-1"
             >
               <option value="real">Vista Super Usuario (Real)</option>
               {ROLES_DEFINICIONES.filter(r => r.id !== 'super_usuario').map(r => (
@@ -227,7 +227,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
                     className={`w-full text-left p-3 rounded-xl border transition flex flex-col gap-1 ${
                       activo
                         ? 'bg-blue-900/40 border-blue-500 shadow-md'
-                        : 'bg-slate-900/60 border-slate-800 hover:bg-slate-800/60 text-slate-300'
+                        : 'bg-white dark:bg-slate-900/60 border-slate-800 hover:bg-slate-800/60 text-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -272,7 +272,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
                   {/* Selector Copiar Desde */}
                   <select
                     onChange={e => { if (e.target.value) handleCopiarDesde(e.target.value as RolId); e.target.value = ''; }}
-                    className="text-xs bg-slate-950 border border-slate-700 rounded-lg text-slate-300 px-2.5 py-1.5"
+                    className="text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 px-2.5 py-1.5"
                     defaultValue=""
                   >
                     <option value="" disabled>Copiar permisos de…</option>
@@ -313,7 +313,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
                 <button
                   onClick={() => setFiltroGrupo('todos')}
                   className={`px-2.5 py-1 text-xs font-semibold rounded-lg ${
-                    filtroGrupo === 'todos' ? 'bg-blue-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
+                    filtroGrupo === 'todos' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Todos ({CATALOGO_PERMISOS.length})
@@ -323,7 +323,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
                     key={g.id}
                     onClick={() => setFiltroGrupo(g.id)}
                     className={`px-2.5 py-1 text-xs font-semibold rounded-lg ${
-                      filtroGrupo === g.id ? 'bg-blue-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
+                      filtroGrupo === g.id ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     {g.nombre}
@@ -341,7 +341,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
             </div>
 
             {/* Tabla de Matriz */}
-            <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/60">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-800/80 text-[11px] font-bold uppercase text-slate-400 border-b border-slate-700">
                   <tr>
@@ -441,7 +441,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
             </span>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/60">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60">
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-800/80 text-[11px] font-bold uppercase text-slate-400 border-b border-slate-700">
                 <tr>
@@ -507,7 +507,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
       {/* Modal de Confirmación con Diff antes de guardar */}
       {modalConfirmar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 space-y-4">
+          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
               <div className="p-2.5 bg-blue-500/20 text-blue-400 border border-blue-500/40 rounded-xl">
                 <ShieldCheck className="w-6 h-6" />
@@ -559,7 +559,7 @@ export const RolesPermisosConfigTab: React.FC = () => {
                 value={motivoCambio}
                 onChange={e => setMotivoCambio(e.target.value)}
                 placeholder="ej: Habilitar exportación de planillas DEP para el rol"
-                className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white"
+                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
               />
             </div>
 

@@ -392,14 +392,14 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
               value={busquedaUsuario}
               onChange={e => setBusquedaUsuario(e.target.value)}
               placeholder="Buscar por nombre, correo o RBD..."
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-52 sm:w-60"
+              className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-52 sm:w-60"
             />
           </div>
 
           <select
             value={filtroRol}
             onChange={e => setFiltroRol(e.target.value as any)}
-            className="px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white"
+            className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
           >
             <option value="todos">Todos los roles ({usuarios.length})</option>
             {ROLES_DEFINICIONES.map(r => {
@@ -494,7 +494,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
       )}
 
       {/* Lista de Usuarios */}
-      <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/60">
+      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60">
         <table className="w-full text-left text-xs text-slate-300">
           <thead className="bg-slate-800/80 text-[11px] font-bold uppercase text-slate-400 border-b border-slate-700">
             <tr>
@@ -655,7 +655,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
       {/* Modal Crear / Editar Usuario */}
       {modalAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6">
             <h4 className="text-base font-bold text-white mb-4 flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-amber-400" />
               {usuarioEnEdicion ? `Editar Usuario: ${usuarioEnEdicion.username}` : 'Crear Nuevo Usuario'}
@@ -672,7 +672,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                   value={username}
                   onChange={e => setUsername(e.target.value)}
                   placeholder="ej: dir_pueblo_seco"
-                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
 
@@ -687,7 +687,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                     value={nombreCompleto}
                     onChange={e => setNombreCompleto(e.target.value)}
                     placeholder="ej: María González Tapia"
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -698,7 +698,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                     type="text"
                     value={cargo}
                     onChange={e => setCargo(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -713,7 +713,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="direccion@slepvallediguillin.cl"
-                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
 
@@ -730,7 +730,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                       setRole(r);
                       setCargo(CARGO_POR_ROL[r]);
                     }}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   >
                     {(esCuentaOficial ? ROLES_DEFINICIONES.filter(r => r.id === 'super_usuario') : rolesAsignables).map(r => (
                       <option key={r.id} value={r.id}>{r.nombre}</option>
@@ -749,7 +749,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder={usuarioEnEdicion ? 'Dejar en blanco para conservar' : '••••••••'}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -762,7 +762,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                   <select
                     value={rbdAsignado}
                     onChange={e => setRbdAsignado(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {colegios.map(c => (
                       <option key={c.id} value={c.rbd}>
@@ -839,7 +839,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                       value={busquedaCartera}
                       onChange={e => setBusquedaCartera(e.target.value)}
                       placeholder="Buscar por nombre, RBD o comuna…"
-                      className="w-full pl-8 pr-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-2 space-y-0.5">
@@ -891,7 +891,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
       {/* Modal Resetear Contraseña (Super Usuario / Admin) */}
       {modalResetAbierto && usuarioReset && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2.5 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-xl">
                 <RotateCcw className="w-5 h-5" />
@@ -912,7 +912,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                   required
                   value={nuevaPasswordReset}
                   onChange={e => setNuevaPasswordReset(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
                 <span className="text-[10px] text-slate-400 mt-1 block">
                   El usuario podrá ingresar con esta clave y luego cambiarla voluntariamente desde su perfil.

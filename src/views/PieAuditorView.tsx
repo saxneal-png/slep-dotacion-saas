@@ -140,39 +140,39 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Banner Decreto 170 y Ordinario 2398 */}
-      <div className="bg-slate-900 text-white p-6 rounded-xl border border-slate-800 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-orange-600/30 border border-orange-500/40 text-orange-400 text-[11px] font-bold">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Normativa Oficial Decreto 170/2009 & Ordinario N° 2398 MINEDUC
-            </div>
-            <h2 className="text-xl font-bold text-white mt-2">
-              Auditoría y Cuadre de Horas PIE - {colegio.nombre}
-            </h2>
-            <p className="text-xs text-slate-300 mt-1 max-w-3xl">
-              Cálculo normativo exacto de demanda de Educadores Diferenciales, Profesionales Asistentes PAE
-              (fonoaudiología, psicología, terapia ocupacional) y las 3.0 horas obligatorias de Trabajo Colaborativo / Co-docencia (Art. 86).
-            </p>
+      {/* Header Slim Dec. 170 (Tema adaptativo + KPIs compactos) */}
+      <div className="card-elevated px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 text-[10px] font-bold uppercase tracking-wider">
+            <ShieldCheck className="w-3 h-3" />
+            Dec. 170 & Ord. 2398
+          </span>
+          <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight truncate">
+            Auditoría y Cuadre PIE · {colegio.nombre}
+          </h2>
+          <span
+            className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[11px] font-bold cursor-help"
+            title="Cálculo normativo de demanda Ed. Diferencial, Profesionales PAE y 3.0h obligatorias de Trabajo Colaborativo / Co-docencia (Art. 86)."
+          >
+            ?
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">Diferencial</span>
+            <span className="text-sm font-black font-mono tabular-nums text-orange-600 dark:text-orange-400">{totalDemandaEdDiferencial.toFixed(1)}h</span>
+            <span className={`text-[10px] font-bold font-mono tabular-nums ${balanceDiferencial >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {balanceDiferencial >= 0 ? `+${balanceDiferencial.toFixed(1)}h` : `${balanceDiferencial.toFixed(1)}h`}
+            </span>
           </div>
 
-          <div className="flex gap-3">
-            <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center min-w-[120px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">Demanda Diferencial</div>
-              <div className="text-lg font-black text-orange-400">{totalDemandaEdDiferencial.toFixed(1)}h</div>
-              <div className={`text-[10px] font-bold ${balanceDiferencial >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {balanceDiferencial >= 0 ? `+${balanceDiferencial.toFixed(1)}h Superávit` : `${balanceDiferencial.toFixed(1)}h Déficit`}
-              </div>
-            </div>
-
-            <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center min-w-[120px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">Demanda PAE</div>
-              <div className="text-lg font-black text-blue-400">{totalDemandaPae.toFixed(1)}h</div>
-              <div className={`text-[10px] font-bold ${balancePae >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {balancePae >= 0 ? `+${balancePae.toFixed(1)}h Superávit` : `${balancePae.toFixed(1)}h Déficit`}
-              </div>
-            </div>
+          <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5">
+            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">PAE</span>
+            <span className="text-sm font-black font-mono tabular-nums text-blue-600 dark:text-blue-400">{totalDemandaPae.toFixed(1)}h</span>
+            <span className={`text-[10px] font-bold font-mono tabular-nums ${balancePae >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {balancePae >= 0 ? `+${balancePae.toFixed(1)}h` : `${balancePae.toFixed(1)}h`}
+            </span>
           </div>
         </div>
       </div>

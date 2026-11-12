@@ -620,7 +620,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               title="Mostrar u ocultar las 12 tarjetas de desglose financiero y multitramo"
             >
               <Coins className="w-3.5 h-3.5 text-orange-600" />
-              <span>{mostrarDesgloseFinanciero ? 'Ocultar Finanzas' : 'Desglose Financiero (12)'}</span>
+              <span>{mostrarDesgloseFinanciero ? 'Ocultar Finanzas' : 'Finanzas'}</span>
               {mostrarDesgloseFinanciero ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
@@ -670,8 +670,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         {mostrarDesgloseFinanciero && (
           <div className="pt-3 border-t border-slate-100 space-y-3 animate-fade-in">
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-              <div className="bg-slate-900 text-white p-2.5 rounded-xl">
-                <span className="text-[10px] text-slate-300 font-semibold block uppercase">1. Total Contrato</span>
+              <div className="card-elevated p-2.5 rounded-xl border-slate-300 dark:border-slate-700">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold block uppercase">1. Total Contrato</span>
                 <span className="text-lg font-black font-mono">{totalContratoReal} <span className="text-xs font-normal text-slate-400">hrs</span></span>
               </div>
               <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">

@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import {
-  Scale, Users, BookOpen, Clock, ShieldCheck, LayoutGrid,
-  FileSpreadsheet, Printer, ArrowRightLeft, FileUp, FileDown, Sparkles,
-  Building2, MapPin, AlertTriangle, CheckCircle2, ChevronRight, Calendar, Trash2, ShieldAlert, ChevronDown, ChevronUp, Minimize2, Maximize2,
-  CloudUpload, RefreshCw, Loader2, Radio
+  Scale, Users, BookOpen, ShieldCheck, LayoutGrid,
+  FileSpreadsheet, Printer, FileUp, FileDown, Sparkles,
+  MapPin, ChevronRight, Calendar, Trash2, ShieldAlert, ChevronDown,
+  RefreshCw, Radio
 } from 'lucide-react';
 import { useColaboracionColegio } from '../services/colaboracionService';
 import {
@@ -29,7 +29,6 @@ import { ExportarEstablecimientoModal } from '../components/ExportarEstablecimie
 import { ImportarEstablecimientoModal } from '../components/ImportarEstablecimientoModal';
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
 import { CentroDescargasModal } from '../components/CentroDescargasModal';
-import { ProgresoDotacionBar } from '../components/ProgresoDotacionBar';
 import { ModalAuditoriaIntegridad } from '../components/ModalAuditoriaIntegridad';
 import { PermisosRol } from '../types/authTypes';
 
@@ -145,10 +144,6 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   const [modalCentroDescargasAbierto, setModalCentroDescargasAbierto] = useState(false);
   const [modalIntegridadAbierto, setModalIntegridadAbierto] = useState(false);
   const [menuAvanzadoAbierto, setMenuAvanzadoAbierto] = useState(false);
-  const [kpisExpandidos, setKpisExpandidos] = useState<boolean>(() => {
-    if (typeof window !== 'undefined' && window.innerHeight <= 864) return false;
-    return true;
-  });
   const [alertaCambioRemoto, setAlertaCambioRemoto] = useState<{
     apartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general';
     mensaje: string;
@@ -189,13 +184,6 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
     }
   });
 
-  // Auto-compactar KPIs cuando el usuario entra a tablas densas (Docentes, Cursos, Asistentes, PIE, Salas)
-  React.useEffect(() => {
-    if (tabActiva !== 'balanza' && typeof window !== 'undefined' && window.innerHeight <= 920) {
-      setKpisExpandidos(false);
-    }
-  }, [tabActiva]);
-
   const handleEjecutarVaciarDotacion = async () => {
     if (onLimpiarDotacionColegio) {
       await onLimpiarDotacionColegio(periodoActivo, colegio.rbd);
@@ -204,6 +192,16 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 
   const bg = diagnostico?.balanzaGeneral;
   const balance = bg?.superavitDeficitLectivo || 0;
+
+  const porcentajeAvance = useMemo(() => {
+    let completados = 0;
+    if (cursos.length > 0) completados++;
+    if (docentes.length > 0) completados++;
+    if (asignaciones.length > 0) completados++;
+    if (asistentes.length > 0) completados++;
+    if (balance >= 0 && cursos.length > 0 && docentes.length > 0) completados++;
+    return Math.round((completados / 5) * 100);
+  }, [cursos.length, docentes.length, asignaciones.length, asistentes.length, balance]);
 
   const tabs = [
     { id: 'balanza' as const, label: 'Balanza & Diagnóstico', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` },
@@ -217,86 +215,72 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   return (
     <div className="space-y-3.5 animate-fade-in">
       
-      {/* Cockpit Ejecutivo Superior Adaptativo */}
-      <div className="card-elevated p-4 sm:p-5 overflow-hidden transition-all">
-        <div className={`flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 ${kpisExpandidos ? 'pb-4 border-b border-slate-100 dark:border-slate-800' : ''}`}>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-mono">
-                RBD {colegio.rbd}
-              </span>
-              <span className={`px-2 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
-                periodoActivo === 2027 
-                  ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800' 
-                  : 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-              }`}>
-                <Calendar className="w-3 h-3" />
-                {periodoActivo === 2027 ? 'Dotación 2027' : 'Dotación 2026'}
-              </span>
-              <span className="text-slate-300 dark:text-slate-700">•</span>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-slate-400" /> {colegio.comuna}
-              </span>
-              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
-              <span className="hidden sm:inline text-xs font-semibold text-slate-500 dark:text-slate-400">
-                {colegio.regimen} ({colegio.porcentajePrioritarios}% SEP • {colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35'})
-              </span>
-              <span className="hidden lg:inline text-slate-300 dark:text-slate-700">•</span>
-              <span className="hidden lg:inline text-xs text-slate-500 dark:text-slate-400">
-                Dir: <strong className="text-slate-700 dark:text-slate-300">{colegio.director || 'S/I'}</strong>
-              </span>
-            </div>
+      {/* Cockpit Slim 1-Línea (Jobs + Toyota Lean: Cero ruido, máximo espacio de tabla) */}
+      <div className="card-elevated px-3.5 py-2.5">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+          <div className="min-w-0 flex items-center gap-2 flex-wrap">
+            <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-mono shrink-0">
+              RBD {colegio.rbd}
+            </span>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight truncate max-w-full sm:max-w-[320px] xl:max-w-[440px]">
+              {colegio.nombre}
+            </h2>
+            <button
+              onClick={onAbrirNavegadorColegios}
+              className="text-[11px] font-bold text-orange-600 dark:text-orange-400 hover:text-orange-700 bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 px-2 py-0.5 rounded-lg border border-orange-200 dark:border-orange-800/60 transition-colors inline-flex items-center gap-0.5 shrink-0"
+              title="Cambiar de escuela (Ctrl+K / ⌘K)"
+            >
+              <span>Cambiar</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
 
-            <div className="flex items-center gap-2.5 flex-wrap mt-1.5">
-              <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight truncate">
-                {colegio.nombre}
-              </h2>
-              <button
-                onClick={onAbrirNavegadorColegios}
-                className="text-[11px] font-bold text-orange-600 dark:text-orange-400 hover:text-orange-700 bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 px-2 py-0.5 rounded-lg border border-orange-200 dark:border-orange-800/60 transition-colors inline-flex items-center gap-1 shrink-0"
-                title="Cambiar de escuela (Ctrl+K / ⌘K)"
-              >
-                <span>Cambiar</span>
-                <ChevronRight className="w-3 h-3" />
-              </button>
+            <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+              <span className="inline-flex items-center gap-1 font-semibold">
+                <MapPin className="w-3 h-3 text-slate-400" /> {colegio.comuna}
+              </span>
+              <span>·</span>
+              <span>{colegio.regimen}</span>
+              <span>·</span>
+              <span className="font-mono font-semibold">{colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35'}</span>
+              <span>·</span>
+              <span className="truncate max-w-[160px]" title={colegio.director || 'S/I'}>
+                Dir: {colegio.director || 'S/I'}
+              </span>
+            </span>
 
-              {/* Resumen KPI en línea cuando el modo compacto está activo */}
-              {!kpisExpandidos && (
-                <div className="hidden md:flex items-center gap-1.5 ml-1 flex-wrap">
-                  <span className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold border ${
-                    balance > 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : balance < 0 ? 'bg-rose-50 text-rose-800 border-rose-200' : 'bg-slate-100 text-slate-700 border-slate-200'
-                  }`}>
-                    Balanza: {balance > 0 ? `+${balance}` : balance} HA
-                  </span>
-                  <span className="px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                    Demanda: {bg?.horasAulaDemandadasCurriculo || 0} HA
-                  </span>
-                  <span className="px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                    Matrícula: {bg?.totalMatriculaProyectada || 0}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300">
-                    PIE: {bg?.horasPieDemandadas || 0}h
-                  </span>
-                </div>
-              )}
-            </div>
+            <span
+              className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold border shrink-0 ${
+                balance > 0
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                  : balance < 0
+                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+              }`}
+              title="Balanza de horas lectivas en aula"
+            >
+              Balanza {balance > 0 ? `+${balance}` : balance} HA
+            </span>
+
+            <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold inline-flex items-center gap-1 shrink-0 ${
+              periodoActivo === 2027
+                ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300'
+                : 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300'
+            }`}>
+              <Calendar className="w-2.5 h-2.5" />
+              {periodoActivo}
+            </span>
           </div>
 
-          {/* Barra de Acciones Desduplicada y Compacta */}
-          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-            {/* Indicador de Colaboración en Tiempo Real */}
+          {/* Acciones Consolidadas (Sin botón Guardar duplicado; vive en el Header global) */}
+          <div className="flex items-center gap-1.5 shrink-0">
             {hayOtrosUsuarios && (
               <div className="relative group">
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-bold shadow-sm">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                  </span>
-                  <span>{usuariosEnColegio.length} colega{usuariosEnColegio.length > 1 ? 's' : ''} activo{usuariosEnColegio.length > 1 ? 's' : ''}</span>
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-bold">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  <span>{usuariosEnColegio.length} activo{usuariosEnColegio.length > 1 ? 's' : ''}</span>
                 </div>
-                {/* Tooltip con los usuarios y sus apartados */}
-                <div className="absolute right-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-xl p-2.5 shadow-2xl z-50 text-[11px] text-slate-300 hidden group-hover:block animate-in fade-in">
-                  <p className="font-bold text-white border-b border-slate-700 pb-1 mb-1.5">Trabajando ahora en esta escuela:</p>
+                <div className="absolute right-0 top-full mt-1.5 w-64 bg-slate-900 border border-slate-700 rounded-xl p-2.5 shadow-2xl z-50 text-[11px] text-slate-300 hidden group-hover:block">
+                  <p className="font-bold text-white border-b border-slate-700 pb-1 mb-1.5">Editando en este colegio:</p>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto">
                     {usuariosEnColegio.map((u, i) => (
                       <div key={i} className="flex flex-col border-b border-slate-800 last:border-0 pb-1">
@@ -312,289 +296,187 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
               </div>
             )}
 
-            {/* Botón Guardar este Apartado en Supabase */}
-            {onGuardarApartadoNube && (
-              <button
-                type="button"
-                onClick={() => onGuardarApartadoNube(tabActiva === 'balanza' ? 'general' : tabActiva)}
-                disabled={guardandoEnNube}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md border border-emerald-400/40 transition-all active:scale-[0.98]"
-                title={`Guardar exclusivamente los cambios de la pestaña "${tabs.find(t => t.id === tabActiva)?.label}" en Supabase sin sobrescribir otros apartados`}
-              >
-                {guardandoEnNube ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                ) : (
-                  <CloudUpload className="w-3.5 h-3.5 text-emerald-200" />
-                )}
-                <span>Guardar {tabActiva === 'balanza' ? 'Todo' : tabs.find(t => t.id === tabActiva)?.label.split(' ')[0]}</span>
-              </button>
-            )}
-
-            {/* Botón Auditoría & Reparación de Integridad */}
-            <button
-              type="button"
-              onClick={() => setModalIntegridadAbierto(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
-              title="Auditar integridad, detectar y reparar asignaciones duplicadas, huérfanas o docentes clonados"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Reparar Integridad</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setKpisExpandidos(!kpisExpandidos)}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
-              title={kpisExpandidos ? 'Ocultar tarjetas KPI grandes para ganar espacio vertical' : 'Mostrar tarjetas KPI detalladas'}
-            >
-              {kpisExpandidos ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{kpisExpandidos ? 'Compactar KPIs' : 'Ver KPIs'}</span>
-            </button>
-
-            {/* 1. Importar Matriz Excel (Oculto para Directores) */}
-            {(!permisos || permisos.puedeImportarMatriz) && (
-              <button
-                onClick={() => setModalMatrizAbierto(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm border border-slate-700/80 active:scale-[0.98]"
-                title="Importar planilla Excel oficial con asignaciones"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-orange-400" />
-                <span>Importar Matriz</span>
-              </button>
-            )}
-
-            {/* 2. Centro de Descargas Unificado (Oculto para Directores) */}
-            {(!permisos || permisos.puedeVerCentroDescargas) && (
-              <button
-                onClick={() => setModalCentroDescargasAbierto(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
-                title="Descargar PAL 2027 DEP, GDP, Matriz Excel, Coeficientes Asistentes o Ficha"
-              >
-                <FileDown className="w-3.5 h-3.5 text-emerald-200" />
-                <span>Descargas</span>
-              </button>
-            )}
-
-            {/* 3. Traspaso de Dotación (Oculto para Directores) */}
-            {(!permisos || permisos.puedeTraspasarPeriodos) && (
-              <button
-                onClick={() => setModalTraspasoAbierto(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
-                title="Asistente guiado de traspaso de dotación 2026 a 2027"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span className="hidden md:inline">Traspaso 26➔27</span>
-                <span className="md:hidden">26➔27</span>
-              </button>
-            )}
-
-            {/* 5. Exportación Directa de Matriz Oficial para Director / Menú Desplegable para Asesor y Admin */}
             {permisos && !permisos.puedeAccederTodasEscuelas ? (
-              /* Director: Botón directo y limpio para Exportar Matriz Oficial Excel (.xlsx) */
               onExportarMatrizExcelColegio && (
                 <button
                   onClick={() => onExportarMatrizExcelColegio(colegio, periodoActivo)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/25 active:scale-[0.98]"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
                   title="Exportar Matriz Oficial Excel (.xlsx) de este establecimiento"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
-                  <span>Exportar Matriz Oficial (.xlsx)</span>
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+                  <span>Exportar Matriz (.xlsx)</span>
                 </button>
               )
             ) : (
-              /* Asesor / Admin: Menú completo de Acciones & Reportes */
-              <div className="relative">
-                <button
-                  onClick={() => setMenuAvanzadoAbierto(!menuAvanzadoAbierto)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98]"
-                  title="Más acciones, exportaciones y reportes"
-                >
-                  <span>Acciones & Reportes</span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${menuAvanzadoAbierto ? 'rotate-180' : ''}`} />
-                </button>
+              <>
+                {(!permisos || permisos.puedeVerCentroDescargas) && (
+                  <button
+                    onClick={() => setModalCentroDescargasAbierto(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
+                    title="Descargar PAL 2027 DEP, GDP, Matriz Excel, Coeficientes Asistentes o Ficha"
+                  >
+                    <FileDown className="w-3.5 h-3.5 text-emerald-100" />
+                    <span>Descargas</span>
+                  </button>
+                )}
 
-                {menuAvanzadoAbierto && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-fade-in divide-y divide-slate-100 dark:divide-slate-800 backdrop-blur-md">
-                    
-                    {/* Reportes y Exportaciones */}
-                    <div className="p-1 space-y-0.5">
-                      <button
-                        onClick={() => {
-                          setModalComparadorAbierto(true);
-                          setMenuAvanzadoAbierto(false);
-                        }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors text-left"
-                      >
-                        <Scale className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                        <span>Comparar 2026 vs 2027</span>
-                      </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setMenuAvanzadoAbierto(!menuAvanzadoAbierto)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98]"
+                    title="Importación, auditoría, traspaso y exportaciones"
+                  >
+                    <span>Herramientas</span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${menuAvanzadoAbierto ? 'rotate-180' : ''}`} />
+                  </button>
 
-                      {onExportarMatrizExcelColegio && (
+                  {menuAvanzadoAbierto && (
+                    <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 py-2 z-50 animate-fade-in divide-y divide-slate-100 dark:divide-slate-800">
+                      <div className="p-1 space-y-0.5">
+                        {(!permisos || permisos.puedeImportarMatriz) && (
+                          <button
+                            onClick={() => {
+                              setModalMatrizAbierto(true);
+                              setMenuAvanzadoAbierto(false);
+                            }}
+                            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-950/60 transition-colors text-left"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 text-orange-500" />
+                            <span>Importar Matriz Excel</span>
+                          </button>
+                        )}
+
                         <button
                           onClick={() => {
-                            onExportarMatrizExcelColegio(colegio, periodoActivo);
+                            onAbrirModuloSige();
                             setMenuAvanzadoAbierto(false);
                           }}
-                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors text-left"
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-950/60 transition-colors text-left"
                         >
-                          <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          <span>Exportar Matriz Oficial Excel (.xlsx)</span>
+                          <FileUp className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                          <span>Cargar Nómina SIGE</span>
                         </button>
-                      )}
 
-                      <button
-                        onClick={() => {
-                          setModalGdpAbierto(true);
-                          setMenuAvanzadoAbierto(false);
-                        }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/60 hover:text-amber-700 dark:hover:text-amber-300 transition-colors text-left"
-                      >
-                        <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                        <span>Exportar Planilla GDP Oficial (.xlsx)</span>
-                      </button>
-
-                      {onExportarDotacionColegio && (
                         <button
                           onClick={() => {
-                            onExportarDotacionColegio(colegio, periodoActivo);
+                            setModalIntegridadAbierto(true);
                             setMenuAvanzadoAbierto(false);
                           }}
-                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/60 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-left"
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/60 transition-colors text-left"
                         >
-                          <FileDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                          <span>Exportar Ficha (.slep)</span>
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => {
-                          setModalImportarEstablecimientoAbierto(true);
-                          setMenuAvanzadoAbierto(false);
-                        }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
-                      >
-                        <FileUp className="w-4 h-4 text-slate-500" />
-                        <span>Importar Ficha (.slep)</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          onAbrirModuloSige();
-                          setMenuAvanzadoAbierto(false);
-                        }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-950/60 hover:text-orange-700 dark:hover:text-orange-300 transition-colors text-left"
-                      >
-                        <FileUp className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                        <span>Cargar Nómina SIGE</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          window.print();
-                          setMenuAvanzadoAbierto(false);
-                        }}
-                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
-                      >
-                        <Printer className="w-4 h-4 text-slate-500" />
-                        <span>Imprimir Informe Oficial</span>
-                      </button>
-                    </div>
-
-                    {/* Zona de Peligro */}
-                    {onLimpiarDotacionColegio && (
-                      <div className="p-1">
-                        <button
-                          onClick={() => {
-                            setModalVaciarSeguroAbierto(true);
-                            setMenuAvanzadoAbierto(false);
-                          }}
-                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors text-left"
-                        >
-                          <Trash2 className="w-4 h-4 text-rose-500" />
-                          <span>Vaciar Dotación del Período</span>
+                          <ShieldAlert className="w-4 h-4 text-amber-500" />
+                          <span>Reparar Integridad</span>
                         </button>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
+
+                      <div className="p-1 space-y-0.5">
+                        <button
+                          onClick={() => {
+                            setModalComparadorAbierto(true);
+                            setMenuAvanzadoAbierto(false);
+                          }}
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition-colors text-left"
+                        >
+                          <Scale className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                          <span>Comparar 2026 vs 2027</span>
+                        </button>
+
+                        {(!permisos || permisos.puedeTraspasarPeriodos) && (
+                          <button
+                            onClick={() => {
+                              setModalTraspasoAbierto(true);
+                              setMenuAvanzadoAbierto(false);
+                            }}
+                            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 transition-colors text-left"
+                          >
+                            <Sparkles className="w-4 h-4 text-indigo-500" />
+                            <span>Traspaso 2026 ➔ 2027</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="p-1 space-y-0.5">
+                        {onExportarMatrizExcelColegio && (
+                          <button
+                            onClick={() => {
+                              onExportarMatrizExcelColegio(colegio, periodoActivo);
+                              setMenuAvanzadoAbierto(false);
+                            }}
+                            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 transition-colors text-left"
+                          >
+                            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>Exportar Matriz Oficial (.xlsx)</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            setModalGdpAbierto(true);
+                            setMenuAvanzadoAbierto(false);
+                          }}
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/60 transition-colors text-left"
+                        >
+                          <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          <span>Exportar Planilla GDP Oficial (.xlsx)</span>
+                        </button>
+
+                        {onExportarDotacionColegio && (
+                          <button
+                            onClick={() => {
+                              onExportarDotacionColegio(colegio, periodoActivo);
+                              setMenuAvanzadoAbierto(false);
+                            }}
+                            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/60 transition-colors text-left"
+                          >
+                            <FileDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            <span>Exportar Ficha (.slep)</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            setModalImportarEstablecimientoAbierto(true);
+                            setMenuAvanzadoAbierto(false);
+                          }}
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
+                        >
+                          <FileUp className="w-4 h-4 text-slate-500" />
+                          <span>Importar Ficha (.slep)</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            window.print();
+                            setMenuAvanzadoAbierto(false);
+                          }}
+                          className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
+                        >
+                          <Printer className="w-4 h-4 text-slate-500" />
+                          <span>Imprimir Informe Oficial</span>
+                        </button>
+                      </div>
+
+                      {onLimpiarDotacionColegio && (
+                        <div className="p-1">
+                          <button
+                            onClick={() => {
+                              setModalVaciarSeguroAbierto(true);
+                              setMenuAvanzadoAbierto(false);
+                            }}
+                            className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors text-left"
+                          >
+                            <Trash2 className="w-4 h-4 text-rose-500" />
+                            <span>Vaciar Dotación del Período</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
-
           </div>
         </div>
-
-        {/* 4 KPIs Clave en Formato Bento (Colapsable para ganar espacio vertical) */}
-        {kpisExpandidos && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4">
-          
-          {/* 1. Balanza Lectiva */}
-          <div className={`p-3.5 rounded-2xl border transition-all ${
-            balance > 0 
-              ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200' 
-              : balance < 0 
-                ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/60 text-rose-950 dark:text-rose-200' 
-                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-          }`}>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider opacity-75">Balanza de Aula</span>
-              <Scale className="w-4 h-4 opacity-75" />
-            </div>
-            <div className="text-xl sm:text-2xl font-black mt-0.5 tabular-nums font-mono">
-              {balance > 0 ? `+${balance} HA` : `${balance} HA`}
-            </div>
-            <div className="text-[11px] font-medium opacity-80 mt-0.5">
-              {balance > 0 
-                ? 'Superávit disponible para refuerzo' 
-                : balance < 0 
-                  ? 'Déficit docente por cubrir' 
-                  : 'Dotación exactamente equilibrada'}
-            </div>
-          </div>
-
-          {/* 2. Demanda Curricular */}
-          <div className="card-elevated p-3.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Demanda Curricular</span>
-              <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5 tabular-nums font-mono">
-              {bg?.horasAulaDemandadasCurriculo || 0} <span className="text-xs font-normal text-slate-400">HA</span>
-            </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-              {cursos.length} cursos matriculados
-            </div>
-          </div>
-
-          {/* 3. Matrícula y Aforo */}
-          <div className="card-elevated p-3.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Matrícula vs SAE</span>
-              <LayoutGrid className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-0.5 tabular-nums font-mono">
-              {bg?.totalMatriculaProyectada || 0} <span className="text-xs font-normal text-slate-400">/ {bg?.totalCuposSae || 0} cupos</span>
-            </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-              {salas.length} salas de clases registradas
-            </div>
-          </div>
-
-          {/* 4. Demanda PIE */}
-          <div className="card-elevated p-3.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Demanda PIE Dec. 170</span>
-              <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            </div>
-            <div className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 mt-0.5 tabular-nums font-mono">
-              {bg?.horasPieDemandadas || 0} <span className="text-xs font-normal text-slate-400">hrs</span>
-            </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-              + {bg?.horasColaborativasDemandadas || 0}h co-docencia obligatorias
-            </div>
-          </div>
-
-        </div>
-        )}
       </div>
 
       {/* Banner de Aviso de Actualización Remota Concurrente */}
@@ -636,50 +518,57 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* Flujo Guiado de 5 Pasos para Certificación Escolar (Compactado por defecto fuera de Balanza) */}
-      <ProgresoDotacionBar
-        cursos={cursos}
-        docentes={docentes}
-        asignaciones={asignaciones}
-        asistentes={asistentes}
-        balanceAula={balance}
-        onSelectTab={(tabId) => setTabActiva(tabId)}
-        defaultCollapsed={tabActiva !== 'balanza'}
-      />
+      {/* Navegación por Pestañas Estilizadas (Sticky bajo Header 12/14 + Píldora de Avance) */}
+      <div className="sticky top-12 sm:top-14 z-30 bg-canvas/95 backdrop-blur-md py-1.5 flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-medium min-w-0">
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            const isSelected = tabActiva === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setTabActiva(tab.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all whitespace-nowrap active:scale-[0.98] ${
+                  isSelected
+                    ? 'bg-slate-900 text-white shadow-soft-sm dark:bg-blue-600 dark:text-white'
+                    : 'card-elevated text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-orange-400 dark:text-amber-300' : 'text-slate-400'}`} />
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black tabular-nums font-mono ${
+                  isSelected ? 'bg-orange-500 text-white dark:bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                }`}>
+                  {tab.badge}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Navegación por Pestañas Estilizadas (Sticky para cambio rápido sin hacer scroll arriba) */}
-      <div className="sticky top-14 sm:top-16 z-30 bg-canvas/95 backdrop-blur-md py-1.5 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar text-xs font-medium">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          const isSelected = tabActiva === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setTabActiva(tab.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition-all whitespace-nowrap active:scale-[0.98] ${
-                isSelected
-                  ? 'bg-slate-900 text-white shadow-soft-sm dark:bg-blue-600 dark:text-white'
-                  : 'card-elevated text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-orange-400 dark:text-amber-300' : 'text-slate-400'}`} />
-              <span>{tab.label}</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black tabular-nums font-mono ${
-                isSelected ? 'bg-orange-500 text-white dark:bg-white/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-              }`}>
-                {tab.badge}
-              </span>
-            </button>
-          );
-        })}
+        <button
+          type="button"
+          onClick={() => setTabActiva('balanza')}
+          className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0 tabular-nums"
+          title="Ver progreso completo de certificación en Balanza & Diagnóstico"
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${porcentajeAvance === 100 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+          <span>Avance {porcentajeAvance}%</span>
+        </button>
       </div>
 
       {/* Contenido de Pestaña */}
-      <div className="space-y-6">
+      <div className="space-y-4">
         {tabActiva === 'balanza' && (
           <BalanzaDiagnosticoView
             diagnostico={diagnostico}
             onExportarExcel={onExportarExcel}
+            cursos={cursos}
+            docentes={docentes}
+            asignaciones={asignaciones}
+            asistentes={asistentes}
+            salas={salas}
+            onSelectTab={(t) => setTabActiva(t)}
           />
         )}
 

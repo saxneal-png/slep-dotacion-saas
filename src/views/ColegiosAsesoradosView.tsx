@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
-  Users, Building2, Search, Filter, ArrowRight, FileSpreadsheet, Download,
-  CheckCircle2, AlertTriangle, AlertCircle, ShieldCheck, Sparkles, SlidersHorizontal,
-  LayoutGrid, List, UserCheck, RefreshCw, ChevronRight, ChevronDown, Mail, Phone, MapPin,
-  HelpCircle, ExternalLink, Settings, Plus, Check, ArrowUpDown, X, Globe, User
+  Users, Building2, Search, FileSpreadsheet, Download,
+  CheckCircle2, AlertTriangle, AlertCircle, LayoutGrid, List,
+  ChevronRight, ChevronDown, Settings, Plus, Check, X, Globe,
+  MoreVertical, Upload, Trash2, FileUp, ArrowRightLeft
 } from 'lucide-react';
 import { Establecimiento, CursoSae, Docente, AsignacionHoraria, PerfilAsesor, AsistenteEducacion } from '../types';
 import { DiagnosticoColegioCompleto, calcularDiagnosticoColegio } from '../services/dotacionCalculationService';
@@ -13,7 +13,7 @@ import { usePermisos } from '../security/PermisosContext';
 import { AuthService } from '../services/authService';
 import { UsuarioSistema } from '../types/authTypes';
 
-interface ColegiosAsesoradosViewProps {
+export interface ColegiosAsesoradosViewProps {
   colegios: Establecimiento[];
   colegioActivo: Establecimiento | null;
   onSelectColegio: (est: Establecimiento) => void;
@@ -29,6 +29,11 @@ interface ColegiosAsesoradosViewProps {
   onGuardarColegio: (est: Establecimiento) => Promise<void>;
   onAbrirConfiguraciones: () => void;
   usuariosSistema?: UsuarioSistema[];
+  onEliminarColegio?: (rbd: string) => Promise<void>;
+  onExportarCarteraSlep?: () => Promise<void>;
+  onImportarCarteraSlep?: (file: File) => Promise<void>;
+  onAbrirModuloSige?: () => void;
+  onAbrirGestionEstablecimientos?: () => void;
 }
 
 export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
@@ -46,13 +51,19 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   periodoActivo,
   onGuardarColegio,
   onAbrirConfiguraciones,
-  usuariosSistema = []
+  usuariosSistema = [],
+  onEliminarColegio,
+  onExportarCarteraSlep,
+  onImportarCarteraSlep,
+  onAbrirModuloSige,
+  onAbrirGestionEstablecimientos
 }) => {
-  const { rol } = usePermisos();
+  const { rol, legado: permisos, esSuperUsuario } = usePermisos();
   const session = useMemo(() => AuthService.getSessionActual(), []);
   const [config] = useState(() => cargarConfiguracionGeneral());
+  const importCarteraInputRef = useRef<HTMLInputElement>(null);
+
   const [asesorFiltro, setAsesorFiltro] = useState<string>(() => {
-    // Si el usuario conectado es Asesor UATP, pre-filtrar automáticamente con su nombre
     if (rol === 'asesor_uatp' && session?.usuario.nombreCompleto) {
       return session.usuario.nombreCompleto;
     }
@@ -62,13 +73,17 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   const [selectedComuna, setSelectedComuna] = useState<string>('ALL');
   const [selectedRegimen, setSelectedRegimen] = useState<string>('ALL');
   const [selectedEstadoBalance, setSelectedEstadoBalance] = useState<string>('ALL');
-  const [vistaModo, setVistaModo] = useState<'grid' | 'table'>('grid');
+  const [vistaModo, setVistaModo] = useState<'grid' | 'table'>('table');
+
+  const [menuAccionesToolbarAbierto, setMenuAccionesToolbarAbierto] = useState(false);
+  const [menuFilaAbiertoRbd, setMenuFilaAbiertoRbd] = useState<string | null>(null);
+
   const [modalReasignarAbierto, setModalReasignarAbierto] = useState(false);
   const [colegioParaGdp, setColegioParaGdp] = useState<Establecimiento | null>(null);
   const [colegiosSeleccionadosBatch, setColegiosSeleccionadosBatch] = useState<string[]>([]);
   const [asesorDestinoBatch, setAsesorDestinoBatch] = useState<string>(config.asesoresRegistrados[0]?.nombre || '');
   const [procesandoReasignacion, setProcesandoReasignacion] = useState(false);
-  const [mensajeFeedback, setMensajeFeedback] = useState<string | null>(null);
+  const [mensajeFeedback, setMensajeFeedback] = useState<{ texto: string; tipo: 'ok' | 'error' } | null>(null);
 
   const NOMBRES_PRUEBA_SET = useMemo(() => new Set([
     'rodrigo fuentes uribe',
@@ -82,16 +97,12 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     'uatp valle diguillin'
   ]), []);
 
-  // Lista de asesores únicos oficiales
   const todosLosAsesores = useMemo(() => {
     const map = new Map<string, PerfilAsesor>();
     for (const a of config.asesoresRegistrados) {
       const key = a.nombre.toLowerCase().trim();
-      if (!NOMBRES_PRUEBA_SET.has(key)) {
-        map.set(key, a);
-      }
+      if (!NOMBRES_PRUEBA_SET.has(key)) map.set(key, a);
     }
-    // Incluir usuarios del sistema que tengan rol asesor_uatp
     for (const u of (usuariosSistema || [])) {
       if (u.role === 'asesor_uatp') {
         const key = u.nombreCompleto.toLowerCase().trim();
@@ -132,13 +143,6 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     return Array.from(map.values());
   }, [config.asesoresRegistrados, colegios, rol, session, usuariosSistema, NOMBRES_PRUEBA_SET]);
 
-  // Perfil del Asesor actualmente filtrado
-  const perfilAsesorSeleccionado = useMemo(() => {
-    if (asesorFiltro === 'TODOS' || asesorFiltro === 'SIN_ASIGNAR') return null;
-    return todosLosAsesores.find(a => a.nombre.toLowerCase().trim() === asesorFiltro.toLowerCase().trim()) || null;
-  }, [asesorFiltro, todosLosAsesores]);
-
-  // Diagnósticos precalculados
   const diagnosticosMap = useMemo(() => {
     const map = new Map<string, DiagnosticoColegioCompleto>();
     for (const est of colegios) {
@@ -151,7 +155,22 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
     return map;
   }, [colegios, todosLosCursos, todosLosDocentes, todasLasSalas, todasLasAsignaciones, periodoActivo]);
 
-  // Filtrado reactivo de colegios
+  const comunasDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of colegios) {
+      if (c.comuna) set.add(c.comuna);
+    }
+    return Array.from(set).sort();
+  }, [colegios]);
+
+  const regimenesDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of colegios) {
+      if (c.regimen) set.add(c.regimen);
+    }
+    return Array.from(set).sort();
+  }, [colegios]);
+
   const colegiosFiltrados = useMemo(() => {
     return colegios.filter(est => {
       if (asesorFiltro === 'SIN_ASIGNAR') {
@@ -168,13 +187,8 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
         }
       }
 
-      if (selectedComuna !== 'ALL' && est.comuna !== selectedComuna) {
-        return false;
-      }
-
-      if (selectedRegimen !== 'ALL' && est.regimen !== selectedRegimen) {
-        return false;
-      }
+      if (selectedComuna !== 'ALL' && est.comuna !== selectedComuna) return false;
+      if (selectedRegimen !== 'ALL' && est.regimen !== selectedRegimen) return false;
 
       if (selectedEstadoBalance !== 'ALL') {
         const diag = diagnosticosMap.get(est.rbd);
@@ -186,32 +200,28 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
 
       if (searchTerm) {
         const q = searchTerm.toLowerCase().trim();
-        const matchNombre = est.nombre.toLowerCase().includes(q);
-        const matchRbd = est.rbd.toLowerCase().includes(q);
-        const matchComuna = (est.comuna || '').toLowerCase().includes(q);
-        const matchDirector = (est.director || '').toLowerCase().includes(q);
-        const matchAsesor = (est.asesorUatp || '').toLowerCase().includes(q);
-        return matchNombre || matchRbd || matchComuna || matchDirector || matchAsesor;
+        return (
+          est.nombre.toLowerCase().includes(q) ||
+          est.rbd.toLowerCase().includes(q) ||
+          (est.comuna || '').toLowerCase().includes(q) ||
+          (est.director || '').toLowerCase().includes(q) ||
+          (est.asesorUatp || '').toLowerCase().includes(q)
+        );
       }
 
       return true;
     });
-  }, [colegios, asesorFiltro, selectedComuna, selectedRegimen, selectedEstadoBalance, searchTerm, diagnosticosMap]);
+  }, [colegios, asesorFiltro, selectedComuna, selectedRegimen, selectedEstadoBalance, searchTerm, diagnosticosMap, session, usuariosSistema]);
 
-  // Métricas agregadas
   const metricasAsesor = useMemo(() => {
     let matriculaTotal = 0;
     let cursosTotal = 0;
     let cuposSaeTotal = 0;
     let horasContratadasTotal = 0;
-    let horasAulaDemandadasTotal = 0;
-    let horasLectivasAsignadasTotal = 0;
     let balanceNeto = 0;
     let colegiosConDeficit = 0;
     let colegiosConSuperavit = 0;
-    let colegiosEquilibrados = 0;
     let totalInconsistencias = 0;
-
     const docentesSet = new Set<string>();
 
     for (const est of colegiosFiltrados) {
@@ -221,16 +231,14 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
         cursosTotal += diag.balanzaGeneral.totalCursos || 0;
         cuposSaeTotal += diag.balanzaGeneral.totalCuposSae || 0;
         horasContratadasTotal += diag.balanzaGeneral.horasContratadasTotales || 0;
-        horasAulaDemandadasTotal += diag.balanzaGeneral.horasAulaDemandadasCurriculo || 0;
-        horasLectivasAsignadasTotal += diag.balanzaGeneral.horasLectivasAsignadas || 0;
-        
+
         const bal = diag.balanzaGeneral.superavitDeficitLectivo || 0;
         balanceNeto += bal;
         if (bal < 0) colegiosConDeficit++;
         else if (bal > 0) colegiosConSuperavit++;
-        else colegiosEquilibrados++;
 
-        totalInconsistencias += (diag.balanzaGeneral.sobreasignacionesAlertas?.length || 0) +
+        totalInconsistencias +=
+          (diag.balanzaGeneral.sobreasignacionesAlertas?.length || 0) +
           (diag.balanzaGeneral.alertasInfraestructura?.length || 0) +
           (diag.balanzaGeneral.alertasAforoPie?.length || 0);
       }
@@ -248,700 +256,688 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
       cursosTotal,
       cuposSaeTotal,
       horasContratadasTotal,
-      horasAulaDemandadasTotal,
-      horasLectivasAsignadasTotal,
       balanceNeto,
       docentesTotal: docentesSet.size,
       colegiosConDeficit,
       colegiosConSuperavit,
-      colegiosEquilibrados,
       totalInconsistencias
     };
   }, [colegiosFiltrados, diagnosticosMap, todosLosDocentes, periodoActivo]);
 
-  // Handlers de reasignación
+  const mostrarFeedback = (texto: string, tipo: 'ok' | 'error' = 'ok') => {
+    setMensajeFeedback({ texto, tipo });
+    setTimeout(() => setMensajeFeedback(null), 4000);
+  };
+
   const handleCambiarAsesorColegio = async (est: Establecimiento, nuevoAsesor: string) => {
     const asesorValor = nuevoAsesor === 'SIN_ASIGNAR' || nuevoAsesor.trim() === '' ? undefined : nuevoAsesor.trim();
     try {
-      const actualizado: Establecimiento = {
-        ...est,
-        asesorUatp: asesorValor
-      };
-      await onGuardarColegio(actualizado);
-      setMensajeFeedback(
-        asesorValor
-          ? `✓ "${est.nombre}" reasignado a ${asesorValor}.`
-          : `✓ "${est.nombre}" marcado como Sin Asignar.`
-      );
-      setTimeout(() => setMensajeFeedback(null), 3000);
-    } catch (e: any) {
-      alert(`Error al reasignar colegio: ${e.message || e}`);
+      await onGuardarColegio({ ...est, asesorUatp: asesorValor });
+      mostrarFeedback(`"${est.nombre}" asignado a ${asesorValor || 'Sin Asignar'}.`);
+    } catch {
+      mostrarFeedback('Error al reasignar asesor del establecimiento.', 'error');
     }
   };
 
-  const handleEjecutarReasignacionBatch = async () => {
-    if (colegiosSeleccionadosBatch.length === 0 || !asesorDestinoBatch) return;
+  const handleEjecutarReasignacionMasiva = async () => {
+    if (colegiosSeleccionadosBatch.length === 0) return;
     setProcesandoReasignacion(true);
     try {
-      await reasignarColegiosMasivo(colegiosSeleccionadosBatch, asesorDestinoBatch, colegios);
-
-      // Sincronizar automáticamente la cartera del asesor destino como usuario activo
-      const asesorObj = todosLosAsesores.find(a => a.nombre.toLowerCase().trim() === asesorDestinoBatch.toLowerCase().trim());
-      await AuthService.sincronizarAsesorComoUsuario({
-        id: asesorObj?.id,
-        nombre: asesorDestinoBatch,
-        email: asesorObj?.email || `${asesorDestinoBatch.toLowerCase().replace(/\s+/g, '.')}@slepvallediguillin.cl`,
-        carteraRbds: colegiosSeleccionadosBatch
-      });
-
-      setMensajeFeedback(`✓ Se han reasignado ${colegiosSeleccionadosBatch.length} establecimientos a ${asesorDestinoBatch}.`);
+      const target = asesorDestinoBatch === 'SIN_ASIGNAR' ? '' : asesorDestinoBatch;
+      await reasignarColegiosMasivo(colegiosSeleccionadosBatch, target, colegios);
+      for (const rbd of colegiosSeleccionadosBatch) {
+        const est = colegios.find(c => c.rbd === rbd);
+        if (est) {
+          await onGuardarColegio({ ...est, asesorUatp: target || undefined });
+        }
+      }
+      mostrarFeedback(`${colegiosSeleccionadosBatch.length} escuela(s) reasignadas a ${target || 'Sin Asignar'}.`);
       setColegiosSeleccionadosBatch([]);
       setModalReasignarAbierto(false);
-      setTimeout(() => setMensajeFeedback(null), 4000);
-    } catch (e: any) {
-      alert(`Error al reasignar: ${e.message || e}`);
+    } catch {
+      mostrarFeedback('Error al ejecutar la reasignación en lote.', 'error');
     } finally {
       setProcesandoReasignacion(false);
     }
   };
 
-  const handleSeleccionarTodosLosFiltrados = () => {
-    if (colegiosSeleccionadosBatch.length === colegiosFiltrados.length) {
+  const toggleSeleccionBatch = (rbd: string) => {
+    setColegiosSeleccionadosBatch(prev =>
+      prev.includes(rbd) ? prev.filter(item => item !== rbd) : [...prev, rbd]
+    );
+  };
+
+  const todosFiltradosSeleccionados =
+    colegiosFiltrados.length > 0 && colegiosFiltrados.every(c => colegiosSeleccionadosBatch.includes(c.rbd));
+
+  const toggleSeleccionTodos = () => {
+    if (todosFiltradosSeleccionados) {
       setColegiosSeleccionadosBatch([]);
     } else {
       setColegiosSeleccionadosBatch(colegiosFiltrados.map(c => c.rbd));
     }
   };
 
-  const toggleSeleccionColegio = (rbd: string) => {
-    setColegiosSeleccionadosBatch(prev => 
-      prev.includes(rbd) ? prev.filter(r => r !== rbd) : [...prev, rbd]
-    );
-  };
+  const hayFiltrosActivos =
+    searchTerm.trim() !== '' ||
+    selectedComuna !== 'ALL' ||
+    selectedRegimen !== 'ALL' ||
+    selectedEstadoBalance !== 'ALL';
+
+  const miNombre = session?.usuario.nombreCompleto || '';
+  const tieneMiCartera = Boolean(miNombre && (rol === 'asesor_uatp' || todosLosAsesores.some(a => a.nombre.toLowerCase().trim() === miNombre.toLowerCase().trim())));
 
   return (
-    <div className="space-y-6 animate-fade-in pb-12">
-      
-      {/* Toast Feedback */}
+    <div className="space-y-3 animate-fade-in">
+      {/* Feedback Toast */}
       {mensajeFeedback && (
-        <div className="fixed top-20 right-6 z-50 bg-slate-900 text-emerald-300 border border-emerald-500/50 px-4 py-3 rounded-2xl shadow-2xl text-xs font-bold flex items-center gap-2 animate-scale-in backdrop-blur-md">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{mensajeFeedback}</span>
+        <div className={`px-4 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-between shadow-sm ${
+          mensajeFeedback.tipo === 'error'
+            ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+            : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+        }`}>
+          <span className="flex items-center gap-2">
+            {mensajeFeedback.tipo === 'error' ? <AlertCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+            {mensajeFeedback.texto}
+          </span>
+          <button onClick={() => setMensajeFeedback(null)} className="opacity-70 hover:opacity-100">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      {/* ── 1. COMANDO EJECUTIVO UATP (Apple Clean Design) ── */}
-      <div className="card-elevated p-5 sm:p-6 bg-gradient-to-r from-surface-card via-surface-card to-slate-50/50 dark:to-slate-900/50 border border-border-subtle relative overflow-hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          
-          {/* Título & Badge Institucional */}
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-[11px] font-extrabold uppercase tracking-wider">
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span>Supervisión Territorial UATP</span>
-              </span>
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                • {colegios.length} Establecimientos en Territorio
-              </span>
-            </div>
-            
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              Control de Dotación & Asesorías Escolares
+      {/* 1. Toolbar Slim 1-Línea (Reemplaza Hero gigante de 220px) */}
+      <div className="card-elevated px-3.5 py-2.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0" />
+            <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+              Dashboard Escuelas
             </h1>
-            <p className="text-xs text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed">
-              Monitoreo analítico de horas lectivas, contratos Ley 20.903 y balance horario por asesor técnico.
-            </p>
+            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
+              periodoActivo === 2027
+                ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300'
+                : 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300'
+            }`}>
+              {periodoActivo}
+            </span>
           </div>
 
-          {/* Selector de Cartera & Botonera Artesanal */}
-          <div className="flex flex-wrap items-center gap-2">
-            
-            {/* Segmented Control de Cartera */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800/90 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+          {/* Selector de Alcance: Mis Colegios / Territorio / Sin Asignar */}
+          <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs">
+            {tieneMiCartera && (
               <button
-                onClick={() => setAsesorFiltro(config.asesorActivoNombre)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                  asesorFiltro === config.asesorActivoNombre
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/60 dark:hover:bg-slate-700'
+                type="button"
+                onClick={() => setAsesorFiltro(miNombre)}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                  asesorFiltro.toLowerCase().trim() === miNombre.toLowerCase().trim()
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Mis Colegios</span>
+                Mis Colegios
               </button>
-
-              <button
-                onClick={() => setAsesorFiltro('TODOS')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                  asesorFiltro === 'TODOS'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/60 dark:hover:bg-slate-700'
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Todo ({colegios.length})</span>
-              </button>
-
-              {/* Selector Desplegable de Asesor */}
-              <div className="relative">
-                <select
-                  value={asesorFiltro === config.asesorActivoNombre || asesorFiltro === 'TODOS' ? '' : asesorFiltro}
-                  onChange={(e) => {
-                    if (e.target.value) setAsesorFiltro(e.target.value);
-                  }}
-                  aria-label="Seleccionar otro asesor"
-                  className={`appearance-none bg-transparent pl-2.5 pr-7 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors focus:outline-none ${
-                    asesorFiltro !== config.asesorActivoNombre && asesorFiltro !== 'TODOS'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  <option value="" disabled className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
-                    Otro asesor...
-                  </option>
-                  <option value="SIN_ASIGNAR" className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
-                    ⚠️ Sin Asignar
-                  </option>
-                  {todosLosAsesores.map((a) => (
-                    <option key={a.id || a.nombre} value={a.nombre} className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
-                      👤 {a.nombre}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-60" />
-              </div>
-            </div>
-
-            {/* Reasignar Lote */}
+            )}
             <button
-              onClick={() => {
-                setColegiosSeleccionadosBatch([]);
-                setModalReasignarAbierto(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-2xl border border-indigo-200 dark:border-indigo-800 transition-all shadow-xs active:scale-[0.98]"
-              title="Reasignar colegios en lote"
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reasignar Lote</span>
-            </button>
-
-            {/* Ajustes */}
-            <button
-              onClick={onAbrirConfiguraciones}
-              className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-2xl border border-slate-200 dark:border-slate-700 transition-all shadow-xs"
-              title="Configuraciones UATP"
-            >
-              <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-            </button>
-
-          </div>
-
-        </div>
-
-        {/* Ficha Dinámica del Asesor Seleccionado */}
-        {perfilAsesorSeleccionado && (
-          <div className="mt-4 pt-4 border-t border-border-subtle flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs text-white shadow-sm ring-1 ring-black/10"
-                style={{ backgroundColor: perfilAsesorSeleccionado.colorBadge || '#007AFF' }}
-              >
-                {perfilAsesorSeleccionado.nombre.split(' ').map(n => n[0]).slice(0, 2).join('')}
-              </div>
-              <div>
-                <div className="font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>{perfilAsesorSeleccionado.nombre}</span>
-                  <span className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                    {colegiosFiltrados.length} escuelas asignadas
-                  </span>
-                </div>
-                <div className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-3 mt-0.5">
-                  <span className="flex items-center gap-1 font-medium">
-                    <Mail className="w-3 h-3" />
-                    {perfilAsesorSeleccionado.email}
-                  </span>
-                  {perfilAsesorSeleccionado.telefono && (
-                    <span className="flex items-center gap-1 font-medium">
-                      <Phone className="w-3 h-3" />
-                      {perfilAsesorSeleccionado.telefono}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={onAbrirConfiguraciones}
-              className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-            >
-              <span>Gestionar perfil de asesor</span>
-              <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── 2. DASHBOARD KPI (Bento Grid) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-        
-        {/* 1. Colegios */}
-        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-blue-400 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Escuelas</span>
-            <div className="p-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
-              <Building2 className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.totalColegios}</span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">en esta cartera</span>
-          </div>
-        </div>
-
-        {/* 2. Docentes */}
-        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-indigo-400 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Docentes</span>
-            <div className="p-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.docentesTotal}</span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">profesionales activos</span>
-          </div>
-        </div>
-
-        {/* 3. Cursos */}
-        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-emerald-400 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Cursos & SAE</span>
-            <div className="p-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-              <LayoutGrid className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.cursosTotal}</span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5 tabular-nums">
-              {metricasAsesor.matriculaTotal} matrícula total
-            </span>
-          </div>
-        </div>
-
-        {/* 4. Horas Contrato */}
-        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-purple-400 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Horas Contrato</span>
-            <div className="p-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">{metricasAsesor.horasContratadasTotal}</span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">hrs cronológicas SLEP</span>
-          </div>
-        </div>
-
-        {/* 5. Balance Territorial */}
-        <div className={`p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs ${
-          metricasAsesor.balanceNeto < 0
-            ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-900 text-rose-950 dark:text-rose-100'
-            : metricasAsesor.balanceNeto > 0
-            ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-900 text-blue-950 dark:text-blue-100'
-            : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-900 text-emerald-950 dark:text-emerald-100'
-        }`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider">Balance Horario</span>
-            <ArrowUpDown className="w-4 h-4 opacity-80" />
-          </div>
-          <div className="mt-3">
-            <span className="text-2xl font-black tabular-nums">
-              {metricasAsesor.balanceNeto > 0 ? `+${metricasAsesor.balanceNeto}` : metricasAsesor.balanceNeto}h
-            </span>
-            <span className="text-[11px] font-bold opacity-80 block mt-0.5">
-              {metricasAsesor.colegiosConDeficit} déficit / {metricasAsesor.colegiosConSuperavit} superávit
-            </span>
-          </div>
-        </div>
-
-        {/* 6. Salud Normativa */}
-        <div className="card-elevated p-4 flex flex-col justify-between group hover:border-amber-400 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Salud Normativa</span>
-            <div className={`p-1.5 rounded-xl ${metricasAsesor.totalInconsistencias > 0 ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600'}`}>
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <span className={`text-2xl font-black tabular-nums ${metricasAsesor.totalInconsistencias > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
-              {metricasAsesor.totalInconsistencias}
-            </span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">
-              {metricasAsesor.totalInconsistencias === 0 ? '✓ 100% Cuadrado' : 'alertas por auditar'}
-            </span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* ── 3. BARRA DE FILTROS & BÚSQUEDA ── */}
-      <div className="card-elevated p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
-        
-        {/* Buscador */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por RBD, nombre, director o comuna..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        {/* Filtros Dropdowns & Píldoras */}
-        <div className="flex flex-wrap items-center gap-2">
-          
-          {/* Comuna */}
-          <select
-            value={selectedComuna}
-            onChange={(e) => setSelectedComuna(e.target.value)}
-            aria-label="Filtrar por comuna"
-            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="ALL">Todas las Comunas</option>
-            <option value="Bulnes">Bulnes</option>
-            <option value="Chillán">Chillán</option>
-            <option value="Chillán Viejo">Chillán Viejo</option>
-            <option value="El Carmen">El Carmen</option>
-            <option value="Pemuco">Pemuco</option>
-            <option value="San Ignacio">San Ignacio</option>
-            <option value="Yungay">Yungay</option>
-          </select>
-
-          {/* Régimen */}
-          <select
-            value={selectedRegimen}
-            onChange={(e) => setSelectedRegimen(e.target.value)}
-            aria-label="Filtrar por régimen"
-            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="ALL">Todo Régimen</option>
-            <option value="JEC">JEC</option>
-            <option value="No JEC">No JEC</option>
-            <option value="Mixto">Mixto</option>
-          </select>
-
-          {/* Estado de Balance */}
-          <select
-            value={selectedEstadoBalance}
-            onChange={(e) => setSelectedEstadoBalance(e.target.value)}
-            aria-label="Filtrar por estado de balance"
-            className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="ALL">Todos los Estados</option>
-            <option value="DEFICIT">🔴 Con Déficit</option>
-            <option value="SUPERAVIT">🔵 Con Superávit</option>
-            <option value="EQUILIBRADO">🟢 Cuadre Exacto</option>
-          </select>
-
-          {/* Contador de resultados */}
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 px-2">
-            {colegiosFiltrados.length} escuelas
-          </span>
-
-          {/* Switcher Modo Vista Grid / Table */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <button
-              onClick={() => setVistaModo('grid')}
-              className={`p-1.5 rounded-lg transition-all ${
-                vistaModo === 'grid' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+              type="button"
+              onClick={() => setAsesorFiltro('TODOS')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all inline-flex items-center gap-1 ${
+                asesorFiltro === 'TODOS'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
-              title="Vista en Cuadrícula"
             >
-              <LayoutGrid className="w-4 h-4" />
+              <Globe className="w-3 h-3" />
+              <span>Territorio ({colegios.length})</span>
             </button>
             <button
+              type="button"
+              onClick={() => setAsesorFiltro('SIN_ASIGNAR')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                asesorFiltro === 'SIN_ASIGNAR'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Sin Asignar
+            </button>
+          </div>
+
+          {/* Selector rápido por Asesor específico */}
+          <select
+            value={asesorFiltro}
+            onChange={(e) => setAsesorFiltro(e.target.value)}
+            aria-label="Filtrar por asesor UATP"
+            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500/30 max-w-[200px]"
+          >
+            <option value="TODOS">Todos los Asesores</option>
+            <option value="SIN_ASIGNAR">Sin Asesor Asignado</option>
+            {todosLosAsesores.map(a => (
+              <option key={a.id} value={a.nombre}>{a.nombre}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {colegiosSeleccionadosBatch.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/60 px-2.5 py-1 rounded-xl">
+              <span className="text-xs font-bold text-orange-800 dark:text-orange-300 tabular-nums">
+                {colegiosSeleccionadosBatch.length} selec.
+              </span>
+              <button
+                type="button"
+                onClick={() => setModalReasignarAbierto(true)}
+                className="px-2 py-0.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-bold transition-colors inline-flex items-center gap-1"
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>Reasignar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setColegiosSeleccionadosBatch([])}
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                title="Limpiar selección"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Toggle Vista Tabla (Default) / Tarjetas */}
+          <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
               onClick={() => setVistaModo('table')}
               className={`p-1.5 rounded-lg transition-all ${
-                vistaModo === 'table' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                vistaModo === 'table'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
-              title="Vista en Tabla"
+              title="Vista Tabla Compacta"
             >
-              <List className="w-4 h-4" />
+              <List className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setVistaModo('grid')}
+              className={`p-1.5 rounded-lg transition-all ${
+                vistaModo === 'grid'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+              title="Vista Tarjetas"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
             </button>
           </div>
 
-        </div>
+          {/* Botón Nuevo / Gestionar Colegios (cuando está permitido) */}
+          {onAbrirGestionEstablecimientos && (!permisos || esSuperUsuario || permisos.puedeAccederTodasEscuelas) && (
+            <button
+              type="button"
+              onClick={onAbrirGestionEstablecimientos}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Colegios</span>
+            </button>
+          )}
 
+          {/* Menú Unificado de Cartera & Herramientas (reemplaza CarteraView) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuAccionesToolbarAbierto(!menuAccionesToolbarAbierto)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 transition-all"
+            >
+              <span>Cartera</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${menuAccionesToolbarAbierto ? 'rotate-180' : ''}`} />
+            </button>
+
+            {menuAccionesToolbarAbierto && (
+              <div className="absolute right-0 mt-2 w-60 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 py-1.5 z-50 animate-fade-in divide-y divide-slate-100 dark:divide-slate-800">
+                <div className="p-1 space-y-0.5">
+                  {onAbrirModuloSige && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuAccionesToolbarAbierto(false);
+                        onAbrirModuloSige();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-950/50 text-left"
+                    >
+                      <FileUp className="w-4 h-4 text-orange-500" />
+                      <span>Ingestar Nómina SIGE</span>
+                    </button>
+                  )}
+                  {onExportarCarteraSlep && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuAccionesToolbarAbierto(false);
+                        onExportarCarteraSlep();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50 text-left"
+                    >
+                      <Download className="w-4 h-4 text-blue-500" />
+                      <span>Exportar Cartera (.slep)</span>
+                    </button>
+                  )}
+                  {onImportarCarteraSlep && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuAccionesToolbarAbierto(false);
+                        importCarteraInputRef.current?.click();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left"
+                    >
+                      <Upload className="w-4 h-4 text-slate-500" />
+                      <span>Importar Cartera (.slep)</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="p-1 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuAccionesToolbarAbierto(false);
+                      if (colegiosSeleccionadosBatch.length === 0 && colegiosFiltrados.length > 0) {
+                        setColegiosSeleccionadosBatch(colegiosFiltrados.map(c => c.rbd));
+                      }
+                      setModalReasignarAbierto(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left"
+                  >
+                    <Users className="w-4 h-4 text-indigo-500" />
+                    <span>Reasignar Cartera en Lote</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuAccionesToolbarAbierto(false);
+                      onAbrirConfiguraciones();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left"
+                  >
+                    <Settings className="w-4 h-4 text-slate-500" />
+                    <span>Configuraciones UATP</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* ── 4. LISTADO DE ESTABLECIMIENTOS ── */}
-      {colegiosFiltrados.length === 0 ? (
-        <div className="card-elevated p-12 text-center max-w-lg mx-auto">
-          <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4 text-slate-400">
-            <Building2 className="w-8 h-8" />
+      {/* Input oculto para importar cartera .slep */}
+      {onImportarCarteraSlep && (
+        <input
+          ref={importCarteraInputRef}
+          type="file"
+          accept=".slep,.json"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f && onImportarCarteraSlep) { void onImportarCarteraSlep(f); } e.target.value = ""; }}
+        />
+      )}
+
+      {/* 2. KPI Ribbon Clickeable (5 métricas compactas, Jidoka: alertas solo si > 0) */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <button
+          type="button"
+          onClick={() => setSelectedEstadoBalance('ALL')}
+          className={`card-elevated px-3 py-2 text-left transition-all hover:border-slate-300 dark:hover:border-slate-600 ${
+            selectedEstadoBalance === 'ALL' ? 'ring-1 ring-slate-300 dark:ring-slate-600' : ''
+          }`}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Escuelas</div>
+          <div className="flex items-baseline justify-between mt-0.5">
+            <span className="text-lg font-black text-slate-900 dark:text-white tabular-nums font-mono">{metricasAsesor.totalColegios}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{metricasAsesor.cursosTotal} cursos</span>
           </div>
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">No se encontraron establecimientos</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            No hay colegios que coincidan con los filtros para "{asesorFiltro}".
-          </p>
+        </button>
+
+        <div className="card-elevated px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Matrícula / SAE</div>
+          <div className="flex items-baseline justify-between mt-0.5">
+            <span className="text-lg font-black text-slate-900 dark:text-white tabular-nums font-mono">{metricasAsesor.matriculaTotal.toLocaleString('es-CL')}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{metricasAsesor.cuposSaeTotal.toLocaleString('es-CL')} cupos</span>
+          </div>
+        </div>
+
+        <div className="card-elevated px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Docentes</div>
+          <div className="flex items-baseline justify-between mt-0.5">
+            <span className="text-lg font-black text-slate-900 dark:text-white tabular-nums font-mono">{metricasAsesor.docentesTotal}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{metricasAsesor.horasContratadasTotal.toLocaleString('es-CL')}h</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setSelectedEstadoBalance(selectedEstadoBalance === 'DEFICIT' ? 'ALL' : 'DEFICIT')}
+          className={`card-elevated px-3 py-2 text-left transition-all ${
+            selectedEstadoBalance === 'DEFICIT'
+              ? 'ring-2 ring-rose-500/60 bg-rose-50/40 dark:bg-rose-950/20'
+              : metricasAsesor.colegiosConDeficit > 0
+                ? 'hover:border-rose-300 dark:hover:border-rose-800'
+                : ''
+          }`}
+          title="Clic para filtrar escuelas en déficit"
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">En Déficit</div>
+          <div className="flex items-baseline justify-between mt-0.5">
+            <span className={`text-lg font-black tabular-nums font-mono ${
+              metricasAsesor.colegiosConDeficit > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+            }`}>
+              {metricasAsesor.colegiosConDeficit}
+            </span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+              {metricasAsesor.totalInconsistencias > 0 ? `${metricasAsesor.totalInconsistencias} alertas` : 'Sin alertas'}
+            </span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSelectedEstadoBalance(selectedEstadoBalance === 'SUPERAVIT' ? 'ALL' : 'SUPERAVIT')}
+          className={`card-elevated px-3 py-2 text-left transition-all col-span-2 sm:col-span-1 ${
+            selectedEstadoBalance === 'SUPERAVIT' ? 'ring-2 ring-emerald-500/60 bg-emerald-50/40 dark:bg-emerald-950/20' : ''
+          }`}
+          title="Clic para filtrar escuelas con superávit"
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Balanza Neta</div>
+          <div className="flex items-baseline justify-between mt-0.5">
+            <span className={`text-lg font-black tabular-nums font-mono ${
+              metricasAsesor.balanceNeto > 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : metricasAsesor.balanceNeto < 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-slate-700 dark:text-slate-200'
+            }`}>
+              {metricasAsesor.balanceNeto > 0 ? `+${metricasAsesor.balanceNeto}` : metricasAsesor.balanceNeto} HA
+            </span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{metricasAsesor.colegiosConSuperavit} sup.</span>
+          </div>
+        </button>
+      </div>
+
+      {/* 3. Barra de Búsqueda y Filtros en 1 Línea */}
+      <div className="card-elevated px-3 py-2 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar escuela, RBD, comuna o director..."
+            className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+          />
+        </div>
+
+        <select
+          value={selectedComuna}
+          onChange={(e) => setSelectedComuna(e.target.value)}
+          className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+        >
+          <option value="ALL">Todas las Comunas</option>
+          {comunasDisponibles.map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedRegimen}
+          onChange={(e) => setSelectedRegimen(e.target.value)}
+          className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+        >
+          <option value="ALL">Todos los Regímenes</option>
+          {regimenesDisponibles.map(r => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedEstadoBalance}
+          onChange={(e) => setSelectedEstadoBalance(e.target.value)}
+          className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+        >
+          <option value="ALL">Estado: Todos</option>
+          <option value="DEFICIT">En Déficit (&lt; 0 HA)</option>
+          <option value="SUPERAVIT">Con Superávit (&gt; 0 HA)</option>
+          <option value="EQUILIBRADO">Equilibrado (0 HA)</option>
+        </select>
+
+        {hayFiltrosActivos && (
           <button
+            type="button"
             onClick={() => {
-              setAsesorFiltro('TODOS');
+              setSearchTerm('');
               setSelectedComuna('ALL');
               setSelectedRegimen('ALL');
               setSelectedEstadoBalance('ALL');
-              setSearchTerm('');
             }}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-sm active:scale-[0.98]"
+            className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1"
           >
-            Limpiar Filtros
+            <X className="w-3.5 h-3.5" />
+            <span>Limpiar</span>
           </button>
+        )}
+      </div>
+
+      {/* 4. Contenido Principal: Tabla Compacta (Default) o Grid */}
+      {colegiosFiltrados.length === 0 ? (
+        <div className="card-elevated p-10 text-center">
+          <Building2 className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+          <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+            No se encontraron establecimientos con los filtros actuales.
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Prueba cambiando el alcance a "Territorio" o limpiando la búsqueda.
+          </p>
         </div>
-      ) : vistaModo === 'grid' ? (
-        /* VISTA GRID */
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3.5">
-          {colegiosFiltrados.map((est) => {
-            const diag = diagnosticosMap.get(est.rbd);
-            const bal = diag?.balanzaGeneral.superavitDeficitLectivo || 0;
-            const esActivo = colegioActivo?.id === est.id || colegioActivo?.rbd === est.rbd;
-            const totalAlertas = (diag?.balanzaGeneral.sobreasignacionesAlertas?.length || 0) +
-              (diag?.balanzaGeneral.alertasInfraestructura?.length || 0) +
-              (diag?.balanzaGeneral.alertasAforoPie?.length || 0);
-            const tieneAlertas = totalAlertas > 0;
-            const es60_40 = est.porcentajePrioritarios >= (config.parametrosMineduc.umbralPrioritarios60_40 || 80);
-
-            return (
-              <div
-                key={est.id || est.rbd}
-                className={`card-elevated p-5 flex flex-col justify-between group relative transition-all duration-200 hover:-translate-y-0.5 ${
-                  esActivo ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md' : ''
-                }`}
-              >
-                <div>
-                  
-                  {/* Header de la tarjeta */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-[10px] font-black bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-700">
-                          RBD {est.rbd}
-                        </span>
-                        <span className="text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800">
-                          {est.comuna}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
-                          es60_40
-                            ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
-                        }`}>
-                          {es60_40 ? '60/40' : '65/35'}
-                        </span>
-                      </div>
-                      
-                      <h3 className="font-black text-slate-900 dark:text-white text-sm mt-2.5 line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-tight">
-                        {est.nombre}
-                      </h3>
-                    </div>
-
-                    {/* Asesor Asignado Selector */}
-                    <div className="text-right flex-shrink-0">
-                      <select
-                        value={est.asesorUatp || 'SIN_ASIGNAR'}
-                        onChange={(e) => handleCambiarAsesorColegio(est, e.target.value)}
-                        aria-label={`Asignar asesor a ${est.nombre}`}
-                        className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[10px] font-extrabold rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[130px] truncate transition-colors"
-                      >
-                        <option value="SIN_ASIGNAR">⚠️ Sin Asignar</option>
-                        {todosLosAsesores.map((a) => (
-                          <option key={a.id || a.nombre} value={a.nombre}>
-                            👤 {a.nombre}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Director */}
-                  {est.director && (
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1.5 truncate">
-                      <span className="font-bold text-slate-700 dark:text-slate-200">Dir:</span> {est.director}
-                    </p>
-                  )}
-
-                  {/* 3 Pilares de Métricas */}
-                  <div className="grid grid-cols-3 gap-2 mt-4 p-2.5 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-center">
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">Cursos</span>
-                      <span className="text-xs font-black text-slate-900 dark:text-white tabular-nums">{diag?.balanzaGeneral.totalCursos || 0}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">Docentes</span>
-                      <span className="text-xs font-black text-slate-900 dark:text-white tabular-nums">
-                        {todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo)).length}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">Balance</span>
-                      <span className={`text-xs font-black tabular-nums ${
-                        bal < 0 ? 'text-rose-600 dark:text-rose-400' : bal > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-emerald-600 dark:text-emerald-400'
-                      }`}>
-                        {bal > 0 ? `+${bal}` : bal}h
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Alertas Normativas */}
-                  {tieneAlertas && (
-                    <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-[11px] font-bold">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                      <span className="truncate">{totalAlertas} alertas normativas</span>
-                    </div>
-                  )}
-
-                </div>
-
-                {/* Barra de Acciones */}
-                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => onExportarDotacionColegio(est, periodoActivo)}
-                      className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors"
-                      title="Exportar Dotación (.slep)"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onExportarMatrizExcelColegio(est, periodoActivo)}
-                      className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition-colors"
-                      title="Descargar Matriz Oficial Excel (.xlsx)"
-                    >
-                      <FileSpreadsheet className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setColegioParaGdp(est)}
-                      className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors"
-                      title="Exportar Planilla GDP Oficial (.xlsx) y Parámetros SEP/PIE"
-                    >
-                      <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      onSelectColegio(est);
-                      onAbrirWorkflow(est);
-                    }}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black rounded-xl transition-all shadow-sm active:scale-[0.98]"
-                  >
-                    <span>Espacio Escolar</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        /* VISTA TABLA */
+      ) : vistaModo === 'table' ? (
         <div className="card-elevated overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 uppercase font-black text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-700">
-                <tr>
-                  <th className="p-3 w-10 text-center">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th className="py-2.5 pl-3 pr-2 w-8">
                     <input
                       type="checkbox"
-                      aria-label="Seleccionar todos los colegios filtrados"
-                      checked={colegiosSeleccionadosBatch.length > 0 && colegiosSeleccionadosBatch.length === colegiosFiltrados.length}
-                      onChange={handleSeleccionarTodosLosFiltrados}
-                      className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      checked={todosFiltradosSeleccionados}
+                      onChange={toggleSeleccionTodos}
+                      aria-label="Seleccionar todas las escuelas"
+                      className="rounded border-slate-300 dark:border-slate-600 text-orange-600 focus:ring-orange-500"
                     />
                   </th>
-                  <th className="p-3">RBD & Establecimiento</th>
-                  <th className="p-3">Comuna</th>
-                  <th className="p-3">Régimen</th>
-                  <th className="p-3 text-center">Docentes</th>
-                  <th className="p-3 text-center">Cursos</th>
-                  <th className="p-3 text-center">Balance</th>
-                  <th className="p-3">Asesor UATP</th>
-                  <th className="p-3 text-right">Acciones</th>
+                  <th className="py-2.5 px-2">RBD</th>
+                  <th className="py-2.5 px-2">Establecimiento</th>
+                  <th className="py-2.5 px-2 hidden md:table-cell">Comuna</th>
+                  <th className="py-2.5 px-2 hidden lg:table-cell">Asesor UATP</th>
+                  <th className="py-2.5 px-2 text-right">Matrícula</th>
+                  <th className="py-2.5 px-2 text-right hidden sm:table-cell">Docentes</th>
+                  <th className="py-2.5 px-2 text-right">Balanza HA</th>
+                  <th className="py-2.5 px-2 text-center hidden md:table-cell">Alertas</th>
+                  <th className="py-2.5 pl-2 pr-3 text-right">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                {colegiosFiltrados.map((est) => {
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {colegiosFiltrados.map(est => {
                   const diag = diagnosticosMap.get(est.rbd);
                   const bal = diag?.balanzaGeneral.superavitDeficitLectivo || 0;
-                  const seleccionado = colegiosSeleccionadosBatch.includes(est.rbd);
+                  const mat = diag?.balanzaGeneral.totalMatriculaProyectada || 0;
+                  const cursosCnt = diag?.balanzaGeneral.totalCursos || 0;
+                  const docsCnt = todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo)).length;
+                  const alertasCnt =
+                    (diag?.balanzaGeneral.sobreasignacionesAlertas?.length || 0) +
+                    (diag?.balanzaGeneral.alertasInfraestructura?.length || 0) +
+                    (diag?.balanzaGeneral.alertasAforoPie?.length || 0);
+                  const isActivo = colegioActivo?.rbd === est.rbd;
+                  const isChecked = colegiosSeleccionadosBatch.includes(est.rbd);
+
                   return (
-                    <tr key={est.id || est.rbd} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                      <td className="p-3 text-center">
+                    <tr
+                      key={est.rbd}
+                      className={`group transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/40 ${
+                        isActivo ? 'bg-orange-50/40 dark:bg-orange-950/20' : ''
+                      }`}
+                    >
+                      <td className="py-2 pl-3 pr-2">
                         <input
                           type="checkbox"
-                          checked={seleccionado}
-                          onChange={() => toggleSeleccionColegio(est.rbd)}
-                          className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          checked={isChecked}
+                          onChange={() => toggleSeleccionBatch(est.rbd)}
+                          aria-label={`Seleccionar ${est.nombre}`}
+                          className="rounded border-slate-300 dark:border-slate-600 text-orange-600 focus:ring-orange-500"
                         />
                       </td>
-                      <td className="p-3">
-                        <div className="font-bold text-slate-900 dark:text-white">{est.nombre}</div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">RBD: {est.rbd}</div>
+                      <td className="py-2 px-2 font-mono font-bold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                        {est.rbd}
                       </td>
-                      <td className="p-3 font-semibold text-slate-700 dark:text-slate-300">{est.comuna}</td>
-                      <td className="p-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
-                          {est.regimen}
-                        </span>
+                      <td className="py-2 px-2">
+                        <button
+                          type="button"
+                          onClick={() => onAbrirWorkflow(est)}
+                          className="text-left font-bold text-slate-900 dark:text-white hover:text-orange-600 dark:hover:text-orange-400 transition-colors flex items-center gap-1.5"
+                        >
+                          <span className="truncate max-w-[240px] xl:max-w-[320px]">{est.nombre}</span>
+                          {isActivo && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 shrink-0">
+                              Activo
+                            </span>
+                          )}
+                        </button>
+                        <div className="text-[10px] text-slate-400 truncate max-w-[240px]">
+                          {est.regimen} · {est.director || 'Sin director'}
+                        </div>
                       </td>
-                      <td className="p-3 text-center font-black tabular-nums">
-                        {todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo)).length}
+                      <td className="py-2 px-2 text-slate-600 dark:text-slate-300 hidden md:table-cell whitespace-nowrap">
+                        {est.comuna}
                       </td>
-                      <td className="p-3 text-center font-black tabular-nums">
-                        {diag?.balanzaGeneral.totalCursos || 0}
+                      <td className="py-2 px-2 hidden lg:table-cell">
+                        <select
+                          value={est.asesorUatp || 'SIN_ASIGNAR'}
+                          onChange={(e) => handleCambiarAsesorColegio(est, e.target.value)}
+                          className="px-2 py-1 rounded-lg text-[11px] font-medium bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 max-w-[170px]"
+                        >
+                          <option value="SIN_ASIGNAR">Sin asignar</option>
+                          {todosLosAsesores.map(a => (
+                            <option key={a.id} value={a.nombre}>{a.nombre}</option>
+                          ))}
+                        </select>
                       </td>
-                      <td className="p-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-black tabular-nums ${
-                          bal < 0 ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' :
-                          bal > 0 ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300' :
-                          'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      <td className="py-2 px-2 text-right tabular-nums font-mono text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                        {mat} <span className="text-[10px] text-slate-400">({cursosCnt}c)</span>
+                      </td>
+                      <td className="py-2 px-2 text-right tabular-nums font-mono text-slate-700 dark:text-slate-200 hidden sm:table-cell">
+                        {docsCnt}
+                      </td>
+                      <td className="py-2 px-2 text-right whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-lg font-mono font-bold tabular-nums ${
+                          bal > 0
+                            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                            : bal < 0
+                              ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                         }`}>
-                          {bal > 0 ? `+${bal}` : bal}h
+                          {bal > 0 ? `+${bal}` : bal}
                         </span>
                       </td>
-                      <td className="p-3">
-                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                          {est.asesorUatp || '⚠️ Sin Asignar'}
-                        </span>
+                      <td className="py-2 px-2 text-center hidden md:table-cell">
+                        {alertasCnt > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 font-bold tabular-nums">
+                            <AlertTriangle className="w-3 h-3" />
+                            {alertasCnt}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-mono">—</span>
+                        )}
                       </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="py-2 pl-2 pr-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1 relative">
                           <button
-                            onClick={() => setColegioParaGdp(est)}
-                            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition-colors"
-                            title="Exportar Planilla GDP Oficial (.xlsx) y Parámetros SEP/PIE"
+                            type="button"
+                            onClick={() => onAbrirWorkflow(est)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-blue-600 hover:bg-orange-600 dark:hover:bg-blue-500 text-white text-[11px] font-bold transition-colors inline-flex items-center gap-1"
                           >
-                            <FileSpreadsheet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                            <span>Abrir</span>
+                            <ChevronRight className="w-3 h-3" />
                           </button>
+
                           <button
-                            onClick={() => {
-                              onSelectColegio(est);
-                              onAbrirWorkflow(est);
-                            }}
-                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-xs"
+                            type="button"
+                            onClick={() => setMenuFilaAbiertoRbd(menuFilaAbiertoRbd === est.rbd ? null : est.rbd)}
+                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                            title="Más opciones"
                           >
-                            Abrir
+                            <MoreVertical className="w-3.5 h-3.5" />
                           </button>
+
+                          {menuFilaAbiertoRbd === est.rbd && (
+                            <div className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-1 z-40 text-left animate-fade-in">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMenuFilaAbiertoRbd(null);
+                                  onSelectColegio(est);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                              >
+                                <Check className="w-3.5 h-3.5 text-orange-500" />
+                                <span>Seleccionar como Activo</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMenuFilaAbiertoRbd(null);
+                                  onExportarMatrizExcelColegio(est, periodoActivo);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
+                              >
+                                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Exportar Matriz (.xlsx)</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMenuFilaAbiertoRbd(null);
+                                  setColegioParaGdp(est);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/50"
+                              >
+                                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Generar Planilla GDP</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMenuFilaAbiertoRbd(null);
+                                  onExportarDotacionColegio(est, periodoActivo);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                              >
+                                <Download className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Exportar Ficha (.slep)</span>
+                              </button>
+                              {onEliminarColegio && (!permisos || esSuperUsuario) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMenuFilaAbiertoRbd(null);
+                                    if (window.confirm(`¿Eliminar "${est.nombre}" (RBD ${est.rbd}) del catálogo?`)) {
+                                      onEliminarColegio(est.rbd);
+                                    }
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 border-t border-slate-100 dark:border-slate-800 mt-1 pt-1.5"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Eliminar Colegio</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -951,81 +947,207 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
             </table>
           </div>
         </div>
+      ) : (
+        /* Vista Tarjetas Limpia (con checkbox para Reasignar Lote y menú ⋮ único) */
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {colegiosFiltrados.map(est => {
+            const diag = diagnosticosMap.get(est.rbd);
+            const bal = diag?.balanzaGeneral.superavitDeficitLectivo || 0;
+            const mat = diag?.balanzaGeneral.totalMatriculaProyectada || 0;
+            const cursosCnt = diag?.balanzaGeneral.totalCursos || 0;
+            const docsCnt = todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodoActivo)).length;
+            const alertasCnt =
+              (diag?.balanzaGeneral.sobreasignacionesAlertas?.length || 0) +
+              (diag?.balanzaGeneral.alertasInfraestructura?.length || 0) +
+              (diag?.balanzaGeneral.alertasAforoPie?.length || 0);
+            const isActivo = colegioActivo?.rbd === est.rbd;
+            const isChecked = colegiosSeleccionadosBatch.includes(est.rbd);
+
+            return (
+              <div
+                key={est.rbd}
+                className={`card-elevated p-4 flex flex-col justify-between gap-3 transition-all ${
+                  isActivo ? 'ring-2 ring-orange-500/60' : ''
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleSeleccionBatch(est.rbd)}
+                      aria-label={`Seleccionar ${est.nombre}`}
+                      className="mt-1 rounded border-slate-300 dark:border-slate-600 text-orange-600 focus:ring-orange-500"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                          RBD {est.rbd}
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{est.comuna}</span>
+                      </div>
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate mt-1">
+                        {est.nombre}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        {est.regimen} · {est.asesorUatp || 'Sin asesor'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold tabular-nums shrink-0 ${
+                    bal > 0
+                      ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                      : bal < 0
+                        ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                  }`}>
+                    {bal > 0 ? `+${bal}` : bal} HA
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 py-2 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-center">
+                  <div>
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">Matrícula</div>
+                    <div className="text-xs font-black text-slate-900 dark:text-white tabular-nums font-mono">{mat} ({cursosCnt}c)</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">Docentes</div>
+                    <div className="text-xs font-black text-slate-900 dark:text-white tabular-nums font-mono">{docsCnt}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">Alertas</div>
+                    <div className={`text-xs font-black tabular-nums font-mono ${alertasCnt > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      {alertasCnt > 0 ? alertasCnt : 'OK'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1 relative">
+                  <button
+                    type="button"
+                    onClick={() => onAbrirWorkflow(est)}
+                    className="flex-1 py-1.5 px-3 rounded-xl bg-slate-900 dark:bg-blue-600 hover:bg-orange-600 dark:hover:bg-blue-500 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>Abrir Espacio</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMenuFilaAbiertoRbd(menuFilaAbiertoRbd === est.rbd ? null : est.rbd)}
+                    className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+                    title="Exportar y opciones"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  {menuFilaAbiertoRbd === est.rbd && (
+                    <div className="absolute right-0 bottom-full mb-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-1 z-40 text-left animate-fade-in">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuFilaAbiertoRbd(null);
+                          onExportarMatrizExcelColegio(est, periodoActivo);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Exportar Matriz (.xlsx)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuFilaAbiertoRbd(null);
+                          setColegioParaGdp(est);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-950/50"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Generar Planilla GDP</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuFilaAbiertoRbd(null);
+                          onExportarDotacionColegio(est, periodoActivo);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                      >
+                        <Download className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Exportar Ficha (.slep)</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* ── 5. MODAL REASIGNACIÓN EN LOTE ── */}
+      {/* Modal Reasignación Masiva */}
       {modalReasignarAbierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
-          <div className="card-elevated max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar p-6 shadow-2xl space-y-4 border border-border-subtle animate-scale-in my-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-border-subtle shrink-0">
-              <div className="flex items-center gap-2">
-                <ArrowUpDown className="w-5 h-5 text-indigo-600" />
-                <h3 className="font-black text-slate-900 dark:text-white text-base">Reasignar Colegios en Lote</h3>
-              </div>
-              <button
-                onClick={() => setModalReasignarAbierto(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-slate-900 dark:text-white">
+                Reasignar {colegiosSeleccionadosBatch.length} Escuela(s)
+              </h3>
+              <button onClick={() => setModalReasignarAbierto(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                <X className="w-4 h-4" />
               </button>
             </div>
-
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              Selecciona el asesor de destino para los <strong>{colegiosSeleccionadosBatch.length}</strong> colegios seleccionados.
-            </p>
-
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">
-                Asesor UATP de Destino:
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
+                Asesor UATP de Destino
               </label>
               <select
                 value={asesorDestinoBatch}
                 onChange={(e) => setAsesorDestinoBatch(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-bold rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
               >
-                <option value="SIN_ASIGNAR">⚠️ Dejar como Sin Asignar</option>
-                {todosLosAsesores.map((a) => (
-                  <option key={a.id || a.nombre} value={a.nombre}>
-                    👤 {a.nombre}
-                  </option>
+                <option value="SIN_ASIGNAR">Sin Asesor (Dejar disponible)</option>
+                {todosLosAsesores.map(a => (
+                  <option key={a.id} value={a.nombre}>{a.nombre}</option>
                 ))}
               </select>
             </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-border-subtle">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => setModalReasignarAbierto(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 rounded-xl"
+                className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Cancelar
               </button>
               <button
-                onClick={handleEjecutarReasignacionBatch}
+                type="button"
                 disabled={procesandoReasignacion || colegiosSeleccionadosBatch.length === 0}
-                className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl shadow-md"
+                onClick={handleEjecutarReasignacionMasiva}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white"
               >
-                {procesandoReasignacion ? 'Reasignando...' : `Confirmar (${colegiosSeleccionadosBatch.length})`}
+                {procesandoReasignacion ? 'Reasignando...' : 'Confirmar Reasignación'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── 6. MODAL PARÁMETROS Y EXPORTACIÓN GDP OFICIAL ── */}
+      {/* Modal Parámetros GDP */}
       {colegioParaGdp && (
         <GdpParametrosModal
-          isOpen={!!colegioParaGdp}
+          isOpen={Boolean(colegioParaGdp)}
           onClose={() => setColegioParaGdp(null)}
           establecimiento={colegioParaGdp}
-          docentes={todosLosDocentes.filter(d => String(d.rbd) === String(colegioParaGdp.rbd))}
-          asistentes={(todosLosAsistentes || []).filter(a => String(a.rbd) === String(colegioParaGdp.rbd))}
-          cursos={todosLosCursos.filter(c => String(c.rbd) === String(colegioParaGdp.rbd))}
-          asignaciones={todasLasAsignaciones.filter(a => String(a.rbd) === String(colegioParaGdp.rbd))}
+          cursos={todosLosCursos.filter(c => c.rbd === colegioParaGdp.rbd && (c.periodo === undefined || c.periodo === periodoActivo))}
+          docentes={todosLosDocentes.filter(d => d.rbd === colegioParaGdp.rbd && (d.periodo === undefined || d.periodo === periodoActivo))}
+          asignaciones={todasLasAsignaciones.filter(a => a.rbd === colegioParaGdp.rbd && (a.periodo === undefined || a.periodo === periodoActivo))}
+          asistentes={todosLosAsistentes.filter(a => a.rbd === colegioParaGdp.rbd && (a.periodo === undefined || a.periodo === periodoActivo))}
           onGuardarEstablecimiento={onGuardarColegio}
-          onNotificar={(msg) => setMensajeFeedback(msg)}
+          onNotificar={(msg, tipo) => mostrarFeedback(msg, tipo === 'error' ? 'error' : 'ok')}
         />
       )}
-
     </div>
   );
 };

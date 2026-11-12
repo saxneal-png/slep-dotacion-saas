@@ -89,7 +89,6 @@ import { LoginModal } from './components/auth/LoginModal';
 import { CambiarPasswordModal } from './components/auth/CambiarPasswordModal';
 import { OlvidoPasswordModal } from './components/auth/OlvidoPasswordModal';
 import { PrimerAccesoModal } from './components/auth/PrimerAccesoModal';
-import { ModalControlSesionesEstamentos } from './components/auth/ModalControlSesionesEstamentos';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSessionActual());
@@ -105,8 +104,6 @@ export const App: React.FC = () => {
   }, [session?.usuario.id]);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
   const [modalOlvidoPassword, setModalOlvidoPassword] = useState(false);
-  const [modalControlSesionesAbierto, setModalControlSesionesAbierto] = useState(false);
-  const [pausaRevisionActiva, setPausaRevisionActiva] = useState<boolean>(() => Boolean(AuthService.getEstadoPausaRevision()?.activa));
   const [avisoSesionPausada, setAvisoSesionPausada] = useState<string | null>(null);
   const [colegios, setColegios] = useState<Establecimiento[]>([]);
   const [colegioActivo, setColegioActivo] = useState<Establecimiento | null>(null);
@@ -246,16 +243,12 @@ export const App: React.FC = () => {
 
   // Validación reactiva, remota y en tiempo real de la vigencia de la sesión activa
   useEffect(() => {
-    const actualizarBadgePausa = async () => {
-      const pausa = isSupabaseEnabled()
-        ? await AuthService.sincronizarEstadoPausaDesdeNube().catch(() => AuthService.getEstadoPausaRevision())
-        : AuthService.getEstadoPausaRevision();
-      setPausaRevisionActiva(Boolean(pausa?.activa && (pausa.rolesAfectados || []).length > 0));
-    };
-
-    actualizarBadgePausa();
-
-    if (!session) return;
+    if (!session) {
+      if (isSupabaseEnabled()) {
+        AuthService.sincronizarEstadoPausaDesdeNube().catch(() => {});
+      }
+      return;
+    }
 
     let cancelado = false;
 
@@ -272,9 +265,6 @@ export const App: React.FC = () => {
 
       if (cancelado) return;
 
-      const pausaActual = AuthService.getEstadoPausaRevision();
-      setPausaRevisionActiva(Boolean(pausaActual?.activa && (pausaActual.rolesAfectados || []).length > 0));
-
       if (!check.valida) {
         const motivoMsg =
           check.motivo || 'Su sesión ha sido pausada temporalmente por período de revisión técnica interna UATP.';
@@ -290,11 +280,7 @@ export const App: React.FC = () => {
 
     const handleFocus = () => verificarEstadoSesion(true);
     const handleEventoPausa = () => {
-      actualizarBadgePausa();
       verificarEstadoSesion(false);
-    };
-    const handleEventoReactivada = () => {
-      actualizarBadgePausa();
     };
     const handleStorage = (e: StorageEvent) => {
       if (
@@ -309,7 +295,6 @@ export const App: React.FC = () => {
     window.addEventListener('focus', handleFocus);
     window.addEventListener('storage', handleStorage);
     window.addEventListener('slep:sesiones_pausadas', handleEventoPausa);
-    window.addEventListener('slep:sesiones_reactivadas', handleEventoReactivada);
 
     // Respaldo periódico ligero (30s) por si Realtime no está disponible en redes escolares
     const intervalo = setInterval(() => verificarEstadoSesion(true), 30000);
@@ -351,7 +336,6 @@ export const App: React.FC = () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('slep:sesiones_pausadas', handleEventoPausa);
-      window.removeEventListener('slep:sesiones_reactivadas', handleEventoReactivada);
       clearInterval(intervalo);
       if (canalControl) {
         supabase.removeChannel(canalControl).catch(() => {});
@@ -1261,8 +1245,6 @@ export const App: React.FC = () => {
         onAbrirCopilot={() => setModalCopilotAbierto(true)}
         onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
         onAbrirGestionEstablecimientos={() => setModalGestionEstablecimientosAbierto(true)}
-        onAbrirControlSesiones={() => setModalControlSesionesAbierto(true)}
-        pausaRevisionActiva={pausaRevisionActiva}
         onGuardarCambiosEnNube={handleGuardarCambiosEnNube}
         guardandoEnNube={guardandoEnNube}
         sincronizandoNube={sincronizandoNube}
@@ -1285,7 +1267,7 @@ export const App: React.FC = () => {
         <React.Suspense
           fallback={<LoadingAnimation variant="inline" />}
         >
-        {vistaActiva === 'colegios_asesorados' && (
+        {(vistaActiva === 'colegios_asesorados' || vistaActiva === 'cartera') && (
           <ColegiosAsesoradosView
             colegios={colegiosPermitidos}
             colegioActivo={colegioActivo}
@@ -1304,6 +1286,11 @@ export const App: React.FC = () => {
             periodoActivo={periodoActivo}
             onGuardarColegio={handleGuardarColegio}
             onAbrirConfiguraciones={() => setVistaActiva('configuraciones')}
+            onEliminarColegio={handleEliminarColegio}
+            onExportarCarteraSlep={handleExportarCarteraSlep}
+            onImportarCarteraSlep={handleImportarCarteraSlep}
+            onAbrirModuloSige={() => setVistaActiva('sige')}
+            onAbrirGestionEstablecimientos={() => setModalGestionEstablecimientosAbierto(true)}
           />
         )}
 
@@ -1318,31 +1305,6 @@ export const App: React.FC = () => {
             onExportarCarteraSlep={handleExportarCarteraSlep}
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onVolver={() => setVistaActiva('colegios_asesorados')}
-          />
-        )}
-
-        {vistaActiva === 'cartera' && (
-          <CarteraView
-            colegios={colegiosPermitidos}
-            colegioActivo={colegioActivo}
-            onSelectColegio={handleSelectColegio}
-            onGuardarColegio={handleGuardarColegio}
-            onEliminarColegio={handleEliminarColegio}
-            onExportarCarteraSlep={handleExportarCarteraSlep}
-            onImportarCarteraSlep={handleImportarCarteraSlep}
-            onAbrirModuloSige={() => setVistaActiva('sige')}
-            onAbrirWorkflow={(est) => {
-              handleSelectColegio(est);
-              setVistaActiva('workflow');
-            }}
-            onExportarSqlite={handleExportarSqlite}
-            onImportarSqlite={handleImportarSqlite}
-            periodoActivo={periodoActivo}
-            onLimpiarDotacionColegio={handleBorrarDotacionPeriodo}
-            onExportarDotacionColegio={handleExportarDotacionColegio}
-            onExportarMatrizExcelColegio={handleExportarMatrizExcelColegio}
-            onAbrirColegiosAsesorados={() => setVistaActiva('colegios_asesorados')}
-            onAbrirGestionEstablecimientos={() => setModalGestionEstablecimientosAbierto(true)}
           />
         )}
 
@@ -1674,20 +1636,6 @@ export const App: React.FC = () => {
         onEliminarColegio={handleEliminarColegio}
       />
 
-      {/* Modal Exclusivo Super Usuario: Pausa / Inactivación Masiva de Sesiones por Estamento */}
-      {session?.usuario.role === 'super_usuario' && (
-        <ModalControlSesionesEstamentos
-          isOpen={modalControlSesionesAbierto}
-          onClose={() => setModalControlSesionesAbierto(false)}
-          usuarioEjecutor={session.usuario.nombreCompleto}
-          onActualizacionExitosa={(msg) => {
-            mostrarMensaje(msg, 'success');
-            const pausa = AuthService.getEstadoPausaRevision();
-            setPausaRevisionActiva(Boolean(pausa?.activa && (pausa.rolesAfectados || []).length > 0));
-            AuthService.getUsuarios().then(setUsuariosSistema).catch(() => {});
-          }}
-        />
-      )}
 
       {/* Botón Flotante Solo en Pantallas Móviles (en Desktop/Notebooks vive en la barra superior) */}
       {(!permisos || permisos.puedeUsarCopilotIa) && (

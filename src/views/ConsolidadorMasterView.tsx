@@ -421,32 +421,30 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Banner Superior Consolidador Master */}
-      <div className="bg-[#002B49] text-white p-6 rounded-xl border border-slate-700 shadow-md">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-orange-600/30 border border-orange-500/40 text-orange-400 text-[11px] font-bold">
-                <Layers className="w-3.5 h-3.5" />
-                Consolidador Territorial de Dotación Docente
-              </div>
-              <span className={`px-2.5 py-0.5 text-[11px] font-semibold rounded border ${
-                totalColegios < 100 
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
-                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-              }`}>
-                {totalColegios < 100 
-                  ? `Cartera Asignada: ${totalColegios} colegios` 
-                  : `Red Territorial Global SLEP: ${totalColegios} colegios`}
-              </span>
-            </div>
-            <h2 className="text-xl font-bold text-white mt-2">
-              Matriz Única Territorial - SLEP Valle Diguillín
+      {/* Header Slim Consolidador Master (Tema adaptativo) */}
+      <div className="card-elevated px-4 py-3">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 text-[10px] font-bold uppercase tracking-wider">
+              <Layers className="w-3 h-3" />
+              Consolidador Territorial
+            </span>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+              Matriz Única Territorial · SLEP Valle Diguillín
             </h2>
-            <p className="text-xs text-slate-300 mt-1 max-w-3xl">
-              Agrupa y audita los levantamientos de los asesores UATP de Bulnes, Chillán Viejo, El Carmen,
-              Pemuco, San Ignacio y Yungay. Fiscaliza la asignación en múltiples escuelas, fuentes de financiamiento y topes legales de 44 hrs.
-            </p>
+            <span className={`px-2 py-0.5 text-[11px] font-bold rounded-md border ${
+              totalColegios < 100
+                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+            }`}>
+              {totalColegios < 100 ? `Cartera: ${totalColegios} escuelas` : `Red SLEP: ${totalColegios} escuelas`}
+            </span>
+            <span
+              className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[11px] font-bold cursor-help"
+              title="Agrupa y audita levantamientos de Bulnes, Chillán Viejo, El Carmen, Pemuco, San Ignacio y Yungay. Fiscaliza multiescuela y tope 44 hrs."
+            >
+              ?
+            </span>
           </div>
 
           <div className="flex items-center gap-3">

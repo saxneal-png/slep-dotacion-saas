@@ -428,7 +428,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
       {/* Cockpit Ejecutivo de Tarjetas KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Asistentes */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+        <div className="p-3.5 rounded-2xl card-elevated relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Total Asistentes
@@ -453,7 +453,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
         </div>
 
         {/* Fuentes de Financiamiento */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+        <div className="p-3.5 rounded-2xl card-elevated relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Fuentes Financiamiento
@@ -491,7 +491,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
         </div>
 
         {/* Dupla Psicosocial SEP */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+        <div className="p-3.5 rounded-2xl card-elevated relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Dupla Psicosocial
@@ -525,7 +525,7 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
         </div>
 
         {/* Apoyo PIE y Auxiliares */}
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+        <div className="p-3.5 rounded-2xl card-elevated relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Equipo PIE & Auxiliares

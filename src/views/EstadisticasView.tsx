@@ -120,32 +120,30 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Encabezado Principal y Controles de Navegación */}
-      <div className="bg-[#002B49] text-white p-6 rounded-2xl border border-slate-700 shadow-md">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-orange-600/30 border border-orange-500/40 text-orange-400 text-xs font-bold">
-                <BarChart3 className="w-4 h-4" />
-                <span>Gestión Estratégica de Dotación de Personal</span>
-                <span className="text-slate-400">• Periodo {periodoActivo}</span>
-              </div>
-              <span className={`px-2.5 py-1 text-xs font-semibold rounded-lg border ${
-                colegios.length < 100 
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
-                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-              }`}>
-                {colegios.length < 100 
-                  ? `Cartera Asignada: ${colegios.length} colegios` 
-                  : `Red Territorial Global SLEP: ${colegios.length} colegios`}
-              </span>
-            </div>
-            <h2 className="text-2xl font-bold text-white mt-2">
-              Panoramas & Auditoría de Personal SLEP Valle Diguillín
+      {/* Encabezado Slim Tema Adaptativo */}
+      <div className="card-elevated px-4 py-3">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 text-[10px] font-bold uppercase tracking-wider">
+              <BarChart3 className="w-3 h-3" />
+              Periodo {periodoActivo}
+            </span>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
+              Panoramas & Auditoría de Personal SLEP
             </h2>
-            <p className="text-xs text-slate-300 mt-1 max-w-3xl">
-              Análisis consolidado de docentes (titulares, contrata, postulando a titularidad, Ley 20.903) y asistentes de la educación (Ley 21.109), financiamiento por subvención y cobertura curricular.
-            </p>
+            <span className={`px-2 py-0.5 text-[11px] font-bold rounded-md border ${
+              colegios.length < 100
+                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+            }`}>
+              {colegios.length < 100 ? `Cartera: ${colegios.length} escuelas` : `Red SLEP: ${colegios.length} escuelas`}
+            </span>
+            <span
+              className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[11px] font-bold cursor-help"
+              title="Análisis consolidado de docentes (Ley 20.903), asistentes (Ley 21.109), financiamiento por subvención y cobertura curricular."
+            >
+              ?
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -170,14 +168,14 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
             )}
 
             {/* Segmented Control de Nivel: Territorial vs Intra-Escuela */}
-            <div className="bg-slate-900/90 p-1 rounded-xl border border-slate-700 flex items-center">
+            <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center">
               <button
                 type="button"
                 onClick={() => setVistaModo('territorial')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                   vistaModo === 'territorial'
                     ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700'
                 }`}
               >
                 <Layers className="w-3.5 h-3.5" />
@@ -189,7 +187,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                   vistaModo === 'intra_escuela'
                     ? 'bg-orange-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700'
                 }`}
               >
                 <School className="w-3.5 h-3.5" />
