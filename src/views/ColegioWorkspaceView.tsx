@@ -51,6 +51,7 @@ export interface ColegioWorkspaceViewProps {
   onGuardarAsistentesBatch?: (asistentes: AsistenteEducacion[], reemplazar?: boolean) => Promise<void> | void;
   onEliminarAsistente?: (id: string) => Promise<void> | void;
   onGuardarAsignacion: (a: AsignacionHoraria) => Promise<void> | void;
+  onGuardarAsignacionesBatch?: (asigs: AsignacionHoraria[]) => Promise<void> | void;
   onEliminarAsignacion: (id: string) => Promise<void> | void;
   onAbrirModuloSige: () => void;
   onExportarExcel: () => void;
@@ -96,6 +97,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   onGuardarAsistentesBatch,
   onEliminarAsistente,
   onGuardarAsignacion,
+  onGuardarAsignacionesBatch,
   onEliminarAsignacion,
   onAbrirModuloSige,
   onExportarExcel,
@@ -585,9 +587,11 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             todosLosCursos={todosLosCursos}
             cursos={cursos}
             onGuardarAsignacion={onGuardarAsignacion}
+            onGuardarAsignacionesBatch={onGuardarAsignacionesBatch}
             onEliminarAsignacion={onEliminarAsignacion}
             onNavegarAPestana={onNavegarAPestana || (() => setTabActiva('cursos'))}
             periodoActivo={periodoActivo}
+            usuarioActualId={usuarioActual?.id}
           />
         )}
 

@@ -53,6 +53,7 @@ import {
   eliminarDocente,
   listarAsignaciones,
   guardarAsignacion,
+  guardarAsignacionesBatch,
   eliminarAsignacion,
   listarAsistentes,
   listarTodosLosAsistentesTerritorio,
@@ -766,17 +767,49 @@ export const App: React.FC = () => {
 
   const handleGuardarAsignacion = async (asig: AsignacionHoraria) => {
     await guardarAsignacion(asig);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
-    const all = await listarTodasLasAsignaciones(periodoActivo);
-    setTodasLasAsignaciones(all);
+    const asigNormalizada: AsignacionHoraria = { ...asig, periodo: asig.periodo || periodoActivo };
+    if (colegioActivo && asigNormalizada.rbd === colegioActivo.rbd && asigNormalizada.periodo === periodoActivo) {
+      setAsignaciones(prev =>
+        prev.some(x => x.id === asigNormalizada.id)
+          ? prev.map(x => (x.id === asigNormalizada.id ? asigNormalizada : x))
+          : [...prev, asigNormalizada]
+      );
+    }
+    setTodasLasAsignaciones(prev =>
+      prev.some(x => x.id === asigNormalizada.id)
+        ? prev.map(x => (x.id === asigNormalizada.id ? asigNormalizada : x))
+        : [...prev, asigNormalizada]
+    );
     mostrarMensaje('Asignación horaria actualizada.');
+  };
+
+  const handleGuardarAsignacionesBatch = async (batch: AsignacionHoraria[]) => {
+    if (!batch.length) return;
+    const normalizadas = batch.map(a => ({ ...a, periodo: a.periodo || periodoActivo }));
+    await guardarAsignacionesBatch(normalizadas);
+    const idsMap = new Map(normalizadas.map(a => [a.id, a]));
+    if (colegioActivo) {
+      const delColegio = normalizadas.filter(a => a.rbd === colegioActivo.rbd && a.periodo === periodoActivo);
+      if (delColegio.length > 0) {
+        setAsignaciones(prev => {
+          const map = new Map(prev.map(x => [x.id, x]));
+          delColegio.forEach(x => map.set(x.id, x));
+          return Array.from(map.values());
+        });
+      }
+    }
+    setTodasLasAsignaciones(prev => {
+      const map = new Map(prev.map(x => [x.id, x]));
+      idsMap.forEach((v, k) => map.set(k, v));
+      return Array.from(map.values());
+    });
+    mostrarMensaje(`${normalizadas.length} asignaciones horarias actualizadas.`);
   };
 
   const handleEliminarAsignacion = async (id: string) => {
     await eliminarAsignacion(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
-    const all = await listarTodasLasAsignaciones(periodoActivo);
-    setTodasLasAsignaciones(all);
+    setAsignaciones(prev => prev.filter(x => x.id !== id));
+    setTodasLasAsignaciones(prev => prev.filter(x => x.id !== id));
     mostrarMensaje('Asignación eliminada.');
   };
 
@@ -1328,6 +1361,7 @@ export const App: React.FC = () => {
               onGuardarAsistentesBatch={handleGuardarAsistentesBatch}
               onEliminarAsistente={handleEliminarAsistente}
               onGuardarAsignacion={handleGuardarAsignacion}
+              onGuardarAsignacionesBatch={handleGuardarAsignacionesBatch}
               onEliminarAsignacion={handleEliminarAsignacion}
               onAbrirModuloSige={() => setVistaActiva('sige')}
               onExportarExcel={handleExportarExcel}
@@ -1441,12 +1475,14 @@ export const App: React.FC = () => {
             onGuardarDocente={handleGuardarDocente}
             onEliminarDocente={handleEliminarDocente}
             onGuardarAsignacion={handleGuardarAsignacion}
+            onGuardarAsignacionesBatch={handleGuardarAsignacionesBatch}
             onEliminarAsignacion={handleEliminarAsignacion}
             todosLosColegios={colegiosPermitidos}
             todosLosDocentes={todosLosDocentes}
             todasLasAsignaciones={todasLasAsignaciones}
             onNavegarAPestana={setVistaActiva} todosLosCursos={todosLosCursos}
             periodoActivo={periodoActivo}
+            usuarioActualId={session?.usuario?.id}
           />
         )}
 

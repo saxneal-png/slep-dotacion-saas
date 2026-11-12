@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useDeferredValue } from 'react';
+import React, { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import { 
   Users, 
   Plus, 
@@ -23,7 +23,10 @@ import {
   BookOpen,
   ClipboardPaste,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  PanelRight,
+  Columns2,
+  Table2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ModalPegarDesdeExcel } from '../components/ModalPegarDesdeExcel';
@@ -52,6 +55,14 @@ import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalcu
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
 import { DocenteAsignacionPanel } from '../components/DocenteAsignacionPanel';
+import { DocenteAsignacionDrawer } from '../components/asignacion/DocenteAsignacionDrawer';
+import { SplitViewCuadraturaDocente } from '../components/asignacion/SplitViewCuadraturaDocente';
+import { SabanaCurricularView } from '../components/asignacion/SabanaCurricularView';
+import {
+  obtenerPreferenciaModoAsignacion,
+  guardarPreferenciaModoAsignacion
+} from '../services/configuracionGeneralService';
+import { ModoAsignacionDocente } from '../types';
 import {
   FILTRO_ESTAMENTO_FUERA_AULA,
   tieneFuncionesFueraDeAulaSinColaborativo
@@ -69,9 +80,11 @@ interface DocentesDotacionViewProps {
   todosLosCursos?: CursoSae[];
   cursos?: CursoSae[];
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
+  onGuardarAsignacionesBatch?: (asigs: AsignacionHoraria[]) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
   onNavegarAPestana?: (pestana: any) => void;
   periodoActivo?: number;
+  usuarioActualId?: string;
 }
 
 export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
@@ -86,16 +99,36 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   todosLosCursos = [],
   cursos = [],
   onGuardarAsignacion,
+  onGuardarAsignacionesBatch,
   onEliminarAsignacion,
   onNavegarAPestana,
-  periodoActivo = 2027
+  periodoActivo = 2027,
+  usuarioActualId
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Docente | null>(null);
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
   const [expandedDocenteId, setExpandedDocenteId] = useState<string | null>(null);
+  const [drawerDocenteId, setDrawerDocenteId] = useState<string | null>(null);
+  const [modoAsignacion, setModoAsignacion] = useState<ModoAsignacionDocente>(() =>
+    obtenerPreferenciaModoAsignacion(usuarioActualId, colegio?.rbd)
+  );
   const [modalPegarAbierto, setModalPegarAbierto] = useState(false);
   const [modalSigeAbierto, setModalSigeAbierto] = useState(false);
+
+  useEffect(() => {
+    setModoAsignacion(obtenerPreferenciaModoAsignacion(usuarioActualId, colegio?.rbd));
+  }, [usuarioActualId, colegio?.rbd]);
+
+  const handleCambiarModoAsignacion = (nuevoModo: ModoAsignacionDocente) => {
+    setModoAsignacion(nuevoModo);
+    guardarPreferenciaModoAsignacion(nuevoModo, usuarioActualId, colegio?.rbd);
+  };
+
+  const drawerDocente = useMemo(
+    () => (drawerDocenteId ? docentes.find(d => d.id === drawerDocenteId) || null : null),
+    [drawerDocenteId, docentes]
+  );
 
   // Filtros de búsqueda de docentes
   const [busquedaDocente, setBusquedaDocente] = useState('');
@@ -963,6 +996,95 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         )}
       </div>
 
+      {/* Selector Personalizable de Modo Visual de Asignación (Persistido por Usuario + RBD) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-3.5 py-2 shadow-2xs">
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <span className="font-bold text-slate-800">Vista de Asignación Curricular</span>
+          <span className="hidden md:inline text-slate-400">•</span>
+          <span className="hidden md:inline text-[11px] text-slate-500">
+            Tu preferencia se guarda automáticamente para este establecimiento.
+          </span>
+        </div>
+        <div
+          role="tablist"
+          aria-label="Modo de visualización para asignar asignaturas"
+          className="inline-flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 gap-1 self-start sm:self-auto"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={modoAsignacion === 'drawer'}
+            onClick={() => handleCambiarModoAsignacion('drawer')}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+              modoAsignacion === 'drawer'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+            }`}
+            title="Modo A: Tabla ejecutiva con panel lateral deslizable por docente"
+          >
+            <PanelRight className="w-3.5 h-3.5" />
+            <span>Ficha Drawer</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={modoAsignacion === 'split'}
+            onClick={() => handleCambiarModoAsignacion('split')}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+              modoAsignacion === 'split'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+            }`}
+            title="Modo B: Vista dividida Docentes vs Vacantes del Plan con asignación rápida y arrastre"
+          >
+            <Columns2 className="w-3.5 h-3.5" />
+            <span>Split Cuadratura</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={modoAsignacion === 'sabana'}
+            onClick={() => handleCambiarModoAsignacion('sabana')}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+              modoAsignacion === 'sabana'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+            }`}
+            title="Modo C: Sábana curricular densa Asignaturas × Cursos"
+          >
+            <Table2 className="w-3.5 h-3.5" />
+            <span>Sábana Grilla</span>
+          </button>
+        </div>
+      </div>
+
+      {modoAsignacion === 'split' && colegio && (
+        <SplitViewCuadraturaDocente
+          colegio={colegio}
+          docentes={docentesFiltrados.map(item => item.docente)}
+          cursos={cursos}
+          asignaciones={asignaciones}
+          periodoActivo={periodoActivo}
+          onGuardarAsignacion={onGuardarAsignacion}
+          onEliminarAsignacion={onEliminarAsignacion}
+          onAbrirDrawerDocente={(doc) => setDrawerDocenteId(doc.id)}
+        />
+      )}
+
+      {modoAsignacion === 'sabana' && colegio && (
+        <SabanaCurricularView
+          colegio={colegio}
+          cursos={cursos}
+          docentes={docentes}
+          asignaciones={asignaciones}
+          periodoActivo={periodoActivo}
+          onGuardarAsignacion={onGuardarAsignacion}
+          onEliminarAsignacion={onEliminarAsignacion}
+        />
+      )}
+
+      {modoAsignacion === 'drawer' && (
+      <>
       {/* Tabla de Docentes con Cabecera Sticky */}
       <div className="card-elevated overflow-hidden">
         <div className="overflow-x-auto max-h-[72vh]">
@@ -1208,13 +1330,26 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
+                          type="button"
+                          onClick={() => setDrawerDocenteId(d.id)}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border transition-colors ${
+                            drawerDocenteId === d.id
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                          }`}
+                          title="Abrir panel deslizable para asignar asignaturas y cursos"
+                        >
+                          <PanelRight className="w-3.5 h-3.5" />
+                          <span>Asignar</span>
+                        </button>
+                        <button
                           onClick={() => setExpandedDocenteId(expandedDocenteId === d.id ? null : d.id)}
                           className={`p-1 rounded transition-colors ${
                             expandedDocenteId === d.id
                               ? 'text-orange-600 bg-orange-100'
                               : 'text-slate-400 hover:text-orange-600 hover:bg-orange-50'
                           }`}
-                          title="Ver y ajustar asignaturas/cursos asignados"
+                          title="Expandir ficha rápida en fila"
                         >
                           {expandedDocenteId === d.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </button>
@@ -1269,6 +1404,25 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           </table>
         </div>
       </div>
+      </>
+      )}
+
+      {/* Drawer Lateral Deslizable de Asignación Curricular (Disponible desde Modo A y Modo B) */}
+      {colegio && (
+        <DocenteAsignacionDrawer
+          isOpen={Boolean(drawerDocente)}
+          docente={drawerDocente}
+          docentesLista={docentesFiltrados.map(item => item.docente)}
+          onSelectDocente={(doc) => setDrawerDocenteId(doc.id)}
+          onClose={() => setDrawerDocenteId(null)}
+          colegio={colegio}
+          cursos={cursos}
+          asignaciones={asignaciones}
+          periodoActivo={periodoActivo}
+          onGuardarAsignacion={onGuardarAsignacion}
+          onEliminarAsignacion={onEliminarAsignacion}
+        />
+      )}
 
       {/* Modal Nuevo / Editar Docente con Desglose de Financiamiento (Aislado y Optimizado) */}
       <DocenteFormModal

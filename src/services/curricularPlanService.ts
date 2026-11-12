@@ -11,7 +11,9 @@ import {
   PLANES_MINEDUC,
   PlanEstudioNivel,
   obtenerPlanPorCurso,
-  resolverCodigoYAmbitoAsignatura
+  resolverCodigoYAmbitoAsignatura,
+  esNivelParvulario,
+  calcularAuditoriaDocenteMultitramo
 } from '@slep/mineduc-engine';
 import { calcularHorasFueraAulaDocente } from './auditoriaDocenteService';
 
@@ -746,6 +748,209 @@ export function calcularSaldoDocentePorFuente(
     saldoJornadaContrato: Math.round((Number(docente.horasContrato || 0) - desglose.horasExentasTotales) * 10) / 10,
     esDocentePiePuro,
     esDocenteSepPuro
+  };
+}
+
+export interface CursoDisponibilidadDocente {
+  curso: CursoSae;
+  infoPlan: InfoPlanResuelto;
+  disponibilidad: ReturnType<typeof calcularDisponibilidadCurso>;
+  esParvulario: boolean;
+  esEpja: boolean;
+  esMedio34: boolean;
+  esTp: boolean;
+  horasAsignadasDocenteEnCurso: number;
+  totalHorasFaltantesPlan: number;
+  tieneAfinidad: boolean;
+  estadoCobertura: 'CUBIERTO' | 'PARCIAL' | 'SIN_ASIGNAR';
+}
+
+export interface ResumenImpactoAsignacion {
+  saldoAntes: number;
+  saldoDespues: number;
+  contratoCalculadoAntes: number;
+  contratoCalculadoDespues: number;
+  porcentajeLectivoDespues: number;
+  porcentajeLimite: number;
+  excedeContrato: boolean;
+  excedeLectivo: boolean;
+  advertencia: string | null;
+}
+
+/**
+ * Obtiene las asignaturas que dicta habitualmente o declara como principales un docente.
+ */
+export function obtenerMateriasAfinesDocente(
+  docente: Docente,
+  asignacionesColegio: AsignacionHoraria[]
+): string[] {
+  const set = new Set<string>();
+  const addClean = (val?: string) => {
+    if (!val) return;
+    const clean = val.trim();
+    if (clean) set.add(clean);
+  };
+  addClean(docente.asignaturaPrincipal);
+  asignacionesColegio
+    .filter(a => a.docenteId === docente.id && !a.esTrabajoColaborativo)
+    .forEach(a => addClean(a.asignatura));
+  return Array.from(set);
+}
+
+/**
+ * Calcula en una sola pasada la disponibilidad curricular de TODOS los cursos del establecimiento
+ * contextualizada para un docente específico (afinidad, carga actual en el curso, modalidades).
+ */
+export function calcularMapaDisponibilidadDocentePorCursos(
+  docente: Docente,
+  cursos: CursoSae[],
+  asignacionesColegio: AsignacionHoraria[],
+  planesDb: PlanEstudioCurricular[] = [],
+  colegio?: Establecimiento | null
+): CursoDisponibilidadDocente[] {
+  const materiasAfines = obtenerMateriasAfinesDocente(docente, asignacionesColegio);
+
+  return cursos.map(curso => {
+    const infoPlan = resolverPlanCurso(curso, planesDb);
+    const disponibilidad = calcularDisponibilidadCurso(curso, infoPlan, asignacionesColegio);
+    const esParvulario = esNivelParvulario(curso.nivel);
+    const esEpja = esCursoModalidadEpja(curso, infoPlan);
+    const esMedio34 = esCursoNivelMedio34(curso, infoPlan);
+    const esTp = esCursoModalidadTp(curso, infoPlan, colegio);
+
+    const horasAsignadasDocenteEnCurso = asignacionesColegio
+      .filter(
+        a =>
+          (a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente)) &&
+          (a.cursoId === curso.id || Boolean(a.cursosCompartidosIds?.includes(curso.id)))
+      )
+      .reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
+
+    const faltantesOblig = disponibilidad.disponibles.reduce((s, a) => s + a.horasDisponibles, 0);
+    const totalHorasFaltantesPlan = Math.round((faltantesOblig + disponibilidad.horasLibreDisponibles) * 100) / 100;
+
+    const tieneAfinidad = disponibilidad.disponibles.some(disp =>
+      materiasAfines.some(m => sonAsignaturasEquivalentes(disp.nombre, m))
+    );
+
+    const horasCubiertas = disponibilidad.todas.reduce((s, a) => s + a.horasAsignadas, 0) + disponibilidad.horasLibreAsignadas;
+    const estadoCobertura: 'CUBIERTO' | 'PARCIAL' | 'SIN_ASIGNAR' =
+      totalHorasFaltantesPlan <= 0.01
+        ? 'CUBIERTO'
+        : horasCubiertas > 0
+        ? 'PARCIAL'
+        : 'SIN_ASIGNAR';
+
+    return {
+      curso,
+      infoPlan,
+      disponibilidad,
+      esParvulario,
+      esEpja,
+      esMedio34,
+      esTp,
+      horasAsignadasDocenteEnCurso,
+      totalHorasFaltantesPlan,
+      tieneAfinidad,
+      estadoCobertura
+    };
+  });
+}
+
+/**
+ * Simula el impacto normativo Ley 20.903 antes de asignar un nuevo bloque horario a un docente.
+ */
+export function simularImpactoAsignacion(
+  docente: Docente,
+  asignacionesColegio: AsignacionHoraria[],
+  curso: CursoSae | null,
+  horasPedagogicasNueva: number,
+  porcentajePrioritariosColegio: number = 0,
+  opciones: { esTallerSep?: boolean; esTrabajoColaborativo?: boolean } = {}
+): ResumenImpactoAsignacion {
+  const asigsDoc = asignacionesColegio.filter(
+    a => a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente)
+  );
+  const cursosMap = new Map<string, CursoSae>();
+  if (curso) cursosMap.set(curso.id, curso);
+
+  const desgloseAntes = calcularHorasFueraAulaDocente(docente, asigsDoc, porcentajePrioritariosColegio);
+
+  let ha65Antes = 0;
+  let ha60Antes = 0;
+  let pieCronAntes = 0;
+  let sepExentoAntes = 0;
+
+  for (const a of asigsDoc) {
+    if (a.esTrabajoColaborativo) {
+      pieCronAntes += a.horasCronologicasPie || a.horasColaborativas || a.horasPedagogicasAula || 0;
+      continue;
+    }
+    if (a.esTallerSep) {
+      sepExentoAntes += Math.round((a.horasPedagogicasAula || 0) * 0.75 * 100) / 100;
+      continue;
+    }
+    const ha = a.horasPedagogicasAula || 0;
+    const es60 = porcentajePrioritariosColegio >= 80;
+    if (es60) ha60Antes += ha;
+    else ha65Antes += ha;
+  }
+
+  const auditAntes = calcularAuditoriaDocenteMultitramo({
+    horasAula65_35: ha65Antes,
+    horasAula60_40: ha60Antes,
+    horasPieCronologicas: pieCronAntes,
+    horasTallerSepExento: sepExentoAntes,
+    horasNoAulaInstitucionales: desgloseAntes.horasInstitucionalesSubvGen,
+    horasContratoReal: docente.horasContrato,
+    aplicaArticulo69: Boolean(docente.aplicaArticulo69)
+  });
+
+  let ha65Despues = ha65Antes;
+  let ha60Despues = ha60Antes;
+  let pieCronDespues = pieCronAntes;
+  let sepExentoDespues = sepExentoAntes;
+
+  if (opciones.esTrabajoColaborativo) {
+    pieCronDespues += horasPedagogicasNueva;
+  } else if (opciones.esTallerSep) {
+    sepExentoDespues += Math.round(horasPedagogicasNueva * 0.75 * 100) / 100;
+  } else if (porcentajePrioritariosColegio >= 80) {
+    ha60Despues += horasPedagogicasNueva;
+  } else {
+    ha65Despues += horasPedagogicasNueva;
+  }
+
+  const auditDespues = calcularAuditoriaDocenteMultitramo({
+    horasAula65_35: ha65Despues,
+    horasAula60_40: ha60Despues,
+    horasPieCronologicas: pieCronDespues,
+    horasTallerSepExento: sepExentoDespues,
+    horasNoAulaInstitucionales: desgloseAntes.horasInstitucionalesSubvGen,
+    horasContratoReal: docente.horasContrato,
+    aplicaArticulo69: Boolean(docente.aplicaArticulo69)
+  });
+
+  const excedeContrato = docente.horasContrato > 0 && auditDespues.saldoHoras < -0.05;
+  const excedeLectivo = auditDespues.esInfractorExcesoLectivo;
+
+  let advertencia: string | null = null;
+  if (excedeContrato) {
+    advertencia = `Sobreasignaría el contrato en ${Math.abs(auditDespues.saldoHoras)} hrs (${auditDespues.contratoCalculadoTotal}h req. vs ${docente.horasContrato}h).`;
+  } else if (excedeLectivo) {
+    advertencia = `Superaría el límite lectivo (${auditDespues.porcentajeLectivoReal}% > ${auditDespues.porcentajeLimitePonderado}%).`;
+  }
+
+  return {
+    saldoAntes: auditAntes.saldoHoras,
+    saldoDespues: auditDespues.saldoHoras,
+    contratoCalculadoAntes: auditAntes.contratoCalculadoTotal,
+    contratoCalculadoDespues: auditDespues.contratoCalculadoTotal,
+    porcentajeLectivoDespues: auditDespues.porcentajeLectivoReal,
+    porcentajeLimite: auditDespues.porcentajeLimitePonderado,
+    excedeContrato,
+    excedeLectivo,
+    advertencia
   };
 }
 

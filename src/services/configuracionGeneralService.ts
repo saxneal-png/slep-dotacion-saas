@@ -1,4 +1,4 @@
-import { ConfiguracionGeneral, PerfilAsesor, ParametrosMineducConfig, GeminiConfig, PreferenciasUiConfig, Establecimiento } from '../types';
+import { ConfiguracionGeneral, PerfilAsesor, ParametrosMineducConfig, GeminiConfig, PreferenciasUiConfig, Establecimiento, ModoAsignacionDocente } from '../types';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/db';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
 import { SupabaseDotacionService } from './supabaseDotacionService';
@@ -31,8 +31,36 @@ export const UI_CONFIG_DEFAULT: PreferenciasUiConfig = {
   vistaInicial: 'colegios_asesorados',
   densidadTablas: 'comoda',
   mostrarAlertasFlotantes: true,
-  animacionesHabilitadas: true
+  animacionesHabilitadas: true,
+  modoAsignacionDocente: 'drawer'
 };
+
+const PREFIX_MODO_ASIGNACION_KEY = 'slep_pref_modo_asignacion_v1';
+
+export function obtenerPreferenciaModoAsignacion(userId?: string, rbd?: string): ModoAsignacionDocente {
+  const key = `${PREFIX_MODO_ASIGNACION_KEY}_${userId || 'anon'}_${rbd || 'global'}`;
+  const raw = safeGetItem(key);
+  if (raw === 'drawer' || raw === 'split' || raw === 'sabana') {
+    return raw;
+  }
+  try {
+    const cfg = cargarConfiguracionGeneral();
+    const modoUi = cfg.ui?.modoAsignacionDocente;
+    if (modoUi === 'drawer' || modoUi === 'split' || modoUi === 'sabana') {
+      return modoUi;
+    }
+  } catch {}
+  return 'drawer';
+}
+
+export function guardarPreferenciaModoAsignacion(
+  modo: ModoAsignacionDocente,
+  userId?: string,
+  rbd?: string
+): void {
+  const key = `${PREFIX_MODO_ASIGNACION_KEY}_${userId || 'anon'}_${rbd || 'global'}`;
+  safeSetItem(key, modo);
+}
 
 export const CONFIGURACION_DEFAULT: ConfiguracionGeneral = {
   asesorActivoId: '',

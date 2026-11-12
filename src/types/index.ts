@@ -555,12 +555,15 @@ export interface GeminiConfig {
   temperatura: number;
 }
 
+export type ModoAsignacionDocente = 'drawer' | 'split' | 'sabana';
+
 export interface PreferenciasUiConfig {
   periodoPredeterminado: PeriodoGestion;
   vistaInicial: string; // 'cartera' | 'colegios_asesorados' | 'workflow' | 'consolidador' | 'estadisticas' | 'analizador'
   densidadTablas: 'compacta' | 'comoda';
   mostrarAlertasFlotantes: boolean;
   animacionesHabilitadas: boolean;
+  modoAsignacionDocente?: ModoAsignacionDocente;
 }
 
 export interface ConfiguracionGeneral {
