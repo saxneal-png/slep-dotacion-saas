@@ -82,21 +82,31 @@ export async function generateGeminiResponse(
 
   for (const m of candidateModels) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
-      const resp = await geminiFetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
         },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-          },
-        }),
-      });
+      };
+
+      const isElectron = typeof window !== 'undefined' && Boolean(window.electronAPI?.geminiRequest);
+      const useVercelProxy = !isElectron && (!apiKey || apiKey === '__SERVER_PROXY__');
+
+      const resp = useVercelProxy
+        ? await geminiFetch('/api/gemini', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: m, payload }),
+          })
+        : await geminiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify(payload),
+          });
 
       if (!resp.ok) continue;
 

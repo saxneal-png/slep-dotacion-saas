@@ -1,0 +1,29 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Ejecuta cada 4 días a las 12:00 UTC para evitar la pausa automática (7 días) en Supabase Free Tier
+    - cron: '0 12 */4 * *'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST Health Endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "Secrets VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY no configurados; omitiendo ping."
+            exit 0
+          fi
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/establecimientos?select=rbd&limit=1")
+          echo "Supabase HTTP status: $STATUS"
+          if [ "$STATUS" -ge 400 ]; then
+            exit 1
+          fi

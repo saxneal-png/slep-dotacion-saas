@@ -175,24 +175,27 @@ export class AuthService {
 
     // Sembrar directores territoriales iniciales con contraseÃ±a 123456
     const passwordDirectores = '123456';
-    for (const d of DIRECTORES_TERRITORIO) {
-      const cleanEmail = d.email.trim().toLowerCase();
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(passwordDirectores, salt);
-      usuariosNuevos.push({
-        id: `user-dir-${d.rbd}`,
-        username: cleanEmail,
-        email: cleanEmail,
-        nombreCompleto: d.director,
-        role: 'director_establecimiento',
-        cargo: d.cargo,
-        rbdAsignado: d.rbd,
-        passwordHash,
-        salt,
-        activo: true,
-        debeCambiarPassword: true
-      });
-    }
+    const directoresSemilla = await Promise.all(
+      DIRECTORES_TERRITORIO.map(async d => {
+        const cleanEmail = d.email.trim().toLowerCase();
+        const salt = generateSalt();
+        const passwordHash = await hashPassword(passwordDirectores, salt);
+        return {
+          id: `user-dir-${d.rbd}`,
+          username: cleanEmail,
+          email: cleanEmail,
+          nombreCompleto: d.director,
+          role: 'director_establecimiento' as const,
+          cargo: d.cargo,
+          rbdAsignado: d.rbd,
+          passwordHash,
+          salt,
+          activo: true,
+          debeCambiarPassword: true
+        };
+      })
+    );
+    usuariosNuevos.push(...directoresSemilla);
 
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuariosNuevos));
     return usuariosNuevos;
@@ -216,8 +219,11 @@ export class AuthService {
     let usuarios = await this.inicializarUsuariosSiNoExisten();
 
     // 1. Fusionar usuarios desde SQLite WASM (usuarios_sistema) si existen
+    let huboCambiosParaSqlite = false;
+    let sqlUsersLen = 0;
     try {
       const sqlUsers = await listarUsuariosDb();
+      sqlUsersLen = sqlUsers.length;
       if (sqlUsers.length > 0) {
         const mapLocal = new Map<string, UsuarioSistema>();
         usuarios.forEach(u => mapLocal.set(u.id, u));
@@ -311,6 +317,7 @@ export class AuthService {
           } catch (_) {}
 
           usuarios = remoteUsers;
+          huboCambiosParaSqlite = true;
           localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
         }
       } catch {
@@ -319,7 +326,9 @@ export class AuthService {
     }
 
     // 4. Persistir todos los usuarios en la tabla SQLite local (sin re-subir en segundo plano a Supabase)
-    await guardarUsuariosBatchDb(usuarios, true).catch(() => {});
+    if (huboCambiosParaSqlite || sqlUsersLen < usuarios.length) {
+      await guardarUsuariosBatchDb(usuarios, true).catch(() => {});
+    }
 
     return usuarios;
   }
