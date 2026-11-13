@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { AsignacionHoraria, CursoSae, Docente, Establecimiento } from '../../types';
 import { CATALOGO_BCEP_PARVULARIA, esNivelParvulario } from '@slep/mineduc-engine';
+import { auditarCargaDocenteIntegral, esDocenteEducadoraParvulos } from '../../services/auditoriaDocenteService';
 import { useAsignacionDocente } from '../../hooks/useAsignacionDocente';
 import { ResumenImpactoAsignacion } from '../../services/curricularPlanService';
 import { DocenteSaldoStickyBar } from './DocenteSaldoStickyBar';
@@ -97,10 +98,26 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
     });
   }, [mapaCursos, busquedaCurso, filtroCursos]);
 
+  const cursosMap = useMemo(() => new Map(cursos.map(c => [c.id, c])), [cursos]);
+
+  const otrasEducadorasConSaldo = useMemo(() => {
+    if (!docente) return [];
+    return docentesLista
+      .filter(d => d.id !== docente.id && esDocenteEducadoraParvulos(d))
+      .map(d => {
+        const propias = asignaciones.filter(a => a.docenteId === d.id);
+        const coDoc = asignaciones.filter(a => a.coDocenteId === d.id && a.tieneCoDocente);
+        const integral = auditarCargaDocenteIntegral(d, propias, coDoc, cursosMap, colegio.porcentajePrioritarios || 0);
+        const libresAula = Math.max(0, Math.round((integral.maxHAPermitidas - integral.haDocenciaEfectiva) * 100) / 100);
+        return { docente: d, libresAula };
+      })
+      .filter(x => x.libresAula > 0.05)
+      .sort((a, b) => b.libresAula - a.libresAula);
+  }, [docentesLista, docente, asignaciones, cursosMap, colegio.porcentajePrioritarios]);
+
   if (!isOpen || !docente || !resumenNormativo || !saldoPorFuente) return null;
 
-  const { audit, desglose, totalHaLectivas } = resumenNormativo;
-  const cursosMap = new Map(cursos.map(c => [c.id, c]));
+  const { totalHaLectivas, maxAulaPermitida, horasAulaLibres } = resumenNormativo;
 
   const irDocente = (delta: number) => {
     if (docentesLista.length <= 1 || idxActual < 0) return;
@@ -187,17 +204,19 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
           contratoPie={saldoPorFuente.contratoPie}
           sepAsignado={saldoPorFuente.sepAsignado}
           pieAsignado={saldoPorFuente.pieAsignado}
-          horasInstitucionalesSubvGen={desglose.horasInstitucionalesSubvGen}
+          horasInstitucionalesSubvGen={resumenNormativo.desglose.horasInstitucionalesSubvGen}
           totalHaLectivas={totalHaLectivas}
-          contratoCalculadoTotal={audit.contratoCalculadoTotal}
-          horasNoAulaTotales={desglose.horasExentasTotales}
-          saldoHoras={audit.saldoHoras}
-          porcentajeLectivoReal={audit.porcentajeLectivoReal}
-          porcentajeLimitePonderado={audit.porcentajeLimitePonderado}
-          esInfractorExcesoLectivo={audit.esInfractorExcesoLectivo}
-          minutosRecreoTotal={audit.minutosRecreoTotal}
-          minutosHnlTotal={audit.minutosHnlTotal}
-          minutosPlanificacion40={audit.minutosHnlPlanificacion40}
+          maxAulaPermitida={maxAulaPermitida}
+          horasAulaLibres={horasAulaLibres}
+          contratoCalculadoTotal={resumenNormativo.audit.contratoCalculadoTotal}
+          horasNoAulaTotales={resumenNormativo.desglose.horasExentasTotales}
+          saldoHoras={resumenNormativo.audit.saldoHoras}
+          porcentajeLectivoReal={resumenNormativo.audit.porcentajeLectivoReal}
+          porcentajeLimitePonderado={resumenNormativo.audit.porcentajeLimitePonderado}
+          esInfractorExcesoLectivo={resumenNormativo.audit.esInfractorExcesoLectivo}
+          minutosRecreoTotal={resumenNormativo.audit.minutosRecreoTotal}
+          minutosHnlTotal={resumenNormativo.audit.minutosHnlTotal}
+          minutosPlanificacion40={resumenNormativo.audit.minutosHnlPlanificacion40}
           isEducadoraParvulo={resumenNormativo.esEducadora}
           previewImpacto={previewHover}
         />
@@ -384,18 +403,39 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                                 {parvRes.minutosCubiertosTotalesTexto} ({parvRes.porcentajeCoberturaPermanencia}%)
                               </span>
                             </div>
-                            <div className="w-full h-1.5 rounded-full bg-teal-100 overflow-hidden">
+                            <div className="w-full h-2 rounded-full bg-amber-100 overflow-hidden flex">
                               <div
-                                className={`h-full transition-all ${
-                                  parvRes.coberturaCompletaPermanencia ? 'bg-emerald-500' : 'bg-teal-600'
-                                }`}
-                                style={{ width: `${Math.min(100, parvRes.porcentajeCoberturaPermanencia)}%` }}
+                                className="h-full bg-teal-600 transition-all"
+                                title={`Titular: ${parvRes.minutosAsignadosTitularTexto}`}
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    Math.round((parvRes.minutosAsignadosTitular / Math.max(1, parvRes.permanenciaMinutos)) * 100)
+                                  )}%`
+                                }}
                               />
+                              {parvRes.minutosAsignadosSegundaEducadora > 0 && (
+                                <div
+                                  className="h-full bg-indigo-500 transition-all"
+                                  title={`2da Educadora: ${Math.floor(parvRes.minutosAsignadosSegundaEducadora / 60)}h ${String(parvRes.minutosAsignadosSegundaEducadora % 60).padStart(2, '0')}m`}
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      Math.round((parvRes.minutosAsignadosSegundaEducadora / Math.max(1, parvRes.permanenciaMinutos)) * 100)
+                                    )}%`
+                                  }}
+                                />
+                              )}
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5 text-slate-600">
                               {estadoParvulario?.titularDocente && (
                                 <span className="px-1.5 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-900 font-semibold">
                                   Titular: {estadoParvulario.titularDocente.apellidos.split(' ')[0]} ({parvRes.minutosAsignadosTitularTexto} / tope {parvRes.minutosAulaTitularTexto})
+                                </span>
+                              )}
+                              {parvRes.minutosAsignadosSegundaEducadora > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold">
+                                  2da Ed: {Math.floor(parvRes.minutosAsignadosSegundaEducadora / 60)}h {String(parvRes.minutosAsignadosSegundaEducadora % 60).padStart(2, '0')}m
                                 </span>
                               )}
                               {parvRes.segundaEducadoraRequerida && (
@@ -404,7 +444,7 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                                 </span>
                               )}
                               {parvRes.requiereTecnicoParvuloDto315 && (
-                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800 font-bold">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 font-bold">
                                   {parvRes.cantidadTecnicosSugeridos} TEP Dto.315
                                 </span>
                               )}
@@ -416,35 +456,60 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                         <div className="flex flex-wrap gap-1.5">
                           {esParvulario && parvRes && !parvRes.coberturaCompletaPermanencia && (
                             <>
-                              <button
-                                type="button"
-                                onMouseEnter={() => {
-                                  const imp = simular(curso, hrsSugeridasParv, {
-                                    esCoDocencia: !esTitularParvEsteCurso,
-                                    esCoDocenciaParvularia: !esTitularParvEsteCurso
-                                  });
-                                  if (imp) setPreviewHover({ etiqueta: `DTO 306 (${curso.nivel} ${curso.letra})`, impacto: imp });
-                                }}
-                                onMouseLeave={() => setPreviewHover(null)}
-                                onClick={() =>
-                                  setPopoverSeed({
-                                    curso,
-                                    asignatura: esTitularParvEsteCurso
-                                      ? 'Atención Directa Parvularia (BCEP Integral)'
-                                      : 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
-                                    horasSugeridas: hrsSugeridasParv,
-                                    maxHorasPlan: hrsSugeridasParv,
-                                    esCoDocencia: !esTitularParvEsteCurso,
-                                    esCoDocenciaParvularia: !esTitularParvEsteCurso
-                                  })
-                                }
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold shadow-2xs"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>
-                                  {esTitularParvEsteCurso ? 'Cubrir Permanencia' : '2da Educadora DTO 306'} ({hrsSugeridasParv}h 60m)
-                                </span>
-                              </button>
+                              {horasAulaLibres > 0.05 ? (
+                                <button
+                                  type="button"
+                                  onMouseEnter={() => {
+                                    const hrsTope = Math.max(0.5, Math.min(hrsSugeridasParv, horasAulaLibres));
+                                    const imp = simular(curso, hrsTope, {
+                                      esCoDocencia: !esTitularParvEsteCurso,
+                                      esCoDocenciaParvularia: !esTitularParvEsteCurso
+                                    });
+                                    if (imp) setPreviewHover({ etiqueta: `DTO 306 (${curso.nivel} ${curso.letra})`, impacto: imp });
+                                  }}
+                                  onMouseLeave={() => setPreviewHover(null)}
+                                  onClick={() => {
+                                    const hrsTope = Math.max(0.5, Math.min(hrsSugeridasParv, horasAulaLibres));
+                                    setPopoverSeed({
+                                      curso,
+                                      asignatura: esTitularParvEsteCurso
+                                        ? 'Atención Directa Parvularia (BCEP Integral)'
+                                        : 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
+                                      horasSugeridas: hrsTope,
+                                      maxHorasPlan: hrsTope,
+                                      esCoDocencia: !esTitularParvEsteCurso,
+                                      esCoDocenciaParvularia: !esTitularParvEsteCurso
+                                    });
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold shadow-2xs"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>
+                                    Cubrir {Math.max(0.5, Math.min(hrsSugeridasParv, horasAulaLibres))}h 60m{' '}
+                                    {horasAulaLibres <= hrsSugeridasParv
+                                      ? '(hasta tope)'
+                                      : esTitularParvEsteCurso
+                                      ? '(Permanencia)'
+                                      : '(2da Ed. DTO 306)'}
+                                  </span>
+                                </button>
+                              ) : (
+                                <div className="w-full flex flex-wrap items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 text-[10px]">
+                                  <span className="font-bold text-amber-900">
+                                    Tope educadora completo · Faltan {parvRes.minutosDeficitRestanteTexto} (2da Educadora)
+                                  </span>
+                                  {otrasEducadorasConSaldo.slice(0, 3).map(otra => (
+                                    <button
+                                      key={otra.docente.id}
+                                      type="button"
+                                      onClick={() => onSelectDocente(otra.docente)}
+                                      className="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors"
+                                    >
+                                      → {otra.docente.apellidos.split(' ')[0]} (+{otra.libresAula}h)
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                               {CATALOGO_BCEP_PARVULARIA.slice(0, 3).map(b => (
                                 <button
                                   key={b.id}

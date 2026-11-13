@@ -114,6 +114,10 @@ export function useAsignacionDocente(
       colegio.porcentajePrioritarios || 0
     );
 
+    const totalLectiva = Math.round(integral.haDocenciaEfectiva * 100) / 100;
+    const maxAulaPermitida = Math.round(integral.maxHAPermitidas * 100) / 100;
+    const horasAulaLibres = Math.max(0, Math.round((maxAulaPermitida - totalLectiva) * 100) / 100);
+
     return {
       audit: integral.auditDoc,
       integral,
@@ -124,7 +128,9 @@ export function useAsignacionDocente(
         horasExentasTotales: integral.horasExentasTotales,
         horasParaDocenciaAula: integral.horasParaDocenciaAula
       },
-      totalHaLectivas: Math.round(integral.haDocenciaEfectiva * 100) / 100,
+      totalHaLectivas: totalLectiva,
+      maxAulaPermitida,
+      horasAulaLibres,
       esEducadora: integral.isEducadoraParvulo,
       esParvularioCurso: (c: CursoSae) => esNivelParvulario(c.nivel)
     };

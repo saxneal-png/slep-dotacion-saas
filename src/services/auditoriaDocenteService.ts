@@ -3,7 +3,8 @@ import {
   calcularAuditoriaDocenteMultitramo,
   buscarContratoMinimoPorTabla,
   esNivelParvulario,
-  buscarContratoMinimoParvulariaPorMinutos
+  buscarContratoMinimoParvulariaPorMinutos,
+  obtenerTramoMineduc
 } from '@slep/mineduc-engine';
 
 export type AuditoriaDocenteMultitramoResult = ReturnType<typeof calcularAuditoriaDocenteMultitramo>;
@@ -48,12 +49,14 @@ export interface AuditoriaIntegralDocenteResult {
  * Helper canónico para identificar a una Educadora de Párvulos (régimen DTO 306 en horas cronológicas de 60m).
  */
 export function esDocenteEducadoraParvulos(doc: Docente): boolean {
+  const rxParv = /p[aá]rvul[oa]|infantil|pre[- ]?b[aá]sica|preescolar|prek[ií]nder|k[ií]nder|\bnt[12]\b/i;
   return (
     doc.estamento === 'EDUCADORA_PARVULO' ||
     Boolean(doc.esEducadoraParvulo) ||
-    Boolean(doc.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.cargoInstitucional)) ||
-    Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
-    Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal))
+    Boolean(doc.cargoInstitucional && rxParv.test(doc.cargoInstitucional)) ||
+    Boolean(doc.titulo && rxParv.test(doc.titulo)) ||
+    Boolean(doc.funcionPrincipal && rxParv.test(doc.funcionPrincipal)) ||
+    Boolean(doc.asignaturaPrincipal && rxParv.test(doc.asignaturaPrincipal))
   );
 }
 
@@ -600,39 +603,59 @@ export function auditarCargaDocenteIntegral(
     aplicaArticulo69: Boolean(doc.aplicaArticulo69)
   });
 
-  if (isEducadoraParvuloDoc && (ha65_35 > 0 || ha60_40 > 0)) {
-    const match65 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ha65_35 * 60), '65_35');
-    const match60 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ha60_40 * 60), '60_40');
-    const reqAulaParv = match65.horasContrato + match60.horasContrato;
-    const contratoCalcParv = reqAulaParv + pieCronologicas + sepExentasCronologicas + horasInstitucionalesSubvGen;
-    const saldoParv = Math.round((hContrato - contratoCalcParv) * 10) / 10;
-    const minHnlParv = match65.minutosHnl + match60.minutosHnl;
-    const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
-    const minAulaTablaParv = match65.minutosAula + match60.minutosAula;
-    const totalHorasAulaParv = ha65_35 + ha60_40;
-    const pctRealParv = horasParaDocenciaAula > 0
-      ? Math.round((totalHorasAulaParv / horasParaDocenciaAula) * 1000) / 10
-      : 0;
+  if (isEducadoraParvuloDoc) {
+    const regCap: '65_35' | '60_40' =
+      ha60_40 > ha65_35
+        ? '60_40'
+        : ha65_35 > 0
+        ? '65_35'
+        : regimenParvularioPredominante;
+    const tramoCap = horasParaDocenciaAula > 0 ? obtenerTramoMineduc(horasParaDocenciaAula, regCap) : null;
+    const minsCapBase = tramoCap
+      ? tramoCap.lectivasMinutosCronologicos
+      : Math.floor(horasParaDocenciaAula * 60 * (regCap === '60_40' ? 0.60 : 0.65));
     const limiteArt69Min = doc.aplicaArticulo69 ? 24 * 60 : Number.POSITIVE_INFINITY;
-    const pctLimiteParv = ha60_40 > ha65_35 ? 60 : 65;
+    const minsCapFinal = Math.min(minsCapBase, limiteArt69Min);
 
-    auditDoc = {
-      ...auditDoc,
-      req65_35: match65.horasContrato,
-      req60_40: match60.horasContrato,
-      contratoPonderado65_35: match65.horasContrato,
-      contratoPonderado60_40: match60.horasContrato,
-      contratoCalculadoTotal: contratoCalcParv,
-      saldoHoras: saldoParv,
-      esInfractorExcesoLectivo: saldoParv < 0 || Boolean(doc.aplicaArticulo69 && totalHorasAulaParv > 24.05),
-      porcentajeLectivoReal: pctRealParv,
-      porcentajeLimitePonderado: pctLimiteParv,
-      minutosLectivosTablaTotal: minAulaTablaParv,
-      minutosLimitePermitido: Math.min(minAulaTablaParv, limiteArt69Min),
-      minutosHnlTotal: minHnlParv,
-      minutosRecreoTotal: minRecParv,
-      minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
-    };
+    if (ha65_35 > 0 || ha60_40 > 0) {
+      const match65 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ha65_35 * 60), '65_35');
+      const match60 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ha60_40 * 60), '60_40');
+      const reqAulaParv = match65.horasContrato + match60.horasContrato;
+      const contratoCalcParv = reqAulaParv + pieCronologicas + sepExentasCronologicas + horasInstitucionalesSubvGen;
+      const saldoParv = Math.round((hContrato - contratoCalcParv) * 10) / 10;
+      const minHnlParv = match65.minutosHnl + match60.minutosHnl;
+      const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
+      const minAulaTablaParv = match65.minutosAula + match60.minutosAula;
+      const totalHorasAulaParv = ha65_35 + ha60_40;
+      const pctRealParv = horasParaDocenciaAula > 0
+        ? Math.round((totalHorasAulaParv / horasParaDocenciaAula) * 1000) / 10
+        : 0;
+      const pctLimiteParv = regCap === '60_40' ? 60 : 65;
+
+      auditDoc = {
+        ...auditDoc,
+        req65_35: match65.horasContrato,
+        req60_40: match60.horasContrato,
+        contratoPonderado65_35: match65.horasContrato,
+        contratoPonderado60_40: match60.horasContrato,
+        contratoCalculadoTotal: contratoCalcParv,
+        saldoHoras: saldoParv,
+        esInfractorExcesoLectivo: saldoParv < 0 || Boolean(doc.aplicaArticulo69 && totalHorasAulaParv > 24.05),
+        porcentajeLectivoReal: pctRealParv,
+        porcentajeLimitePonderado: pctLimiteParv,
+        minutosLectivosTablaTotal: minAulaTablaParv,
+        minutosLimitePermitido: minsCapFinal,
+        minutosHnlTotal: minHnlParv,
+        minutosRecreoTotal: minRecParv,
+        minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
+      };
+    } else {
+      auditDoc = {
+        ...auditDoc,
+        minutosLimitePermitido: minsCapFinal,
+        porcentajeLimitePonderado: regCap === '60_40' ? 60 : 65
+      };
+    }
   }
 
   const maxHAPermitidas = isEducadoraParvuloDoc

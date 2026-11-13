@@ -61,6 +61,7 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
   const [filtroDoc, setFiltroDoc] = useState<'TODOS' | 'LIBRES' | 'EXCEDIDOS' | 'SEP_PIE'>('LIBRES');
   const [agrupacion, setAgrupacion] = useState<'ASIGNATURA' | 'CURSO'>('ASIGNATURA');
   const [busquedaVacante, setBusquedaVacante] = useState('');
+  const [soloEnfoqueParvulario, setSoloEnfoqueParvulario] = useState<boolean>(true);
   const [popoverSeed, setPopoverSeed] = useState<QuickPopoverSeed | null>(null);
   const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
 
@@ -106,12 +107,18 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
       const contratoSep = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
       const contratoPie = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
       const esSepPie = contratoSep + contratoPie > 0 || integral.reqSepDoc > 0 || integral.pieAsignadasDoc > 0;
+      const haAsignadas = Math.round(integral.haDocenciaEfectiva * 100) / 100;
+      const maxAula = Math.round(integral.maxHAPermitidas * 100) / 100;
+      const libresAula = Math.max(0, Math.round((maxAula - haAsignadas) * 100) / 100);
       return {
         docente: d,
         saldo: integral.saldoHoras,
         esSepPie,
         totalAsigs: propias.length + coDoc.length,
         isEducadora: integral.isEducadoraParvulo,
+        haAsignadas,
+        maxAula,
+        libresAula,
         contratoSep,
         sepAsignado: integral.reqSepDoc,
         contratoPie,
@@ -122,6 +129,24 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
       };
     });
   }, [docentes, asignaciones, cursosMap, colegio.porcentajePrioritarios]);
+
+  const mapaParvulario = useMemo(
+    () =>
+      calcularEstadoCursosParvularios(
+        cursos,
+        docentes,
+        asignaciones,
+        colegio.porcentajePrioritarios || 0,
+        colegio.regimenProporcion
+      ),
+    [cursos, docentes, asignaciones, colegio.porcentajePrioritarios, colegio.regimenProporcion]
+  );
+
+  const otrasEducadorasConSaldo = useMemo(() => {
+    return docentesResumen
+      .filter(r => r.isEducadora && r.docente.id !== docenteActivo?.id && r.libresAula > 0.05)
+      .sort((a, b) => b.libresAula - a.libresAula);
+  }, [docentesResumen, docenteActivo?.id]);
 
   const docentesFiltrados = useMemo(() => {
     const q = busquedaDoc.trim().toLowerCase();
@@ -201,13 +226,17 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
 
   const vacantesFiltradas = useMemo(() => {
     const q = busquedaVacante.trim().toLowerCase();
-    if (!q) return vacantes;
-    return vacantes.filter(
-      v =>
+    return vacantes.filter(v => {
+      if (resumenNormativo?.esEducadora && soloEnfoqueParvulario && !v.esParvularia) {
+        return false;
+      }
+      if (!q) return true;
+      return (
         v.asignatura.toLowerCase().includes(q) ||
         `${v.curso.nivel} ${v.curso.letra}`.toLowerCase().includes(q)
-    );
-  }, [vacantes, busquedaVacante]);
+      );
+    });
+  }, [vacantes, busquedaVacante, resumenNormativo?.esEducadora, soloEnfoqueParvulario]);
 
   const gruposVacantes = useMemo(() => {
     const map = new Map<string, { titulo: string; subtitulo: string; esAfin: boolean; items: VacanteItem[] }>();
@@ -294,7 +323,7 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-          {docentesFiltrados.map(({ docente, saldo, totalAsigs, isEducadora, contratoSep, sepAsignado, contratoPie, pieAsignado, minutosRecreo, minutosHnl, minutosPlan40 }) => {
+          {docentesFiltrados.map(({ docente, saldo, totalAsigs, isEducadora, haAsignadas, maxAula, libresAula, contratoSep, sepAsignado, contratoPie, pieAsignado, minutosRecreo, minutosHnl, minutosPlan40 }) => {
             const activo = docenteActivo?.id === docente.id;
             const fmtM = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
             return (
@@ -329,7 +358,10 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
                       </div>
                       <p className="text-[10px] text-slate-500 truncate">
                         {docente.asignaturaPrincipal || docente.cargoInstitucional || docente.estamento} ·{' '}
-                        <span className="font-mono">{docente.horasContrato}h</span> · {totalAsigs} asig.
+                        <span className="font-mono">{docente.horasContrato}h</span> · {totalAsigs} asig. ·{' '}
+                        <span className={`font-mono font-bold ${libresAula <= 0.05 ? 'text-emerald-700' : isEducadora ? 'text-teal-700' : 'text-blue-700'}`}>
+                          Aula {haAsignadas}/{maxAula}h {libresAula <= 0.05 ? '(✓ Tope)' : `(+${libresAula}h)`}
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -391,6 +423,18 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/15">
                   Contrato {docenteActivo.horasContrato}h
                 </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                    resumenNormativo.horasAulaLibres <= 0.05
+                      ? 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/40'
+                      : 'bg-teal-500/30 text-teal-100 border border-teal-400/40'
+                  }`}
+                >
+                  Aula {resumenNormativo.esEducadora ? '60m' : '45m'}: {resumenNormativo.totalHaLectivas}/{resumenNormativo.maxAulaPermitida}h{' '}
+                  {resumenNormativo.horasAulaLibres <= 0.05
+                    ? '✓ Tope completo'
+                    : `(+${resumenNormativo.horasAulaLibres}h disp.)`}
+                </span>
                 {(saldoPorFuente.contratoSep > 0 || saldoPorFuente.sepAsignado > 0) && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/30 text-sky-100">
                     SEP {Math.round(saldoPorFuente.sepAsignado * 10) / 10}/{saldoPorFuente.contratoSep}h
@@ -445,29 +489,275 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-[11px]">
-            <button
-              type="button"
-              onClick={() => setAgrupacion('ASIGNATURA')}
-              className={`px-2.5 py-1 rounded-md font-bold inline-flex items-center gap-1 ${
-                agrupacion === 'ASIGNATURA' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600'
-              }`}
-            >
-              <BookOpen className="w-3 h-3" />
-              <span>Por Asignatura</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setAgrupacion('CURSO')}
-              className={`px-2.5 py-1 rounded-md font-bold inline-flex items-center gap-1 ${
-                agrupacion === 'CURSO' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600'
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              <span>Por Curso</span>
-            </button>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {resumenNormativo?.esEducadora && (
+              <div className="flex items-center gap-1 bg-teal-50 border border-teal-200 p-1 rounded-lg text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setSoloEnfoqueParvulario(true)}
+                  className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                    soloEnfoqueParvulario ? 'bg-teal-600 text-white shadow-xs' : 'text-teal-800 hover:bg-teal-100'
+                  }`}
+                >
+                  Solo Párvulos (DTO 306)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSoloEnfoqueParvulario(false)}
+                  className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                    !soloEnfoqueParvulario ? 'bg-teal-600 text-white shadow-xs' : 'text-teal-800 hover:bg-teal-100'
+                  }`}
+                >
+                  Todo el Colegio
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-[11px]">
+              <button
+                type="button"
+                onClick={() => setAgrupacion('ASIGNATURA')}
+                className={`px-2.5 py-1 rounded-md font-bold inline-flex items-center gap-1 ${
+                  agrupacion === 'ASIGNATURA' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600'
+                }`}
+              >
+                <BookOpen className="w-3 h-3" />
+                <span>Por Asignatura</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgrupacion('CURSO')}
+                className={`px-2.5 py-1 rounded-md font-bold inline-flex items-center gap-1 ${
+                  agrupacion === 'CURSO' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600'
+                }`}
+              >
+                <Layers className="w-3 h-3" />
+                <span>Por Curso</span>
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Panel Guiado DTO 306 para Educadoras de Párvulos */}
+        {docenteActivo && resumenNormativo?.esEducadora && (
+          <div className="card-elevated p-3 space-y-2.5 border-teal-200 bg-teal-50/30">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wide text-teal-900">
+                  Cobertura de Permanencia DTO 306 · Educación Parvularia (60m cron.)
+                </h4>
+                <p className="text-[11px] text-teal-800/80">
+                  Visualiza en tiempo real lo cubierto por la Titular, lo asignado a 2da Educadora y el saldo disponible de{' '}
+                  <span className="font-bold">{docenteActivo.nombres} {docenteActivo.apellidos}</span>.
+                </p>
+              </div>
+              <span
+                className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-black ${
+                  resumenNormativo.horasAulaLibres <= 0.05
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    : 'bg-teal-600 text-white'
+                }`}
+              >
+                {resumenNormativo.horasAulaLibres <= 0.05
+                  ? `✓ Tope aula completo (${resumenNormativo.totalHaLectivas}/${resumenNormativo.maxAulaPermitida}h)`
+                  : `Disponible en aula: +${resumenNormativo.horasAulaLibres}h (de ${resumenNormativo.maxAulaPermitida}h)`}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {cursos
+                .filter(c => {
+                  if (!esNivelParvulario(c.nivel)) return false;
+                  const q = busquedaVacante.trim().toLowerCase();
+                  if (!q) return true;
+                  return `${c.nivel} ${c.letra}`.toLowerCase().includes(q);
+                })
+                .map(c => {
+                  const estadoParv = mapaParvulario.get(c.id);
+                  if (!estadoParv) return null;
+                  const res = estadoParv.resultado;
+                  const faltaHoras = Math.round((res.minutosDeficitRestante / 60) * 100) / 100;
+                  const esTitularActiva = estadoParv.titularDocente?.id === docenteActivo.id;
+                  const hrsSug = Math.max(0.5, Math.min(faltaHoras, resumenNormativo.horasAulaLibres));
+                  const pctTitular = Math.min(100, Math.round((res.minutosAsignadosTitular / Math.max(1, res.permanenciaMinutos)) * 100));
+                  const pctSegunda = Math.min(100, Math.round((res.minutosAsignadosSegundaEducadora / Math.max(1, res.permanenciaMinutos)) * 100));
+
+                  return (
+                    <div
+                      key={c.id}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => {
+                        e.preventDefault();
+                        const doc = docentes.find(d => d.id === draggedDocId) || docenteActivo;
+                        if (!doc || res.coberturaCompletaPermanencia) return;
+                        asignarDirecto(
+                          {
+                            curso: c,
+                            asignatura: !esTitularActiva && res.minutosAsignadosTitular > 0
+                              ? 'Atención Directa y Co-Docencia Parvularia (DTO 306)'
+                              : 'Atención Directa Parvularia (BCEP Integral)',
+                            horasPlan: Math.round((res.permanenciaMinutos / 60) * 100) / 100,
+                            horasAsignadas: Math.round((res.minutosCubiertosTotales / 60) * 100) / 100,
+                            horasDisponibles: hrsSug,
+                            esParvularia: true,
+                            esCoDocenciaParvularia: !esTitularActiva && res.minutosAsignadosTitular > 0
+                          },
+                          doc
+                        );
+                      }}
+                      className={`rounded-xl border p-2.5 bg-white space-y-2 transition-all ${
+                        res.coberturaCompletaPermanencia
+                          ? 'border-emerald-200 bg-emerald-50/20'
+                          : draggedDocId
+                          ? 'border-dashed border-teal-400'
+                          : 'border-teal-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black text-slate-900">
+                              {c.nivel} {c.letra}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700">
+                              {c.regimen}
+                            </span>
+                            {res.requiereTecnicoParvuloDto315 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                                {res.cantidadTecnicosSugeridos} TEP Dto.315
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            Permanencia: {res.permanenciaTexto} ({res.regimenNormativoProporcion === '60_40' ? '60/40' : '65/35'})
+                          </p>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black ${
+                            res.coberturaCompletaPermanencia
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-900'
+                          }`}
+                        >
+                          {res.coberturaCompletaPermanencia
+                            ? '✓ 100% Cubierta'
+                            : `Falta ${res.minutosDeficitRestanteTexto}`}
+                        </span>
+                      </div>
+
+                      {/* Barra apilada Titular (teal) + 2da Educadora (indigo) */}
+                      <div className="w-full h-2 rounded-full bg-amber-100 overflow-hidden flex">
+                        <div
+                          className="h-full bg-teal-600 transition-all"
+                          title={`Titular: ${res.minutosAsignadosTitularTexto}`}
+                          style={{ width: `${pctTitular}%` }}
+                        />
+                        {res.minutosAsignadosSegundaEducadora > 0 && (
+                          <div
+                            className="h-full bg-indigo-500 transition-all"
+                            title={`2da Educadora: ${Math.floor(res.minutosAsignadosSegundaEducadora / 60)}h ${String(res.minutosAsignadosSegundaEducadora % 60).padStart(2, '0')}m`}
+                            style={{ width: `${pctSegunda}%` }}
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                        {estadoParv.titularDocente && (
+                          <span className="px-1.5 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-900 font-semibold">
+                            Titular: {estadoParv.titularDocente.apellidos.split(' ')[0]} ({res.minutosAsignadosTitularTexto}/{res.minutosAulaTitularTexto})
+                          </span>
+                        )}
+                        {res.minutosAsignadosSegundaEducadora > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-900 font-semibold">
+                            2da Ed: {Math.floor(res.minutosAsignadosSegundaEducadora / 60)}h {String(res.minutosAsignadosSegundaEducadora % 60).padStart(2, '0')}m
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Acción contextual en 1 clic */}
+                      {!res.coberturaCompletaPermanencia && (
+                        resumenNormativo.horasAulaLibres > 0.05 ? (
+                          <div className="flex items-center gap-1.5 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                asignarDirecto({
+                                  curso: c,
+                                  asignatura: !esTitularActiva && res.minutosAsignadosTitular > 0
+                                    ? 'Atención Directa y Co-Docencia Parvularia (DTO 306)'
+                                    : 'Atención Directa Parvularia (BCEP Integral)',
+                                  horasPlan: Math.round((res.permanenciaMinutos / 60) * 100) / 100,
+                                  horasAsignadas: Math.round((res.minutosCubiertosTotales / 60) * 100) / 100,
+                                  horasDisponibles: hrsSug,
+                                  esParvularia: true,
+                                  esCoDocenciaParvularia: !esTitularActiva && res.minutosAsignadosTitular > 0
+                                })
+                              }
+                              className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold shadow-2xs transition-colors"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>
+                                Cubrir {hrsSug}h 60m{' '}
+                                {resumenNormativo.horasAulaLibres <= faltaHoras
+                                  ? '(hasta tope)'
+                                  : esTitularActiva || res.minutosAsignadosTitular === 0
+                                  ? '(Titular)'
+                                  : '(2da Ed. DTO 306)'}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPopoverSeed({
+                                  curso: c,
+                                  asignatura: !esTitularActiva && res.minutosAsignadosTitular > 0
+                                    ? 'Atención Directa y Co-Docencia Parvularia (DTO 306)'
+                                    : 'Atención Directa Parvularia (BCEP Integral)',
+                                  horasSugeridas: hrsSug,
+                                  maxHorasPlan: hrsSug,
+                                  esCoDocencia: !esTitularActiva && res.minutosAsignadosTitular > 0,
+                                  esCoDocenciaParvularia: !esTitularActiva && res.minutosAsignadosTitular > 0
+                                })
+                              }
+                              className="px-2 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600"
+                              title="Personalizar horas o núcleo BCEP"
+                            >
+                              <SlidersHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="rounded-lg bg-amber-50 border border-amber-200 p-2 space-y-1 text-[10px]">
+                            <p className="font-bold text-amber-900">
+                              Tope de {docenteActivo.apellidos.split(' ')[0]} completo · Faltan {res.minutosDeficitRestanteTexto} para 2da Educadora
+                            </p>
+                            {otrasEducadorasConSaldo.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-1">
+                                <span className="text-amber-800">Asignar a:</span>
+                                {otrasEducadorasConSaldo.slice(0, 3).map(otra => (
+                                  <button
+                                    key={otra.docente.id}
+                                    type="button"
+                                    onClick={() => setDocenteActivoId(otra.docente.id)}
+                                    className="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors"
+                                  >
+                                    → {otra.docente.apellidos.split(' ')[0]} (+{otra.libresAula}h)
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-amber-800">
+                                Sin otra educadora con saldo aula libre en nómina (requiere ~{res.horasContratoSegundaEducadoraRestante}h contrato).
+                              </p>
+                            )}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
 
         {/* Lista agrupada de vacantes (Modo Ráfaga + Drop target) */}
         <div className="card-elevated p-3 space-y-3 max-h-[430px] overflow-y-auto">

@@ -52,6 +52,7 @@ import {
   buscarContratoMinimoParvulariaPorMinutos
 } from '@slep/mineduc-engine';
 import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalculationService';
+import { esDocenteEducadoraParvulos } from '../services/auditoriaDocenteService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
 import { DocenteAsignacionPanel } from '../components/DocenteAsignacionPanel';
@@ -360,11 +361,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             horasReduccionArticulo69: 0
           };
 
-      const isEducadoraParvuloDoc = d.estamento === 'EDUCADORA_PARVULO' ||
-        Boolean(d.esEducadoraParvulo) ||
-        Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
-        Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
-        Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal));
+      const isEducadoraParvuloDoc = esDocenteEducadoraParvulos(d);
 
       const cursosParvulariosColegio = cursos.filter(x => esNivelParvulario(x.nivel));
       const regimenParvularioPredominante: '65_35' | '60_40' =
@@ -1214,6 +1211,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       <span className={`font-bold text-xs ${isEducadoraParvuloDoc ? 'text-teal-800' : 'text-slate-800'}`}>
                         {ped65} {isEducadoraParvuloDoc ? 'h cron.' : 'HA'}
                       </span>
+                      {isEducadoraParvuloDoc && ped60 === 0 && auditMulti.minutosLimitePermitido > 0 && (() => {
+                        const tope = Math.round((auditMulti.minutosLimitePermitido / 60) * 100) / 100;
+                        const libres = Math.max(0, Math.round((tope - (ped65 + ped60)) * 100) / 100);
+                        return (
+                          <span className={`block text-[10px] font-mono font-bold mt-0.5 ${libres <= 0.05 ? 'text-emerald-700' : 'text-teal-700'}`}>
+                            / {tope}h ({libres <= 0.05 ? '✓ Tope' : `+${libres}h`})
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* Aula 60/40 */}
@@ -1221,6 +1227,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                       <span className={`font-bold text-xs ${isEducadoraParvuloDoc ? 'text-teal-800' : 'text-slate-800'}`}>
                         {ped60} {isEducadoraParvuloDoc ? 'h cron.' : 'HA'}
                       </span>
+                      {isEducadoraParvuloDoc && ped60 > 0 && auditMulti.minutosLimitePermitido > 0 && (() => {
+                        const tope = Math.round((auditMulti.minutosLimitePermitido / 60) * 100) / 100;
+                        const libres = Math.max(0, Math.round((tope - (ped65 + ped60)) * 100) / 100);
+                        return (
+                          <span className={`block text-[10px] font-mono font-bold mt-0.5 ${libres <= 0.05 ? 'text-emerald-700' : 'text-teal-700'}`}>
+                            / {tope}h ({libres <= 0.05 ? '✓ Tope' : `+${libres}h`})
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* PIE */}

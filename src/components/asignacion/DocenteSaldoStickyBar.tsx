@@ -12,6 +12,8 @@ interface DocenteSaldoStickyBarProps {
   pieAsignado?: number;
   horasInstitucionalesSubvGen?: number;
   totalHaLectivas: number;
+  maxAulaPermitida?: number;
+  horasAulaLibres?: number;
   contratoCalculadoTotal: number;
   horasNoAulaTotales: number;
   saldoHoras: number;
@@ -37,6 +39,8 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
   pieAsignado = 0,
   horasInstitucionalesSubvGen = 0,
   totalHaLectivas,
+  maxAulaPermitida,
+  horasAulaLibres,
   contratoCalculadoTotal,
   horasNoAulaTotales,
   saldoHoras,
@@ -144,15 +148,36 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
       {/* Fila 2: 4 KPIs tabulares compactos + Barra de ocupación */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
-          <span className="text-[10px] font-bold uppercase text-slate-400 block">
-            {isEducadoraParvulo ? 'Aula Parv. (60m cron.)' : 'Aula Asignada'}
-          </span>
-          <span className={`text-base font-black font-mono ${isEducadoraParvulo ? 'text-teal-700 dark:text-teal-400' : 'text-blue-700 dark:text-blue-400'}`}>
-            {totalHaLectivas} {isEducadoraParvulo ? 'h' : 'HA'}
-          </span>
-          <span className={`ml-1.5 text-[10px] font-bold font-mono ${esInfractorExcesoLectivo ? 'text-rose-600' : 'text-slate-500'}`}>
-            ({porcentajeLectivoReal}% / máx {porcentajeLimitePonderado}%)
-          </span>
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] font-bold uppercase text-slate-400">
+              {isEducadoraParvulo ? 'Aula Parv. (60m)' : 'Aula Asignada'}
+            </span>
+            {typeof horasAulaLibres === 'number' && typeof maxAulaPermitida === 'number' && maxAulaPermitida > 0 && (
+              <span
+                className={`text-[9.5px] font-mono font-bold ${
+                  horasAulaLibres <= 0.05 && !esInfractorExcesoLectivo
+                    ? 'text-emerald-600'
+                    : esInfractorExcesoLectivo
+                    ? 'text-rose-600'
+                    : 'text-blue-600'
+                }`}
+              >
+                {horasAulaLibres <= 0.05 && !esInfractorExcesoLectivo
+                  ? '✓ Tope completo'
+                  : `+${horasAulaLibres}h disp.`}
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-base font-black font-mono ${isEducadoraParvulo ? 'text-teal-700 dark:text-teal-400' : 'text-blue-700 dark:text-blue-400'}`}>
+              {totalHaLectivas}
+              {typeof maxAulaPermitida === 'number' && maxAulaPermitida > 0 ? ` / ${maxAulaPermitida}` : ''}{' '}
+              {isEducadoraParvulo ? 'h' : 'HA'}
+            </span>
+            <span className={`text-[10px] font-bold font-mono ${esInfractorExcesoLectivo ? 'text-rose-600' : 'text-slate-500'}`}>
+              ({porcentajeLectivoReal}% / {porcentajeLimitePonderado}%)
+            </span>
+          </div>
         </div>
 
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">

@@ -72,10 +72,16 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
         );
         const contratoSep = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
         const contratoPie = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+        const haAsignadas = Math.round(integral.haDocenciaEfectiva * 100) / 100;
+        const maxAula = Math.round(integral.maxHAPermitidas * 100) / 100;
+        const libresAula = Math.max(0, Math.round((maxAula - haAsignadas) * 100) / 100);
         return {
           docente: d,
           saldoHoras: integral.saldoHoras,
           isEducadora: integral.isEducadoraParvulo,
+          haAsignadas,
+          maxAula,
+          libresAula,
           contratoSep,
           sepAsignado: integral.reqSepDoc,
           contratoPie,
@@ -341,6 +347,13 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                                 </span>
                               )}
                             </div>
+                            {!res.coberturaCompletaPermanencia && (
+                              <div className="truncate text-[9px] font-bold text-amber-800 mt-0.5">
+                                {res.segundaEducadoraRequerida
+                                  ? `Req. 2da Ed: ${res.minutosDeficitRestanteTexto}`
+                                  : `Faltan ${res.minutosDeficitRestanteTexto}`}
+                              </div>
+                            )}
                           </button>
                         </td>
                       );
@@ -503,14 +516,27 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-semibold"
                     required
                   >
-                    {docentesConSaldo.map(({ docente, saldoHoras, isEducadora }) => (
+                    {docentesConSaldo.map(({ docente, isEducadora, haAsignadas, maxAula, libresAula }) => (
                       <option key={docente.id} value={docente.id}>
-                        {docente.apellidos}, {docente.nombres} {isEducadora ? '[Parv 60m] ' : ''}({saldoHoras > 0 ? `+${saldoHoras}h` : `${saldoHoras}h`} disp.)
+                        {docente.apellidos}, {docente.nombres} {isEducadora ? '[Parv 60m] ' : ''}
+                        [Aula: {haAsignadas}/{maxAula}h · {libresAula <= 0.05 ? 'Tope completo' : `+${libresAula}h disp.`}]
                       </option>
                     ))}
                   </select>
                   {docResumenSeleccionado && (
                     <div className="mt-1.5 px-2 py-1 rounded-md bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-600">
+                      <span
+                        className={`px-1.5 py-0.2 rounded font-bold ${
+                          docResumenSeleccionado.libresAula <= 0.05
+                            ? 'bg-emerald-100 text-emerald-900'
+                            : 'bg-teal-100 text-teal-900'
+                        }`}
+                      >
+                        Aula {docResumenSeleccionado.haAsignadas}/{docResumenSeleccionado.maxAula}h{' '}
+                        {docResumenSeleccionado.libresAula <= 0.05
+                          ? '✓ Tope'
+                          : `(+${docResumenSeleccionado.libresAula}h disp.)`}
+                      </span>
                       {(docResumenSeleccionado.contratoSep > 0 || docResumenSeleccionado.sepAsignado > 0) && (
                         <span className="px-1.5 py-0.2 rounded bg-sky-100 text-sky-900 font-bold">
                           SEP {Math.round(docResumenSeleccionado.sepAsignado * 10) / 10}/{docResumenSeleccionado.contratoSep}h

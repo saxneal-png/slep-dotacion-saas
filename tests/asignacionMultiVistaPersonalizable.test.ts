@@ -9,7 +9,7 @@ import {
   calcularSaldoDocentePorFuente,
   simularImpactoAsignacion
 } from '../src/services/curricularPlanService';
-import { auditarCargaDocenteIntegral } from '../src/services/auditoriaDocenteService';
+import { auditarCargaDocenteIntegral, esDocenteEducadoraParvulos } from '../src/services/auditoriaDocenteService';
 import { AsignacionHoraria, CursoSae, Docente } from '../src/types';
 
 function crearDocenteFixture(overrides: Partial<Docente> = {}): Docente {
@@ -257,5 +257,49 @@ describe('Preferencias personalizables de vista de asignación y motor único', 
     expect(saldoFuente.contratoPie).toBe(6);
     expect(saldoFuente.pieAsignado).toBe(3);
     expect(saldoFuente.pieDisponible).toBe(3);
+  });
+
+  it('detecta Educadora de Párvulos por asignaturaPrincipal y reporta maxHAPermitidas según contrato aunque tenga carga parcial', () => {
+    const educadoraPorAsignatura = crearDocenteFixture({
+      id: 'ed-asig',
+      estamento: 'DOCENTE_AULA',
+      asignaturaPrincipal: 'Educación Parvularia',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44
+    });
+
+    expect(esDocenteEducadoraParvulos(educadoraPorAsignatura)).toBe(true);
+
+    const cursoKinder = crearCursoFixture({
+      id: 'c-kinder',
+      nivel: 'Kínder',
+      letra: 'A',
+      regimenJornada: 'JEC',
+      regimenProporcion: '65_35'
+    });
+
+    const asigParcial: AsignacionHoraria[] = [
+      {
+        id: 'asig-parcial',
+        rbd: '4100',
+        docenteId: 'ed-asig',
+        cursoId: 'c-kinder',
+        asignatura: 'Atención Directa Parvularia (BCEP Integral)',
+        horasPedagogicasAula: 10,
+        periodo: 2027
+      }
+    ];
+
+    const integral = auditarCargaDocenteIntegral(
+      educadoraPorAsignatura,
+      asigParcial,
+      [],
+      new Map([[cursoKinder.id, cursoKinder]]),
+      40
+    );
+
+    expect(integral.isEducadoraParvulo).toBe(true);
+    expect(integral.haDocenciaEfectiva).toBe(10);
+    expect(integral.maxHAPermitidas).toBe(28.5);
   });
 });
