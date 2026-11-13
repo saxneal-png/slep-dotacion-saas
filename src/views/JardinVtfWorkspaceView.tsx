@@ -45,6 +45,7 @@ import {
 } from '../database/db';
 import { ingestarArchivosJisc } from '../services/jiscIngestaService';
 import { importarPlanillaPalDEP } from '../services/depPalExportService';
+import { importarDetalleCentroCostoVtf } from '../services/centroCostoVtfImportService';
 
 interface JardinVtfWorkspaceViewProps {
   colegio: Establecimiento;
@@ -113,6 +114,8 @@ export const JardinVtfWorkspaceView: React.FC<JardinVtfWorkspaceViewProps> = ({
 
   const fileJiscRef = useRef<HTMLInputElement>(null);
   const filePalVtfRef = useRef<HTMLInputElement>(null);
+  const fileCentroCostoAllRef = useRef<HTMLInputElement>(null);
+  const fileCentroCostoOneRef = useRef<HTMLInputElement>(null);
 
   const cargarDatosVtf = useCallback(async () => {
     setCargando(true);
@@ -404,6 +407,28 @@ export const JardinVtfWorkspaceView: React.FC<JardinVtfWorkspaceViewProps> = ({
       onRefreshData?.();
     } catch (err: any) {
       setEstadoMsg({ text: `Error importando PAL 2027: ${err?.message || String(err)}`, type: 'err' });
+    } finally {
+      setImportando(false);
+    }
+  };
+
+  const handleUploadCentroCostoVtf = async (fileList: FileList | null, soloEsteJardin: boolean) => {
+    if (!fileList || fileList.length === 0) return;
+    setImportando(true);
+    setEstadoMsg(null);
+    try {
+      const buf = await fileList[0].arrayBuffer();
+      const res = await importarDetalleCentroCostoVtf(buf, periodoActivo, {
+        rbdFiltro: soloEsteJardin ? colegio.rbd : undefined,
+      });
+      setEstadoMsg({
+        text: `Centro de Costo (${res.hojaUtilizada}) importado en ${res.unidadesAfectadas} unidad(es): ${res.docentesImportados} docentes (${res.directorasImportadas} Dir. + ${res.educadorasImportadas} Educ.) y ${res.asistentesImportados} asistentes (${res.tecnicosImportados} Téc. + ${res.otrosAsistentesImportados} Otros).`,
+        type: res.alertas.length > 0 ? 'warn' : 'ok',
+      });
+      await cargarDatosVtf();
+      onRefreshData?.();
+    } catch (err: any) {
+      setEstadoMsg({ text: `Error importando Detalle Centro de Costo: ${err?.message || String(err)}`, type: 'err' });
     } finally {
       setImportando(false);
     }
@@ -1162,14 +1187,66 @@ export const JardinVtfWorkspaceView: React.FC<JardinVtfWorkspaceViewProps> = ({
             </div>
           )}
 
-          {/* SUBTAB 5: INGESTA MULTI-LIBRO JISC & PAL VTF */}
+          {/* SUBTAB 5: INGESTA MULTI-LIBRO JISC, CENTRO DE COSTO & PAL VTF */}
           {subTab === 'ingesta' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="card-elevated p-5 space-y-3 border-t-4 border-t-indigo-500">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-indigo-600" />
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    1. Poblar Funcionarios (Centro de Costo RR.HH.)
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Importa <code>DetalleDotacionCentroCosto (2).xlsx</code> (prioriza <code>Hoja1</code> deduplicada). Enruta automáticamente por cargo: <strong>Director/a</strong> y <strong>Educadora de Párvulos</strong> a Docentes VTF; <strong>Técnicos</strong> y <strong>Auxiliares</strong> a Asistentes, resolviendo <code>SALA CUNA RIOS DEL SUR → 36646</code> y excluyendo escuelas básicas.
+                </p>
+                <input
+                  ref={fileCentroCostoAllRef}
+                  type="file"
+                  accept=".xlsx"
+                  className="hidden"
+                  onChange={(e) => {
+                    handleUploadCentroCostoVtf(e.target.files, false);
+                    e.target.value = '';
+                  }}
+                />
+                <input
+                  ref={fileCentroCostoOneRef}
+                  type="file"
+                  accept=".xlsx"
+                  className="hidden"
+                  onChange={(e) => {
+                    handleUploadCentroCostoVtf(e.target.files, true);
+                    e.target.value = '';
+                  }}
+                />
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={importando}
+                    onClick={() => fileCentroCostoAllRef.current?.click()}
+                    className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>{importando ? 'Procesando...' : 'Poblar los 42 Jardines VTF (.xlsx)'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={importando}
+                    onClick={() => fileCentroCostoOneRef.current?.click()}
+                    className="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-200 dark:border-indigo-800 disabled:opacity-60 text-[11px] font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Solo este Jardín (RBD {colegio.rbd})</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="card-elevated p-5 space-y-3">
                 <div className="flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-pink-600" />
                   <h3 className="text-sm font-black text-slate-900 dark:text-white">
-                    1. Ingesta Multi-Libro Plataforma JISC (.xlsx)
+                    2. Ingesta Multi-Libro Plataforma JISC (.xlsx)
                   </h3>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -1201,7 +1278,7 @@ export const JardinVtfWorkspaceView: React.FC<JardinVtfWorkspaceViewProps> = ({
                 <div className="flex items-center gap-2">
                   <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
                   <h3 className="text-sm font-black text-slate-900 dark:text-white">
-                    2. Ingesta Nómina PAL 2027 · Info Funcionario (VTF)
+                    3. Ingesta Nómina PAL 2027 · Info Funcionario (VTF)
                   </h3>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
