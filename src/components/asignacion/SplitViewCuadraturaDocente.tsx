@@ -12,10 +12,11 @@ import {
   Trash2
 } from 'lucide-react';
 import { AsignacionHoraria, CursoSae, Docente, Establecimiento } from '../../types';
-import { calcularAuditoriaDocenteMultitramo } from '@slep/mineduc-engine';
-import { calcularHorasFueraAulaDocente } from '../../services/auditoriaDocenteService';
+import { esNivelParvulario } from '@slep/mineduc-engine';
+import { auditarCargaDocenteIntegral } from '../../services/auditoriaDocenteService';
 import {
   calcularDisponibilidadCurso,
+  calcularEstadoCursosParvularios,
   resolverPlanCurso,
   sonAsignaturasEquivalentes
 } from '../../services/curricularPlanService';
@@ -40,6 +41,9 @@ interface VacanteItem {
   horasAsignadas: number;
   horasDisponibles: number;
   esLibreJec?: boolean;
+  esParvularia?: boolean;
+  esCoDocenciaParvularia?: boolean;
+  notaParvularia?: string;
 }
 
 export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProps> = ({
@@ -69,6 +73,7 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
     planesDb,
     asignacionesDocente,
     materiasAfines,
+    saldoPorFuente,
     resumenNormativo,
     simular,
     crearAsignacion,
@@ -80,46 +85,43 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
     asignaciones,
     periodoActivo,
     onGuardarAsignacion,
-    onEliminarAsignacion
+    onEliminarAsignacion,
+    docentes
   );
 
-  // Resumen rápido de cada docente para la columna izquierda
+  const cursosMap = useMemo(() => new Map(cursos.map(c => [c.id, c])), [cursos]);
+
+  // Resumen unificado de cada docente (incluye Parvularia 60m, SEP, PIE, Recreo, HNL y 40% Planif.)
   const docentesResumen = useMemo(() => {
-    const es60 = (colegio.porcentajePrioritarios || 0) >= 80;
     return docentes.map(d => {
-      const asigs = asignaciones.filter(
-        a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente)
+      const propias = asignaciones.filter(a => a.docenteId === d.id);
+      const coDoc = asignaciones.filter(a => a.coDocenteId === d.id && a.tieneCoDocente);
+      const integral = auditarCargaDocenteIntegral(
+        d,
+        propias,
+        coDoc,
+        cursosMap,
+        colegio.porcentajePrioritarios || 0
       );
-      const desglose = calcularHorasFueraAulaDocente(d, asigs, colegio.porcentajePrioritarios || 0);
-      let ha65 = 0;
-      let ha60 = 0;
-      let pieCron = 0;
-      let sepEx = 0;
-      for (const a of asigs) {
-        if (a.esTrabajoColaborativo) {
-          pieCron += a.horasCronologicasPie || a.horasColaborativas || a.horasPedagogicasAula || 0;
-        } else if (a.esTallerSep) {
-          sepEx += Math.round((a.horasPedagogicasAula || 0) * 0.75 * 100) / 100;
-        } else if (es60) {
-          ha60 += a.horasPedagogicasAula || 0;
-        } else {
-          ha65 += a.horasPedagogicasAula || 0;
-        }
-      }
-      const audit = calcularAuditoriaDocenteMultitramo({
-        horasAula65_35: ha65,
-        horasAula60_40: ha60,
-        horasPieCronologicas: pieCron,
-        horasTallerSepExento: sepEx,
-        horasNoAulaInstitucionales: desglose.horasInstitucionalesSubvGen,
-        horasContratoReal: d.horasContrato,
-        aplicaArticulo69: Boolean(d.aplicaArticulo69)
-      });
-      const esSepPie =
-        (d.horasSepTitular || 0) + (d.horasSepContrata || 0) + (d.horasPieTitular || 0) + (d.horasPieContrata || 0) > 0;
-      return { docente: d, saldo: audit.saldoHoras, esSepPie, totalAsigs: asigs.length };
+      const contratoSep = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
+      const contratoPie = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+      const esSepPie = contratoSep + contratoPie > 0 || integral.reqSepDoc > 0 || integral.pieAsignadasDoc > 0;
+      return {
+        docente: d,
+        saldo: integral.saldoHoras,
+        esSepPie,
+        totalAsigs: propias.length + coDoc.length,
+        isEducadora: integral.isEducadoraParvulo,
+        contratoSep,
+        sepAsignado: integral.reqSepDoc,
+        contratoPie,
+        pieAsignado: integral.pieAsignadasDoc,
+        minutosRecreo: integral.auditDoc.minutosRecreoTotal,
+        minutosHnl: integral.auditDoc.minutosHnlTotal,
+        minutosPlan40: integral.auditDoc.minutosHnlPlanificacion40
+      };
     });
-  }, [docentes, asignaciones, colegio.porcentajePrioritarios]);
+  }, [docentes, asignaciones, cursosMap, colegio.porcentajePrioritarios]);
 
   const docentesFiltrados = useMemo(() => {
     const q = busquedaDoc.trim().toLowerCase();
@@ -136,10 +138,42 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
       .sort((a, b) => a.docente.apellidos.localeCompare(b.docente.apellidos));
   }, [docentesResumen, busquedaDoc, filtroDoc]);
 
-  // Vacantes del establecimiento
+  // Vacantes del establecimiento (unificado: HA 45m para Básica/Media y Permanencia DTO 306 en 60m para Parvularia)
   const vacantes = useMemo(() => {
     const lista: VacanteItem[] = [];
+    const mapaParv = calcularEstadoCursosParvularios(
+      cursos,
+      docentes,
+      asignaciones,
+      colegio.porcentajePrioritarios || 0,
+      colegio.regimenProporcion
+    );
     for (const c of cursos) {
+      if (esNivelParvulario(c.nivel)) {
+        const estadoParv = mapaParv.get(c.id);
+        if (estadoParv && !estadoParv.resultado.coberturaCompletaPermanencia) {
+          const res = estadoParv.resultado;
+          const faltaHoras = Math.round((res.minutosDeficitRestante / 60) * 100) / 100;
+          const esTitularActiva = Boolean(docenteActivo && estadoParv.titularDocente?.id === docenteActivo.id);
+          const hrsSugeridas = esTitularActiva && res.horasRestantesCapacidadTitular > 0
+            ? Math.min(res.horasRestantesCapacidadTitular, faltaHoras)
+            : res.horasAulaSegundaEducadoraRestante || faltaHoras;
+          lista.push({
+            curso: c,
+            asignatura: res.segundaEducadoraRequerida && !esTitularActiva
+              ? 'Atención Directa y Co-Docencia Parvularia (DTO 306)'
+              : 'Atención Directa Parvularia (BCEP Integral)',
+            horasPlan: Math.round((res.permanenciaMinutos / 60) * 100) / 100,
+            horasAsignadas: Math.round((res.minutosCubiertosTotales / 60) * 100) / 100,
+            horasDisponibles: Math.max(0.5, Math.round(hrsSugeridas * 100) / 100),
+            esParvularia: true,
+            esCoDocenciaParvularia: res.segundaEducadoraRequerida && !esTitularActiva,
+            notaParvularia: `DTO 306 (${res.regimenNormativoProporcion === '60_40' ? '60/40' : '65/35'}) · Falta ${res.minutosDeficitRestanteTexto}`
+          });
+        }
+        continue;
+      }
+
       const plan = resolverPlanCurso(c, planesDb);
       const disp = calcularDisponibilidadCurso(c, plan, asignaciones);
       for (const d of disp.disponibles) {
@@ -163,7 +197,7 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
       }
     }
     return lista;
-  }, [cursos, planesDb, asignaciones]);
+  }, [cursos, docentes, planesDb, asignaciones, colegio.porcentajePrioritarios, colegio.regimenProporcion, docenteActivo]);
 
   const vacantesFiltradas = useMemo(() => {
     const q = busquedaVacante.trim().toLowerCase();
@@ -198,8 +232,6 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
       .sort((a, b) => Number(b.esAfin) - Number(a.esAfin) || a.titulo.localeCompare(b.titulo));
   }, [vacantesFiltradas, agrupacion, materiasAfines]);
 
-  const cursosMap = useMemo(() => new Map(cursos.map(c => [c.id, c])), [cursos]);
-
   const asignarDirecto = async (v: VacanteItem, docOverride?: Docente) => {
     const targetDoc = docOverride || docenteActivo;
     if (!targetDoc || !onGuardarAsignacion) return;
@@ -210,7 +242,10 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
       curso: v.curso,
       asignatura: v.asignatura,
       horas: v.horasDisponibles,
-      esTallerJec: Boolean(v.esLibreJec)
+      esTallerJec: Boolean(v.esLibreJec),
+      esCoDocencia: Boolean(v.esCoDocenciaParvularia),
+      esCoDocenciaParvularia: Boolean(v.esCoDocenciaParvularia),
+      tipoApoyo: v.esCoDocenciaParvularia ? '2DA_EDUCADORA_DTO306' : undefined
     });
   };
 
@@ -259,8 +294,9 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-          {docentesFiltrados.map(({ docente, saldo, totalAsigs }) => {
+          {docentesFiltrados.map(({ docente, saldo, totalAsigs, isEducadora, contratoSep, sepAsignado, contratoPie, pieAsignado, minutosRecreo, minutosHnl, minutosPlan40 }) => {
             const activo = docenteActivo?.id === docente.id;
+            const fmtM = (m: number) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
             return (
               <div
                 key={docente.id}
@@ -271,35 +307,61 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
                 }}
                 onDragEnd={() => setDraggedDocId(null)}
                 onClick={() => setDocenteActivoId(docente.id)}
-                className={`p-2.5 cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                className={`p-2.5 cursor-pointer transition-all space-y-1 ${
                   activo
                     ? 'bg-blue-50/90 dark:bg-blue-950/40 border-l-4 border-l-blue-600'
                     : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                 }`}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <GripVertical className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                      {docente.apellidos}, {docente.nombres}
-                    </p>
-                    <p className="text-[10px] text-slate-500 truncate">
-                      {docente.asignaturaPrincipal || docente.cargoInstitucional || docente.estamento} ·{' '}
-                      <span className="font-mono">{docente.horasContrato}h</span> · {totalAsigs} asig.
-                    </p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <GripVertical className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {docente.apellidos}, {docente.nombres}
+                        </p>
+                        {isEducadora && (
+                          <span className="px-1 py-0.2 rounded text-[9px] font-extrabold bg-teal-100 text-teal-800 shrink-0">
+                            60m
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 truncate">
+                        {docente.asignaturaPrincipal || docente.cargoInstitucional || docente.estamento} ·{' '}
+                        <span className="font-mono">{docente.horasContrato}h</span> · {totalAsigs} asig.
+                      </p>
+                    </div>
                   </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-black shrink-0 ${
+                      saldo > 0.05
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : saldo < -0.05
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {saldo > 0 ? `+${saldo}h` : `${saldo}h`}
+                  </span>
                 </div>
-                <span
-                  className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-black shrink-0 ${
-                    saldo > 0.05
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : saldo < -0.05
-                      ? 'bg-rose-100 text-rose-800'
-                      : 'bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  {saldo > 0 ? `+${saldo}h` : `${saldo}h`}
-                </span>
+
+                {/* Micro-fila compacta SEP / PIE / Recreo / HNL / 40% Planif. */}
+                <div className="pl-5 flex flex-wrap items-center gap-1.5 text-[9.5px] font-mono text-slate-500">
+                  {(contratoSep > 0 || sepAsignado > 0) && (
+                    <span className="px-1.5 py-0.2 rounded bg-sky-50 text-sky-800 border border-sky-200/80 font-bold">
+                      SEP {Math.round(sepAsignado * 10) / 10}/{contratoSep}h
+                    </span>
+                  )}
+                  {(contratoPie > 0 || pieAsignado > 0) && (
+                    <span className="px-1.5 py-0.2 rounded bg-purple-50 text-purple-800 border border-purple-200/80 font-bold">
+                      PIE {Math.round(pieAsignado * 10) / 10}/{contratoPie}h
+                    </span>
+                  )}
+                  <span title="Recreo · HNL totales · 40% Planificación">
+                    Rec {fmtM(minutosRecreo)} · HNL {fmtM(minutosHnl)} (40%: {fmtM(minutosPlan40)})
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -313,16 +375,34 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
 
       {/* PANEL DERECHO (65% -> 8 cols): Vacantes del Colegio + Carga del Docente Activo */}
       <div className="lg:col-span-8 space-y-3">
-        {docenteActivo && resumenNormativo && (
+        {docenteActivo && resumenNormativo && saldoPorFuente && (
           <div className="card-elevated p-3 bg-gradient-to-r from-blue-900 to-slate-900 text-white flex flex-wrap items-center justify-between gap-2">
-            <div>
+            <div className="space-y-1">
               <span className="text-[10px] uppercase font-bold text-blue-200 block">Docente Activo para Cuadratura</span>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <h4 className="text-sm font-black">
                   {docenteActivo.nombres} {docenteActivo.apellidos}
                 </h4>
+                {resumenNormativo.esEducadora && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/30 text-teal-100 border border-teal-400/40">
+                    Parvularia DTO 306 · 60m
+                  </span>
+                )}
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/15">
                   Contrato {docenteActivo.horasContrato}h
+                </span>
+                {(saldoPorFuente.contratoSep > 0 || saldoPorFuente.sepAsignado > 0) && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/30 text-sky-100">
+                    SEP {Math.round(saldoPorFuente.sepAsignado * 10) / 10}/{saldoPorFuente.contratoSep}h
+                  </span>
+                )}
+                {(saldoPorFuente.contratoPie > 0 || saldoPorFuente.pieAsignado > 0) && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/30 text-purple-100">
+                    PIE {Math.round(saldoPorFuente.pieAsignado * 10) / 10}/{saldoPorFuente.contratoPie}h
+                  </span>
+                )}
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/10 text-blue-100">
+                  Rec {Math.floor(resumenNormativo.audit.minutosRecreoTotal / 60)}h{resumenNormativo.audit.minutosRecreoTotal % 60}m · HNL {Math.floor(resumenNormativo.audit.minutosHnlTotal / 60)}h{resumenNormativo.audit.minutosHnlTotal % 60}m (40%: {Math.floor(resumenNormativo.audit.minutosHnlPlanificacion40 / 60)}h{resumenNormativo.audit.minutosHnlPlanificacion40 % 60}m)
                 </span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
@@ -447,8 +527,10 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
                         <span>
                           {agrupacion === 'ASIGNATURA' ? `${v.curso.nivel} ${v.curso.letra}` : v.asignatura}
                         </span>
-                        <span className="font-mono font-black px-1 rounded bg-amber-100 text-amber-900 text-[10px]">
-                          {v.horasDisponibles}h
+                        <span className={`font-mono font-black px-1 rounded text-[10px] ${
+                          v.esParvularia ? 'bg-teal-100 text-teal-900' : 'bg-amber-100 text-amber-900'
+                        }`}>
+                          {v.horasDisponibles}{v.esParvularia ? 'h 60m' : 'h'}
                         </span>
                       </button>
                       <button
@@ -459,7 +541,9 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
                             asignatura: v.asignatura,
                             horasSugeridas: v.horasDisponibles,
                             maxHorasPlan: v.horasDisponibles,
-                            esTallerJec: Boolean(v.esLibreJec)
+                            esTallerJec: Boolean(v.esLibreJec),
+                            esCoDocencia: Boolean(v.esCoDocenciaParvularia),
+                            esCoDocenciaParvularia: Boolean(v.esCoDocenciaParvularia)
                           })
                         }
                         className="px-1.5 py-1 border-l border-slate-200 hover:bg-slate-100 text-slate-500"

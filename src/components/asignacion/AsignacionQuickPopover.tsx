@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Check, Minus, Plus, Sparkles, X } from 'lucide-react';
 import { CursoSae, Docente } from '../../types';
+import { CATALOGO_BCEP_PARVULARIA, esNivelParvulario } from '@slep/mineduc-engine';
+import { esDocenteEducadoraParvulos } from '../../services/auditoriaDocenteService';
 import { ResumenImpactoAsignacion } from '../../services/curricularPlanService';
 import { NuevaAsignacionInput } from '../../hooks/useAsignacionDocente';
 
@@ -12,6 +14,7 @@ export interface QuickPopoverSeed {
   esTallerJec?: boolean;
   esTallerSep?: boolean;
   esCoDocencia?: boolean;
+  esCoDocenciaParvularia?: boolean;
   esTrabajoColaborativo?: boolean;
   tipoApoyo?: string;
 }
@@ -23,7 +26,12 @@ interface AsignacionQuickPopoverProps {
   simular: (
     curso: CursoSae | null,
     horas: number,
-    opciones?: { esTallerSep?: boolean; esTrabajoColaborativo?: boolean }
+    opciones?: {
+      esTallerSep?: boolean;
+      esTrabajoColaborativo?: boolean;
+      esCoDocencia?: boolean;
+      esCoDocenciaParvularia?: boolean;
+    }
   ) => ResumenImpactoAsignacion | null;
   onConfirmar: (input: NuevaAsignacionInput) => Promise<void>;
   onCerrar: () => void;
@@ -39,7 +47,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
 }) => {
   const [asignatura, setAsignatura] = useState('');
   const [horas, setHoras] = useState(2);
-  const [modalidad, setModalidad] = useState<'REGULAR' | 'TALLER_JEC' | 'TALLER_SEP' | 'CO_DOCENCIA' | 'PIE_COLAB'>('REGULAR');
+  const [modalidad, setModalidad] = useState<'REGULAR' | 'PARV_CODOCENCIA' | 'TALLER_JEC' | 'TALLER_SEP' | 'CO_DOCENCIA' | 'PIE_COLAB'>('REGULAR');
   const [compartirCursos, setCompartirCursos] = useState(false);
   const [cursosCompartidos, setCursosCompartidos] = useState<string[]>([]);
   const [guardando, setGuardando] = useState(false);
@@ -50,6 +58,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
     setHoras(seed.horasSugeridas > 0 ? seed.horasSugeridas : 2);
     if (seed.esTrabajoColaborativo) setModalidad('PIE_COLAB');
     else if (seed.esTallerSep) setModalidad('TALLER_SEP');
+    else if (seed.esCoDocenciaParvularia) setModalidad('PARV_CODOCENCIA');
     else if (seed.esCoDocencia) setModalidad('CO_DOCENCIA');
     else if (seed.esTallerJec) setModalidad('TALLER_JEC');
     else setModalidad('REGULAR');
@@ -59,12 +68,21 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
 
   if (!seed) return null;
 
+  const esParvulariaCurso = Boolean(seed.curso && esNivelParvulario(seed.curso.nivel));
+  const esEducadora = esDocenteEducadoraParvulos(docente);
+  const esFlujoParvularia = esParvulariaCurso || (esEducadora && !seed.curso);
   const esTallerSep = modalidad === 'TALLER_SEP';
   const esTrabajoColaborativo = modalidad === 'PIE_COLAB';
   const esTallerJec = modalidad === 'TALLER_JEC';
-  const esCoDocencia = modalidad === 'CO_DOCENCIA';
+  const esCoDocenciaParvularia = modalidad === 'PARV_CODOCENCIA';
+  const esCoDocencia = modalidad === 'CO_DOCENCIA' || esCoDocenciaParvularia;
 
-  const impacto = simular(seed.curso, horas, { esTallerSep, esTrabajoColaborativo });
+  const impacto = simular(seed.curso, horas, {
+    esTallerSep,
+    esTrabajoColaborativo,
+    esCoDocencia,
+    esCoDocenciaParvularia
+  });
   const esCiencias = /^ciencias naturales$/i.test(asignatura.trim());
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,8 +97,15 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
         esTallerJec,
         esTallerSep,
         esCoDocencia,
+        esCoDocenciaParvularia,
         esTrabajoColaborativo,
-        tipoApoyo: esCoDocencia ? 'CO_DOCENCIA' : esTrabajoColaborativo ? 'Trabajo Colaborativo Art. 86' : seed.tipoApoyo,
+        tipoApoyo: esCoDocenciaParvularia
+          ? '2DA_EDUCADORA_DTO306'
+          : esCoDocencia
+          ? 'CO_DOCENCIA'
+          : esTrabajoColaborativo
+          ? 'Trabajo Colaborativo Art. 86'
+          : seed.tipoApoyo,
         cursosCompartidosIds: compartirCursos ? cursosCompartidos : undefined
       });
       onCerrar();
@@ -145,31 +170,63 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
                 ))}
               </div>
             )}
+            {esFlujoParvularia && (
+              <div className="mt-1.5 space-y-1">
+                <span className="text-[10px] text-teal-700 font-bold block">
+                  Núcleos BCEP / Atención Directa Parvularia (60m cron.):
+                </span>
+                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => setAsignatura('Atención Directa y Co-Docencia Parvularia (DTO 306)')}
+                    className="px-2 py-0.5 rounded bg-teal-600 text-white text-[10px] font-bold hover:bg-teal-700"
+                  >
+                    Atención Directa DTO 306
+                  </button>
+                  {CATALOGO_BCEP_PARVULARIA.slice(0, 6).map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setAsignatura(b.nucleo)}
+                      className="px-2 py-0.5 rounded bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 text-[10px] font-semibold"
+                    >
+                      {b.nucleo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Stepper de horas */}
           <div className="flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/70 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
             <div>
-              <span className="font-bold text-slate-700 dark:text-slate-200 block">Horas a Asignar</span>
+              <span className="font-bold text-slate-700 dark:text-slate-200 block">
+                {esFlujoParvularia ? 'Horas Cronológicas (60m)' : 'Horas a Asignar'}
+              </span>
               {seed.maxHorasPlan ? (
-                <span className="text-[10px] text-slate-500">Vacante del plan: {seed.maxHorasPlan} HA</span>
+                <span className="text-[10px] text-slate-500">
+                  {esFlujoParvularia
+                    ? `Déficit permanencia: ${seed.maxHorasPlan}h cron.`
+                    : `Vacante del plan: ${seed.maxHorasPlan} HA`}
+                </span>
               ) : null}
             </div>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setHoras(h => Math.max(0.5, Math.round((h - 1) * 100) / 100))}
+                onClick={() => setHoras(h => Math.max(0.25, Math.round((h - 1) * 100) / 100))}
                 className="w-7 h-7 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 flex items-center justify-center hover:bg-slate-100"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
               <input
                 type="number"
-                step="0.5"
-                min="0.5"
+                step={esFlujoParvularia ? '0.25' : '0.5'}
+                min="0.25"
                 max="44"
                 value={horas}
-                onChange={e => setHoras(Math.max(0.5, Number(e.target.value) || 0.5))}
+                onChange={e => setHoras(Math.max(0.25, Number(e.target.value) || 0.5))}
                 className="w-16 text-center py-1 font-mono font-black text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800"
               />
               <button
@@ -189,7 +246,10 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
             </label>
             <div className="grid grid-cols-2 gap-1.5">
               {[
-                { id: 'REGULAR' as const, label: 'Plan Regular', cls: 'border-blue-300 bg-blue-50 text-blue-900' },
+                { id: 'REGULAR' as const, label: esFlujoParvularia ? 'Titular Parvularia (60m)' : 'Plan Regular', cls: 'border-blue-300 bg-blue-50 text-blue-900' },
+                ...(esFlujoParvularia
+                  ? [{ id: 'PARV_CODOCENCIA' as const, label: '2da Educadora DTO 306', cls: 'border-teal-300 bg-teal-50 text-teal-900' }]
+                  : []),
                 { id: 'TALLER_JEC' as const, label: 'Libre Disp. JEC', cls: 'border-amber-300 bg-amber-50 text-amber-900' },
                 { id: 'TALLER_SEP' as const, label: 'Taller / Refuerzo SEP', cls: 'border-sky-300 bg-sky-50 text-sky-900' },
                 { id: 'CO_DOCENCIA' as const, label: 'Co-Docencia Aula', cls: 'border-indigo-300 bg-indigo-50 text-indigo-900' },

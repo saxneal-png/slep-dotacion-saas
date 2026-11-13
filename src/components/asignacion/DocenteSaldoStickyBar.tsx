@@ -8,6 +8,9 @@ interface DocenteSaldoStickyBarProps {
   contratoSubvGen: number;
   contratoSep: number;
   contratoPie: number;
+  sepAsignado?: number;
+  pieAsignado?: number;
+  horasInstitucionalesSubvGen?: number;
   totalHaLectivas: number;
   contratoCalculadoTotal: number;
   horasNoAulaTotales: number;
@@ -17,6 +20,8 @@ interface DocenteSaldoStickyBarProps {
   esInfractorExcesoLectivo: boolean;
   minutosRecreoTotal: number;
   minutosHnlTotal: number;
+  minutosPlanificacion40?: number;
+  isEducadoraParvulo?: boolean;
   previewImpacto?: {
     etiqueta: string;
     impacto: ResumenImpactoAsignacion;
@@ -28,6 +33,9 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
   contratoSubvGen,
   contratoSep,
   contratoPie,
+  sepAsignado = 0,
+  pieAsignado = 0,
+  horasInstitucionalesSubvGen = 0,
   totalHaLectivas,
   contratoCalculadoTotal,
   horasNoAulaTotales,
@@ -37,32 +45,70 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
   esInfractorExcesoLectivo,
   minutosRecreoTotal,
   minutosHnlTotal,
+  minutosPlanificacion40,
+  isEducadoraParvulo = false,
   previewImpacto
 }) => {
   const contratoTotal = Math.max(0, Number(docente.horasContrato || 0));
   const pctOcupado = contratoTotal > 0 ? Math.min(100, Math.round((contratoCalculadoTotal / contratoTotal) * 100)) : 0;
+  const plan40Mins = minutosPlanificacion40 ?? Math.round(minutosHnlTotal * 0.4);
+  const hnl60Mins = Math.max(0, minutosHnlTotal - plan40Mins);
+  const aulaCronMins = isEducadoraParvulo ? Math.round(totalHaLectivas * 60) : Math.round(totalHaLectivas * 45);
+  const exentoMins = Math.max(0, Math.round(horasNoAulaTotales * 60));
+  const totalBaseMins = Math.max(1, contratoTotal * 60, aulaCronMins + minutosRecreoTotal + minutosHnlTotal + exentoMins);
+  const pctBar = (m: number) => Math.max(0, Math.min(100, Math.round((m / totalBaseMins) * 1000) / 10));
+  const fmtMins = (m: number) => `${Math.floor(Math.max(0, m) / 60)}h ${Math.max(0, m) % 60}m`;
+
+  const sepExcedido = sepAsignado > contratoSep + 0.05;
+  const pieExcedido = pieAsignado > contratoPie + 0.05;
 
   return (
-    <div className="bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-700 px-4 py-3 space-y-2.5 backdrop-blur-xs">
-      {/* Fila 1: Fuentes contractuales + Progreso de ocupación */}
+    <div className="bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-700 px-4 py-3 space-y-2 backdrop-blur-xs">
+      {/* Fila 1: Fuentes contractuales (con avance SEP/PIE) + Recreo / HNL / 40% Planificación */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
           <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white font-bold">
             Contrato: {contratoTotal}h
           </span>
+          {isEducadoraParvulo && (
+            <span
+              className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-900 border border-teal-300 font-sans font-extrabold"
+              title="Cálculo normativo Educación Parvularia en horas cronológicas reales de 60 minutos (DTO 306/2007)"
+            >
+              Parvularia DTO 306 · 60m
+            </span>
+          )}
           {contratoSubvGen > 0 && (
             <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-200 font-bold">
               Subv. Gral: {contratoSubvGen}h
             </span>
           )}
-          {contratoSep > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-900 border border-sky-200 font-bold">
-              SEP: {contratoSep}h
+          {(contratoSep > 0 || sepAsignado > 0) && (
+            <span
+              className={`px-2 py-0.5 rounded-full border font-bold ${
+                sepExcedido
+                  ? 'bg-rose-100 text-rose-900 border-rose-300'
+                  : sepAsignado > 0 && sepAsignado >= contratoSep - 0.05
+                  ? 'bg-sky-600 text-white border-sky-700'
+                  : 'bg-sky-100 text-sky-900 border-sky-200'
+              }`}
+              title={`SEP asignado: ${sepAsignado}h de ${contratoSep}h contratadas`}
+            >
+              SEP {Math.round(sepAsignado * 10) / 10}/{contratoSep}h
             </span>
           )}
-          {contratoPie > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200 font-bold">
-              PIE: {contratoPie}h
+          {(contratoPie > 0 || pieAsignado > 0) && (
+            <span
+              className={`px-2 py-0.5 rounded-full border font-bold ${
+                pieExcedido
+                  ? 'bg-rose-100 text-rose-900 border-rose-300'
+                  : pieAsignado > 0 && pieAsignado >= contratoPie - 0.05
+                  ? 'bg-purple-600 text-white border-purple-700'
+                  : 'bg-purple-100 text-purple-900 border-purple-200'
+              }`}
+              title={`PIE asignado: ${pieAsignado}h de ${contratoPie}h contratadas`}
+            >
+              PIE {Math.round(pieAsignado * 10) / 10}/{contratoPie}h
             </span>
           )}
           {docente.asignaturaPrincipal && (
@@ -72,13 +118,25 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] text-slate-600 dark:text-slate-300">
-          <span className="inline-flex items-center gap-1 font-mono">
-            <Clock className="w-3.5 h-3.5 text-blue-600" />
-            Recreo: <strong>{Math.floor(minutosRecreoTotal / 60)}h {minutosRecreoTotal % 60}m</strong>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300 font-mono">
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200/80"
+            title="Minutos cronológicos de recreo según tablas MINEDUC"
+          >
+            <Clock className="w-3 h-3 text-amber-600" />
+            Recreo: <strong>{fmtMins(minutosRecreoTotal)}</strong>
           </span>
-          <span className="inline-flex items-center gap-1 font-mono">
-            HNL: <strong>{Math.floor(minutosHnlTotal / 60)}h {minutosHnlTotal % 60}m</strong>
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200"
+            title="Total Horas No Lectivas cronológicas"
+          >
+            HNL: <strong>{fmtMins(minutosHnlTotal)}</strong>
+          </span>
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-900 border border-emerald-200/80"
+            title="40% exclusivo de HNL para preparación de la enseñanza (Ley 20.903)"
+          >
+            40% Plan: <strong>{fmtMins(plan40Mins)}</strong>
           </span>
         </div>
       </div>
@@ -86,8 +144,12 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
       {/* Fila 2: 4 KPIs tabulares compactos + Barra de ocupación */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
-          <span className="text-[10px] font-bold uppercase text-slate-400 block">Aula Asignada</span>
-          <span className="text-base font-black font-mono text-blue-700 dark:text-blue-400">{totalHaLectivas} HA</span>
+          <span className="text-[10px] font-bold uppercase text-slate-400 block">
+            {isEducadoraParvulo ? 'Aula Parv. (60m cron.)' : 'Aula Asignada'}
+          </span>
+          <span className={`text-base font-black font-mono ${isEducadoraParvulo ? 'text-teal-700 dark:text-teal-400' : 'text-blue-700 dark:text-blue-400'}`}>
+            {totalHaLectivas} {isEducadoraParvulo ? 'h' : 'HA'}
+          </span>
           <span className={`ml-1.5 text-[10px] font-bold font-mono ${esInfractorExcesoLectivo ? 'text-rose-600' : 'text-slate-500'}`}>
             ({porcentajeLectivoReal}% / máx {porcentajeLimitePonderado}%)
           </span>
@@ -95,7 +157,20 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
 
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
           <span className="text-[10px] font-bold uppercase text-slate-400 block">No Aula / Exentas</span>
-          <span className="text-base font-black font-mono text-purple-700 dark:text-purple-400">{horasNoAulaTotales}h</span>
+          <div className="flex items-baseline justify-between gap-1">
+            <span className="text-base font-black font-mono text-purple-700 dark:text-purple-400">{horasNoAulaTotales}h</span>
+            {(horasInstitucionalesSubvGen > 0 || sepAsignado > 0 || pieAsignado > 0) && (
+              <span className="text-[9px] font-mono text-slate-500 truncate">
+                {[
+                  horasInstitucionalesSubvGen > 0 ? `Inst ${horasInstitucionalesSubvGen}h` : '',
+                  sepAsignado > 0 ? `SEP ${Math.round(sepAsignado * 10) / 10}h` : '',
+                  pieAsignado > 0 ? `PIE ${Math.round(pieAsignado * 10) / 10}h` : ''
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
@@ -145,6 +220,18 @@ export const DocenteSaldoStickyBar: React.FC<DocenteSaldoStickyBarProps> = ({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Micro-barra segmentada de composición de jornada (4px, sin ruido visual) */}
+      <div
+        className="w-full h-1.5 rounded-full bg-slate-200/80 dark:bg-slate-700 overflow-hidden flex"
+        title={`Distribución jornada: Aula ${fmtMins(aulaCronMins)} · Recreo ${fmtMins(minutosRecreoTotal)} · HNL 60% ${fmtMins(hnl60Mins)} · Planif. 40% ${fmtMins(plan40Mins)} · Exentas ${fmtMins(exentoMins)}`}
+      >
+        <div className="bg-blue-600 transition-all" style={{ width: `${pctBar(aulaCronMins)}%` }} />
+        <div className="bg-amber-400 transition-all" style={{ width: `${pctBar(minutosRecreoTotal)}%` }} />
+        <div className="bg-slate-400 transition-all" style={{ width: `${pctBar(hnl60Mins)}%` }} />
+        <div className="bg-emerald-500 transition-all" style={{ width: `${pctBar(plan40Mins)}%` }} />
+        <div className="bg-purple-500 transition-all" style={{ width: `${pctBar(exentoMins)}%` }} />
       </div>
 
       {/* Simulación previa en vivo al hacer hover sobre cualquier vacante */}

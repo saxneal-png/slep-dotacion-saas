@@ -4,9 +4,12 @@ import {
   guardarPreferenciaModoAsignacion
 } from '../src/services/configuracionGeneralService';
 import {
+  calcularEstadoCursosParvularios,
   calcularMapaDisponibilidadDocentePorCursos,
+  calcularSaldoDocentePorFuente,
   simularImpactoAsignacion
 } from '../src/services/curricularPlanService';
+import { auditarCargaDocenteIntegral } from '../src/services/auditoriaDocenteService';
 import { AsignacionHoraria, CursoSae, Docente } from '../src/types';
 
 function crearDocenteFixture(overrides: Partial<Docente> = {}): Docente {
@@ -130,5 +133,129 @@ describe('Preferencias personalizables de vista de asignación y motor único', 
     expect(impactoExcedido.excedeContrato).toBe(true);
     expect(impactoExcedido.saldoDespues).toBeLessThan(0);
     expect(impactoExcedido.advertencia).toBeTruthy();
+  });
+
+  it('unifica cálculo de Educación Parvularia DTO 306 (60m cronológicos) entre auditoría, simulador y mapa de cursos', () => {
+    const educadora = crearDocenteFixture({
+      id: 'ed-1',
+      estamento: 'EDUCADORA_PARVULO',
+      esEducadoraParvulo: true,
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44,
+      asignaturaPrincipal: 'Educación Parvularia'
+    });
+
+    const cursoNt1 = crearCursoFixture({
+      id: 'nt1-a',
+      nivel: 'NT1 (Pre-Kínder)',
+      letra: 'A',
+      regimen: 'JEC',
+      regimenJornada: 'JEC',
+      matriculaProyectada: 26,
+      regimenProporcion: '65_35'
+    });
+
+    // 28.5 horas cronológicas = 1.710 min (tope legal de 44h en 65/35)
+    const asigParv: AsignacionHoraria = {
+      id: 'asig-parv-1',
+      rbd: '4100',
+      docenteId: 'ed-1',
+      cursoId: 'nt1-a',
+      asignatura: 'Atención Directa Parvularia (BCEP Integral)',
+      horasPedagogicasAula: 28.5,
+      periodo: 2027
+    };
+
+    const cursosMap = new Map([[cursoNt1.id, cursoNt1]]);
+    const integral = auditarCargaDocenteIntegral(educadora, [asigParv], [], cursosMap, 40);
+    expect(integral.isEducadoraParvulo).toBe(true);
+    expect(integral.horasComprometidasDocente).toBe(44);
+    expect(integral.saldoHoras).toBe(0);
+    expect(integral.auditDoc.minutosRecreoTotal).toBe(180);
+    expect(integral.auditDoc.minutosHnlTotal).toBe(750);
+    expect(integral.auditDoc.minutosHnlPlanificacion40).toBe(300);
+
+    // Simulador debe usar exactamente los 60m cronológicos: asignar 4h extra a 28.5h excede las 44h
+    const simExtra = simularImpactoAsignacion(educadora, [asigParv], cursoNt1, 4, 40, {
+      cursosColegio: [cursoNt1]
+    });
+    expect(simExtra.isEducadoraParvulo).toBe(true);
+    expect(simExtra.excedeContrato).toBe(true);
+    expect(simExtra.contratoCalculadoAntes).toBe(44);
+    expect(simExtra.contratoCalculadoDespues).toBeGreaterThan(44);
+
+    // Mapa de permanencia DTO 306 detecta los 35h25m JEC (2.125 min) vs 28.5h (1.710 min) cubiertas -> faltan 415 min / 6.92h (2da educadora)
+    const mapaParv = calcularEstadoCursosParvularios([cursoNt1], [educadora], [asigParv], 40, '65_35');
+    const estado = mapaParv.get('nt1-a')!;
+    expect(estado.resultado.permanenciaMinutos).toBe(2125);
+    expect(estado.resultado.minutosDeficitRestante).toBe(415);
+    expect(estado.resultado.segundaEducadoraRequerida).toBe(true);
+    expect(estado.resultado.requiereTecnicoParvuloDto315).toBe(true);
+
+    const mapaCursos = calcularMapaDisponibilidadDocentePorCursos(
+      educadora,
+      [cursoNt1],
+      [asigParv],
+      [],
+      null,
+      [educadora]
+    );
+    expect(mapaCursos[0].esParvulario).toBe(true);
+    expect(mapaCursos[0].tieneAfinidad).toBe(true);
+    expect(mapaCursos[0].totalHorasFaltantesPlan).toBe(6.92);
+  });
+
+  it('expone desglose exacto de horas asignadas y disponibles de SEP y PIE para micro-fichas', () => {
+    const docenteMixto = crearDocenteFixture({
+      id: 'doc-mix',
+      horasContrato: 38,
+      horasSubvencionGeneralTitular: 24,
+      horasSepTitular: 8,
+      horasPieTitular: 6
+    });
+    const curso = crearCursoFixture({ id: 'c-5a' });
+
+    const asigs: AsignacionHoraria[] = [
+      {
+        id: 'a-reg',
+        rbd: '4100',
+        docenteId: 'doc-mix',
+        cursoId: 'c-5a',
+        asignatura: 'Matemática',
+        horasPedagogicasAula: 12,
+        periodo: 2027
+      },
+      {
+        id: 'a-sep',
+        rbd: '4100',
+        docenteId: 'doc-mix',
+        cursoId: 'c-5a',
+        asignatura: 'Taller Refuerzo Matemática SEP',
+        horasPedagogicasAula: 4,
+        esTallerSep: true,
+        tipoApoyo: 'TALLER_SEP',
+        periodo: 2027
+      },
+      {
+        id: 'a-pie',
+        rbd: '4100',
+        docenteId: 'doc-mix',
+        cursoId: 'c-5a',
+        asignatura: 'Trabajo Colaborativo PIE',
+        horasPedagogicasAula: 3,
+        horasCronologicasPie: 3,
+        esTrabajoColaborativo: true,
+        tipoApoyo: 'TRABAJO_COLABORATIVO',
+        periodo: 2027
+      }
+    ];
+
+    const saldoFuente = calcularSaldoDocentePorFuente(docenteMixto, asigs, 40, [curso]);
+    expect(saldoFuente.contratoSep).toBe(8);
+    expect(saldoFuente.sepAsignado).toBeGreaterThan(0);
+    expect(saldoFuente.sepDisponible).toBe(saldoFuente.contratoSep - saldoFuente.sepAsignado);
+    expect(saldoFuente.contratoPie).toBe(6);
+    expect(saldoFuente.pieAsignado).toBe(3);
+    expect(saldoFuente.pieDisponible).toBe(3);
   });
 });

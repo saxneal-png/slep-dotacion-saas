@@ -16,6 +16,7 @@ import {
   X
 } from 'lucide-react';
 import { AsignacionHoraria, CursoSae, Docente, Establecimiento } from '../../types';
+import { CATALOGO_BCEP_PARVULARIA, esNivelParvulario } from '@slep/mineduc-engine';
 import { useAsignacionDocente } from '../../hooks/useAsignacionDocente';
 import { ResumenImpactoAsignacion } from '../../services/curricularPlanService';
 import { DocenteSaldoStickyBar } from './DocenteSaldoStickyBar';
@@ -75,7 +76,8 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
     asignaciones,
     periodoActivo,
     onGuardarAsignacion,
-    onEliminarAsignacion
+    onEliminarAsignacion,
+    docentesLista
   );
 
   const idxActual = useMemo(() => {
@@ -183,6 +185,9 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
           contratoSubvGen={saldoPorFuente.contratoSubvGen}
           contratoSep={saldoPorFuente.contratoSep}
           contratoPie={saldoPorFuente.contratoPie}
+          sepAsignado={saldoPorFuente.sepAsignado}
+          pieAsignado={saldoPorFuente.pieAsignado}
+          horasInstitucionalesSubvGen={desglose.horasInstitucionalesSubvGen}
           totalHaLectivas={totalHaLectivas}
           contratoCalculadoTotal={audit.contratoCalculadoTotal}
           horasNoAulaTotales={desglose.horasExentasTotales}
@@ -192,6 +197,8 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
           esInfractorExcesoLectivo={audit.esInfractorExcesoLectivo}
           minutosRecreoTotal={audit.minutosRecreoTotal}
           minutosHnlTotal={audit.minutosHnlTotal}
+          minutosPlanificacion40={audit.minutosHnlPlanificacion40}
+          isEducadoraParvulo={resumenNormativo.esEducadora}
           previewImpacto={previewHover}
         />
 
@@ -297,12 +304,26 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {cursosFiltrados.map(item => {
-                    const { curso, infoPlan, disponibilidad, horasAsignadasDocenteEnCurso, totalHorasFaltantesPlan } = item;
+                    const { curso, infoPlan, disponibilidad, horasAsignadasDocenteEnCurso, totalHorasFaltantesPlan, esParvulario, estadoParvulario } = item;
+                    const parvRes = estadoParvulario?.resultado;
+                    const esTitularParvEsteCurso = Boolean(estadoParvulario?.titularDocente?.id === docente.id);
+                    const hrsSugeridasParv = parvRes
+                      ? Math.max(
+                          0.5,
+                          Math.round(
+                            (esTitularParvEsteCurso && parvRes.horasRestantesCapacidadTitular > 0
+                              ? Math.min(parvRes.horasRestantesCapacidadTitular, parvRes.minutosDeficitRestante / 60)
+                              : parvRes.horasAulaSegundaEducadoraRestante || parvRes.minutosDeficitRestante / 60) * 100
+                          ) / 100
+                        )
+                      : 0;
                     return (
                       <div
                         key={curso.id}
                         className={`rounded-xl border p-3 space-y-2.5 transition-all ${
-                          item.tieneAfinidad
+                          esParvulario
+                            ? 'bg-teal-50/35 border-teal-200'
+                            : item.tieneAfinidad
                             ? 'bg-emerald-50/30 border-emerald-200'
                             : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
                         }`}
@@ -316,7 +337,12 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
                                 {curso.regimen}
                               </span>
-                              {item.tieneAfinidad && (
+                              {esParvulario && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-200">
+                                  DTO 306 · 60m
+                                </span>
+                              )}
+                              {item.tieneAfinidad && !esParvulario && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 inline-flex items-center gap-0.5">
                                   <Sparkles className="w-2.5 h-2.5" /> Afín
                                 </span>
@@ -328,7 +354,7 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                           <div className="text-right font-mono text-[11px] shrink-0">
                             {horasAsignadasDocenteEnCurso > 0 && (
                               <span className="block font-bold text-blue-700">
-                                Docente aquí: {horasAsignadasDocenteEnCurso} HA
+                                Docente aquí: {horasAsignadasDocenteEnCurso} {esParvulario ? 'h cron.' : 'HA'}
                               </span>
                             )}
                             <span
@@ -337,15 +363,112 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                               }`}
                             >
                               {totalHorasFaltantesPlan <= 0.01
-                                ? '✓ Plan cubierto'
+                                ? esParvulario
+                                  ? '✓ Permanencia cubierta'
+                                  : '✓ Plan cubierto'
+                                : esParvulario && parvRes
+                                ? `Faltan ${parvRes.minutosDeficitRestanteTexto}`
                                 : `Faltan ${totalHorasFaltantesPlan} HA`}
                             </span>
                           </div>
                         </div>
 
-                        {/* Chips de Asignaturas Pendientes (1 clic asigna; engranaje personaliza) */}
+                        {/* Barra de Permanencia Cronológica Unificada para Educación Parvularia */}
+                        {esParvulario && parvRes && (
+                          <div className="bg-white/90 border border-teal-200/90 rounded-lg p-2 space-y-1.5 text-[10px]">
+                            <div className="flex flex-wrap items-center justify-between gap-1">
+                              <span className="font-bold text-teal-900">
+                                Permanencia {parvRes.permanenciaTexto} ({parvRes.regimenNormativoProporcion === '60_40' ? '60/40' : '65/35'})
+                              </span>
+                              <span className="font-mono font-bold text-teal-700">
+                                {parvRes.minutosCubiertosTotalesTexto} ({parvRes.porcentajeCoberturaPermanencia}%)
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-teal-100 overflow-hidden">
+                              <div
+                                className={`h-full transition-all ${
+                                  parvRes.coberturaCompletaPermanencia ? 'bg-emerald-500' : 'bg-teal-600'
+                                }`}
+                                style={{ width: `${Math.min(100, parvRes.porcentajeCoberturaPermanencia)}%` }}
+                              />
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 text-slate-600">
+                              {estadoParvulario?.titularDocente && (
+                                <span className="px-1.5 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-900 font-semibold">
+                                  Titular: {estadoParvulario.titularDocente.apellidos.split(' ')[0]} ({parvRes.minutosAsignadosTitularTexto} / tope {parvRes.minutosAulaTitularTexto})
+                                </span>
+                              )}
+                              {parvRes.segundaEducadoraRequerida && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-900 font-bold">
+                                  Req. 2da Ed: ~{parvRes.horasContratoSegundaEducadoraRestante}h cont.
+                                </span>
+                              )}
+                              {parvRes.requiereTecnicoParvuloDto315 && (
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800 font-bold">
+                                  {parvRes.cantidadTecnicosSugeridos} TEP Dto.315
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Chips de Asignaturas Pendientes o Núcleos BCEP Parvularia */}
                         <div className="flex flex-wrap gap-1.5">
-                          {disponibilidad.disponibles.map(asig => {
+                          {esParvulario && parvRes && !parvRes.coberturaCompletaPermanencia && (
+                            <>
+                              <button
+                                type="button"
+                                onMouseEnter={() => {
+                                  const imp = simular(curso, hrsSugeridasParv, {
+                                    esCoDocencia: !esTitularParvEsteCurso,
+                                    esCoDocenciaParvularia: !esTitularParvEsteCurso
+                                  });
+                                  if (imp) setPreviewHover({ etiqueta: `DTO 306 (${curso.nivel} ${curso.letra})`, impacto: imp });
+                                }}
+                                onMouseLeave={() => setPreviewHover(null)}
+                                onClick={() =>
+                                  setPopoverSeed({
+                                    curso,
+                                    asignatura: esTitularParvEsteCurso
+                                      ? 'Atención Directa Parvularia (BCEP Integral)'
+                                      : 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
+                                    horasSugeridas: hrsSugeridasParv,
+                                    maxHorasPlan: hrsSugeridasParv,
+                                    esCoDocencia: !esTitularParvEsteCurso,
+                                    esCoDocenciaParvularia: !esTitularParvEsteCurso
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold shadow-2xs"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>
+                                  {esTitularParvEsteCurso ? 'Cubrir Permanencia' : '2da Educadora DTO 306'} ({hrsSugeridasParv}h 60m)
+                                </span>
+                              </button>
+                              {CATALOGO_BCEP_PARVULARIA.slice(0, 3).map(b => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setPopoverSeed({
+                                      curso,
+                                      asignatura: b.nucleo,
+                                      horasSugeridas: Math.min(4, hrsSugeridasParv),
+                                      maxHorasPlan: hrsSugeridasParv,
+                                      esCoDocencia: !esTitularParvEsteCurso,
+                                      esCoDocenciaParvularia: !esTitularParvEsteCurso
+                                    })
+                                  }
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 bg-white hover:bg-teal-50 text-teal-900 text-[10px] font-bold"
+                                >
+                                  <Plus className="w-2.5 h-2.5 text-teal-600" />
+                                  <span>{b.nucleo}</span>
+                                </button>
+                              ))}
+                            </>
+                          )}
+
+                          {!esParvulario && disponibilidad.disponibles.map(asig => {
                             const esAfin = materiasAfines.some(m => m.toLowerCase() === asig.nombre.toLowerCase());
                             return (
                               <div
@@ -398,7 +521,7 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                             );
                           })}
 
-                          {disponibilidad.horasLibreDisponibles > 0 && (
+                          {!esParvulario && disponibilidad.horasLibreDisponibles > 0 && (
                             <button
                               type="button"
                               onClick={() =>
@@ -486,10 +609,14 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                               ? 'SEP'
                               : a.esTrabajoColaborativo
                               ? 'Colaborativo'
+                              : a.esCoDocenciaParvularia
+                              ? '2da Ed. DTO 306'
                               : a.esTallerJec
                               ? 'JEC'
                               : a.esCoDocencia
                               ? 'Co-Docencia'
+                              : c && esNivelParvulario(c.nivel)
+                              ? 'Parvularia (60m)'
                               : 'Plan Regular'}
                           </span>
                         </td>
@@ -505,7 +632,9 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                             >
                               <Minus className="w-3 h-3" />
                             </button>
-                            <span className="w-10 text-center font-bold">{a.horasPedagogicasAula}h</span>
+                            <span className="w-12 text-center font-bold">
+                              {a.horasPedagogicasAula}{c && esNivelParvulario(c.nivel) ? 'h*' : 'h'}
+                            </span>
                             <button
                               type="button"
                               onClick={() =>

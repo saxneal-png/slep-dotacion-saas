@@ -41,6 +41,20 @@ export interface AuditoriaIntegralDocenteResult {
   pedCurricularTitular: number;
   deficitSubvencionGeneral: number;
   esImprocedenteFinanciamientoSepPie: boolean;
+  isEducadoraParvulo: boolean;
+}
+
+/**
+ * Helper canónico para identificar a una Educadora de Párvulos (régimen DTO 306 en horas cronológicas de 60m).
+ */
+export function esDocenteEducadoraParvulos(doc: Docente): boolean {
+  return (
+    doc.estamento === 'EDUCADORA_PARVULO' ||
+    Boolean(doc.esEducadoraParvulo) ||
+    Boolean(doc.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.cargoInstitucional)) ||
+    Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
+    Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal))
+  );
 }
 
 /**
@@ -545,12 +559,7 @@ export function auditarCargaDocenteIntegral(
     horasInstitucionalesSubvGen + sepExentasCronologicas + pieCronologicas;
   const horasParaDocenciaAula = Math.max(0, hContrato - horasExentasTotales);
 
-  const isEducadoraParvuloDoc =
-    doc.estamento === 'EDUCADORA_PARVULO' ||
-    Boolean(doc.esEducadoraParvulo) ||
-    Boolean(doc.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.cargoInstitucional)) ||
-    Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
-    Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal));
+  const isEducadoraParvuloDoc = esDocenteEducadoraParvulos(doc);
 
   const cursosParvulariosColegio = Array.from(cursosMap.values()).filter((x: CursoSae) => esNivelParvulario(x.nivel));
   const regimenParvularioPredominante: '65_35' | '60_40' =
@@ -604,6 +613,7 @@ export function auditarCargaDocenteIntegral(
     const pctRealParv = horasParaDocenciaAula > 0
       ? Math.round((totalHorasAulaParv / horasParaDocenciaAula) * 1000) / 10
       : 0;
+    const limiteArt69Min = doc.aplicaArticulo69 ? 24 * 60 : Number.POSITIVE_INFINITY;
     const pctLimiteParv = ha60_40 > ha65_35 ? 60 : 65;
 
     auditDoc = {
@@ -614,11 +624,11 @@ export function auditarCargaDocenteIntegral(
       contratoPonderado60_40: match60.horasContrato,
       contratoCalculadoTotal: contratoCalcParv,
       saldoHoras: saldoParv,
-      esInfractorExcesoLectivo: saldoParv < 0,
+      esInfractorExcesoLectivo: saldoParv < 0 || Boolean(doc.aplicaArticulo69 && totalHorasAulaParv > 24.05),
       porcentajeLectivoReal: pctRealParv,
       porcentajeLimitePonderado: pctLimiteParv,
       minutosLectivosTablaTotal: minAulaTablaParv,
-      minutosLimitePermitido: minAulaTablaParv,
+      minutosLimitePermitido: Math.min(minAulaTablaParv, limiteArt69Min),
       minutosHnlTotal: minHnlParv,
       minutosRecreoTotal: minRecParv,
       minutosHnlPlanificacion40: Math.round(minHnlParv * 0.40)
@@ -743,6 +753,7 @@ export function auditarCargaDocenteIntegral(
     totalHorasSinAsignar,
     pedCurricularTitular,
     deficitSubvencionGeneral,
-    esImprocedenteFinanciamientoSepPie
+    esImprocedenteFinanciamientoSepPie,
+    isEducadoraParvulo: isEducadoraParvuloDoc
   };
 }

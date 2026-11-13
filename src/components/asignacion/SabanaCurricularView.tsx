@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Check, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import { AsignacionHoraria, CursoSae, Docente, Establecimiento, PlanEstudioCurricular } from '../../types';
-import { calcularAuditoriaDocenteMultitramo, resolverCodigoYAmbitoAsignatura } from '@slep/mineduc-engine';
+import { esNivelParvulario, resolverCodigoYAmbitoAsignatura } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../../database/db';
-import { calcularHorasFueraAulaDocente } from '../../services/auditoriaDocenteService';
+import { auditarCargaDocenteIntegral } from '../../services/auditoriaDocenteService';
 import {
   calcularDisponibilidadCurso,
+  calcularEstadoCursosParvularios,
   resolverPlanCurso,
   sonAsignaturasEquivalentes
 } from '../../services/curricularPlanService';
@@ -55,44 +56,52 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
     };
   }, [colegio.rbd]);
 
+  const cursosMap = useMemo(() => new Map(cursos.map(c => [c.id, c])), [cursos]);
+
   const docentesConSaldo = useMemo(() => {
-    const es60 = (colegio.porcentajePrioritarios || 0) >= 80;
     return docentes
       .map(d => {
-        const asigs = asignaciones.filter(
-          a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente)
+        const propias = asignaciones.filter(a => a.docenteId === d.id);
+        const coDoc = asignaciones.filter(a => a.coDocenteId === d.id && a.tieneCoDocente);
+        const integral = auditarCargaDocenteIntegral(
+          d,
+          propias,
+          coDoc,
+          cursosMap,
+          colegio.porcentajePrioritarios || 0
         );
-        const desglose = calcularHorasFueraAulaDocente(d, asigs, colegio.porcentajePrioritarios || 0);
-        let ha65 = 0;
-        let ha60 = 0;
-        let pieCron = 0;
-        let sepEx = 0;
-        for (const a of asigs) {
-          if (a.esTrabajoColaborativo) {
-            pieCron += a.horasCronologicasPie || a.horasColaborativas || a.horasPedagogicasAula || 0;
-          } else if (a.esTallerSep) {
-            sepEx += Math.round((a.horasPedagogicasAula || 0) * 0.75 * 100) / 100;
-          } else if (es60) {
-            ha60 += a.horasPedagogicasAula || 0;
-          } else {
-            ha65 += a.horasPedagogicasAula || 0;
-          }
-        }
-        const audit = calcularAuditoriaDocenteMultitramo({
-          horasAula65_35: ha65,
-          horasAula60_40: ha60,
-          horasPieCronologicas: pieCron,
-          horasTallerSepExento: sepEx,
-          horasNoAulaInstitucionales: desglose.horasInstitucionalesSubvGen,
-          horasContratoReal: d.horasContrato,
-          aplicaArticulo69: Boolean(d.aplicaArticulo69)
-        });
-        return { docente: d, saldoHoras: audit.saldoHoras };
+        const contratoSep = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
+        const contratoPie = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
+        return {
+          docente: d,
+          saldoHoras: integral.saldoHoras,
+          isEducadora: integral.isEducadoraParvulo,
+          contratoSep,
+          sepAsignado: integral.reqSepDoc,
+          contratoPie,
+          pieAsignado: integral.pieAsignadasDoc,
+          minutosRecreo: integral.auditDoc.minutosRecreoTotal,
+          minutosHnl: integral.auditDoc.minutosHnlTotal,
+          minutosPlan40: integral.auditDoc.minutosHnlPlanificacion40
+        };
       })
       .sort((a, b) => b.saldoHoras - a.saldoHoras || a.docente.apellidos.localeCompare(b.docente.apellidos));
-  }, [docentes, asignaciones, colegio.porcentajePrioritarios]);
+  }, [docentes, asignaciones, cursosMap, colegio.porcentajePrioritarios]);
+
+  const mapaParvulario = useMemo(
+    () =>
+      calcularEstadoCursosParvularios(
+        cursos,
+        docentes,
+        asignaciones,
+        colegio.porcentajePrioritarios || 0,
+        colegio.regimenProporcion
+      ),
+    [cursos, docentes, asignaciones, colegio.porcentajePrioritarios, colegio.regimenProporcion]
+  );
 
   const docentesMap = useMemo(() => new Map(docentes.map(d => [d.id, d])), [docentes]);
+  const FILA_PARVULARIA_DTO306 = 'Permanencia DTO 306 / BCEP (60m cron.)';
 
   // Planes resueltos por curso
   const infoPorCurso = useMemo(() => {
@@ -111,10 +120,15 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
     return map;
   }, [cursos, planesDb, asignaciones]);
 
-  // Lista única de asignaturas presentes en los planes de la escuela
+  // Lista única de asignaturas presentes en los planes de la escuela (+ fila unificada DTO 306 si hay párvulos)
   const asignaturasFilas = useMemo(() => {
     const nombresMap = new Map<string, string>();
+    let hayParvularia = false;
     for (const c of cursos) {
+      if (esNivelParvulario(c.nivel)) {
+        hayParvularia = true;
+        continue;
+      }
       const info = infoPorCurso.get(c.id);
       if (!info) continue;
       for (const a of info.disp.todas) {
@@ -122,12 +136,19 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
         if (!nombresMap.has(key)) nombresMap.set(key, a.nombre.trim());
       }
     }
+    if (hayParvularia) {
+      nombresMap.set(FILA_PARVULARIA_DTO306.toLowerCase(), FILA_PARVULARIA_DTO306);
+    }
     const q = filtroTexto.trim().toLowerCase();
     return Array.from(nombresMap.values())
       .filter(nombre => {
         if (q && !nombre.toLowerCase().includes(q)) return false;
         if (soloConVacantes) {
+          if (nombre === FILA_PARVULARIA_DTO306) {
+            return Array.from(mapaParvulario.values()).some(p => !p.resultado.coberturaCompletaPermanencia);
+          }
           return cursos.some(c => {
+            if (esNivelParvulario(c.nivel)) return false;
             const info = infoPorCurso.get(c.id);
             const item = info?.disp.todas.find(x => sonAsignaturasEquivalentes(x.nombre, nombre));
             return item && item.horasDisponibles > 0.01;
@@ -135,8 +156,12 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
         }
         return true;
       })
-      .sort((a, b) => a.localeCompare(b));
-  }, [cursos, infoPorCurso, filtroTexto, soloConVacantes]);
+      .sort((a, b) => {
+        if (a === FILA_PARVULARIA_DTO306) return -1;
+        if (b === FILA_PARVULARIA_DTO306) return 1;
+        return a.localeCompare(b);
+      });
+  }, [cursos, infoPorCurso, filtroTexto, soloConVacantes, mapaParvulario]);
 
   const abrirCelda = (curso: CursoSae, asignatura: string, horasPlan: number, horasDisp: number) => {
     setCeldaActiva({ curso, asignatura, horasPlan });
@@ -153,24 +178,37 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
 
   const asignacionesCeldaActiva = useMemo(() => {
     if (!celdaActiva) return [];
+    const esParv = esNivelParvulario(celdaActiva.curso.nivel);
     return asignaciones.filter(
       a =>
         (a.cursoId === celdaActiva.curso.id ||
           Boolean(a.cursosCompartidosIds?.includes(celdaActiva.curso.id))) &&
         !a.esTallerSep &&
         !a.esTrabajoColaborativo &&
-        sonAsignaturasEquivalentes(a.asignatura, celdaActiva.asignatura)
+        (esParv ? true : sonAsignaturasEquivalentes(a.asignatura, celdaActiva.asignatura))
     );
   }, [celdaActiva, asignaciones]);
+
+  const docResumenSeleccionado = useMemo(
+    () => docentesConSaldo.find(x => x.docente.id === docenteSeleccionadoId) || null,
+    [docentesConSaldo, docenteSeleccionadoId]
+  );
 
   const handleGuardarCelda = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!celdaActiva || !docenteSeleccionadoId || !onGuardarAsignacion || horasInput <= 0) return;
-    const nombreFinal = asignaturaInput.trim() || celdaActiva.asignatura;
+    const esParv = esNivelParvulario(celdaActiva.curso.nivel);
+    const nombreFinal =
+      asignaturaInput.trim() ||
+      (esParv ? 'Atención Directa Parvularia (DTO 306)' : celdaActiva.asignatura);
     const resCod = resolverCodigoYAmbitoAsignatura(nombreFinal, {
       nivelCurso: celdaActiva.curso.nivel,
       esJec: false
     });
+    const estadoParv = esParv ? mapaParvulario.get(celdaActiva.curso.id) : null;
+    const esSegundaEd = Boolean(
+      estadoParv?.titularDocente && estadoParv.titularDocente.id !== docenteSeleccionadoId
+    );
     await onGuardarAsignacion({
       id: `asig_sabana_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       rbd: colegio.rbd,
@@ -182,6 +220,8 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
       ambitoCurricular: resCod.ambito,
       horasPedagogicasAula: Number(horasInput),
       esTallerJec: false,
+      esCoDocencia: esSegundaEd,
+      esCoDocenciaParvularia: esSegundaEd,
       esProporcionDocente: true
     });
   };
@@ -232,12 +272,19 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                 {cursos.map(c => (
                   <th
                     key={c.id}
-                    className="px-2.5 py-2 text-center font-bold min-w-[120px] border-r border-blue-800/60"
+                    className="px-2.5 py-2 text-center font-bold min-w-[125px] border-r border-blue-800/60"
                   >
                     <div className="font-black">
                       {c.nivel} {c.letra}
                     </div>
-                    <div className="text-[9px] text-blue-200 font-normal">{c.regimen}</div>
+                    <div className="text-[9px] text-blue-200 font-normal flex items-center justify-center gap-1">
+                      <span>{c.regimen}</span>
+                      {esNivelParvulario(c.nivel) && (
+                        <span className="px-1 rounded bg-teal-500/30 text-teal-100 font-bold">
+                          DTO 306 · 60m
+                        </span>
+                      )}
+                    </div>
                   </th>
                 ))}
               </tr>
@@ -249,6 +296,67 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                     {asigNombre}
                   </td>
                   {cursos.map(c => {
+                    const esParv = esNivelParvulario(c.nivel);
+                    if (esParv && asigNombre === FILA_PARVULARIA_DTO306) {
+                      const estadoParv = mapaParvulario.get(c.id);
+                      if (!estadoParv) return <td key={c.id} className="px-2 py-2 text-center text-slate-300 border-r border-slate-100">—</td>;
+                      const res = estadoParv.resultado;
+                      const hrsPlanCron = Math.round((res.permanenciaMinutos / 60) * 100) / 100;
+                      const hrsCubiertasCron = Math.round((res.minutosCubiertosTotales / 60) * 100) / 100;
+                      const hrsFaltantesCron = Math.max(0, Math.round((res.minutosDeficitRestante / 60) * 100) / 100);
+                      const asigsParvCurso = asignaciones.filter(
+                        a => (a.cursoId === c.id || Boolean(a.cursosCompartidosIds?.includes(c.id))) && !a.esTrabajoColaborativo
+                      );
+                      return (
+                        <td key={c.id} className="p-1 border-r border-slate-100 align-middle">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              abrirCelda(c, 'Atención Directa Parvularia (DTO 306)', hrsPlanCron, hrsFaltantesCron)
+                            }
+                            className={`w-full px-2 py-1.5 rounded-lg border text-left transition-all ${
+                              res.coberturaCompletaPermanencia
+                                ? 'bg-teal-50 border-teal-300 text-teal-900 hover:bg-teal-100'
+                                : hrsCubiertasCron > 0
+                                ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
+                                : 'bg-white border-dashed border-teal-300 text-slate-600 hover:bg-teal-50/40'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 font-mono font-black text-[10px]">
+                              <span>{hrsCubiertasCron}/{hrsPlanCron}h 60m</span>
+                              {asigsParvCurso.length > 1 && (
+                                <span className="px-1 rounded bg-teal-100 text-teal-900 inline-flex items-center gap-0.5">
+                                  <Users className="w-2.5 h-2.5" /> {asigsParvCurso.length}
+                                </span>
+                              )}
+                            </div>
+                            <div className="truncate text-[10px] font-semibold mt-0.5">
+                              {estadoParv.titularDocente ? (
+                                <span>
+                                  {estadoParv.titularDocente.apellidos.split(' ')[0]} {estadoParv.titularDocente.nombres.charAt(0)}. ({res.porcentajeCoberturaPermanencia}%)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 text-teal-700">
+                                  <Plus className="w-2.5 h-2.5" /> Sin educadora
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        </td>
+                      );
+                    }
+
+                    if (esParv) {
+                      return (
+                        <td
+                          key={c.id}
+                          className="px-2 py-2 text-center text-slate-300 border-r border-slate-100 bg-slate-50/30"
+                        >
+                          —
+                        </td>
+                      );
+                    }
+
                     const info = infoPorCurso.get(c.id);
                     const itemPlan = info?.disp.todas.find(x => sonAsignaturasEquivalentes(x.nombre, asigNombre));
                     if (!itemPlan) {
@@ -325,11 +433,14 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
       {celdaActiva && (
         <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-md w-full overflow-hidden">
-            <div className="px-4 py-3 bg-blue-900 text-white flex items-center justify-between">
+            <div className={`px-4 py-3 text-white flex items-center justify-between ${esNivelParvulario(celdaActiva.curso.nivel) ? 'bg-teal-900' : 'bg-blue-900'}`}>
               <div>
                 <h4 className="text-sm font-bold">{celdaActiva.asignatura}</h4>
                 <p className="text-[11px] text-blue-100">
-                  {celdaActiva.curso.nivel} {celdaActiva.curso.letra} · Plan: {celdaActiva.horasPlan} HA
+                  {celdaActiva.curso.nivel} {celdaActiva.curso.letra} ·{' '}
+                  {esNivelParvulario(celdaActiva.curso.nivel)
+                    ? `Permanencia DTO 306: ${celdaActiva.horasPlan}h (60m cron.)`
+                    : `Plan: ${celdaActiva.horasPlan} HA`}
                 </p>
               </div>
               <button
@@ -359,7 +470,10 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                             {doc ? `${doc.apellidos}, ${doc.nombres}` : a.docenteId}
                           </p>
                           <p className="text-[10px] text-slate-500">
-                            {a.asignatura} · <strong className="font-mono">{a.horasPedagogicasAula} HA</strong>
+                            {a.asignatura} ·{' '}
+                            <strong className="font-mono">
+                              {a.horasPedagogicasAula} {esNivelParvulario(celdaActiva.curso.nivel) ? 'h cron.' : 'HA'}
+                            </strong>
                           </p>
                         </div>
                         {onEliminarAsignacion && (
@@ -389,12 +503,29 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-semibold"
                     required
                   >
-                    {docentesConSaldo.map(({ docente, saldoHoras }) => (
+                    {docentesConSaldo.map(({ docente, saldoHoras, isEducadora }) => (
                       <option key={docente.id} value={docente.id}>
-                        {docente.apellidos}, {docente.nombres} ({saldoHoras > 0 ? `+${saldoHoras}h` : `${saldoHoras}h`} disp.)
+                        {docente.apellidos}, {docente.nombres} {isEducadora ? '[Parv 60m] ' : ''}({saldoHoras > 0 ? `+${saldoHoras}h` : `${saldoHoras}h`} disp.)
                       </option>
                     ))}
                   </select>
+                  {docResumenSeleccionado && (
+                    <div className="mt-1.5 px-2 py-1 rounded-md bg-slate-50 border border-slate-200 flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-600">
+                      {(docResumenSeleccionado.contratoSep > 0 || docResumenSeleccionado.sepAsignado > 0) && (
+                        <span className="px-1.5 py-0.2 rounded bg-sky-100 text-sky-900 font-bold">
+                          SEP {Math.round(docResumenSeleccionado.sepAsignado * 10) / 10}/{docResumenSeleccionado.contratoSep}h
+                        </span>
+                      )}
+                      {(docResumenSeleccionado.contratoPie > 0 || docResumenSeleccionado.pieAsignado > 0) && (
+                        <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 font-bold">
+                          PIE {Math.round(docResumenSeleccionado.pieAsignado * 10) / 10}/{docResumenSeleccionado.contratoPie}h
+                        </span>
+                      )}
+                      <span>
+                        Rec {Math.floor(docResumenSeleccionado.minutosRecreo / 60)}h{docResumenSeleccionado.minutosRecreo % 60}m · HNL {Math.floor(docResumenSeleccionado.minutosHnl / 60)}h{docResumenSeleccionado.minutosHnl % 60}m (40%: {Math.floor(docResumenSeleccionado.minutosPlan40 / 60)}h{docResumenSeleccionado.minutosPlan40 % 60}m)
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
@@ -410,11 +541,13 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Horas (HA)</label>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      {esNivelParvulario(celdaActiva.curso.nivel) ? 'Horas (60m)' : 'Horas (HA)'}
+                    </label>
                     <input
                       type="number"
-                      step="0.5"
-                      min="0.5"
+                      step={esNivelParvulario(celdaActiva.curso.nivel) ? '0.25' : '0.5'}
+                      min="0.25"
                       max="44"
                       value={horasInput}
                       onChange={e => setHorasInput(Number(e.target.value) || 0.5)}

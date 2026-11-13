@@ -513,7 +513,10 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         esImprocedenteFinanciamiento,
         deficitFinanciamiento,
         reqSubvDoc,
-        subTotalDoc
+        subTotalDoc,
+        isEducadoraParvuloDoc,
+        contratoSepDoc,
+        contratoPieDoc
       };
     });
   }, [docentes, asignaciones, colegio, cursos, consolidadosTerritoriales, regimenTabla, regimenProporcion]);
@@ -1114,7 +1117,7 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                docentesFiltrados.map(({ docente: d, pedAsignadas, pedAulaRegular, pedCoDocencia, pedTallerSep, pedTrabajoColab, ped65, ped60, pieCronologicas, sepExentas, hInstNoAula, calculo, valSobre, auditMulti, esExento, hDir, hInsp, hTec, hCoord, hTallerSepDoc, hColabDoc, docTerritorial, esImprocedenteFinanciamiento, deficitFinanciamiento }) => {
+                docentesFiltrados.map(({ docente: d, pedAsignadas, pedAulaRegular, pedCoDocencia, pedTallerSep, pedTrabajoColab, ped65, ped60, pieCronologicas, sepExentas, hInstNoAula, calculo, valSobre, auditMulti, esExento, hDir, hInsp, hTec, hCoord, hTallerSepDoc, hColabDoc, docTerritorial, esImprocedenteFinanciamiento, deficitFinanciamiento, isEducadoraParvuloDoc, contratoSepDoc, contratoPieDoc }) => {
                 const esMultiEscuela = docTerritorial && docTerritorial.contratos.length > 1;
 
                 // Para Educadoras Diferenciales (cuyo contrato PIE está exento en la homologación DEP de la proporción 65/35 regular):
@@ -1174,6 +1177,11 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                             📜 Aut. Docente
                           </span>
                         )}
+                        {isEducadoraParvuloDoc && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-200" title="Régimen Educación Parvularia DTO 306/2007 en horas cronológicas (60m)">
+                            DTO 306 · 60m
+                          </span>
+                        )}
                         {Boolean(d.funcionesNoAula && d.funcionesNoAula.length > 0) && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-800 border border-purple-200" title={d.funcionesNoAula?.map(f => `${f.nombre}: ${f.horas}h (${f.financiamiento || 'Subv. Gen'})`).join(', ')}>
                             🏢 {d.funcionesNoAula?.length} func. no aula ({d.funcionesNoAula?.reduce((s, f) => s + (Number(f.horas) || 0), 0)}h)
@@ -1203,24 +1211,29 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
                     {/* Aula 65/35 */}
                     <td className="px-3 py-3 text-center bg-indigo-50/15">
-                      <span className="font-bold text-slate-800 text-xs">
-                        {ped65} {d.estamento === 'EDUCADORA_PARVULO' || d.esEducadoraParvulo ? 'h (60m)' : 'HA'}
+                      <span className={`font-bold text-xs ${isEducadoraParvuloDoc ? 'text-teal-800' : 'text-slate-800'}`}>
+                        {ped65} {isEducadoraParvuloDoc ? 'h cron.' : 'HA'}
                       </span>
                     </td>
 
                     {/* Aula 60/40 */}
                     <td className="px-3 py-3 text-center bg-purple-50/15">
-                      <span className="font-bold text-slate-800 text-xs">
-                        {ped60} {d.estamento === 'EDUCADORA_PARVULO' || d.esEducadoraParvulo ? 'h (60m)' : 'HA'}
+                      <span className={`font-bold text-xs ${isEducadoraParvuloDoc ? 'text-teal-800' : 'text-slate-800'}`}>
+                        {ped60} {isEducadoraParvuloDoc ? 'h cron.' : 'HA'}
                       </span>
                     </td>
 
                     {/* PIE */}
                     <td className="px-3 py-3 text-center bg-blue-50/15 border-x border-blue-50">
-                      {pieCronologicas > 0 ? (
+                      {pieCronologicas > 0 || contratoPieDoc > 0 ? (
                         <div className="flex flex-col items-center">
                           <span className="font-bold text-blue-700 text-xs">{pieCronologicas} hrs</span>
-                          {esDiferencialPie && (
+                          {contratoPieDoc > 0 && (
+                            <span className="text-[9px] text-blue-500 font-medium font-mono">
+                              de {contratoPieDoc}h{esDiferencialPie ? ' · D.170' : ''}
+                            </span>
+                          )}
+                          {!contratoPieDoc && esDiferencialPie && (
                             <span className="text-[9px] text-blue-500 font-medium font-mono">D.170</span>
                           )}
                         </div>
@@ -1231,10 +1244,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
                     {/* SEP */}
                     <td className="px-3 py-3 text-center bg-purple-50/15 border-r border-purple-50">
-                      {sepExentas > 0 ? (
+                      {sepExentas > 0 || contratoSepDoc > 0 ? (
                         <div className="flex flex-col items-center">
                           <span className="font-bold text-purple-700 text-xs">{sepExentas} hrs</span>
-                          <span className="text-[9px] text-purple-500 font-medium font-mono">PME</span>
+                          {contratoSepDoc > 0 ? (
+                            <span className="text-[9px] text-purple-500 font-medium font-mono">de {contratoSepDoc}h · PME</span>
+                          ) : (
+                            <span className="text-[9px] text-purple-500 font-medium font-mono">PME</span>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-300">-</span>

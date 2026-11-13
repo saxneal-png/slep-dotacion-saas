@@ -7,12 +7,11 @@ import {
   PlanEstudioCurricular
 } from '../types';
 import {
-  calcularAuditoriaDocenteMultitramo,
   esNivelParvulario,
   resolverCodigoYAmbitoAsignatura
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
-import { calcularHorasFueraAulaDocente } from '../services/auditoriaDocenteService';
+import { auditarCargaDocenteIntegral } from '../services/auditoriaDocenteService';
 import {
   calcularMapaDisponibilidadDocentePorCursos,
   calcularSaldoDocentePorFuente,
@@ -48,7 +47,8 @@ export function useAsignacionDocente(
   asignacionesColegio: AsignacionHoraria[],
   periodoActivo: number,
   onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void,
-  onEliminarAsignacion?: (id: string) => Promise<void> | void
+  onEliminarAsignacion?: (id: string) => Promise<void> | void,
+  docentesColegio: Docente[] = []
 ) {
   const [planesDb, setPlanesDb] = useState<PlanEstudioCurricular[]>([]);
 
@@ -83,78 +83,63 @@ export function useAsignacionDocente(
       cursos,
       asignacionesColegio,
       planesDb,
-      colegio
+      colegio,
+      docentesColegio
     );
-  }, [docente, cursos, asignacionesColegio, planesDb, colegio]);
+  }, [docente, cursos, asignacionesColegio, planesDb, colegio, docentesColegio]);
 
   const saldoPorFuente = useMemo(() => {
     if (!docente) return null;
     return calcularSaldoDocentePorFuente(
       docente,
       asignacionesColegio,
-      colegio.porcentajePrioritarios || 0
+      colegio.porcentajePrioritarios || 0,
+      cursos
     );
-  }, [docente, asignacionesColegio, colegio.porcentajePrioritarios]);
+  }, [docente, asignacionesColegio, colegio.porcentajePrioritarios, cursos]);
+
+  const cursosMap = useMemo(() => new Map(cursos.map(c => [c.id, c])), [cursos]);
 
   const resumenNormativo = useMemo(() => {
     if (!docente) return null;
-    const desglose = calcularHorasFueraAulaDocente(
+    const propias = asignacionesColegio.filter(a => a.docenteId === docente.id);
+    const coDoc = asignacionesColegio.filter(
+      a => a.coDocenteId === docente.id && a.tieneCoDocente
+    );
+    const integral = auditarCargaDocenteIntegral(
       docente,
-      asignacionesDocente,
+      propias,
+      coDoc,
+      cursosMap,
       colegio.porcentajePrioritarios || 0
     );
-    const es60 = (colegio.porcentajePrioritarios || 0) >= 80;
-
-    let ha65 = 0;
-    let ha60 = 0;
-    let pieCron = 0;
-    let sepExento = 0;
-    let totalHaLectivas = 0;
-
-    for (const a of asignacionesDocente) {
-      if (a.esTrabajoColaborativo) {
-        pieCron += a.horasCronologicasPie || a.horasColaborativas || a.horasPedagogicasAula || 0;
-        continue;
-      }
-      if (a.esTallerSep) {
-        sepExento += Math.round((a.horasPedagogicasAula || 0) * 0.75 * 100) / 100;
-        continue;
-      }
-      const ha = a.horasPedagogicasAula || 0;
-      totalHaLectivas += ha;
-      if (es60) ha60 += ha;
-      else ha65 += ha;
-    }
-
-    const audit = calcularAuditoriaDocenteMultitramo({
-      horasAula65_35: ha65,
-      horasAula60_40: ha60,
-      horasPieCronologicas: pieCron,
-      horasTallerSepExento: sepExento,
-      horasNoAulaInstitucionales: desglose.horasInstitucionalesSubvGen,
-      horasContratoReal: docente.horasContrato,
-      aplicaArticulo69: Boolean(docente.aplicaArticulo69)
-    });
-
-    const esEducadora =
-      docente.estamento === 'EDUCADORA_PARVULO' ||
-      Boolean(docente.esEducadoraParvulo) ||
-      Boolean(docente.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.cargoInstitucional));
 
     return {
-      audit,
-      desglose,
-      totalHaLectivas: Math.round(totalHaLectivas * 100) / 100,
-      esEducadora,
+      audit: integral.auditDoc,
+      integral,
+      desglose: {
+        horasInstitucionalesSubvGen: integral.horasInstitucionalesSubvGen,
+        sepExentasCronologicas: integral.sepExentasCronologicas,
+        pieCronologicas: integral.pieCronologicas,
+        horasExentasTotales: integral.horasExentasTotales,
+        horasParaDocenciaAula: integral.horasParaDocenciaAula
+      },
+      totalHaLectivas: Math.round(integral.haDocenciaEfectiva * 100) / 100,
+      esEducadora: integral.isEducadoraParvulo,
       esParvularioCurso: (c: CursoSae) => esNivelParvulario(c.nivel)
     };
-  }, [docente, asignacionesDocente, colegio.porcentajePrioritarios]);
+  }, [docente, asignacionesColegio, cursosMap, colegio.porcentajePrioritarios]);
 
   const simular = useCallback(
     (
       curso: CursoSae | null,
       horasPedagogicas: number,
-      opciones: { esTallerSep?: boolean; esTrabajoColaborativo?: boolean } = {}
+      opciones: {
+        esTallerSep?: boolean;
+        esTrabajoColaborativo?: boolean;
+        esCoDocencia?: boolean;
+        esCoDocenciaParvularia?: boolean;
+      } = {}
     ): ResumenImpactoAsignacion | null => {
       if (!docente) return null;
       return simularImpactoAsignacion(
@@ -163,10 +148,10 @@ export function useAsignacionDocente(
         curso,
         horasPedagogicas,
         colegio.porcentajePrioritarios || 0,
-        opciones
+        { ...opciones, cursosColegio: cursos }
       );
     },
-    [docente, asignacionesColegio, colegio.porcentajePrioritarios]
+    [docente, asignacionesColegio, colegio.porcentajePrioritarios, cursos]
   );
 
   const crearAsignacion = useCallback(

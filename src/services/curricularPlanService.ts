@@ -13,9 +13,14 @@ import {
   obtenerPlanPorCurso,
   resolverCodigoYAmbitoAsignatura,
   esNivelParvulario,
-  calcularAuditoriaDocenteMultitramo
+  calcularDotacionParvulariaCurso,
+  ResultadoDotacionParvulariaCurso
 } from '@slep/mineduc-engine';
-import { calcularHorasFueraAulaDocente } from './auditoriaDocenteService';
+import {
+  auditarCargaDocenteIntegral,
+  calcularHorasFueraAulaDocente,
+  esDocenteEducadoraParvulos
+} from './auditoriaDocenteService';
 
 export interface InfoPlanResuelto {
   asignaturas: { nombre: string; horas: number; caracter?: string }[];
@@ -714,7 +719,8 @@ export function calcularDisponibilidadCurso(
 export function calcularSaldoDocentePorFuente(
   docente: Docente,
   asignacionesColegio: AsignacionHoraria[],
-  porcentajePrioritarios: number = 0
+  porcentajePrioritarios: number = 0,
+  cursos: CursoSae[] = []
 ): {
   contratoTotal: number;
   contratoSubvGen: number;
@@ -724,13 +730,29 @@ export function calcularSaldoDocentePorFuente(
   saldoJornadaContrato: number;
   esDocentePiePuro: boolean;
   esDocenteSepPuro: boolean;
+  isEducadoraParvulo: boolean;
+  subvGenAsignado: number;
+  sepAsignado: number;
+  sepDisponible: number;
+  pieAsignado: number;
+  pieDisponible: number;
 } {
-  const asigsDoc = asignacionesColegio.filter(
-    a => a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente)
+  const docenteAsigs = asignacionesColegio.filter(a => a.docenteId === docente.id);
+  const coDocenteAsigs = asignacionesColegio.filter(
+    a => a.coDocenteId === docente.id && a.tieneCoDocente
   );
-  const desglose = calcularHorasFueraAulaDocente(docente, asigsDoc, porcentajePrioritarios);
+  const cursosMap = new Map(cursos.map(c => [c.id, c]));
+  const integral = auditarCargaDocenteIntegral(
+    docente,
+    docenteAsigs,
+    coDocenteAsigs,
+    cursosMap,
+    porcentajePrioritarios
+  );
 
-  const contratoSubvGen = Number(docente.horasSubvencionGeneralTitular || 0) + Number(docente.horasSubvencionGeneralContrata || 0);
+  const contratoSubvGen =
+    Number(docente.horasSubvencionGeneralTitular || 0) +
+    Number(docente.horasSubvencionGeneralContrata || 0);
   const contratoSep = Number(docente.horasSepTitular || 0) + Number(docente.horasSepContrata || 0);
   const contratoPie = Number(docente.horasPieTitular || 0) + Number(docente.horasPieContrata || 0);
 
@@ -744,11 +766,117 @@ export function calcularSaldoDocentePorFuente(
     contratoSubvGen,
     contratoSep,
     contratoPie,
-    horasParaAulaTotal: desglose.horasParaDocenciaAula,
-    saldoJornadaContrato: Math.round((Number(docente.horasContrato || 0) - desglose.horasExentasTotales) * 10) / 10,
+    horasParaAulaTotal: integral.horasParaDocenciaAula,
+    saldoJornadaContrato: integral.saldoHoras,
     esDocentePiePuro,
-    esDocenteSepPuro
+    esDocenteSepPuro,
+    isEducadoraParvulo: integral.isEducadoraParvulo,
+    subvGenAsignado: integral.reqSubvGenDoc,
+    sepAsignado: integral.reqSepDoc,
+    sepDisponible: integral.horasSepSinAsignar,
+    pieAsignado: integral.pieAsignadasDoc,
+    pieDisponible: integral.horasPieSinAsignar
   };
+}
+
+export interface EstadoParvularioCursoResuelto {
+  resultado: ResultadoDotacionParvulariaCurso;
+  titularDocente: Docente | null;
+}
+
+/**
+ * Calcula con rigor normativo DTO 306/2007 y Dto. 315/2010 el estado de permanencia,
+ * cobertura titular + 2da educadora y déficit en minutos cronológicos de cada curso parvulario.
+ */
+export function calcularEstadoCursosParvularios(
+  cursos: CursoSae[],
+  docentes: Docente[],
+  asignacionesColegio: AsignacionHoraria[],
+  porcentajePrioritarios: number = 0,
+  regimenColegio?: '65_35' | '60_40'
+): Map<string, EstadoParvularioCursoResuelto> {
+  const result = new Map<string, EstadoParvularioCursoResuelto>();
+  const educadoras = docentes.filter(d => esDocenteEducadoraParvulos(d));
+
+  for (const curso of cursos) {
+    if (!esNivelParvulario(curso.nivel)) continue;
+
+    const asigsCurso = asignacionesColegio.filter(
+      a => a.cursoId === curso.id || Boolean(a.cursosCompartidosIds?.includes(curso.id))
+    );
+
+    const horasPorDocente = new Map<string, number>();
+    for (const a of asigsCurso) {
+      if (a.esTrabajoColaborativo) continue;
+      horasPorDocente.set(
+        a.docenteId,
+        (horasPorDocente.get(a.docenteId) || 0) + (a.horasPedagogicasAula || 0)
+      );
+    }
+
+    let titular: Docente | null = null;
+    if (horasPorDocente.size > 0) {
+      const topDocId = Array.from(horasPorDocente.entries()).sort((a, b) => b[1] - a[1])[0][0];
+      titular = educadoras.find(d => d.id === topDocId) || docentes.find(d => d.id === topDocId) || null;
+    }
+    if (!titular && educadoras.length === 1) {
+      titular = educadoras[0];
+    }
+
+    let horasTitular = 0;
+    let horasSegunda = 0;
+    for (const a of asigsCurso) {
+      if (a.esTrabajoColaborativo) continue;
+      const hrs = a.horasPedagogicasAula || 0;
+      if (titular && a.docenteId === titular.id && !a.esCoDocenciaParvularia) {
+        horasTitular += hrs;
+      } else if (titular && a.docenteId === titular.id && horasTitular === 0 && !a.esCoDocencia) {
+        horasTitular += hrs;
+      } else {
+        horasSegunda += hrs;
+      }
+    }
+
+    let inputTitular: {
+      horasContrato: number;
+      horasNoAulaDeducibles: number;
+      horasContratoDisponiblesAula: number;
+      aplicaArticulo69?: boolean;
+    } | null = null;
+
+    if (titular) {
+      const asigsTit = asignacionesColegio.filter(a => a.docenteId === titular!.id);
+      const desgloseTit = calcularHorasFueraAulaDocente(titular, asigsTit, porcentajePrioritarios);
+      inputTitular = {
+        horasContrato: Number(titular.horasContrato) || 0,
+        horasNoAulaDeducibles: desgloseTit.horasExentasTotales,
+        horasContratoDisponiblesAula: desgloseTit.horasParaDocenciaAula,
+        aplicaArticulo69: Boolean(titular.aplicaArticulo69)
+      };
+    }
+
+    const res = calcularDotacionParvulariaCurso(
+      {
+        id: curso.id,
+        nivel: curso.nivel,
+        letra: curso.letra,
+        regimen: curso.regimen,
+        matriculaProyectada: curso.matriculaProyectada,
+        esCombinado: curso.esCombinado,
+        regimenProporcion: curso.regimenProporcion || regimenColegio
+      },
+      porcentajePrioritarios,
+      inputTitular,
+      {
+        horasAsignadasTitular: horasTitular,
+        horasAsignadasSegundaEducadora: horasSegunda
+      }
+    );
+
+    result.set(curso.id, { resultado: res, titularDocente: titular });
+  }
+
+  return result;
 }
 
 export interface CursoDisponibilidadDocente {
@@ -756,6 +884,7 @@ export interface CursoDisponibilidadDocente {
   infoPlan: InfoPlanResuelto;
   disponibilidad: ReturnType<typeof calcularDisponibilidadCurso>;
   esParvulario: boolean;
+  estadoParvulario?: EstadoParvularioCursoResuelto | null;
   esEpja: boolean;
   esMedio34: boolean;
   esTp: boolean;
@@ -774,6 +903,7 @@ export interface ResumenImpactoAsignacion {
   porcentajeLimite: number;
   excedeContrato: boolean;
   excedeLectivo: boolean;
+  isEducadoraParvulo: boolean;
   advertencia: string | null;
 }
 
@@ -806,14 +936,25 @@ export function calcularMapaDisponibilidadDocentePorCursos(
   cursos: CursoSae[],
   asignacionesColegio: AsignacionHoraria[],
   planesDb: PlanEstudioCurricular[] = [],
-  colegio?: Establecimiento | null
+  colegio?: Establecimiento | null,
+  docentesColegio: Docente[] = []
 ): CursoDisponibilidadDocente[] {
   const materiasAfines = obtenerMateriasAfinesDocente(docente, asignacionesColegio);
+  const esEducadoraDoc = esDocenteEducadoraParvulos(docente);
+  const docentesEval = docentesColegio.length > 0 ? docentesColegio : [docente];
+  const mapaParv = calcularEstadoCursosParvularios(
+    cursos,
+    docentesEval,
+    asignacionesColegio,
+    colegio?.porcentajePrioritarios || 0,
+    colegio?.regimenProporcion
+  );
 
   return cursos.map(curso => {
     const infoPlan = resolverPlanCurso(curso, planesDb);
     const disponibilidad = calcularDisponibilidadCurso(curso, infoPlan, asignacionesColegio);
     const esParvulario = esNivelParvulario(curso.nivel);
+    const estadoParvulario = esParvulario ? mapaParv.get(curso.id) || null : null;
     const esEpja = esCursoModalidadEpja(curso, infoPlan);
     const esMedio34 = esCursoNivelMedio34(curso, infoPlan);
     const esTp = esCursoModalidadTp(curso, infoPlan, colegio);
@@ -827,13 +968,22 @@ export function calcularMapaDisponibilidadDocentePorCursos(
       .reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
 
     const faltantesOblig = disponibilidad.disponibles.reduce((s, a) => s + a.horasDisponibles, 0);
-    const totalHorasFaltantesPlan = Math.round((faltantesOblig + disponibilidad.horasLibreDisponibles) * 100) / 100;
+    const faltantesParvHoras = estadoParvulario
+      ? Math.round((estadoParvulario.resultado.minutosDeficitRestante / 60) * 100) / 100
+      : 0;
+    const totalHorasFaltantesPlan = esParvulario && estadoParvulario
+      ? faltantesParvHoras
+      : Math.round((faltantesOblig + disponibilidad.horasLibreDisponibles) * 100) / 100;
 
-    const tieneAfinidad = disponibilidad.disponibles.some(disp =>
-      materiasAfines.some(m => sonAsignaturasEquivalentes(disp.nombre, m))
-    );
+    const tieneAfinidad = esParvulario
+      ? esEducadoraDoc
+      : disponibilidad.disponibles.some(disp =>
+          materiasAfines.some(m => sonAsignaturasEquivalentes(disp.nombre, m))
+        );
 
-    const horasCubiertas = disponibilidad.todas.reduce((s, a) => s + a.horasAsignadas, 0) + disponibilidad.horasLibreAsignadas;
+    const horasCubiertas = esParvulario && estadoParvulario
+      ? estadoParvulario.resultado.minutosCubiertosTotales
+      : disponibilidad.todas.reduce((s, a) => s + a.horasAsignadas, 0) + disponibilidad.horasLibreAsignadas;
     const estadoCobertura: 'CUBIERTO' | 'PARCIAL' | 'SIN_ASIGNAR' =
       totalHorasFaltantesPlan <= 0.01
         ? 'CUBIERTO'
@@ -846,6 +996,7 @@ export function calcularMapaDisponibilidadDocentePorCursos(
       infoPlan,
       disponibilidad,
       esParvulario,
+      estadoParvulario,
       esEpja,
       esMedio34,
       esTp,
@@ -858,7 +1009,8 @@ export function calcularMapaDisponibilidadDocentePorCursos(
 }
 
 /**
- * Simula el impacto normativo Ley 20.903 antes de asignar un nuevo bloque horario a un docente.
+ * Simula el impacto normativo Ley 20.903 (y DTO 306 en Parvularia) antes de asignar un nuevo bloque horario.
+ * Delega 100% en auditarCargaDocenteIntegral para garantizar paridad exacta entre todas las vistas.
  */
 export function simularImpactoAsignacion(
   docente: Docente,
@@ -866,90 +1018,79 @@ export function simularImpactoAsignacion(
   curso: CursoSae | null,
   horasPedagogicasNueva: number,
   porcentajePrioritariosColegio: number = 0,
-  opciones: { esTallerSep?: boolean; esTrabajoColaborativo?: boolean } = {}
+  opciones: {
+    esTallerSep?: boolean;
+    esTrabajoColaborativo?: boolean;
+    esCoDocencia?: boolean;
+    esCoDocenciaParvularia?: boolean;
+    cursosColegio?: CursoSae[];
+  } = {}
 ): ResumenImpactoAsignacion {
-  const asigsDoc = asignacionesColegio.filter(
-    a => a.docenteId === docente.id || (a.coDocenteId === docente.id && a.tieneCoDocente)
-  );
   const cursosMap = new Map<string, CursoSae>();
+  (opciones.cursosColegio || []).forEach(c => cursosMap.set(c.id, c));
   if (curso) cursosMap.set(curso.id, curso);
 
-  const desgloseAntes = calcularHorasFueraAulaDocente(docente, asigsDoc, porcentajePrioritariosColegio);
+  const docenteAsigs = asignacionesColegio.filter(a => a.docenteId === docente.id);
+  const coDocenteAsigs = asignacionesColegio.filter(
+    a => a.coDocenteId === docente.id && a.tieneCoDocente
+  );
 
-  let ha65Antes = 0;
-  let ha60Antes = 0;
-  let pieCronAntes = 0;
-  let sepExentoAntes = 0;
+  const antes = auditarCargaDocenteIntegral(
+    docente,
+    docenteAsigs,
+    coDocenteAsigs,
+    cursosMap,
+    porcentajePrioritariosColegio
+  );
 
-  for (const a of asigsDoc) {
-    if (a.esTrabajoColaborativo) {
-      pieCronAntes += a.horasCronologicasPie || a.horasColaborativas || a.horasPedagogicasAula || 0;
-      continue;
-    }
-    if (a.esTallerSep) {
-      sepExentoAntes += Math.round((a.horasPedagogicasAula || 0) * 0.75 * 100) / 100;
-      continue;
-    }
-    const ha = a.horasPedagogicasAula || 0;
-    const es60 = porcentajePrioritariosColegio >= 80;
-    if (es60) ha60Antes += ha;
-    else ha65Antes += ha;
-  }
+  const asigSimulada: AsignacionHoraria = {
+    id: '__sim__',
+    rbd: docente.rbd,
+    periodo: 2027,
+    cursoId: curso ? curso.id : 'TRANSVERSAL',
+    docenteId: docente.id,
+    asignatura: opciones.esTrabajoColaborativo
+      ? 'Trabajo Colaborativo PIE'
+      : opciones.esTallerSep
+      ? 'Taller SEP'
+      : 'Simulación',
+    horasPedagogicasAula: Number(horasPedagogicasNueva) || 0,
+    horasCronologicasPie: opciones.esTrabajoColaborativo ? Number(horasPedagogicasNueva) || 0 : undefined,
+    esTallerSep: Boolean(opciones.esTallerSep),
+    esTrabajoColaborativo: Boolean(opciones.esTrabajoColaborativo),
+    esCoDocencia: Boolean(opciones.esCoDocencia),
+    esCoDocenciaParvularia: Boolean(opciones.esCoDocenciaParvularia),
+    esProporcionDocente: Boolean(curso) && !opciones.esTallerSep && !opciones.esTrabajoColaborativo
+  };
 
-  const auditAntes = calcularAuditoriaDocenteMultitramo({
-    horasAula65_35: ha65Antes,
-    horasAula60_40: ha60Antes,
-    horasPieCronologicas: pieCronAntes,
-    horasTallerSepExento: sepExentoAntes,
-    horasNoAulaInstitucionales: desgloseAntes.horasInstitucionalesSubvGen,
-    horasContratoReal: docente.horasContrato,
-    aplicaArticulo69: Boolean(docente.aplicaArticulo69)
-  });
+  const despues = auditarCargaDocenteIntegral(
+    docente,
+    [...docenteAsigs, asigSimulada],
+    coDocenteAsigs,
+    cursosMap,
+    porcentajePrioritariosColegio
+  );
 
-  let ha65Despues = ha65Antes;
-  let ha60Despues = ha60Antes;
-  let pieCronDespues = pieCronAntes;
-  let sepExentoDespues = sepExentoAntes;
-
-  if (opciones.esTrabajoColaborativo) {
-    pieCronDespues += horasPedagogicasNueva;
-  } else if (opciones.esTallerSep) {
-    sepExentoDespues += Math.round(horasPedagogicasNueva * 0.75 * 100) / 100;
-  } else if (porcentajePrioritariosColegio >= 80) {
-    ha60Despues += horasPedagogicasNueva;
-  } else {
-    ha65Despues += horasPedagogicasNueva;
-  }
-
-  const auditDespues = calcularAuditoriaDocenteMultitramo({
-    horasAula65_35: ha65Despues,
-    horasAula60_40: ha60Despues,
-    horasPieCronologicas: pieCronDespues,
-    horasTallerSepExento: sepExentoDespues,
-    horasNoAulaInstitucionales: desgloseAntes.horasInstitucionalesSubvGen,
-    horasContratoReal: docente.horasContrato,
-    aplicaArticulo69: Boolean(docente.aplicaArticulo69)
-  });
-
-  const excedeContrato = docente.horasContrato > 0 && auditDespues.saldoHoras < -0.05;
-  const excedeLectivo = auditDespues.esInfractorExcesoLectivo;
+  const excedeContrato = docente.horasContrato > 0 && despues.saldoHoras < -0.05;
+  const excedeLectivo = despues.esInfractorExcesoLectivo;
 
   let advertencia: string | null = null;
   if (excedeContrato) {
-    advertencia = `Sobreasignaría el contrato en ${Math.abs(auditDespues.saldoHoras)} hrs (${auditDespues.contratoCalculadoTotal}h req. vs ${docente.horasContrato}h).`;
+    advertencia = `Sobreasignaría el contrato en ${Math.abs(despues.saldoHoras)} hrs (${despues.horasComprometidasDocente}h req. vs ${docente.horasContrato}h).`;
   } else if (excedeLectivo) {
-    advertencia = `Superaría el límite lectivo (${auditDespues.porcentajeLectivoReal}% > ${auditDespues.porcentajeLimitePonderado}%).`;
+    advertencia = `Superaría el límite lectivo (${despues.auditDoc.porcentajeLectivoReal}% > ${despues.auditDoc.porcentajeLimitePonderado}%).`;
   }
 
   return {
-    saldoAntes: auditAntes.saldoHoras,
-    saldoDespues: auditDespues.saldoHoras,
-    contratoCalculadoAntes: auditAntes.contratoCalculadoTotal,
-    contratoCalculadoDespues: auditDespues.contratoCalculadoTotal,
-    porcentajeLectivoDespues: auditDespues.porcentajeLectivoReal,
-    porcentajeLimite: auditDespues.porcentajeLimitePonderado,
+    saldoAntes: antes.saldoHoras,
+    saldoDespues: despues.saldoHoras,
+    contratoCalculadoAntes: antes.horasComprometidasDocente,
+    contratoCalculadoDespues: despues.horasComprometidasDocente,
+    porcentajeLectivoDespues: despues.auditDoc.porcentajeLectivoReal,
+    porcentajeLimite: despues.auditDoc.porcentajeLimitePonderado,
     excedeContrato,
     excedeLectivo,
+    isEducadoraParvulo: despues.isEducadoraParvulo,
     advertencia
   };
 }
