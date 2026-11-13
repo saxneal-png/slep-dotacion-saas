@@ -1,6 +1,6 @@
 import initSqlJs, { Database } from 'sql.js';
 import { getEmbeddedSqlWasm } from './sqlWasmBinary';
-import { INIT_SCHEMA_SQL, runMigrations } from './schema';
+import { INIT_SCHEMA_SQL, runMigrations, hasAppliedMigration, markAppliedMigration } from './schema';
 import { getIdbBytes, setIdbBytes, deleteIdbBytes } from './idbStorage';
 
 let dbInstance: Database | null = null;
@@ -74,18 +74,28 @@ export async function getDb(): Promise<Database> {
   }
   runMigrations(dbInstance);
 
-  // Asegurar purga definitiva de nóminas de docentes, asistentes, cursos y asignaciones en el cliente
-  if (typeof localStorage !== 'undefined' && !localStorage.getItem('slep_dotacion_2027_clean_v1')) {
+  // Control interno SQLite para inicio 2027: nunca borrar datos 2027 existentes por pérdida de localStorage
+  if (!hasAppliedMigration(dbInstance, 'clean_init_2027_v1')) {
     try {
-      dbInstance.run("DELETE FROM asignaciones_horarias;");
-      dbInstance.run("DELETE FROM cursos_sae;");
-      dbInstance.run("DELETE FROM docentes;");
-      dbInstance.run("DELETE FROM asistentes_educacion;");
-      dbInstance.run("DELETE FROM salas_infraestructura;");
-      localStorage.setItem('slep_dotacion_2027_clean_v1', 'true');
-      console.log('[SQLite] Purga definitiva de dotación ejecutada para inicio limpio 2027.');
+      const yaTieneDatos2027 =
+        Number(dbInstance.exec("SELECT COUNT(*) FROM docentes WHERE periodo = 2027;")[0]?.values[0]?.[0] || 0) > 0 ||
+        Number(dbInstance.exec("SELECT COUNT(*) FROM cursos_sae WHERE periodo = 2027;")[0]?.values[0]?.[0] || 0) > 0 ||
+        Number(dbInstance.exec("SELECT COUNT(*) FROM asistentes_educacion WHERE periodo = 2027;")[0]?.values[0]?.[0] || 0) > 0;
+      const teniaFlagLegacy =
+        typeof localStorage !== 'undefined' && localStorage.getItem('slep_dotacion_2027_clean_v1') === 'true';
+
+      if (!yaTieneDatos2027 && !teniaFlagLegacy) {
+        dbInstance.run("DELETE FROM asignaciones_horarias WHERE periodo < 2027;");
+        dbInstance.run("DELETE FROM cursos_sae WHERE periodo < 2027;");
+        dbInstance.run("DELETE FROM docentes WHERE periodo < 2027;");
+        dbInstance.run("DELETE FROM asistentes_educacion WHERE periodo < 2027;");
+      }
+      markAppliedMigration(dbInstance, 'clean_init_2027_v1');
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('slep_dotacion_2027_clean_v1', 'true');
+      }
     } catch (e) {
-      console.warn('[SQLite] Aviso durante purga 2027:', e);
+      console.warn('[SQLite] Aviso durante verificación de migración 2027:', e);
     }
   }
 

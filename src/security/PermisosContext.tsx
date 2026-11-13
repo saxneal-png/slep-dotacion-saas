@@ -49,7 +49,7 @@ export function useEvaluadorPermisos(session: AuthSession | null): PermisosConte
 
   // Sincroniza la matriz publicada al iniciar sesión / limpia simulación al salir
   useEffect(() => {
-    if (session) RolesPermisosService.sincronizarDesdeFirestore().catch(() => {});
+    if (session) RolesPermisosService.sincronizarDesdeSupabase().catch(() => {});
     else RolesPermisosService.setRolSimulado(null);
   }, [session?.usuario.id]);
 

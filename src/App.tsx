@@ -82,6 +82,7 @@ import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoCo
 import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota } from './services/configuracionGeneralService';
 import { RolesPermisosService } from './services/rolesPermisosService';
 import { AuthService } from './services/authService';
+import { obtenerGeminiApiKeyActiva } from './services/geminiKeyResolver';
 import { AuthSession, UsuarioSistema } from './types/authTypes';
 import { useEvaluadorPermisos, PermisosProvider } from './security/PermisosContext';
 import { getDefinicionRol, normalizarRol } from './security/rolesDefinitions';
@@ -890,8 +891,8 @@ export const App: React.FC = () => {
       const docentesColegio = todosLosDocentes.filter(d => d.rbd === est.rbd && (d.periodo === undefined || d.periodo === periodo));
       const asignacionesColegio = todasLasAsignaciones.filter(a => a.rbd === est.rbd && (a.periodo === undefined || a.periodo === periodo));
 
-      // Leer configuración de Gemini desde localStorage (la misma que usa el Analizador)
-      const geminiApiKey = localStorage.getItem('gemini_api_key') || '';
+      // Leer API Key respetando el perfil del usuario activo (con fallback a configuración / localStorage)
+      const geminiApiKey = obtenerGeminiApiKeyActiva();
       const geminiModel = localStorage.getItem('gemini_model') || 'gemini-2.5-flash';
       const geminiAnalizarTodos = localStorage.getItem('gemini_export_analizar_todos') === 'true';
 

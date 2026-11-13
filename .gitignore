@@ -38,19 +38,23 @@ Thumbs.db
 # Gemini internal
 .gemini/
 
-# Sensitive seeds and SQL dumps
-database/*.sql
+# Sensitive seeds, backups and SQL dumps (recursive)
+database/**/*.sql
 !database/supabase_schema.sql
-database/*.sqlite
-database/*.json
+!database/seed_121_colegios.sql
+!database/migrations/*.sql
+database/**/*.sqlite
+database/**/*.json
+database/backups/
 scripts/seed_*.cjs
 
 # Supabase CLI temp
 supabase/.temp/
 
-# Working and temporary Excel files in root
+# Working and temporary Excel / CSV files with real staff data in root
 /*.xlsx
 /~*.xlsx
 ~$*.xlsx
+/nomina_directores_actualizada.csv
 
 

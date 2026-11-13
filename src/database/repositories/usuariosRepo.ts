@@ -153,14 +153,18 @@ export async function guardarUsuarioDb(u: UsuarioSistema, skipCloudSync: boolean
       cartera_rbds_json: carteraJson,
       asesores_supervisados_json: asesoresJson,
       comunas_permitidas_json: comunasJson,
-      password_hash: u.passwordHash || null,
-      salt: u.salt || null,
-      gemini_api_key: u.geminiApiKey || null,
       activo: u.activo !== false,
       ultimo_acceso: u.ultimoAcceso || null,
       debe_cambiar_password: u.debeCambiarPassword ?? false,
       updated_at: new Date().toISOString()
     };
+    if (u.passwordHash && u.salt) {
+      payload.password_hash = u.passwordHash;
+      payload.salt = u.salt;
+    }
+    if (u.geminiApiKey !== undefined) {
+      payload.gemini_api_key = u.geminiApiKey || null;
+    }
 
     let { error } = await supabase
       .from('usuarios_sistema')
@@ -315,9 +319,6 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipClo
             cartera_rbds_json: JSON.stringify(carteraArr),
             asesores_supervisados_json: JSON.stringify(asesoresArr),
             comunas_permitidas_json: JSON.stringify(comunasArr),
-            password_hash: u.passwordHash || null,
-            salt: u.salt || null,
-            gemini_api_key: u.geminiApiKey || null,
             activo: u.activo !== false,
             ultimo_acceso: u.ultimoAcceso || null,
             debe_cambiar_password: u.debeCambiarPassword ?? false,

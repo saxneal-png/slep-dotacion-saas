@@ -44,12 +44,64 @@ export const ROLES_PAUSABLES_ESTAMENTO: readonly RolId[] = [
 ] as const;
 
 // FunciÃ³n para derivar hash criptogrÃ¡fico usando SHA-256 con Salt
-export async function hashPassword(password: string, salt: string): Promise<string> {
+const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_PREFIX = 'pbkdf2_sha256';
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+async function legacySha256Hash(password: string, salt: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(password + salt);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return bytesToHex(new Uint8Array(hashBuffer));
+}
+
+export async function hashPassword(password: string, salt: string, iterations: number = PBKDF2_ITERATIONS): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode(salt),
+      iterations,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    256
+  );
+  return `${PBKDF2_PREFIX}$${iterations}$${bytesToHex(new Uint8Array(derivedBits))}`;
+}
+
+export async function verifyPassword(passwordPlain: string, salt: string, storedHash: string): Promise<boolean> {
+  if (!salt || !storedHash) return false;
+  if (storedHash.startsWith(`${PBKDF2_PREFIX}$`)) {
+    const parts = storedHash.split('$');
+    const iterations = Number(parts[1]);
+    if (parts.length !== 3 || !Number.isFinite(iterations) || iterations < 10000) {
+      return false;
+    }
+    const candidate = await hashPassword(passwordPlain, salt, iterations);
+    return timingSafeEqualStr(candidate, storedHash);
+  }
+  const legacyCandidate = await legacySha256Hash(passwordPlain, salt);
+  return timingSafeEqualStr(legacyCandidate, storedHash);
 }
 
 export function generateSalt(): string {
@@ -87,6 +139,31 @@ export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 
 
 const SUPER_USUARIO_EMAIL = 'saxneal@gmail.com';
 
+const SUPABASE_USER_PUBLIC_COLUMNS =
+  'id, username, email, nombre_completo, role, cargo, rbd_asignado, cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json, gemini_api_key, activo, debe_cambiar_password, ultimo_acceso, auth_uid';
+
+function isNetworkAuthError(err: any): boolean {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('err_name_not_resolved') ||
+    msg.includes('enotfound') ||
+    msg.includes('fetch') ||
+    err?.status === 0 ||
+    (typeof err?.status === 'number' && err.status >= 500)
+  );
+}
+
+function sanitizarUsuariosParaLocalStorage(usuarios: UsuarioSistema[], currentUserId?: string): UsuarioSistema[] {
+  return usuarios.map(u => {
+    const esPropio = Boolean(currentUserId && u.id === currentUserId);
+    if (esPropio) return u;
+    const { geminiApiKey: _omitKey, ...resto } = u;
+    return resto;
+  });
+}
+
 /** Migra roles heredados (admin/asesor/director_colegio/auditor) a los roles UATP vigentes. */
 export function migrarUsuario(u: UsuarioSistema): { usuario: UsuarioSistema; cambiado: boolean } {
   let cambiado = false;
@@ -119,32 +196,41 @@ export class AuthService {
           if (!tieneDirectores && DIRECTORES_TERRITORIO.length > 0) {
             huboMigracion = true;
             const passwordDirectores = '123456';
-            for (const d of DIRECTORES_TERRITORIO) {
+            const faltantes = DIRECTORES_TERRITORIO.filter(d => {
               const cleanEmail = d.email.trim().toLowerCase();
-              const yaExiste = migrados.some(
+              return !migrados.some(
                 u => (u.email && u.email.toLowerCase() === cleanEmail) || u.username.toLowerCase() === cleanEmail
               );
-              if (!yaExiste) {
+            });
+            const nuevosDirectores = await Promise.all(
+              faltantes.map(async d => {
+                const cleanEmail = d.email.trim().toLowerCase();
                 const salt = generateSalt();
                 const passwordHash = await hashPassword(passwordDirectores, salt);
-                migrados.push({
+                return {
                   id: `user-dir-${d.rbd}`,
                   username: cleanEmail,
                   email: cleanEmail,
                   nombreCompleto: d.director,
-                  role: 'director_establecimiento',
+                  role: 'director_establecimiento' as const,
                   cargo: d.cargo,
                   rbdAsignado: d.rbd,
                   passwordHash,
                   salt,
                   activo: true,
                   debeCambiarPassword: true
-                });
-              }
-            }
+                };
+              })
+            );
+            migrados.push(...nuevosDirectores);
           }
 
-          if (huboMigracion) localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(migrados));
+          if (huboMigracion) {
+            localStorage.setItem(
+              STORAGE_USERS_KEY,
+              JSON.stringify(sanitizarUsuariosParaLocalStorage(migrados, this.getSessionActual()?.usuario.id))
+            );
+          }
           return migrados;
         }
       } catch (e) {
@@ -152,7 +238,7 @@ export class AuthService {
       }
     }
 
-    // Sembrar super usuario oficial sin contraseÃ±as en texto plano en el cÃ³digo
+    // Sembrar super usuario oficial sin contraseñas en texto plano en el código
     const env = (import.meta as any).env || {};
     const initialSalt = env.VITE_SUPERADMIN_INITIAL_SALT || '';
     const initialHash = env.VITE_SUPERADMIN_INITIAL_HASH || '';
@@ -174,7 +260,7 @@ export class AuthService {
       });
     }
 
-    // Sembrar directores territoriales iniciales con contraseÃ±a 123456
+    // Sembrar directores territoriales iniciales con contraseña 123456
     const passwordDirectores = '123456';
     const directoresSemilla = await Promise.all(
       DIRECTORES_TERRITORIO.map(async d => {
@@ -198,7 +284,10 @@ export class AuthService {
     );
     usuariosNuevos.push(...directoresSemilla);
 
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuariosNuevos));
+    localStorage.setItem(
+      STORAGE_USERS_KEY,
+      JSON.stringify(sanitizarUsuariosParaLocalStorage(usuariosNuevos, this.getSessionActual()?.usuario.id))
+    );
     return usuariosNuevos;
   }
 
@@ -263,14 +352,19 @@ export class AuthService {
       // Fallback seguro si SQLite aÃºn no estÃ¡ inicializado
     }
 
-    // 2.0 SincronizaciÃ³n desde Supabase PostgreSQL (Fuente Primaria en Nube)
+    // 2.0 Sincronización desde Supabase PostgreSQL (Fuente Primaria en Nube, sin exponer password_hash ni salt)
     if (isSupabaseEnabled()) {
       try {
-        const supaUsers = await SupabaseDotacionService.fetchAllRows<any>('usuarios_sistema');
-        if (supaUsers && supaUsers.length > 0) {
+        const { data: supaUsers, error: supaErr } = await supabase
+          .from('usuarios_sistema')
+          .select(SUPABASE_USER_PUBLIC_COLUMNS);
+
+        if (!supaErr && supaUsers && supaUsers.length > 0) {
+          const mapLocalById = new Map(usuarios.map(u => [u.id, u]));
+          const activeUserId = this.getSessionActual()?.usuario.id;
           const remoteUsers: UsuarioSistema[] = [];
 
-          for (const row of supaUsers) {
+          for (const row of supaUsers as any[]) {
             const emailKey = (row.email || '').toLowerCase();
             const esSuper = emailKey === SUPER_USUARIO_EMAIL;
             const rol = esSuper ? 'super_usuario' : normalizarRol(row.role || 'asesor_uatp');
@@ -278,6 +372,7 @@ export class AuthService {
             const carteraRbds = parseJsonArray(row.cartera_rbds_json);
             const asesoresSupervisados = parseJsonArray(row.asesores_supervisados_json);
             const comunasArr = parseJsonArray(row.comunas_permitidas_json);
+            const prevLocal = mapLocalById.get(row.id);
 
             remoteUsers.push({
               id: row.id,
@@ -290,36 +385,46 @@ export class AuthService {
               carteraRbds,
               asesoresSupervisados,
               comunasPermitidas: comunasArr.length > 0 ? comunasArr : undefined,
-              passwordHash: row.password_hash || '',
-              salt: row.salt || '',
-              geminiApiKey: row.gemini_api_key || undefined,
+              passwordHash: prevLocal?.passwordHash || '',
+              salt: prevLocal?.salt || '',
+              geminiApiKey: row.gemini_api_key || (row.id === activeUserId ? prevLocal?.geminiApiKey : undefined),
               activo: row.activo !== false,
               debeCambiarPassword: Boolean(row.debe_cambiar_password),
               ultimoAcceso: row.ultimo_acceso || undefined
             });
           }
 
-          // Asegurar super usuario si no estuviera en Supabase
-          if (!remoteUsers.some(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL)) {
-            const superLocal = usuarios.find(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL);
-            if (superLocal) remoteUsers.push(superLocal);
+          if (remoteUsers.length > 1) {
+            // Vista administrativa completa: asegurar superusuario y purgar obsoletos en SQLite
+            if (!remoteUsers.some(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL)) {
+              const superLocal = usuarios.find(u => (u.email || '').toLowerCase() === SUPER_USUARIO_EMAIL);
+              if (superLocal) remoteUsers.push(superLocal);
+            }
+            try {
+              const { getDb, persistDb } = await import('../database/dbCore');
+              const db = await getDb();
+              const validIds = remoteUsers.map(u => u.id);
+              const placeholders = validIds.map(() => '?').join(',');
+              if (placeholders) {
+                db.run('DELETE FROM usuarios_sistema WHERE id NOT IN (' + placeholders + ')', validIds);
+                await persistDb();
+              }
+            } catch (_) {}
+            usuarios = remoteUsers;
+          } else {
+            // Vista filtrada por RLS (usuario no-admin recibe únicamente su propio perfil): fusionar sin borrar directorio local
+            for (const ru of remoteUsers) {
+              const idx = usuarios.findIndex(u => u.id === ru.id);
+              if (idx >= 0) usuarios[idx] = ru;
+              else usuarios.push(ru);
+            }
           }
 
-          // Purgar de SQLite cualquier usuario obsoleto que ya no estÃ© en Supabase
-          try {
-            const { getDb, persistDb } = await import('../database/dbCore');
-            const db = await getDb();
-            const validIds = remoteUsers.map(u => u.id);
-            const placeholders = validIds.map(() => '?').join(',');
-            if (placeholders) {
-              db.run('DELETE FROM usuarios_sistema WHERE id NOT IN (' + placeholders + ')', validIds);
-              await persistDb();
-            }
-          } catch (_) {}
-
-          usuarios = remoteUsers;
           huboCambiosParaSqlite = true;
-          localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+          localStorage.setItem(
+            STORAGE_USERS_KEY,
+            JSON.stringify(sanitizarUsuariosParaLocalStorage(usuarios, activeUserId))
+          );
         }
       } catch {
         // Fallback silencioso a local
@@ -337,19 +442,84 @@ export class AuthService {
   public static async login(usernameOrEmail: string, passwordPlain: string): Promise<AuthSession> {
     const cleanInput = usernameOrEmail.trim().toLowerCase();
     let usuarios = await this.getUsuarios();
-    
-    // 1. Si es el superusuario saxneal@gmail.com, asegurar inicializaciÃ³n
+
+    // 1. Si es el superusuario saxneal@gmail.com, asegurar inicialización local base
     if (cleanInput === SUPER_USUARIO_EMAIL || cleanInput === 'saxneal') {
       usuarios = await this.inicializarUsuariosSiNoExisten();
     }
 
-    // 2. Buscar usuario por username, email o prefijo de correo institucional
-    let encontrado = usuarios.find(
-      u =>
-        u.username.toLowerCase() === cleanInput ||
-        (u.email && u.email.toLowerCase() === cleanInput) ||
-        (u.email && u.email.toLowerCase().split('@')[0] === cleanInput)
-    );
+    const buscarUsuarioEnLista = (lista: UsuarioSistema[], targetEmail?: string) =>
+      lista.find(
+        u =>
+          (targetEmail && u.email && u.email.toLowerCase() === targetEmail) ||
+          u.username.toLowerCase() === cleanInput ||
+          (u.email && u.email.toLowerCase() === cleanInput) ||
+          (u.email && u.email.toLowerCase().split('@')[0] === cleanInput)
+      );
+
+    let encontrado = buscarUsuarioEnLista(usuarios);
+    let authenticatedViaSupabase = false;
+
+    // 2. Autenticación primaria contra Supabase Auth cuando está habilitado (habilita JWT + RLS estricto)
+    if (isSupabaseEnabled()) {
+      let resolvedEmail = encontrado?.email?.toLowerCase() || (cleanInput.includes('@') ? cleanInput : '');
+      try {
+        const { data: rpcRows, error: rpcErr } = await supabase.rpc('resolve_login_profile', { p_login: cleanInput });
+        if (!rpcErr && Array.isArray(rpcRows) && rpcRows.length > 0 && rpcRows[0]?.email) {
+          resolvedEmail = String(rpcRows[0].email).trim().toLowerCase();
+          if (rpcRows[0].activo === false) {
+            throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
+          }
+        }
+      } catch (rpcException: any) {
+        if (rpcException?.message?.includes('deshabilitada')) {
+          throw rpcException;
+        }
+      }
+
+      if (resolvedEmail) {
+        try {
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email: resolvedEmail,
+            password: passwordPlain
+          });
+
+          if (!authError && authData?.user) {
+            authenticatedViaSupabase = true;
+            await supabase.rpc('link_my_auth_uid').then(() => {}, () => {});
+            usuarios = await this.getUsuarios();
+            encontrado = buscarUsuarioEnLista(usuarios, resolvedEmail);
+          } else if (authError && !isNetworkAuthError(authError)) {
+            // Verificar si corresponde a cuenta heredada aún no migrada a auth.users
+            const localMatch =
+              encontrado &&
+              encontrado.salt &&
+              encontrado.passwordHash &&
+              (await verifyPassword(passwordPlain, encontrado.salt, encontrado.passwordHash));
+
+            if (localMatch) {
+              const { data: signUpData } = await supabase.auth.signUp({
+                email: resolvedEmail,
+                password: passwordPlain
+              });
+              if (signUpData?.session || signUpData?.user) {
+                authenticatedViaSupabase = Boolean(signUpData?.session);
+                if (authenticatedViaSupabase) {
+                  await supabase.rpc('link_my_auth_uid').then(() => {}, () => {});
+                }
+              }
+            } else {
+              throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
+            }
+          }
+        } catch (authFlowErr: any) {
+          if (!isNetworkAuthError(authFlowErr)) {
+            throw authFlowErr;
+          }
+          // Si falló por red/offline, continúa hacia validación local PBKDF2 en caché SQLite
+        }
+      }
+    }
 
     // Si el usuario está registrado pero fue deshabilitado o su estamento está en pausa de revisión interna
     if (encontrado) {
@@ -358,36 +528,59 @@ export class AuthService {
       if (!encontrado.activo || !esProtegido) {
         const pausa = (await this.sincronizarEstadoPausaDesdeNube().catch(() => null)) || this.getEstadoPausaRevision();
         if (pausa?.activa && pausa.rolesAfectados.includes(rolNorm) && !esProtegido) {
+          if (authenticatedViaSupabase) await supabase.auth.signOut().catch(() => {});
           throw new Error(
             `Acceso pausado por Revisión Interna UATP: El trabajo para su estamento se encuentra suspendido temporalmente mientras el equipo territorial realiza la auditoría de dotación. Motivo: ${pausa.motivo || 'Revisión técnica en curso'}.`
           );
         }
         if (!encontrado.activo) {
+          if (authenticatedViaSupabase) await supabase.auth.signOut().catch(() => {});
           throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
         }
       }
     }
     if (!encontrado) {
+      if (authenticatedViaSupabase) await supabase.auth.signOut().catch(() => {});
       throw new Error('Usuario no encontrado o cuenta deshabilitada.');
     }
 
-    // Si el perfil fue inicializado sin passwordHash/salt local (o antes de almacenar hash en Firestore),
-    // sellar criptogrÃ¡ficamente la contraseÃ±a en su primer ingreso vÃ¡lido (>= 6 caracteres)
-    if (!encontrado.passwordHash && !encontrado.salt && passwordPlain.trim().length >= 6) {
+    // 3. Validación criptográfica local PBKDF2 (obligatoria en modo offline / Vitest; en online actualiza verificador local)
+    if (!authenticatedViaSupabase) {
+      const esSuperUsuarioInicial =
+        (encontrado.email || '').toLowerCase() === SUPER_USUARIO_EMAIL &&
+        !encontrado.passwordHash &&
+        !encontrado.salt &&
+        passwordPlain.trim().length >= 6;
+
+      if (esSuperUsuarioInicial) {
+        const nuevoSalt = generateSalt();
+        encontrado.salt = nuevoSalt;
+        encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
+      }
+
+      if (!encontrado.passwordHash || !encontrado.salt) {
+        throw new Error('La cuenta no tiene credenciales inicializadas. Solicite restablecimiento al administrador.');
+      }
+
+      const localPasswordOk = await verifyPassword(passwordPlain, encontrado.salt, encontrado.passwordHash);
+      if (!localPasswordOk) {
+        throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
+      }
+
+      // Migrar automáticamente hashes SHA-256 legados a PBKDF2-HMAC-SHA256 tras verificar
+      if (!encontrado.passwordHash.startsWith(`${PBKDF2_PREFIX}$`)) {
+        const nuevoSalt = generateSalt();
+        encontrado.salt = nuevoSalt;
+        encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
+      }
+    } else if (!encontrado.passwordHash || !encontrado.passwordHash.startsWith(`${PBKDF2_PREFIX}$`)) {
+      // Actualizar verificador local PBKDF2 para resiliencia offline tras autenticar con Supabase Auth
       const nuevoSalt = generateSalt();
       encontrado.salt = nuevoSalt;
       encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
     }
 
-    // ValidaciÃ³n criptogrÃ¡fica con Salt (SHA-256)
-    const testHash = encontrado.salt ? await hashPassword(passwordPlain, encontrado.salt) : '';
-    const localPasswordOk = Boolean(encontrado.passwordHash && testHash === encontrado.passwordHash);
-
-    if (!localPasswordOk) {
-      throw new Error('ContraseÃ±a incorrecta. Verifique sus credenciales.');
-    }
-
-    // Actualizar Ãºltimo acceso y refrescar cache
+    // Actualizar último acceso y refrescar cache
     encontrado.ultimoAcceso = new Date().toISOString();
     const existingIdx = usuarios.findIndex(u => u.id === encontrado!.id);
     if (existingIdx >= 0) {
@@ -395,10 +588,13 @@ export class AuthService {
     } else {
       usuarios.push(encontrado);
     }
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    localStorage.setItem(
+      STORAGE_USERS_KEY,
+      JSON.stringify(sanitizarUsuariosParaLocalStorage(usuarios, encontrado.id))
+    );
     guardarUsuarioDb(encontrado).catch(() => {});
 
-    // Si el usuario tiene una ApiKey personal configurada, activarla
+    // Si el usuario tiene una ApiKey personal configurada, activarla solo durante su sesión
     if (encontrado.geminiApiKey) {
       localStorage.setItem('gemini_api_key', encontrado.geminiApiKey);
     }
@@ -433,10 +629,20 @@ export class AuthService {
   }
 
   public static logout(): void {
+    const sesionPrevia = this.getSessionActual();
     localStorage.removeItem(STORAGE_SESSION_KEY);
-    // Limpieza de claves temporales de sincronización para evitar contaminación cruzada entre sesiones en el mismo equipo
+    if (isSupabaseEnabled()) {
+      supabase.auth.signOut().catch(() => {});
+    }
+    // Limpieza de claves temporales de sincronización y API key personal para evitar contaminación cruzada entre sesiones
     if (typeof localStorage !== 'undefined') {
       try {
+        if (
+          sesionPrevia?.usuario?.geminiApiKey &&
+          localStorage.getItem('gemini_api_key') === sesionPrevia.usuario.geminiApiKey
+        ) {
+          localStorage.removeItem('gemini_api_key');
+        }
         const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
@@ -449,12 +655,31 @@ export class AuthService {
     }
   }
 
+  public static async verificarPasswordActual(usuario: UsuarioSistema, actualPasswordPlain: string): Promise<boolean> {
+    if (usuario.passwordHash && usuario.salt) {
+      const ok = await verifyPassword(actualPasswordPlain, usuario.salt, usuario.passwordHash);
+      if (ok) return true;
+    }
+    if (isSupabaseEnabled() && usuario.email) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: usuario.email,
+          password: actualPasswordPlain
+        });
+        return !error && Boolean(data?.user);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
   public static async restablecerPasswordPorEmail(email: string, nuevaPasswordPlain?: string): Promise<string> {
     const cleanEmail = email.trim().toLowerCase();
     const usuarios = await this.getUsuarios();
     const idx = usuarios.findIndex(u => (u.email || '').toLowerCase() === cleanEmail);
     if (idx === -1) {
-      throw new Error('No se encontrÃ³ ninguna cuenta asociada a este correo electrÃ³nico institucional.');
+      throw new Error('No se encontró ninguna cuenta asociada a este correo electrónico institucional.');
     }
 
     if (nuevaPasswordPlain) {
@@ -462,19 +687,48 @@ export class AuthService {
       const passwordHash = await hashPassword(nuevaPasswordPlain, salt);
       usuarios[idx].salt = salt;
       usuarios[idx].passwordHash = passwordHash;
-      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+      localStorage.setItem(
+        STORAGE_USERS_KEY,
+        JSON.stringify(sanitizarUsuariosParaLocalStorage(usuarios, this.getSessionActual()?.usuario.id))
+      );
       await guardarUsuarioDb(usuarios[idx]);
     }
     return usuarios[idx].nombreCompleto;
   }
 
   public static async guardarApiKeyUsuario(userId: string, apiKey: string): Promise<void> {
+    const cleanKey = apiKey.trim();
     const usuarios = await this.getUsuarios();
     const idx = usuarios.findIndex(u => u.id === userId);
     if (idx >= 0) {
-      usuarios[idx].geminiApiKey = apiKey.trim();
-      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
-      localStorage.setItem('gemini_api_key', apiKey.trim());
+      usuarios[idx].geminiApiKey = cleanKey || undefined;
+      localStorage.setItem(
+        STORAGE_USERS_KEY,
+        JSON.stringify(sanitizarUsuariosParaLocalStorage(usuarios, userId))
+      );
+      if (cleanKey) {
+        localStorage.setItem('gemini_api_key', cleanKey);
+      } else {
+        localStorage.removeItem('gemini_api_key');
+      }
+
+      const sesionActual = this.getSessionActual();
+      if (sesionActual && sesionActual.usuario.id === userId) {
+        sesionActual.usuario.geminiApiKey = cleanKey || undefined;
+        localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionActual));
+      }
+
+      if (isSupabaseEnabled()) {
+        try {
+          const { error } = await supabase.rpc('update_my_profile_secrets', {
+            p_gemini_api_key: cleanKey
+          });
+          if (!error) {
+            await guardarUsuarioDb(usuarios[idx], true);
+            return;
+          }
+        } catch (_) {}
+      }
       await guardarUsuarioDb(usuarios[idx]);
     }
   }
@@ -489,12 +743,25 @@ export class AuthService {
     usuarios[idx].salt = salt;
     usuarios[idx].passwordHash = passwordHash;
     usuarios[idx].debeCambiarPassword = false;
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    localStorage.setItem(
+      STORAGE_USERS_KEY,
+      JSON.stringify(sanitizarUsuariosParaLocalStorage(usuarios, this.getSessionActual()?.usuario.id))
+    );
+
+    const sesionActual = this.getSessionActual();
+    const esUsuarioActual = Boolean(
+      sesionActual && (sesionActual.usuario.id === userId || sesionActual.usuario.username === usuarios[idx].username)
+    );
+
+    if (esUsuarioActual && isSupabaseEnabled()) {
+      await supabase.auth.updateUser({ password: nuevaPasswordPlain }).catch(() => {});
+      await supabase.rpc('update_my_profile_secrets', { p_debe_cambiar_password: false }).then(() => {}, () => {});
+    }
+
     await guardarUsuarioDb(usuarios[idx]);
 
-    // Refrescar sesiÃ³n activa si corresponde al usuario autenticado
-    const sesionActual = this.getSessionActual();
-    if (sesionActual && (sesionActual.usuario.id === userId || sesionActual.usuario.username === usuarios[idx].username)) {
+    // Refrescar sesión activa si corresponde al usuario autenticado
+    if (sesionActual && esUsuarioActual) {
       sesionActual.usuario.debeCambiarPassword = false;
       localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionActual));
     }
@@ -764,13 +1031,41 @@ export class AuthService {
     let actualizados = 0;
     const errores: string[] = [];
 
-    for (const d of directores) {
-      try {
+    // Precalcular hashes PBKDF2 en paralelo solo para registros que realmente requieren credencial nueva o reset
+    const validosConCreds = await Promise.all(
+      directores.map(async d => {
         const cleanEmail = (d.email || '').trim().toLowerCase();
         const cleanRbd = (d.rbd || '').trim();
+        if (!cleanEmail || !cleanRbd || eliminados.has(cleanRbd)) {
+          return { d, cleanEmail, cleanRbd, salt: '', passwordHash: '' };
+        }
+        const existente = usuarios.find(
+          u =>
+            (u.email && u.email.toLowerCase() === cleanEmail) ||
+            u.username.toLowerCase() === cleanEmail ||
+            (u.role === 'director_establecimiento' && u.rbdAsignado === cleanRbd)
+        );
+        if (
+          existente &&
+          existente.salt &&
+          existente.passwordHash?.startsWith(`${PBKDF2_PREFIX}$`) &&
+          existente.debeCambiarPassword &&
+          passwordInicial === '123456'
+        ) {
+          return { d, cleanEmail, cleanRbd, salt: existente.salt, passwordHash: existente.passwordHash };
+        }
+        const salt = generateSalt();
+        const passwordHash = await hashPassword(passwordInicial, salt);
+        return { d, cleanEmail, cleanRbd, salt, passwordHash };
+      })
+    );
+
+    for (const item of validosConCreds) {
+      const { d, cleanEmail, cleanRbd, salt, passwordHash } = item;
+      try {
         const cleanNombre = (d.director || '').trim();
         if (!cleanEmail || !cleanRbd) {
-          errores.push(`RBD ${d.rbd}: Falta correo electrÃ³nico o RBD vÃ¡lido.`);
+          errores.push(`RBD ${d.rbd}: Falta correo electrónico o RBD válido.`);
           continue;
         }
 
@@ -785,9 +1080,6 @@ export class AuthService {
             u.username.toLowerCase() === cleanEmail ||
             (u.role === 'director_establecimiento' && u.rbdAsignado === cleanRbd)
         );
-
-        const salt = generateSalt();
-        const passwordHash = await hashPassword(passwordInicial, salt);
 
         if (idx >= 0) {
           // Si el usuario ya existe, actualizar rbdAsignado, cargo, email, username y resetear clave
@@ -826,7 +1118,10 @@ export class AuthService {
       }
     }
 
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
+    localStorage.setItem(
+      STORAGE_USERS_KEY,
+      JSON.stringify(sanitizarUsuariosParaLocalStorage(usuarios, this.getSessionActual()?.usuario.id))
+    );
     await guardarUsuariosBatchDb(usuarios);
 
     // Sincronizar informaciÃ³n de directores en la tabla establecimientos local SQLite
@@ -921,14 +1216,23 @@ export class AuthService {
       return this.getEstadoPausaRevision();
     }
     try {
-      const { data, error } = await supabase
-        .from('configuracion_general')
-        .select('ui_config_json')
-        .eq('id', 'pausa_revision_interna')
-        .maybeSingle();
+      let uiConfigJson: any = null;
+      const rpcRes = await supabase.rpc('get_pausa_revision_publica');
+      if (!rpcRes.error && rpcRes.data) {
+        uiConfigJson = rpcRes.data;
+      } else {
+        const { data, error } = await supabase
+          .from('configuracion_general')
+          .select('ui_config_json')
+          .eq('id', 'pausa_revision_interna')
+          .maybeSingle();
+        if (!error && data?.ui_config_json) {
+          uiConfigJson = data.ui_config_json;
+        }
+      }
 
-      if (!error && data && data.ui_config_json) {
-        const raw = data.ui_config_json as Partial<EstadoPausaRevision>;
+      if (uiConfigJson) {
+        const raw = uiConfigJson as Partial<EstadoPausaRevision>;
         if (raw.activa && Array.isArray(raw.rolesAfectados) && raw.rolesAfectados.length > 0) {
           const estado: EstadoPausaRevision = {
             activa: true,

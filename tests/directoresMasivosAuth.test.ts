@@ -68,7 +68,7 @@ describe('Aprovisionamiento Masivo de Usuarios Directores de Establecimiento', (
     const usuarios2 = await AuthService.getUsuarios();
     const directores2 = usuarios2.filter(u => u.role === 'director_establecimiento');
     expect(directores2.length).toBe(131);
-  });
+  }, 15000);
 
   it('permite autenticación con el correo del director y clave 123456 retornando debeCambiarPassword=true y luego permite cambiarla', async () => {
     await AuthService.getUsuarios();

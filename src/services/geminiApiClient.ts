@@ -7,6 +7,8 @@
  * y usa window.fetch nativo cuando está en el navegador web.
  */
 
+import { supabase, isSupabaseEnabled } from './supabaseClient';
+
 declare global {
   interface Window {
     electronAPI?: {
@@ -30,12 +32,33 @@ export interface GeminiResponseWrapper {
   text: () => Promise<string>;
 }
 
+async function attachProxyAuthHeaders(url: string, headers?: HeadersInit): Promise<HeadersInit | undefined> {
+  if (!url.startsWith('/api/gemini') || !isSupabaseEnabled()) {
+    return headers;
+  }
+  try {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data?.session?.access_token;
+    if (!accessToken) return headers;
+
+    const normalized = new Headers(headers || {});
+    if (!normalized.has('Authorization')) {
+      normalized.set('Authorization', `Bearer ${accessToken}`);
+    }
+    return Object.fromEntries(normalized.entries());
+  } catch {
+    return headers;
+  }
+}
+
 export async function geminiFetch(url: string, options?: RequestInit): Promise<GeminiResponseWrapper> {
+  const enrichedHeaders = await attachProxyAuthHeaders(url, options?.headers);
+
   // Si estamos en entorno Electron de escritorio con IPC disponible
   if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.geminiRequest === 'function') {
     const ipcResult = await window.electronAPI.geminiRequest(url, {
       method: options?.method || 'GET',
-      headers: (options?.headers as any) || undefined,
+      headers: (enrichedHeaders as any) || undefined,
       body: typeof options?.body === 'string' ? options.body : undefined
     });
 
@@ -54,7 +77,7 @@ export async function geminiFetch(url: string, options?: RequestInit): Promise<G
   }
 
   // Si estamos en navegador estandar o en entorno Node/Vitest
-  const resp = await fetch(url, options);
+  const resp = await fetch(url, enrichedHeaders ? { ...options, headers: enrichedHeaders } : options);
   return {
     ok: resp.ok,
     status: resp.status,

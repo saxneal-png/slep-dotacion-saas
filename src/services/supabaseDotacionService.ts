@@ -1717,9 +1717,6 @@ export class SupabaseDotacionService {
           cartera_rbds_json: JSON.stringify(u.carteraRbds || []),
           asesores_supervisados_json: JSON.stringify(u.asesoresSupervisados || []),
           comunas_permitidas_json: JSON.stringify(u.comunasPermitidas || []),
-          password_hash: u.passwordHash || null,
-          salt: u.salt || null,
-          gemini_api_key: u.geminiApiKey || null,
           activo: u.activo !== false,
           debe_cambiar_password: u.debeCambiarPassword ?? false
         };

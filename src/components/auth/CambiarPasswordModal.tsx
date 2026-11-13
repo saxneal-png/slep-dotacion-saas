@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { KeyRound, Check, AlertCircle, X, Shield, Lock, Eye, EyeOff } from 'lucide-react';
-import { AuthService, hashPassword } from '../../services/authService';
+import { AuthService, verifyPassword } from '../../services/authService';
 import { AuthSession } from '../../types/authTypes';
 
 interface CambiarPasswordModalProps {
@@ -20,7 +20,7 @@ export const CambiarPasswordModal: React.FC<CambiarPasswordModalProps> = ({
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [confirmarPassword, setConfirmarPassword] = useState('');
   const [geminiApiKey, setGeminiApiKey] = useState(() => {
-    return localStorage.getItem('gemini_api_key') || (session.usuario as any).geminiApiKey || '';
+    return (session.usuario as any).geminiApiKey || localStorage.getItem('gemini_api_key') || '';
   });
   const [mostrarClaves, setMostrarClaves] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,8 +70,8 @@ export const CambiarPasswordModal: React.FC<CambiarPasswordModalProps> = ({
       const me = usuarios.find(u => u.id === session.usuario.id);
       if (!me) throw new Error('Usuario no encontrado en el sistema.');
 
-      const hashActual = await hashPassword(actualPassword, me.salt);
-      if (hashActual !== me.passwordHash) {
+      const passwordValida = await AuthService.verificarPasswordActual(me, actualPassword);
+      if (!passwordValida) {
         throw new Error('La contraseña actual es incorrecta.');
       }
 

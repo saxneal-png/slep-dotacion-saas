@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { calcularDiagnosticoColegio, DiagnosticoColegioCompleto } from './dotacionCalculationService';
 import { geminiFetch } from './geminiApiClient';
+import { obtenerGeminiApiKeyActiva } from './geminiKeyResolver';
 import { normalizarRut, formatearRut } from '../utils/rutUtils';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
 import { cargarConfiguracionGeneral } from './configuracionGeneralService';
@@ -452,10 +453,13 @@ export async function consultarCopilotGemini(
 ): Promise<string> {
   const config = cargarConfiguracionGeneral();
 
-  const effectiveApiKey = apiKey || config.gemini.apiKey || (typeof localStorage !== 'undefined' ? localStorage.getItem('gemini_api_key') : '') || '';
+  const resolvedProfileOrGlobalKey = obtenerGeminiApiKeyActiva();
+  const effectiveApiKey = (apiKey || resolvedProfileOrGlobalKey || '').trim();
+  const isElectron = typeof window !== 'undefined' && Boolean((window as any).electronAPI?.geminiRequest);
+  const useServerProxy = !isElectron && (!effectiveApiKey || effectiveApiKey === '__SERVER_PROXY__') && !config.gemini.modoEstrictoCopilot;
 
-  // Soberanía estricta: si el modo estricto está activo o no hay llave disponible, responder offline local
-  if (!effectiveApiKey || (config.gemini.modoEstrictoCopilot && !apiKey && !config.gemini.apiKey)) {
+  // Soberanía estricta: si el modo estricto está activo sin llave o si estamos en Electron sin API key, responder offline local
+  if ((!effectiveApiKey && !useServerProxy) || (config.gemini.modoEstrictoCopilot && !effectiveApiKey)) {
     return responderConsultaLocalmente(pregunta, contexto);
   }
 
@@ -502,25 +506,31 @@ INSTRUCCIONES DE RESPUESTA:
     }
   ];
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
-
-  const response = await geminiFetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': effectiveApiKey
+  const requestBody = {
+    contents,
+    systemInstruction: {
+      parts: [{ text: systemInstruction }]
     },
-    body: JSON.stringify({
-      contents,
-      systemInstruction: {
-        parts: [{ text: systemInstruction }]
-      },
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 2048
-      }
-    })
-  });
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 2048
+    }
+  };
+
+  const response = useServerProxy
+    ? await geminiFetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelName, payload: requestBody })
+      })
+    : await geminiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': effectiveApiKey
+        },
+        body: JSON.stringify(requestBody)
+      });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

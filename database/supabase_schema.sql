@@ -385,7 +385,9 @@ ALTER TABLE public.roles_permisos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.roles_permisos_bitacora ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.configuracion_general ENABLE ROW LEVEL SECURITY;
 
--- Políticas de lectura y escritura para el rol 'anon' y 'authenticated'
+-- Políticas base: solo usuarios autenticados vía Supabase Auth.
+-- IMPORTANTE: Aplicar inmediatamente database/migrations/20261112_rls_and_updated_at.sql
+-- y database/migrations/20261113_auth_rls_hardening.sql para aislar por RBD y proteger usuarios_sistema.
 DO $$
 DECLARE
   tbl text;
@@ -394,9 +396,12 @@ BEGIN
     SELECT tablename FROM pg_tables WHERE schemaname = 'public'
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS "Permitir select a todos en %I" ON public.%I', tbl, tbl);
-    EXECUTE format('CREATE POLICY "Permitir select a todos en %I" ON public.%I FOR SELECT USING (true)', tbl, tbl);
-    
     EXECUTE format('DROP POLICY IF EXISTS "Permitir insert/update/delete en %I" ON public.%I', tbl, tbl);
-    EXECUTE format('CREATE POLICY "Permitir insert/update/delete en %I" ON public.%I FOR ALL USING (true) WITH CHECK (true)', tbl, tbl);
+
+    EXECUTE format('DROP POLICY IF EXISTS "rls_auth_baseline_%I" ON public.%I', tbl, tbl);
+    EXECUTE format(
+      'CREATE POLICY "rls_auth_baseline_%I" ON public.%I FOR ALL TO authenticated USING (auth.role() = ''authenticated'') WITH CHECK (auth.role() = ''authenticated'')',
+      tbl, tbl
+    );
   END LOOP;
 END $$;

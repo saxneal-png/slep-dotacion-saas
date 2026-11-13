@@ -221,7 +221,132 @@ CREATE TABLE IF NOT EXISTS establecimientos_eliminados (
   eliminado_por TEXT,
   fecha TEXT
 );
+
+CREATE TABLE IF NOT EXISTS __schema_migrations (
+  id TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
 `;
+
+const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, string]>> = {
+  establecimientos: [
+    ['subvencion_sep_mensual', 'REAL DEFAULT 0'],
+    ['subvencion_pro_retencion', 'REAL DEFAULT 0'],
+    ['cupo_horas_pie_diferencial', 'REAL DEFAULT 0'],
+    ['cupo_horas_pie_asistentes', 'REAL DEFAULT 0']
+  ],
+  cursos_sae: [
+    ['talleres_jec_json', 'TEXT'],
+    ['periodo', 'INTEGER NOT NULL DEFAULT 2027'],
+    ['regimen_proporcion', "TEXT DEFAULT '65_35'"],
+    ['es_multigrado', 'INTEGER DEFAULT 0'],
+    ['es_combinado', 'INTEGER DEFAULT 0'],
+    ['tipo_modalidad', "TEXT DEFAULT 'REGULAR'"],
+    ['grados_combinados_json', 'TEXT'],
+    ['especialidad_tp', 'TEXT'],
+    ['plan_estudio_id', 'TEXT']
+  ],
+  docentes: [
+    ['horas_subvencion_general_titular', 'REAL DEFAULT 0'],
+    ['horas_subvencion_general_contrata', 'REAL DEFAULT 0'],
+    ['horas_sep_titular', 'REAL DEFAULT 0'],
+    ['horas_sep_contrata', 'REAL DEFAULT 0'],
+    ['horas_pie_titular', 'REAL DEFAULT 0'],
+    ['horas_pie_contrata', 'REAL DEFAULT 0'],
+    ['horas_directivas', 'INTEGER DEFAULT 0'],
+    ['horas_inspector_general', 'REAL DEFAULT 0'],
+    ['horas_tecnico_pedagogica', 'INTEGER DEFAULT 0'],
+    ['horas_coordinacion', 'INTEGER DEFAULT 0'],
+    ['tipo_coordinacion', 'TEXT'],
+    ['horas_aula', 'INTEGER DEFAULT 0'],
+    ['horas_ingles', 'INTEGER DEFAULT 0'],
+    ['funcion_principal', 'TEXT'],
+    ['funcion_secundaria', 'TEXT'],
+    ['periodo', 'INTEGER NOT NULL DEFAULT 2027'],
+    ['horas_coordinacion_pie', 'REAL DEFAULT 0'],
+    ['horas_convivencia_escolar', 'REAL DEFAULT 0'],
+    ['horas_extraescolar', 'REAL DEFAULT 0'],
+    ['cargo_institucional', 'TEXT'],
+    ['horas_taller_sep', 'REAL DEFAULT 0'],
+    ['horas_trabajo_colaborativo', 'REAL DEFAULT 0'],
+    ['funciones_no_aula_json', 'TEXT'],
+    ['requiere_autorizacion_docente', 'INTEGER DEFAULT 0'],
+    ['horas_vigentes_anterior', 'REAL DEFAULT 0'],
+    ['propuesta_gdp', "TEXT DEFAULT 'Continuidad'"],
+    ['remuneracion_mensual_app', 'REAL DEFAULT 0'],
+    ['fecha_inicio_contrato', "TEXT DEFAULT '01-03-2026'"],
+    ['fecha_termino_contrato', "TEXT DEFAULT '28-02-2027'"],
+    ['accion_pme_sep', 'TEXT'],
+    ['horas_pro_retencion', 'REAL DEFAULT 0'],
+    ['descripcion_funcion_gdp', 'TEXT'],
+    ['estado_sancion_gdp', "TEXT DEFAULT 'Pendiente'"],
+    ['horas_aprobadas_gdp', 'REAL DEFAULT 0'],
+    ['situacion_final_gdp', "TEXT DEFAULT 'Vigente'"],
+    ['observaciones_director', 'TEXT'],
+    ['observaciones_slep', 'TEXT']
+  ],
+  asignaciones_horarias: [
+    ['co_docente_id', 'TEXT'],
+    ['tiene_co_docente', 'INTEGER DEFAULT 0'],
+    ['es_taller_jec', 'INTEGER DEFAULT 0'],
+    ['periodo', 'INTEGER NOT NULL DEFAULT 2027'],
+    ['es_taller_sep', 'INTEGER DEFAULT 0'],
+    ['es_proporcion_docente', 'INTEGER DEFAULT 0'],
+    ['cursos_compartidos_json', 'TEXT'],
+    ['es_diferenciado_compartido', 'INTEGER DEFAULT 0'],
+    ['es_co_docencia', 'INTEGER DEFAULT 0'],
+    ['es_agrupacion_flexible', 'INTEGER DEFAULT 0'],
+    ['es_trabajo_colaborativo', 'INTEGER DEFAULT 0'],
+    ['codigo_asignatura', 'TEXT'],
+    ['ambito_curricular', 'TEXT']
+  ],
+  asistentes_educacion: [
+    ['horas_honorarios', 'REAL DEFAULT 0'],
+    ['horas_vigentes_anterior', 'REAL DEFAULT 0'],
+    ['propuesta_gdp', "TEXT DEFAULT 'Continuidad'"],
+    ['remuneracion_mensual_app', 'REAL DEFAULT 0'],
+    ['fecha_inicio_contrato', "TEXT DEFAULT '01-03-2026'"],
+    ['fecha_termino_contrato', "TEXT DEFAULT '28-02-2027'"],
+    ['accion_pme_sep', 'TEXT'],
+    ['horas_pro_retencion', 'REAL DEFAULT 0'],
+    ['descripcion_funcion_gdp', 'TEXT'],
+    ['estado_sancion_gdp', "TEXT DEFAULT 'Pendiente'"],
+    ['horas_aprobadas_gdp', 'REAL DEFAULT 0'],
+    ['situacion_final_gdp', "TEXT DEFAULT 'Vigente'"],
+    ['observaciones_director', 'TEXT'],
+    ['observaciones_slep', 'TEXT']
+  ],
+  usuarios_sistema: [
+    ['debe_cambiar_password', 'INTEGER DEFAULT 0']
+  ]
+};
+
+function ensureTableColumns(db: Database, table: string, columns: ReadonlyArray<readonly [string, string]>): void {
+  const info = db.exec(`PRAGMA table_info(${table});`);
+  const existing = new Set<string>((info[0]?.values || []).map(row => String(row[1]).toLowerCase()));
+  for (const [colName, colDef] of columns) {
+    if (!existing.has(colName.toLowerCase())) {
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${colName} ${colDef};`);
+      existing.add(colName.toLowerCase());
+    }
+  }
+}
+
+export function hasAppliedMigration(db: Database, migrationId: string): boolean {
+  try {
+    const res = db.exec('SELECT 1 FROM __schema_migrations WHERE id = ? LIMIT 1;', [migrationId]);
+    return Boolean(res[0]?.values?.length);
+  } catch {
+    return false;
+  }
+}
+
+export function markAppliedMigration(db: Database, migrationId: string): void {
+  db.run('INSERT OR IGNORE INTO __schema_migrations (id, applied_at) VALUES (?, ?);', [
+    migrationId,
+    new Date().toISOString()
+  ]);
+}
 
 export function runMigrations(db: Database): void {
   db.run(INIT_SCHEMA_SQL);
@@ -233,199 +358,13 @@ export function runMigrations(db: Database): void {
     console.warn('Error al sincronizar planes de estudio en SQLite:', e);
   }
 
-  // Asegurar columnas nuevas en tabla docentes si fue creada con versión previa
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_subvencion_general_titular REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_subvencion_general_contrata REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_sep_titular REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_sep_contrata REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_pie_titular REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_pie_contrata REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_directivas INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_inspector_general REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_tecnico_pedagogica INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_coordinacion INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN tipo_coordinacion TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_aula INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_ingles INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN funcion_principal TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN funcion_secundaria TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN talleres_jec_json TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN co_docente_id TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN tiene_co_docente INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_taller_jec INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2027;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2027;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN periodo INTEGER NOT NULL DEFAULT 2027;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_taller_sep INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_proporcion_docente INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN cursos_compartidos_json TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_diferenciado_compartido INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN regimen_proporcion TEXT DEFAULT '65_35';");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN es_multigrado INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN es_combinado INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN tipo_modalidad TEXT DEFAULT 'REGULAR';");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN grados_combinados_json TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN especialidad_tp TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE cursos_sae ADD COLUMN plan_estudio_id TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_coordinacion_pie REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_convivencia_escolar REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_extraescolar REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN cargo_institucional TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_co_docencia INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_agrupacion_flexible INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN es_trabajo_colaborativo INTEGER DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN codigo_asignatura TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE asignaciones_horarias ADD COLUMN ambito_curricular TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_taller_sep REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN horas_trabajo_colaborativo REAL DEFAULT 0;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN funciones_no_aula_json TEXT;");
-  } catch (_) {}
-  try {
-    db.run("ALTER TABLE docentes ADD COLUMN requiere_autorizacion_docente INTEGER DEFAULT 0;");
-  } catch (_) {}
-
-  // Migraciones Oficiales DEP / GDP
-  const gdpEstablecimientosCols = [
-    "ALTER TABLE establecimientos ADD COLUMN subvencion_sep_mensual REAL DEFAULT 0;",
-    "ALTER TABLE establecimientos ADD COLUMN subvencion_pro_retencion REAL DEFAULT 0;",
-    "ALTER TABLE establecimientos ADD COLUMN cupo_horas_pie_diferencial REAL DEFAULT 0;",
-    "ALTER TABLE establecimientos ADD COLUMN cupo_horas_pie_asistentes REAL DEFAULT 0;"
-  ];
-  for (const sql of gdpEstablecimientosCols) {
-    try { db.run(sql); } catch (_) {}
+  for (const [table, cols] of Object.entries(EXTRA_COLUMNS_BY_TABLE)) {
+    try {
+      ensureTableColumns(db, table, cols);
+    } catch (e) {
+      console.warn(`[schema] Error asegurando columnas en ${table}:`, e);
+    }
   }
-
-  const gdpDocentesCols = [
-    "ALTER TABLE docentes ADD COLUMN horas_vigentes_anterior REAL DEFAULT 0;",
-    "ALTER TABLE docentes ADD COLUMN propuesta_gdp TEXT DEFAULT 'Continuidad';",
-    "ALTER TABLE docentes ADD COLUMN remuneracion_mensual_app REAL DEFAULT 0;",
-    "ALTER TABLE docentes ADD COLUMN fecha_inicio_contrato TEXT DEFAULT '01-03-2026';",
-    "ALTER TABLE docentes ADD COLUMN fecha_termino_contrato TEXT DEFAULT '28-02-2027';",
-    "ALTER TABLE docentes ADD COLUMN accion_pme_sep TEXT;",
-    "ALTER TABLE docentes ADD COLUMN horas_pro_retencion REAL DEFAULT 0;",
-    "ALTER TABLE docentes ADD COLUMN descripcion_funcion_gdp TEXT;",
-    "ALTER TABLE docentes ADD COLUMN estado_sancion_gdp TEXT DEFAULT 'Pendiente';",
-    "ALTER TABLE docentes ADD COLUMN horas_aprobadas_gdp REAL DEFAULT 0;",
-    "ALTER TABLE docentes ADD COLUMN situacion_final_gdp TEXT DEFAULT 'Vigente';",
-    "ALTER TABLE docentes ADD COLUMN observaciones_director TEXT;",
-    "ALTER TABLE docentes ADD COLUMN observaciones_slep TEXT;"
-  ];
-  for (const sql of gdpDocentesCols) {
-    try { db.run(sql); } catch (_) {}
-  }
-
-  const gdpAsistentesCols = [
-    "ALTER TABLE asistentes_educacion ADD COLUMN horas_honorarios REAL DEFAULT 0;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN horas_vigentes_anterior REAL DEFAULT 0;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN propuesta_gdp TEXT DEFAULT 'Continuidad';",
-    "ALTER TABLE asistentes_educacion ADD COLUMN remuneracion_mensual_app REAL DEFAULT 0;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN fecha_inicio_contrato TEXT DEFAULT '01-03-2026';",
-    "ALTER TABLE asistentes_educacion ADD COLUMN fecha_termino_contrato TEXT DEFAULT '28-02-2027';",
-    "ALTER TABLE asistentes_educacion ADD COLUMN accion_pme_sep TEXT;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN horas_pro_retencion REAL DEFAULT 0;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN descripcion_funcion_gdp TEXT;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN estado_sancion_gdp TEXT DEFAULT 'Pendiente';",
-    "ALTER TABLE asistentes_educacion ADD COLUMN horas_aprobadas_gdp REAL DEFAULT 0;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN situacion_final_gdp TEXT DEFAULT 'Vigente';",
-    "ALTER TABLE asistentes_educacion ADD COLUMN observaciones_director TEXT;",
-    "ALTER TABLE asistentes_educacion ADD COLUMN observaciones_slep TEXT;"
-  ];
-  for (const sql of gdpAsistentesCols) {
-    try { db.run(sql); } catch (_) {}
-  }
-
-  try {
-    db.run("ALTER TABLE usuarios_sistema ADD COLUMN debe_cambiar_password INTEGER DEFAULT 0;");
-  } catch (_) {}
 
   const indexes = [
     'CREATE INDEX IF NOT EXISTS idx_cursos_rbd_periodo ON cursos_sae(rbd, periodo);',

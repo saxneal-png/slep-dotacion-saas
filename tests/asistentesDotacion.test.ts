@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import * as XLSX from 'xlsx';
-import path from 'path';
 import initSqlJs, { Database } from 'sql.js';
 import { INIT_SCHEMA_SQL, runMigrations } from '../src/database/schema';
 import { parseAsistentesFromWorkbook } from '../src/services/analizador/asistentesParser';
 import { inferirClasificacionAsistente, calcularDiagnosticoAsistentes } from '../packages/mineduc-engine/src/calculoAsistentes';
+import { crearWorkbookAsistentesSintetico } from './fixtures/asistentesWorkbookFixture';
 import {
   guardarAsistente,
   guardarAsistentesBatch,
@@ -23,9 +22,8 @@ describe('Módulo de Dotación de Asistentes de la Educación', () => {
     runMigrations(db);
   });
 
-  it('debe parsear correctamente la hoja "Asistentes" del archivo real Planilla Dotación Pueblo Seco Santa Clara 2026.xlsx', () => {
-    const filePath = path.resolve(process.cwd(), 'Planilla Dotación Pueblo Seco Santa Clara 2026.xlsx');
-    const workbook = XLSX.readFile(filePath);
+  it('debe parsear correctamente la hoja "Asistentes" de una planilla de levantamiento multi-financiamiento (fixture sintético)', () => {
+    const workbook = crearWorkbookAsistentesSintetico();
     
     const result = parseAsistentesFromWorkbook(workbook, '3543', 2026);
 
@@ -33,15 +31,15 @@ describe('Módulo de Dotación de Asistentes de la Educación', () => {
     expect(result.totalFuncionarios).toBe(23);
     expect(result.totalHoras).toBe(844);
 
-    // Verificar caso multi-financiamiento de Nicole Andrea Reyes González (22h SEP + 22h PIE = 44h)
-    const nicole = result.asistentes.find(a => a.run === '16.993.910-1');
-    expect(nicole).toBeDefined();
-    expect(nicole?.cargoFuncion).toBe('ASISTENTE SOCIAL');
-    expect(nicole?.estamento).toBe('PROFESIONAL');
-    expect(nicole?.esDuplaPsicosocial).toBe(true);
-    expect(nicole?.horasContrato).toBe(44);
-    expect(nicole?.horasSepIndefinido).toBe(22);
-    expect(nicole?.horasPieIndefinido).toBe(22);
+    // Verificar caso multi-financiamiento (22h SEP + 22h PIE = 44h)
+    const duplaSocial = result.asistentes.find(a => a.run === '11.111.112-2');
+    expect(duplaSocial).toBeDefined();
+    expect(duplaSocial?.cargoFuncion).toBe('ASISTENTE SOCIAL');
+    expect(duplaSocial?.estamento).toBe('PROFESIONAL');
+    expect(duplaSocial?.esDuplaPsicosocial).toBe(true);
+    expect(duplaSocial?.horasContrato).toBe(44);
+    expect(duplaSocial?.horasSepIndefinido).toBe(22);
+    expect(duplaSocial?.horasPieIndefinido).toBe(22);
 
     // Verificar totales por fuentes
     const sumSubGralInd = result.asistentes.reduce((s, a) => s + a.horasSubvencionGeneralIndefinido, 0);
@@ -86,8 +84,7 @@ describe('Módulo de Dotación de Asistentes de la Educación', () => {
   });
 
   it('debe calcular diagnósticos y ratios de asistentes correctamente', () => {
-    const filePath = path.resolve(process.cwd(), 'Planilla Dotación Pueblo Seco Santa Clara 2026.xlsx');
-    const workbook = XLSX.readFile(filePath);
+    const workbook = crearWorkbookAsistentesSintetico();
     const parseRes = parseAsistentesFromWorkbook(workbook, '3543', 2026);
 
     const diagnostico = calcularDiagnosticoAsistentes(parseRes.asistentes, {
@@ -117,8 +114,7 @@ describe('Módulo de Dotación de Asistentes de la Educación', () => {
       VALUES ('est_1', '3543', 'Escuela Pueblo Seco', 'San Ignacio', 'JEC', 85.0);
     `);
 
-    const filePath = path.resolve(process.cwd(), 'Planilla Dotación Pueblo Seco Santa Clara 2026.xlsx');
-    const workbook = XLSX.readFile(filePath);
+    const workbook = crearWorkbookAsistentesSintetico();
     const parseRes = parseAsistentesFromWorkbook(workbook, '3543', 2026);
 
     // Guardar batch
