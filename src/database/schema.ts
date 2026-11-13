@@ -156,6 +156,21 @@ CREATE TABLE IF NOT EXISTS planes_estudio_mineduc (
   asignaturas_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS planes_estudio_colegio (
+  id TEXT PRIMARY KEY,
+  rbd TEXT NOT NULL,
+  nivel TEXT NOT NULL,
+  regimen TEXT NOT NULL,
+  categoria TEXT,
+  referencia_fuente TEXT,
+  horas_obligatorias REAL NOT NULL DEFAULT 0,
+  horas_libre_disposicion REAL NOT NULL DEFAULT 0,
+  total_horas_plan REAL NOT NULL DEFAULT 0,
+  asignaturas_json TEXT NOT NULL,
+  actualizado_en TEXT,
+  FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
+);
+
 CREATE TABLE IF NOT EXISTS auditoria_cambios (
   id TEXT PRIMARY KEY,
   rbd TEXT NOT NULL,
@@ -484,6 +499,7 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_asignaciones_docente ON asignaciones_horarias(docente_id);',
     'CREATE INDEX IF NOT EXISTS idx_salas_rbd ON salas_infraestructura(rbd);',
     'CREATE INDEX IF NOT EXISTS idx_planes_estudio ON planes_estudio_mineduc(nivel, regimen);',
+    'CREATE INDEX IF NOT EXISTS idx_planes_colegio_rbd ON planes_estudio_colegio(rbd, nivel, regimen);',
     'CREATE INDEX IF NOT EXISTS idx_auditoria_rbd_periodo ON auditoria_cambios(rbd, periodo);',
     'CREATE INDEX IF NOT EXISTS idx_asistentes_rbd_periodo ON asistentes_educacion(rbd, periodo);',
     'CREATE INDEX IF NOT EXISTS idx_asistentes_run ON asistentes_educacion(run);',

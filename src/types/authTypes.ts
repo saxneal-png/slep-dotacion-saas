@@ -20,7 +20,7 @@ export type UserRole = RolId;
 /** Roles de versiones anteriores, migrados automáticamente al cargar usuarios. */
 export type LegacyRole = 'admin' | 'asesor' | 'director_colegio' | 'auditor';
 
-export type AccionPermiso = 'ver' | 'editar' | 'eliminar' | 'importar' | 'exportar' | 'ejecutar';
+export type AccionPermiso = 'ver' | 'crear' | 'editar' | 'eliminar' | 'importar' | 'exportar' | 'ejecutar';
 
 /** Clave granular de permiso con formato `modulo.accion` (ej. `docentes.editar`). */
 export type PermisoKey = `${string}.${AccionPermiso}`;

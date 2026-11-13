@@ -149,6 +149,8 @@ export interface PlanEstudioCurricular {
     duracionModuloSemanas: number;
   };
   esPersonalizado?: boolean;
+  /** RBD del establecimiento cuando el plan es una personalización exclusiva de esa escuela. */
+  rbd?: string;
 }
 
 export type CalidadJuridicaDocente = 'TITULAR' | 'CONTRATA' | 'REEMPLAZANTE' | 'POSTULANDO_A_TITULARIDAD';

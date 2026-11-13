@@ -29,7 +29,11 @@ import {
   resolverCodigoYAmbitoAsignatura,
   coincideAsignacionConNucleoBcep
 } from '@slep/mineduc-engine';
-import { listarPlanesEstudio } from '../database/db';
+import {
+  listarPlanesEstudio,
+  guardarPlanEstudioColegio,
+  eliminarPlanEstudioColegio
+} from '../database/db';
 import {
   resolverPlanCurso,
   convertirInfoPlanANivelMineduc,
@@ -39,11 +43,6 @@ import {
   esCursoModalidadEpja,
   esCursoNivelMedio34
 } from '../services/curricularPlanService';
-import {
-  ModalAsignarDocencia,
-  ModalAsignarCoDocencia,
-  ModalAsignarPie
-} from '../components/CurriculumAsignacionModals';
 import { ModalCombinarCursos } from '../components/ModalCombinarCursos';
 import { ModalDescombinarCurso } from '../components/ModalDescombinarCurso';
 import { ModalReconciliarMalla } from '../components/ModalReconciliarMalla';
@@ -51,8 +50,10 @@ import { analizarSincronizacionDotacion } from '../services/reconciliacionDotaci
 import { CursoModalForm } from './curriculum/components/CursoModalForm';
 import { CursoNeeModal } from './curriculum/components/CursoNeeModal';
 import { MallaPlanPanel } from './curriculum/components/MallaPlanPanel';
+import { PersonalizarPlanColegioModal } from './curriculum/components/PersonalizarPlanColegioModal';
 import { CurriculumStatsHeader } from './curriculum/components/CurriculumStatsHeader';
 import { CurriculumFilterBar } from './curriculum/components/CurriculumFilterBar';
+import { usePermisos } from '../security/PermisosContext';
 import { NIVELES_TP_ESPECIALIDADES } from './curriculum/types';
 
 export interface CurriculumDemandaViewProps {
@@ -128,22 +129,38 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   onSincronizarMalla,
   onGestionarPlanes
 }) => {
+  const { can } = usePermisos();
+  const puedeCrearCursos = can('curriculum.crear');
+  const puedeEliminarCursos = can('curriculum.eliminar');
+  const puedePersonalizarPlan = can('curriculum.editar') || can('planes_estudio.editar');
+
   // Modal de Curso Avanzado
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
+  // Modal de Personalización del Plan del Establecimiento
+  const [modalPersonalizarPlanOpen, setModalPersonalizarPlanOpen] = useState(false);
   // Modal de Reconciliación Nómina-Malla
   const [modalReconciliarOpen, setModalReconciliarOpen] = useState(false);
   // Planes personalizados desde SQLite para mantener Single Source of Truth con Nómina Docente
   const [planesDb, setPlanesDb] = useState<PlanEstudioCurricular[]>([]);
 
+  const recargarPlanesColegio = async () => {
+    try {
+      const res = await listarPlanesEstudio(undefined, colegio?.rbd);
+      if (res) setPlanesDb(res);
+    } catch (err) {
+      console.warn('[CurriculumDemandaView] Error al cargar planes:', err);
+    }
+  };
+
   useEffect(() => {
     let cancel = false;
-    listarPlanesEstudio()
+    listarPlanesEstudio(undefined, colegio?.rbd)
       .then(res => {
         if (!cancel && res) setPlanesDb(res);
       })
       .catch(err => console.warn('[CurriculumDemandaView] Error al cargar planes:', err));
     return () => { cancel = true; };
-  }, []);
+  }, [colegio?.rbd]);
 
   // Diagnóstico en tiempo real de coherencia Nómina vs Malla
   const diagSincronizacion = useMemo(() => {
@@ -158,26 +175,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const [filtroCicloCurso, setFiltroCicloCurso] = useState<'TODOS' | 'PARVULARIA' | 'BASICA' | 'MEDIA_HC' | 'MEDIA_TP' | 'MULTIGRADO_COMBINADO' | 'EPJA' | 'ESPECIAL'>('TODOS');
   const [filtroRegimenCurso, setFiltroRegimenCurso] = useState<'TODOS' | 'JEC' | 'No JEC'>('TODOS');
   const [filtroCoberturaCurso, setFiltroCoberturaCurso] = useState<'TODOS' | 'COMPLETO' | 'DEFICIT' | 'SOBRE'>('TODOS');
-
-  // Modales Asignación Aislados (0 lag al tipear)
-  const [modalDocencia, setModalDocencia] = useState<{
-    isOpen: boolean;
-    editandoAsig: AsignacionHoraria | null;
-    asignaturaSugerida?: string;
-    horasSugeridas?: number;
-  }>({ isOpen: false, editandoAsig: null });
-
-  const [modalCoDocencia, setModalCoDocencia] = useState<{
-    isOpen: boolean;
-    editandoAsig: AsignacionHoraria | null;
-    asignaturaSugerida?: string;
-    horasSugeridas?: number;
-  }>({ isOpen: false, editandoAsig: null });
-
-  const [modalPie, setModalPie] = useState<{
-    isOpen: boolean;
-    editandoAsig: AsignacionHoraria | null;
-  }>({ isOpen: false, editandoAsig: null });
 
   // Modal Ajuste NEET/NEEP del Curso
   const [modalNeeOpen, setModalNeeOpen] = useState(false);
@@ -470,150 +467,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     a.tipoApoyo !== 'TRABAJO_COLABORATIVO'
   ).reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
-  // Handlers para abrir los modales aislados (0 lag)
-  const abrirModalNuevaDocencia = (asignaturaSugerida?: string, horasSugeridas?: number) => {
-    setModalDocencia({
-      isOpen: true,
-      editandoAsig: null,
-      asignaturaSugerida,
-      horasSugeridas
-    });
-  };
-
-  const abrirModalEditarDocencia = (asig: AsignacionHoraria) => {
-    setModalDocencia({
-      isOpen: true,
-      editandoAsig: asig
-    });
-  };
-
-  const abrirModalNuevaCoDocencia = (asigSugerida?: string, hrsSugeridas?: number) => {
-    setModalCoDocencia({
-      isOpen: true,
-      editandoAsig: null,
-      asignaturaSugerida: asigSugerida,
-      horasSugeridas: hrsSugeridas
-    });
-  };
-
-  const abrirModalEditarCoDocencia = (asig: AsignacionHoraria) => {
-    setModalCoDocencia({
-      isOpen: true,
-      editandoAsig: asig
-    });
-  };
-
-  const abrirModalNuevoPie = () => {
-    setModalPie({
-      isOpen: true,
-      editandoAsig: null
-    });
-  };
-
-  const abrirModalEditarPie = (asig: AsignacionHoraria) => {
-    setModalPie({
-      isOpen: true,
-      editandoAsig: asig
-    });
-  };
-
-  // Auto-asignación asistida Jidoka para PIE en este curso
-  const handleAutoAsignarPieCurso = async () => {
-    if (!cursoActivo || !onGuardarAsignacion) return;
-
-    const educadores = docentes.filter(d => d.estamento === 'DOCENTE_DIFERENCIAL');
-    const asistentesPae = docentes.filter(d => d.estamento === 'PROFESIONAL_PAE');
-    const docentesAula = docentes.filter(d => d.estamento === 'DOCENTE_AULA');
-
-    if (educadores.length === 0 && asistentesPae.length === 0) {
-      alert('No se encontraron Educadoras Diferenciales ni Profesionales Asistentes PAE en la dotación del establecimiento.');
-      return;
-    }
-
-    const hrsDifDemandadas = demandaPieCurso.horasDiferencialDecimal;
-    const hrsPaeDemandadas = demandaPieCurso.horasPaeDecimal;
-
-    let asignadasCount = 0;
-
-    // 1. Asignar Docente Diferencial si falta cobertura
-    if (desglosePieAsignado.dif < hrsDifDemandadas && educadores.length > 0) {
-      // Buscar el educador con más horas disponibles
-      const docDif = educadores.reduce((best, cur) => {
-        const dispBest = disponibilidadDocentes.get(best.id)?.horasLibres || 0;
-        const dispCur = disponibilidadDocentes.get(cur.id)?.horasLibres || 0;
-        return dispCur > dispBest ? cur : best;
-      }, educadores[0]);
-
-      const falta = parseFloat((hrsDifDemandadas - desglosePieAsignado.dif).toFixed(1));
-      const asigDif: AsignacionHoraria = {
-        id: `auto-pie-dif-${cursoActivo.id}-${Date.now()}`,
-        rbd: colegio.rbd,
-        periodo: periodoActivo,
-        cursoId: cursoActivo.id,
-        docenteId: docDif.id,
-        asignatura: 'Apoyo PIE - Co-Docencia Aula Común (Decreto 170)',
-        horasPedagogicasAula: Math.round(falta * 1.333),
-        horasCronologicasPie: falta,
-        esCoDocencia: true,
-        tipoApoyo: 'Co-Docencia en Aula Regular'
-      };
-      await onGuardarAsignacion(asigDif);
-      asignadasCount++;
-    }
-
-    // 2. Asignar Profesional PAE si falta cobertura
-    if (desglosePieAsignado.pae < hrsPaeDemandadas && asistentesPae.length > 0) {
-      const paeDoc = asistentesPae.reduce((best, cur) => {
-        const dispBest = disponibilidadDocentes.get(best.id)?.horasLibres || 0;
-        const dispCur = disponibilidadDocentes.get(cur.id)?.horasLibres || 0;
-        return dispCur > dispBest ? cur : best;
-      }, asistentesPae[0]);
-
-      const faltaPae = parseFloat((hrsPaeDemandadas - desglosePieAsignado.pae).toFixed(1));
-      const asigPae: AsignacionHoraria = {
-        id: `auto-pie-pae-${cursoActivo.id}-${Date.now()}`,
-        rbd: colegio.rbd,
-        periodo: periodoActivo,
-        cursoId: cursoActivo.id,
-        docenteId: paeDoc.id,
-        asignatura: `Apoyo Especializado PAE - ${paeDoc.titulo || 'Profesional Asistente'}`,
-        horasPedagogicasAula: Math.round(faltaPae * 1.333),
-        horasCronologicasPie: faltaPae,
-        esCoDocencia: true,
-        tipoApoyo: 'Apoyo Multidisciplinario / Clínico PAE'
-      };
-      await onGuardarAsignacion(asigPae);
-      asignadasCount++;
-    }
-
-    // 3. Asignar Horas Colaborativas si faltan (3.0 hrs Art. 86)
-    if (desglosePieAsignado.colab < 3.0) {
-      // Buscar un docente de aula que efectivamente tenga horas asignadas en este curso
-      const docAula = docentesAula.find(d => 
-        asignaciones.some(a => a.cursoId === cursoActivo.id && (a.docenteId === d.id || a.coDocenteId === d.id))
-      );
-      if (docAula) {
-        const asigColab: AsignacionHoraria = {
-          id: `auto-pie-colab-${cursoActivo.id}-${Date.now()}`,
-          rbd: colegio.rbd,
-          periodo: periodoActivo,
-          cursoId: cursoActivo.id,
-          docenteId: docAula.id,
-          asignatura: 'Trabajo Colaborativo / Co-Planificación (Art. 86)',
-          horasPedagogicasAula: 4,
-          horasCronologicasPie: 3.0,
-          esCoDocencia: true,
-          esTrabajoColaborativo: true,
-          tipoApoyo: 'Trabajo Colaborativo / Co-Planificación'
-        };
-        await onGuardarAsignacion(asigColab);
-        asignadasCount++;
-      }
-    }
-
-    alert(`¡Asignación Inteligente Jidoka Completada! Se generaron ${asignadasCount} asignaciones PIE para ${cursoActivo.nivel} ${cursoActivo.letra}.`);
-  };
-
   const hayFiltrosCursoActivos = busquedaCurso !== '' || filtroCicloCurso !== 'TODOS' || filtroRegimenCurso !== 'TODOS' || filtroCoberturaCurso !== 'TODOS';
 
   const limpiarFiltrosCurso = () => {
@@ -744,24 +597,28 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setModalCombinarOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-all cursor-pointer"
-            title="Combinar dos o más cursos del establecimiento en un aula multigrado/combinada"
-          >
-            <Layers className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Combinar Cursos</span>
-          </button>
+          {puedeCrearCursos && (
+            <>
+              <button
+                type="button"
+                onClick={() => setModalCombinarOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                title="Combinar dos o más cursos del establecimiento en un aula multigrado/combinada"
+              >
+                <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Combinar Cursos</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setModalCursoOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Agregar Curso</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setModalCursoOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar Curso</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -795,18 +652,20 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
               <span>Cursos ({cursos.length})</span>
             </h3>
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setCursoInicialCombinar(undefined);
-                  setModalCombinarOpen(true);
-                }}
-                className="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
-                title="Combinar 2 o más cursos creados"
-              >
-                <Layers className="w-3 h-3 text-indigo-600" />
-                <span>Combinar</span>
-              </button>
+              {puedeCrearCursos && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCursoInicialCombinar(undefined);
+                    setModalCombinarOpen(true);
+                  }}
+                  className="text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"
+                  title="Combinar 2 o más cursos creados"
+                >
+                  <Layers className="w-3 h-3 text-indigo-600" />
+                  <span>Combinar</span>
+                </button>
+              )}
               <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">
                 {cursosFiltrados.length} visibles
               </span>
@@ -1017,7 +876,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1">
-                        {(c.esCombinado || c.tipoModalidad === 'COMBINADO' || (c.gradosCombinados && c.gradosCombinados.length >= 2)) ? (
+                        {puedeCrearCursos && ((c.esCombinado || c.tipoModalidad === 'COMBINADO' || (c.gradosCombinados && c.gradosCombinados.length >= 2)) ? (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1044,20 +903,22 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                             <Layers className="w-3 h-3 text-indigo-500" />
                             <span>Combinar</span>
                           </button>
+                        ))}
+                        {puedeEliminarCursos && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`¿Eliminar ${c.nivel} ${c.letra} y todas sus asignaciones?`)) {
+                                onEliminarCurso(c.id);
+                              }
+                            }}
+                            title="Eliminar curso"
+                            className="text-slate-400 hover:text-red-600 p-1 transition-colors rounded hover:bg-red-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(`¿Eliminar ${c.nivel} ${c.letra} y todas sus asignaciones?`)) {
-                              onEliminarCurso(c.id);
-                            }
-                          }}
-                          title="Eliminar curso"
-                          className="text-slate-400 hover:text-red-600 p-1 transition-colors rounded hover:bg-red-50"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
                     </div>
 
@@ -1133,14 +994,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     Talleres extraescolares, robótica, academias, deportes, artes, teatro y refuerzo pedagógico SEP transversal.
                   </p>
                 </div>
-
-                <button
-                  onClick={() => abrirModalNuevaDocencia('Taller de Robótica / Extraescolar', 4)}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Crear Taller Transversal</span>
-                </button>
               </div>
 
               {/* Métricas de Talleres Transversales */}
@@ -1228,29 +1081,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => abrirModalEditarDocencia(asig)}
-                                  className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50"
-                                  title="Editar taller"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (confirm(`¿Eliminar el taller "${asig.asignatura}"?`)) {
-                                      if (onEliminarAsignacion) await onEliminarAsignacion(asig.id);
-                                    }
-                                  }}
-                                  className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-                                  title="Eliminar taller"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                            <td className="px-4 py-3 text-center text-[10px] text-slate-400">
+                              Solo lectura
                             </td>
                           </tr>
                         );
@@ -1362,22 +1194,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           </div>
                         </div>
                         {dotacionParvularia.horasContratoSegundaEducadoraRestante > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setModalCoDocencia({
-                                isOpen: true,
-                                editandoAsig: null,
-                                asignaturaSugerida: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
-                                horasSugeridas: dotacionParvularia.horasAulaSegundaEducadoraRestante || dotacionParvularia.horasContratoSegundaEducadoraRestante
-                              });
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
-                            title="Asignar horas de permanencia restantes a una 2da Educadora"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Asignar 2da Educadora ({dotacionParvularia.minutosDeficitRestanteTexto} aula / {dotacionParvularia.horasContratoSegundaEducadoraRestante}h contrato)</span>
-                          </button>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold bg-teal-100 text-teal-900 rounded-xl border border-teal-200">
+                            Requiere 2da Educadora ({dotacionParvularia.minutosDeficitRestanteTexto} aula / {dotacionParvularia.horasContratoSegundaEducadoraRestante}h contrato — gestionar en Docentes Ley 20.903)
+                          </span>
                         )}
                       </div>
 
@@ -1441,62 +1260,20 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     </div>
                   )}
 
-                  {/* Controles de Ajuste Rápido del Curso */}
-                  <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-bold text-slate-600">Jornada:</span>
-                      <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
-                        <button
-                          type="button"
-                          onClick={() => onGuardarCurso({ ...cursoActivo, regimen: 'JEC' })}
-                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
-                            cursoActivo.regimen === 'JEC'
-                              ? 'bg-orange-600 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          JEC (38h)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onGuardarCurso({ ...cursoActivo, regimen: 'No JEC' })}
-                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
-                            cursoActivo.regimen === 'No JEC'
-                              ? 'bg-slate-800 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          No JEC (30h)
-                        </button>
-                      </div>
+                  {/* Parámetros Informativos del Curso (solo lectura desde Cursos y Planes MINEDUC) */}
+                  <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-slate-100">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                      <span className="font-bold text-slate-600">Jornada:</span>
+                      <span className={`font-extrabold ${cursoActivo.regimen === 'JEC' ? 'text-orange-700' : 'text-slate-800'}`}>
+                        {cursoActivo.regimen === 'JEC' ? 'JEC (38h)' : 'No JEC (30h)'}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-bold text-slate-600">Régimen Docente:</span>
-                      <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
-                        <button
-                          type="button"
-                          onClick={() => onGuardarCurso({ ...cursoActivo, regimenProporcion: '65_35' })}
-                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
-                            (cursoActivo.regimenProporcion || '65_35') === '65_35'
-                              ? 'bg-blue-600 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          65/35 (Estándar)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onGuardarCurso({ ...cursoActivo, regimenProporcion: '60_40' })}
-                          className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
-                            cursoActivo.regimenProporcion === '60_40'
-                              ? 'bg-purple-600 text-white shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          60/40 (Vulnerabilidad)
-                        </button>
-                      </div>
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                      <span className="font-bold text-slate-600">Régimen Docente:</span>
+                      <span className={`font-extrabold ${cursoActivo.regimenProporcion === '60_40' ? 'text-purple-700' : 'text-blue-700'}`}>
+                        {cursoActivo.regimenProporcion === '60_40' ? '60/40 (Vulnerabilidad)' : '65/35 (Estándar)'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1617,20 +1394,23 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 <div className="space-y-4 pt-2">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-orange-50/60 p-3 rounded-lg border border-orange-100">
                     <div>
-                      <h4 className="text-xs font-bold text-orange-950">Malla Curricular Obligatoria</h4>
+                      <h4 className="text-xs font-bold text-orange-950">Malla Curricular y Cobertura del Curso</h4>
                       <p className="text-[11px] text-orange-800/80">
-                        Asigna profesores y horas pedagógicas semanales (HA) para cubrir el plan obligatorio de este curso.
+                        Visualiza la cobertura horaria del plan de estudio de este curso. La asignación de docentes se realiza en <strong>Docentes Ley 20.903</strong>.
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => abrirModalNuevaDocencia()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all whitespace-nowrap"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>+ Asignar Docente / Asignatura</span>
-                    </button>
+                    {puedePersonalizarPlan && (
+                      <button
+                        type="button"
+                        onClick={() => setModalPersonalizarPlanOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all whitespace-nowrap cursor-pointer"
+                        title="Crear asignaturas o personalizar las horas del plan exclusivamente para este establecimiento"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Personalizar Plan de la Escuela</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Tabla de Asignaciones de Aula Regular */}
@@ -1649,7 +1429,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                         {asignacionesPlanRegularCurso.length === 0 ? (
                           <tr>
                             <td colSpan={5} className="p-6 text-center text-slate-400 italic">
-                              No hay docentes ni asignaturas asignadas a este curso aún. Haz clic en <strong>"+ Asignar Docente / Asignatura"</strong> o selecciona una materia del plan sugerido abajo.
+                              No hay docentes asignados a este curso aún. Las asignaciones docentes se gestionan desde el módulo <strong>Docentes Ley 20.903</strong>.
                             </td>
                           </tr>
                         ) : (
@@ -1708,29 +1488,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                     </span>
                                   )}
                                 </td>
-                                <td className="px-4 py-2.5 text-right">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => abrirModalEditarDocencia(a)}
-                                      className="p-1 text-slate-400 hover:text-blue-600 rounded transition-colors"
-                                      title="Editar horas o docente"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        if (confirm(`¿Eliminar la asignación de ${a.asignatura}?`)) {
-                                          if (onEliminarAsignacion) await onEliminarAsignacion(a.id);
-                                        }
-                                      }}
-                                      className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
-                                      title="Eliminar asignación"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
+                                <td className="px-4 py-2.5 text-right text-[10px] text-slate-400">
+                                  Solo lectura
                                 </td>
                               </tr>
                             );
@@ -1786,13 +1545,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                               </div>
 
                               {!cubierto && (
-                                <button
-                                  type="button"
-                                  onClick={() => abrirModalNuevaDocencia(b.nucleo, hrsRestantes)}
-                                  className="px-2 py-1 bg-teal-100 hover:bg-teal-200 text-teal-900 text-[10px] font-bold rounded transition-colors shrink-0"
-                                >
-                                  + Asignar ({hrsRestantes}h)
-                                </button>
+                                <span className="px-2 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold rounded shrink-0">
+                                  Faltan {hrsRestantes}h
+                                </span>
                               )}
                             </div>
                           );
@@ -1827,13 +1582,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                             </div>
 
                             {!yaAsignada && (
-                              <button
-                                type="button"
-                                onClick={() => abrirModalNuevaDocencia(asigDisp.nombre, horasRestantesAsig)}
-                                className="px-2 py-1 bg-orange-100 hover:bg-orange-200 text-orange-800 text-[10px] font-bold rounded transition-colors shrink-0"
-                              >
-                                + Asignar ({horasRestantesAsig}h)
-                              </button>
+                              <span className="px-2 py-0.5 bg-orange-50 text-orange-800 border border-orange-200 text-[10px] font-bold rounded shrink-0">
+                                Faltan {horasRestantesAsig}h
+                              </span>
                             )}
                           </div>
                         );
@@ -1867,14 +1618,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                               </div>
 
                               {horasJecRestantes > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => abrirModalNuevaDocencia('Taller JEC / Libre Disposición', Math.min(horasJecRestantes, 2))}
-                                  className="px-2 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[10px] font-bold rounded transition-colors"
-                                  title="Asignar horas de libre disposición / Taller JEC"
-                                >
-                                  + Asignar
-                                </button>
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold rounded shrink-0">
+                                  Disp: {horasJecRestantes}h
+                                </span>
                               )}
                             </div>
                           );
@@ -1916,14 +1662,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                 </div>
 
                                 {!electivoAsignado && (
-                                  <button
-                                    type="button"
-                                    onClick={() => abrirModalNuevaDocencia('Plan Común Electivo (Historia / Artes / Ed. Física / Religión)', 2)}
-                                    className="px-2 py-1 bg-blue-200 hover:bg-blue-300 text-blue-900 text-[10px] font-bold rounded transition-colors"
-                                    title="Asignar 2 HA del Plan Común Electivo con cargo a libre disposición"
-                                  >
-                                    + Asignar
-                                  </button>
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-bold rounded shrink-0">
+                                    Pendiente (2h)
+                                  </span>
                                 )}
                               </div>
                             );
@@ -1949,18 +1690,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                         Co-Docencia, Agrupaciones Flexibles y Refuerzo de Aula
                       </h4>
                       <p className="text-[11px] text-indigo-900/80 mt-0.5 max-w-xl">
-                        Asigna docentes o funcionarios de apoyo (segundo profesor, división de grupos, refuerzo pedagógico). Suman horas al contrato del funcionario pero <strong>no inflan el plan de estudio oficial del curso</strong> ({horasPlanCurso} HA).
+                        Visualiza docentes o funcionarios de apoyo en sala. Las asignaciones se gestionan desde el módulo <strong>Docentes Ley 20.903</strong> y no inflan el plan de estudio oficial del curso ({horasPlanCurso} HA).
                       </p>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => abrirModalNuevaCoDocencia()}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all whitespace-nowrap"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>+ Asignar Co-Docencia</span>
-                    </button>
                   </div>
 
                   {/* Tarjetas Resumen de Co-Docencia */}
@@ -2014,7 +1746,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                         {asignacionesCoDocenciaCurso.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="p-6 text-center text-slate-400 italic">
-                              No hay registros de co-docencia ni agrupaciones flexibles en este curso. Usa el botón <strong>"+ Asignar Co-Docencia"</strong> para agregar un docente de apoyo en sala.
+                              No hay registros de co-docencia ni agrupaciones flexibles en este curso. Las asignaciones se gestionan desde el módulo <strong>Docentes Ley 20.903</strong>.
                             </td>
                           </tr>
                         ) : (
@@ -2073,29 +1805,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                     </span>
                                   )}
                                 </td>
-                                <td className="px-4 py-2.5 text-right">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => abrirModalEditarCoDocencia(a)}
-                                      className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
-                                      title="Editar co-docencia"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        if (confirm(`¿Eliminar el apoyo de co-docencia en ${a.asignatura}?`)) {
-                                          if (onEliminarAsignacion) await onEliminarAsignacion(a.id);
-                                        }
-                                      }}
-                                      className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
-                                      title="Eliminar co-docencia"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
+                                <td className="px-4 py-2.5 text-right text-[10px] text-slate-400">
+                                  Solo lectura
                                 </td>
                               </tr>
                             );
@@ -2139,16 +1850,6 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           className="px-3 py-1.5 bg-purple-800/60 hover:bg-purple-700 text-purple-100 text-xs font-bold rounded-lg border border-purple-600 transition-colors"
                         >
                           Ajustar Cupos PIE
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleAutoAsignarPieCurso}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-lg shadow-sm transition-all"
-                          title="Auto-asignar horas PIE con docentes y asistentes disponibles en el establecimiento"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>⚡ Auto-Asignar PIE (Jidoka)</span>
                         </button>
                       </div>
                     </div>
@@ -2197,25 +1898,16 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Acciones y Botón Asignar PIE */}
+                  {/* Listado de Profesionales PIE (solo lectura) */}
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-xs font-bold text-slate-800">
                         Profesionales y Asistentes Asignados al Apoyo PIE ({asignacionesPieCurso.length})
                       </h4>
                       <p className="text-[11px] text-slate-500">
-                        Incluye Educadoras Diferenciales, Asistentes de la Educación Profesionales (PAE) y Técnicos.
+                        Incluye Educadoras Diferenciales, Asistentes de la Educación Profesionales (PAE) y Técnicos (asignación desde Auditoría PIE / Docentes).
                       </p>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={abrirModalNuevoPie}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-lg shadow-xs transition-all"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>+ Asignar Profesional PIE</span>
-                    </button>
                   </div>
 
                   {/* Tabla de Asignaciones PIE */}
@@ -2234,7 +1926,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                         {asignacionesPieCurso.length === 0 ? (
                           <tr>
                             <td colSpan={5} className="p-6 text-center text-slate-400 italic">
-                              No se han asignado profesionales PIE a este curso. Usa el botón <strong>"+ Asignar Profesional PIE"</strong> o <strong>"⚡ Auto-Asignar PIE"</strong>.
+                              No se han asignado profesionales PIE a este curso. Las asignaciones PIE se gestionan desde <strong>Auditoría PIE</strong> o <strong>Docentes Ley 20.903</strong>.
                             </td>
                           </tr>
                         ) : (
@@ -2305,29 +1997,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                 <td className="px-4 py-2.5 text-center font-bold text-purple-900">
                                   {a.horasCronologicasPie || a.horasPedagogicasAula} hrs/sem
                                 </td>
-                                <td className="px-4 py-2.5 text-right">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => abrirModalEditarPie(a)}
-                                      className="p-1 text-slate-400 hover:text-purple-600 rounded transition-colors"
-                                      title="Editar asignación PIE"
-                                    >
-                                      <Edit2 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        if (confirm(`¿Eliminar la asignación de apoyo PIE para este curso?`)) {
-                                          if (onEliminarAsignacion) await onEliminarAsignacion(a.id);
-                                        }
-                                      }}
-                                      className="p-1 text-slate-400 hover:text-red-600 rounded transition-colors"
-                                      title="Eliminar asignación"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
+                                <td className="px-4 py-2.5 text-right text-[10px] text-slate-400">
+                                  Solo lectura
                                 </td>
                               </tr>
                             );
@@ -2341,7 +2012,12 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
               {/* SUBPESTAÑA 3: MALLA Y PLAN OFICIAL MINEDUC */}
               {tabCurso === 'malla' && (
-                <MallaPlanPanel planActivo={planActivo} onGestionarPlanes={onGestionarPlanes} />
+                <MallaPlanPanel
+                  planActivo={planActivo}
+                  infoPlanActual={infoPlanActivo}
+                  onGestionarPlanes={onGestionarPlanes}
+                  onPersonalizarPlanColegio={puedePersonalizarPlan ? () => setModalPersonalizarPlanOpen(true) : undefined}
+                />
               )}
             </div>
           ) : (
@@ -2352,68 +2028,63 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         </div>
       </div>
 
-      {/* MODAL 1: AGREGAR CURSO (REGULAR, MULTIGRADO, COMBINADO, EPJA) */}
-      <CursoModalForm
-        isOpen={modalCursoOpen}
-        onClose={() => setModalCursoOpen(false)}
-        rbd={colegio.rbd}
-        colegio={colegio}
-        periodoActivo={periodoActivo}
-        cursosExistentes={cursos}
-        onGuardarCurso={onGuardarCurso}
-        onCombinarCursos={handleConfirmarCombinarCursos}
-        onCursoCreado={(nuevoId) => setCursoSeleccionadoPlan(nuevoId)}
-      />
+      {/* MODAL 1: AGREGAR CURSO (SOLO ASESORES, COORDINADORES Y SUPER USUARIO) */}
+      {puedeCrearCursos && (
+        <CursoModalForm
+          isOpen={modalCursoOpen}
+          onClose={() => setModalCursoOpen(false)}
+          rbd={colegio.rbd}
+          colegio={colegio}
+          periodoActivo={periodoActivo}
+          cursosExistentes={cursos}
+          onGuardarCurso={onGuardarCurso}
+          onCombinarCursos={handleConfirmarCombinarCursos}
+          onCursoCreado={(nuevoId) => setCursoSeleccionadoPlan(nuevoId)}
+        />
+      )}
 
-      {/* MODALES AISLADOS DE ASIGNACIÓN (0 LAG AL TIPEAR) */}
-      {onGuardarAsignacion && (
-        <>
-          <ModalAsignarDocencia
-            isOpen={modalDocencia.isOpen}
-            onClose={() => setModalDocencia({ isOpen: false, editandoAsig: null })}
-            onGuardar={onGuardarAsignacion}
-            cursoActivo={cursoActivo}
-            esModoTransversal={esModoTransversal}
-            colegio={colegio}
-            periodoActivo={periodoActivo}
-            editandoAsig={modalDocencia.editandoAsig}
-            asignaturaSugerida={modalDocencia.asignaturaSugerida}
-            horasSugeridas={modalDocencia.horasSugeridas}
-            docentes={docentes}
-            disponibilidadDocentes={disponibilidadDocentes}
-            planActivo={planActivo}
-            cursos={cursos}
-          />
-
-          <ModalAsignarCoDocencia
-            isOpen={modalCoDocencia.isOpen}
-            onClose={() => setModalCoDocencia({ isOpen: false, editandoAsig: null })}
-            onGuardar={onGuardarAsignacion}
-            cursoActivo={cursoActivo}
-            colegio={colegio}
-            periodoActivo={periodoActivo}
-            editandoAsig={modalCoDocencia.editandoAsig}
-            asignaturaSugerida={modalCoDocencia.asignaturaSugerida}
-            horasSugeridas={modalCoDocencia.horasSugeridas}
-            docentes={docentes}
-            disponibilidadDocentes={disponibilidadDocentes}
-            planActivo={planActivo}
-            horasPlanCurso={horasPlanCurso}
-          />
-
-          <ModalAsignarPie
-            isOpen={modalPie.isOpen}
-            onClose={() => setModalPie({ isOpen: false, editandoAsig: null })}
-            onGuardar={onGuardarAsignacion}
-            cursoActivo={cursoActivo}
-            colegio={colegio}
-            periodoActivo={periodoActivo}
-            editandoAsig={modalPie.editandoAsig}
-            docentes={docentes}
-            disponibilidadDocentes={disponibilidadDocentes}
-            demandaPieCurso={demandaPieCurso}
-          />
-        </>
+      {/* MODAL PERSONALIZAR PLAN DE ESTUDIO DEL ESTABLECIMIENTO (SIN AFECTAR BASE GENERAL) */}
+      {cursoActivo && (
+        <PersonalizarPlanColegioModal
+          isOpen={modalPersonalizarPlanOpen}
+          onClose={() => setModalPersonalizarPlanOpen(false)}
+          colegio={colegio}
+          curso={cursoActivo}
+          infoPlanActual={infoPlanActivo}
+          planColegioExistente={
+            planesDb.find(
+              p =>
+                p.rbd === colegio.rbd &&
+                (p.id === cursoActivo.planEstudioId ||
+                  (p.nivel.trim().toLowerCase() === cursoActivo.nivel.trim().toLowerCase() &&
+                    p.regimen === cursoActivo.regimen))
+            ) || null
+          }
+          onGuardarPlanColegio={async (planColegio) => {
+            const guardado = await guardarPlanEstudioColegio(colegio.rbd, planColegio);
+            await recargarPlanesColegio();
+            const cursosMismoNivel = cursos.filter(
+              c =>
+                c.rbd === colegio.rbd &&
+                c.nivel.trim().toLowerCase() === guardado.nivel.trim().toLowerCase() &&
+                c.regimen === guardado.regimen
+            );
+            for (const c of cursosMismoNivel) {
+              if (c.planEstudioId !== guardado.id) {
+                await onGuardarCurso({ ...c, planEstudioId: guardado.id });
+              }
+            }
+          }}
+          onRestaurarPlanOficial={async (planId) => {
+            await eliminarPlanEstudioColegio(colegio.rbd, planId);
+            await recargarPlanesColegio();
+            for (const c of cursos) {
+              if (c.planEstudioId === planId) {
+                await onGuardarCurso({ ...c, planEstudioId: undefined });
+              }
+            }
+          }}
+        />
       )}
 
       {/* MODAL 4: AJUSTAR ALUMNOS NEET / NEEP DEL CURSO */}

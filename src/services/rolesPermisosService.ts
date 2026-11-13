@@ -114,7 +114,15 @@ export class RolesPermisosService {
           const r = parsed[rol];
           if (r && Array.isArray(r.permisos)) {
             base[rol] = {
-              permisos: normalizarPermisos(rol, r.permisos),
+              permisos: normalizarPermisos(
+                rol,
+                (rol === 'coordinador_uatp' || rol === 'asesor_uatp') &&
+                r.permisos.includes('curriculum.editar') &&
+                !r.permisos.includes('curriculum.crear') &&
+                storage()?.getItem('slep_permisos_curriculum_crear_migrated_v1') !== '1'
+                  ? [...r.permisos, 'curriculum.crear']
+                  : r.permisos
+              ),
               version: r.version || 1,
               actualizadoEn: r.actualizadoEn || base[rol].actualizadoEn,
               actualizadoPor: r.actualizadoPor || 'desconocido'

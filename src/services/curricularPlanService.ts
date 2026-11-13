@@ -138,9 +138,24 @@ export function resolverPlanCurso(
   const esJec = !esNivelEpja && curso.regimen === 'JEC';
   const talleresCurso = esNivelEpja ? [] : (curso.talleresJec || []);
 
-  // 1. Plan de estudio personalizado asignado en BD
-  if (curso.planEstudioId && planesDb.length > 0) {
-    const planDb = planesDb.find(p => p.id === curso.planEstudioId);
+  const planesAplicables = planesDb.filter(p => !p.rbd || p.rbd === curso.rbd);
+
+  // 1. Plan de estudio personalizado asignado en BD (por ID o por coincidencia escuela + nivel + régimen)
+  if (planesAplicables.length > 0) {
+    const regimenObjetivo = esNivelEpja ? 'JEC' : curso.regimen;
+    const planPorId = curso.planEstudioId
+      ? (planesAplicables.find(p => p.id === curso.planEstudioId && p.rbd === curso.rbd) ||
+         planesAplicables.find(p => p.id === curso.planEstudioId))
+      : undefined;
+    const planPorEscuelaNivel = !planPorId
+      ? planesAplicables.find(
+          p =>
+            p.rbd === curso.rbd &&
+            p.nivel.trim().toLowerCase() === curso.nivel.trim().toLowerCase() &&
+            p.regimen === regimenObjetivo
+        )
+      : undefined;
+    const planDb = planPorId || planPorEscuelaNivel;
     if (planDb && planDb.asignaturas && planDb.asignaturas.length > 0) {
       const esPlanEpja = esNivelEpja || planDb.categoria === 'EPJA' || esCursoModalidadEpja(curso, { nombrePlan: planDb.nivel, categoria: planDb.categoria });
       const esJecReal = !esPlanEpja && (planDb.regimen === 'JEC' || esJec);

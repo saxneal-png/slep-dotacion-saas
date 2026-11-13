@@ -46,7 +46,7 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
 
   useEffect(() => {
     let cancel = false;
-    listarPlanesEstudio()
+    listarPlanesEstudio(undefined, colegio.rbd)
       .then(list => {
         if (!cancel) setPlanesDb(list);
       })

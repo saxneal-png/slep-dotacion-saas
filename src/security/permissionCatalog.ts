@@ -31,14 +31,15 @@ export const GRUPOS_PERMISOS: { id: GrupoPermiso; nombre: string; descripcion: s
 
 export const ACCIONES_ETIQUETAS: Record<AccionPermiso, string> = {
   ver: 'Ver',
-  editar: 'Crear / Editar',
+  crear: 'Crear',
+  editar: 'Editar',
   eliminar: 'Eliminar',
   importar: 'Importar',
   exportar: 'Exportar',
   ejecutar: 'Ejecutar'
 };
 
-export const ACCIONES_ORDEN: AccionPermiso[] = ['ver', 'editar', 'eliminar', 'importar', 'exportar', 'ejecutar'];
+export const ACCIONES_ORDEN: AccionPermiso[] = ['ver', 'crear', 'editar', 'eliminar', 'importar', 'exportar', 'ejecutar'];
 
 /** Catálogo maestro de funciones del SaaS. Fuente única de verdad para matriz, guards y pruebas. */
 export const CATALOGO_PERMISOS: ModuloPermiso[] = [
@@ -51,7 +52,7 @@ export const CATALOGO_PERMISOS: ModuloPermiso[] = [
   // ── Establecimiento ──
   { id: 'workflow', nombre: 'Espacio Escolar', descripcion: 'Espacio de trabajo del establecimiento', grupo: 'establecimiento', acciones: ['ver'] },
   { id: 'salas_sae', nombre: 'Salas & Cupos SAE', descripcion: 'Infraestructura y aforos Dto. 548', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
-  { id: 'curriculum', nombre: 'Cursos y Currículum', descripcion: 'Cursos, mallas y demanda curricular', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
+  { id: 'curriculum', nombre: 'Cursos y Currículum', descripcion: 'Cursos, mallas y demanda curricular', grupo: 'establecimiento', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
   { id: 'planes_estudio', nombre: 'Planes de Estudio', descripcion: 'Catálogo de planes MINEDUC y EPJA', grupo: 'establecimiento', acciones: ['ver', 'editar'] },
   { id: 'docentes', nombre: 'Docentes Ley 20.903', descripcion: 'Nómina docente y asignaciones horarias', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
   { id: 'asistentes', nombre: 'Asistentes de la Educación', descripcion: 'Ley 21.109, duplas SEP y PIE', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
@@ -168,17 +169,22 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
   ]
 };
 
+/** Roles autorizados para crear/combinar cursos en establecimientos. */
+export const ROLES_PUEDEN_CREAR_CURSOS: RolId[] = ['super_usuario', 'coordinador_uatp', 'asesor_uatp'];
+
 /**
  * Normaliza un conjunto de permisos aplicando las reglas de dependencia:
  * - cualquier acción distinta de `ver` implica `ver` (si el módulo tiene `ver`);
  * - se descartan claves inválidas y duplicadas;
- * - las claves reservadas solo se conservan para el super usuario.
+ * - las claves reservadas solo se conservan para el super usuario;
+ * - `curriculum.crear` está restringido exclusivamente a asesores, coordinadores y super usuario.
  */
 export function normalizarPermisos(rolId: RolId, permisos: string[]): PermisoKey[] {
   const set = new Set<PermisoKey>();
   for (const p of permisos) {
     if (!esClaveValida(p)) continue;
     if (rolId !== 'super_usuario' && esClaveReservada(p)) continue;
+    if (p === 'curriculum.crear' && !ROLES_PUEDEN_CREAR_CURSOS.includes(rolId)) continue;
     set.add(p);
     const [mod, accion] = p.split('.') as [string, AccionPermiso];
     if (accion !== 'ver' && getModulo(mod)?.acciones.includes('ver')) {

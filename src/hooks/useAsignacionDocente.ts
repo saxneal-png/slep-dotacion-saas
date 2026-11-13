@@ -54,7 +54,7 @@ export function useAsignacionDocente(
 
   useEffect(() => {
     let cancel = false;
-    listarPlanesEstudio()
+    listarPlanesEstudio(undefined, colegio.rbd)
       .then(list => {
         if (!cancel) setPlanesDb(list);
       })

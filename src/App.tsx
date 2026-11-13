@@ -735,6 +735,11 @@ export const App: React.FC = () => {
   };
 
   const handleGuardarCurso = async (c: CursoSae) => {
+    const esNuevoCurso = !cursos.some(x => x.id === c.id) && !todosLosCursos.some(x => x.id === c.id);
+    if (esNuevoCurso && !evaluadorPermisos.can('curriculum.crear')) {
+      mostrarMensaje('No tienes permiso para crear cursos. Solo asesores, coordinadores y super usuarios pueden crear cursos.', 'error');
+      return;
+    }
     await guardarCurso(c);
     if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
     const allCursos = await listarTodosLosCursos(periodoActivo);

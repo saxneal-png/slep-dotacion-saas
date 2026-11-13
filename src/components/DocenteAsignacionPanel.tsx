@@ -1878,13 +1878,13 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
   useEffect(() => {
     let cancel = false;
-    listarPlanesEstudio()
+    listarPlanesEstudio(undefined, colegio.rbd)
       .then(res => {
         if (!cancel && res) setPlanesDb(res);
       })
       .catch(err => console.warn('Error al cargar planes de estudio:', err));
     return () => { cancel = true; };
-  }, []);
+  }, [colegio.rbd]);
 
   const asignacionesDocente = useMemo(() => {
     return asignaciones.filter(a => {

@@ -85,10 +85,13 @@ export {
 
 export {
   listarPlanesEstudio,
+  listarPlanesEstudioColegio,
   obtenerPlanEstudioPorId,
   obtenerPlanEstudioPorNivelYRegimen,
   guardarPlanEstudio,
+  guardarPlanEstudioColegio,
   eliminarPlanEstudio,
+  eliminarPlanEstudioColegio,
   adjuntarPlanACursos,
   poblarPlanesEstudioEnDb,
   PLAN_EPJA_2024_OFICIAL_JSON

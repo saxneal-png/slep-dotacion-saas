@@ -663,7 +663,77 @@ export interface PlanEstudioRegistroDb {
   detallesExtraJson?: string;
 }
 
-export async function listarPlanesEstudio(categoriaFiltro?: string): Promise<PlanEstudioCurricular[]> {
+function mapRowToPlanEstudio(row: any[], rbd?: string): PlanEstudioCurricular {
+  let asignaturas: AsignaturaPlanEstudio[] = [];
+  let ambitosFormativos: AmbitoFormativoPlan[] | undefined = undefined;
+  let extraMeta: any = {};
+
+  if (row[8]) {
+    try {
+      const parsed = JSON.parse(String(row[8]));
+      if (Array.isArray(parsed)) {
+        asignaturas = parsed.map((a: any) => ({
+          id: a.id || `asig-${Math.random().toString(36).substr(2, 9)}`,
+          nombre: a.nombre || a.asignatura || 'Asignatura',
+          horasSemanales: Number(a.horasSemanales || a.horasSugeridas || a.horas || 2),
+          horasAnuales: a.horasAnuales ? Number(a.horasAnuales) : undefined,
+          caracter: a.caracter || 'Obligatoria',
+          ambito: a.ambito
+        }));
+      } else if (parsed && typeof parsed === 'object') {
+        asignaturas = (parsed.asignaturas || []).map((a: any) => ({
+          id: a.id || `asig-${Math.random().toString(36).substr(2, 9)}`,
+          nombre: a.nombre,
+          horasSemanales: Number(a.horasSemanales || a.horas || 2),
+          horasAnuales: a.horasAnuales ? Number(a.horasAnuales) : undefined,
+          caracter: a.caracter || 'Obligatoria',
+          ambito: a.ambito
+        }));
+        ambitosFormativos = parsed.ambitosFormativos;
+        extraMeta = parsed.extraMeta || {};
+      }
+    } catch (_) {}
+  }
+
+  return {
+    id: String(row[0]),
+    nivel: String(row[1]),
+    regimen: row[2] as 'JEC' | 'No JEC',
+    categoria: (row[3] as any) || 'OTRO',
+    documento: extraMeta.documento || (row[3] === 'EPJA' ? 'Bases Curriculares EPJA' : 'Planes de Estudio MINEDUC'),
+    decretoSupremo: row[4] ? String(row[4]) : undefined,
+    ministerio: extraMeta.ministerio || 'Ministerio de Educación - Gobierno de Chile',
+    duracionAnoLectivoSemanas: extraMeta.duracionAnoLectivoSemanas || 36,
+    totalHorasSemanalesObligatorias: Number(row[5]),
+    totalHorasAnualesObligatorias: extraMeta.totalHorasAnualesObligatorias || (Number(row[5]) * 36),
+    horasLibreDisposicion: Number(row[6]),
+    totalHorasPlan: Number(row[7]),
+    ambitosFormativos,
+    asignaturas,
+    organizacionModular: extraMeta.organizacionModular,
+    esPersonalizado: rbd ? true : (extraMeta.esPersonalizado || false),
+    ...(rbd ? { rbd } : {})
+  };
+}
+
+export async function listarPlanesEstudioColegio(rbd: string, categoriaFiltro?: string): Promise<PlanEstudioCurricular[]> {
+  if (!rbd) return [];
+  const db = await getDb();
+  let sql = "SELECT id, nivel, regimen, categoria, referencia_fuente, horas_obligatorias, horas_libre_disposicion, total_horas_plan, asignaturas_json FROM planes_estudio_colegio WHERE rbd = ?";
+  const params: any[] = [rbd];
+
+  if (categoriaFiltro && categoriaFiltro !== 'ALL') {
+    sql += " AND categoria = ?";
+    params.push(categoriaFiltro);
+  }
+  sql += " ORDER BY categoria, nivel, regimen";
+
+  const res = db.exec(sql, params);
+  if (!res.length) return [];
+  return res[0].values.map(row => mapRowToPlanEstudio(row, rbd));
+}
+
+export async function listarPlanesEstudio(categoriaFiltro?: string, rbd?: string): Promise<PlanEstudioCurricular[]> {
   const db = await getDb();
   let sql = "SELECT id, nivel, regimen, categoria, referencia_fuente, horas_obligatorias, horas_libre_disposicion, total_horas_plan, asignaturas_json FROM planes_estudio_mineduc";
   const params: any[] = [];
@@ -675,59 +745,13 @@ export async function listarPlanesEstudio(categoriaFiltro?: string): Promise<Pla
   sql += " ORDER BY categoria, nivel, regimen";
 
   const res = db.exec(sql, params);
-  if (!res.length) return [];
+  const globales = res.length ? res[0].values.map(row => mapRowToPlanEstudio(row)) : [];
 
-  return res[0].values.map(row => {
-    let asignaturas: AsignaturaPlanEstudio[] = [];
-    let ambitosFormativos: AmbitoFormativoPlan[] | undefined = undefined;
-    let extraMeta: any = {};
-
-    if (row[8]) {
-      try {
-        const parsed = JSON.parse(String(row[8]));
-        if (Array.isArray(parsed)) {
-          asignaturas = parsed.map((a: any) => ({
-            id: a.id || `asig-${Math.random().toString(36).substr(2, 9)}`,
-            nombre: a.nombre || a.asignatura || 'Asignatura',
-            horasSemanales: Number(a.horasSemanales || a.horasSugeridas || a.horas || 2),
-            horasAnuales: a.horasAnuales ? Number(a.horasAnuales) : undefined,
-            caracter: a.caracter || 'Obligatoria',
-            ambito: a.ambito
-          }));
-        } else if (parsed && typeof parsed === 'object') {
-          asignaturas = (parsed.asignaturas || []).map((a: any) => ({
-            id: a.id || `asig-${Math.random().toString(36).substr(2, 9)}`,
-            nombre: a.nombre,
-            horasSemanales: Number(a.horasSemanales || a.horas || 2),
-            horasAnuales: a.horasAnuales ? Number(a.horasAnuales) : undefined,
-            caracter: a.caracter || 'Obligatoria',
-            ambito: a.ambito
-          }));
-          ambitosFormativos = parsed.ambitosFormativos;
-          extraMeta = parsed.extraMeta || {};
-        }
-      } catch (_) {}
-    }
-
-    return {
-      id: String(row[0]),
-      nivel: String(row[1]),
-      regimen: row[2] as 'JEC' | 'No JEC',
-      categoria: (row[3] as any) || 'OTRO',
-      documento: extraMeta.documento || (row[3] === 'EPJA' ? 'Bases Curriculares EPJA' : 'Planes de Estudio MINEDUC'),
-      decretoSupremo: row[4] ? String(row[4]) : undefined,
-      ministerio: extraMeta.ministerio || 'Ministerio de Educación - Gobierno de Chile',
-      duracionAnoLectivoSemanas: extraMeta.duracionAnoLectivoSemanas || 36,
-      totalHorasSemanalesObligatorias: Number(row[5]),
-      totalHorasAnualesObligatorias: extraMeta.totalHorasAnualesObligatorias || (Number(row[5]) * 36),
-      horasLibreDisposicion: Number(row[6]),
-      totalHorasPlan: Number(row[7]),
-      ambitosFormativos,
-      asignaturas,
-      organizacionModular: extraMeta.organizacionModular,
-      esPersonalizado: extraMeta.esPersonalizado || false
-    };
-  });
+  if (rbd) {
+    const delColegio = await listarPlanesEstudioColegio(rbd, categoriaFiltro);
+    return [...delColegio, ...globales];
+  }
+  return globales;
 }
 
 export async function obtenerPlanEstudioPorId(id: string): Promise<PlanEstudioCurricular | null> {
@@ -910,6 +934,124 @@ export async function eliminarPlanEstudio(id: string): Promise<void> {
   if (isSupabaseEnabled()) {
     supabase.from('planes_estudio_mineduc').delete().eq('id', id).then(() => {}, (err: any) =>
       console.warn('[planesEstudioRepo] Aviso eliminando en Supabase:', err)
+    );
+  }
+}
+
+/**
+ * Guarda un plan de estudio personalizado exclusivamente para un establecimiento (`rbd`),
+ * sin modificar el catálogo general `planes_estudio_mineduc`.
+ */
+export async function guardarPlanEstudioColegio(
+  rbd: string,
+  plan: PlanEstudioCurricular
+): Promise<PlanEstudioCurricular> {
+  const db = await getDb();
+  const slug = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const idColegio = plan.id && plan.id.startsWith(`colegio_${rbd}_`)
+    ? plan.id
+    : `colegio_${rbd}_${slug(plan.nivel)}_${slug(plan.regimen)}`;
+
+  const asignaturasLimpias = (plan.asignaturas || []).map((a, idx) => ({
+    ...a,
+    id: a.id || `asig-${Date.now()}-${idx}`,
+    nombre: String(a.nombre || '').trim(),
+    horasSemanales: Number(a.horasSemanales) || 0,
+    caracter: a.caracter || 'Obligatoria'
+  })).filter(a => a.nombre.length > 0 && a.horasSemanales > 0);
+
+  const horasObligatorias = asignaturasLimpias.reduce((s, a) => s + a.horasSemanales, 0);
+  const horasLibre = Number(plan.horasLibreDisposicion) || 0;
+  const totalHorasPlan = Math.max(horasObligatorias + horasLibre, Number(plan.totalHorasPlan) || 0);
+
+  const planFinal: PlanEstudioCurricular = {
+    ...plan,
+    id: idColegio,
+    rbd,
+    asignaturas: asignaturasLimpias,
+    totalHorasSemanalesObligatorias: horasObligatorias,
+    horasLibreDisposicion: horasLibre,
+    totalHorasPlan,
+    esPersonalizado: true
+  };
+
+  const payload = {
+    asignaturas: asignaturasLimpias,
+    ambitosFormativos: planFinal.ambitosFormativos,
+    extraMeta: {
+      documento: planFinal.documento || `Plan Personalizado Establecimiento ${rbd}`,
+      ministerio: planFinal.ministerio,
+      duracionAnoLectivoSemanas: planFinal.duracionAnoLectivoSemanas,
+      totalHorasAnualesObligatorias: planFinal.totalHorasAnualesObligatorias,
+      organizacionModular: planFinal.organizacionModular,
+      esPersonalizado: true,
+      rbd
+    }
+  };
+
+  const asigsJson = JSON.stringify(payload);
+  const ahora = new Date().toISOString();
+
+  db.run(
+    `INSERT INTO planes_estudio_colegio (id, rbd, nivel, regimen, categoria, referencia_fuente, horas_obligatorias, horas_libre_disposicion, total_horas_plan, asignaturas_json, actualizado_en)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      nivel=excluded.nivel,
+      regimen=excluded.regimen,
+      categoria=excluded.categoria,
+      referencia_fuente=excluded.referencia_fuente,
+      horas_obligatorias=excluded.horas_obligatorias,
+      horas_libre_disposicion=excluded.horas_libre_disposicion,
+      total_horas_plan=excluded.total_horas_plan,
+      asignaturas_json=excluded.asignaturas_json,
+      actualizado_en=excluded.actualizado_en;`,
+    [
+      idColegio,
+      rbd,
+      planFinal.nivel,
+      planFinal.regimen,
+      planFinal.categoria || null,
+      planFinal.decretoSupremo || `Personalizado RBD ${rbd}`,
+      horasObligatorias,
+      horasLibre,
+      totalHorasPlan,
+      asigsJson,
+      ahora
+    ]
+  );
+  persistDb();
+
+  if (isSupabaseEnabled()) {
+    supabase.from('planes_estudio_colegio').upsert({
+      id: idColegio,
+      rbd,
+      nivel: planFinal.nivel,
+      regimen: planFinal.regimen,
+      categoria: planFinal.categoria || null,
+      referencia_fuente: planFinal.decretoSupremo || `Personalizado RBD ${rbd}`,
+      horas_obligatorias: horasObligatorias,
+      horas_libre_disposicion: horasLibre,
+      total_horas_plan: totalHorasPlan,
+      asignaturas_json: payload,
+      actualizado_en: ahora
+    }, { onConflict: 'id' }).then(() => {}, (err: any) =>
+      console.warn('[planesEstudioRepo] Aviso sincronizando plan colegio con Supabase:', err)
+    );
+  }
+
+  return planFinal;
+}
+
+export async function eliminarPlanEstudioColegio(rbd: string, id: string): Promise<void> {
+  const db = await getDb();
+  db.run("DELETE FROM planes_estudio_colegio WHERE id = ? AND rbd = ?", [id, rbd]);
+  db.run("UPDATE cursos_sae SET plan_estudio_id = NULL WHERE rbd = ? AND plan_estudio_id = ?", [rbd, id]);
+  persistDb();
+
+  if (isSupabaseEnabled()) {
+    supabase.from('planes_estudio_colegio').delete().eq('id', id).eq('rbd', rbd).then(() => {}, (err: any) =>
+      console.warn('[planesEstudioRepo] Aviso eliminando plan colegio en Supabase:', err)
     );
   }
 }
