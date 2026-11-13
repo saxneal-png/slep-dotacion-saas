@@ -302,4 +302,69 @@ describe('Preferencias personalizables de vista de asignación y motor único', 
     expect(integral.haDocenciaEfectiva).toBe(10);
     expect(integral.maxHAPermitidas).toBe(28.5);
   });
+
+  it('calcularEstadoCursosParvularios considera cursosCompartidosIds y excluye apoyos PIE/SEP en permanencia DTO 306', () => {
+    const educadora = crearDocenteFixture({
+      id: 'ed-comp',
+      estamento: 'DOCENTE_AULA',
+      asignaturaPrincipal: 'Educación Parvularia',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44
+    });
+    const diferencialPie = crearDocenteFixture({
+      id: 'dif-pie',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      asignaturaPrincipal: 'Educación Diferencial',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 0,
+      horasPieTitular: 30
+    });
+
+    const preKinder = crearCursoFixture({
+      id: 'c-pk',
+      nivel: 'Pre-Kínder',
+      letra: 'A',
+      regimenJornada: 'SIN_JEC',
+      regimen: 'SIN_JEC',
+      esCombinado: true
+    });
+    const kinder = crearCursoFixture({
+      id: 'c-k',
+      nivel: 'Kínder',
+      letra: 'A',
+      regimenJornada: 'SIN_JEC',
+      regimen: 'SIN_JEC',
+      esCombinado: true
+    });
+
+    const asigs: AsignacionHoraria[] = [
+      {
+        id: 'asig-pk-k',
+        rbd: '4100',
+        docenteId: 'ed-comp',
+        cursoId: 'c-pk',
+        cursosCompartidosIds: ['c-k'],
+        asignatura: 'Atención Directa Parvularia (BCEP Integral)',
+        horasPedagogicasAula: 22.5,
+        periodo: 2027
+      },
+      {
+        id: 'asig-pie-k',
+        rbd: '4100',
+        docenteId: 'dif-pie',
+        cursoId: 'c-k',
+        asignatura: 'Apoyo PIE Aula Común',
+        horasPedagogicasAula: 8,
+        horasCronologicasPie: 8,
+        tipoApoyo: 'PIE_AULA_COMUN',
+        periodo: 2027
+      }
+    ];
+
+    const estado = calcularEstadoCursosParvularios([preKinder, kinder], [educadora, diferencialPie], asigs, 40);
+    expect(estado.get('c-pk')?.resultado.coberturaCompletaPermanencia).toBe(true);
+    expect(estado.get('c-k')?.resultado.coberturaCompletaPermanencia).toBe(true);
+    // El apoyo PIE de 8h no debe inflar las horas cubiertas DTO 306 de Kínder
+    expect(estado.get('c-k')?.resultado.minutosCubiertosTotales).toBe(22.5 * 60);
+  });
 });

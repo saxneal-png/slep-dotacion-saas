@@ -797,13 +797,29 @@ export function calcularEstadoCursosParvularios(
 ): Map<string, EstadoParvularioCursoResuelto> {
   const result = new Map<string, EstadoParvularioCursoResuelto>();
   const educadoras = docentes.filter(d => esDocenteEducadoraParvulos(d));
+  const educadoraIds = new Set(educadoras.map(e => e.id));
 
   for (const curso of cursos) {
     if (!esNivelParvulario(curso.nivel)) continue;
 
-    const asigsCurso = asignacionesColegio.filter(
-      a => a.cursoId === curso.id || Boolean(a.cursosCompartidosIds?.includes(curso.id))
-    );
+    // En Parvularia (DTO 306), la permanencia es cubierta exclusivamente por Educadoras de Párvulos
+    // (incluyendo asignaciones compartidas), excluyendo apoyos PIE, Trabajo Colaborativo y Talleres SEP.
+    const asigsCurso = asignacionesColegio.filter(a => {
+      if (a.cursoId !== curso.id && !a.cursosCompartidosIds?.includes(curso.id)) return false;
+      if (
+        a.esTrabajoColaborativo ||
+        a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
+        a.esTallerSep ||
+        a.tipoApoyo === 'TALLER_SEP' ||
+        a.tipoApoyo === 'PIE_AULA_COMUN' ||
+        a.tipoApoyo === 'PIE_AULA_RECURSOS' ||
+        Boolean(a.horasCronologicasPie && a.horasCronologicasPie > 0) ||
+        /pie|decreto 170/i.test(`${a.asignatura} ${a.tipoApoyo || ''}`)
+      ) {
+        return false;
+      }
+      return educadoraIds.has(a.docenteId);
+    });
 
     const horasPorDocente = new Map<string, number>();
     for (const a of asigsCurso) {

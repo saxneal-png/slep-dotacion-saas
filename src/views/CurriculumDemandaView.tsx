@@ -25,7 +25,6 @@ import {
   esModalidadLaboral,
   esModalidadTp,
   esNivelParvulario,
-  calcularDotacionParvulariaCurso,
   CATALOGO_BCEP_PARVULARIA,
   resolverCodigoYAmbitoAsignatura,
   coincideAsignacionConNucleoBcep
@@ -35,6 +34,7 @@ import {
   resolverPlanCurso,
   convertirInfoPlanANivelMineduc,
   calcularDisponibilidadCurso,
+  calcularEstadoCursosParvularios,
   esAsignacionLibreDisposicionJec,
   esCursoModalidadEpja,
   esCursoNivelMedio34
@@ -48,7 +48,6 @@ import { ModalCombinarCursos } from '../components/ModalCombinarCursos';
 import { ModalDescombinarCurso } from '../components/ModalDescombinarCurso';
 import { ModalReconciliarMalla } from '../components/ModalReconciliarMalla';
 import { analizarSincronizacionDotacion } from '../services/reconciliacionDotacionService';
-import { calcularHorasFueraAulaDocente } from '../services/auditoriaDocenteService';
 import { CursoModalForm } from './curriculum/components/CursoModalForm';
 import { CursoNeeModal } from './curriculum/components/CursoNeeModal';
 import { MallaPlanPanel } from './curriculum/components/MallaPlanPanel';
@@ -328,88 +327,21 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
   const esCursoParvulario = Boolean(cursoActivo && esNivelParvulario(cursoActivo.nivel));
 
+  const mapaParvulario = useMemo(() => {
+    if (!colegio) return new Map();
+    return calcularEstadoCursosParvularios(
+      cursos,
+      docentes,
+      asignaciones,
+      colegio.porcentajePrioritarios || 0,
+      colegio.regimenProporcion
+    );
+  }, [cursos, docentes, asignaciones, colegio]);
+
   const dotacionParvularia = useMemo(() => {
     if (!esCursoParvulario || !cursoActivo || !colegio) return null;
-
-    // Calcular minutos/horas reales asignadas a la titular y a la 2da educadora
-    // En Parvularia (DTO 306), la permanencia es cubierta ÚNICA y EXCLUSIVAMENTE por Educadoras de Párvulos.
-    // El apoyo PIE (Decreto 170) ingresa como recurso especializado adicional y NO descuenta permanencia.
-    const asigsCursoParv = asignaciones.filter(a => {
-      if (a.cursoId !== cursoActivo.id || esApoyoPie(a) || a.esTrabajoColaborativo || a.esTallerSep) return false;
-      const d = docentes.find(doc => doc.id === a.docenteId);
-      return Boolean(d && (
-        d.estamento === 'EDUCADORA_PARVULO' ||
-        Boolean(d.esEducadoraParvulo) ||
-        Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
-        Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
-        Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal))
-      ));
-    });
-
-    // Determinar la educadora titular basándonos en la mayor carga horaria regular
-    const mapaHoras = new Map<string, number>();
-    asigsCursoParv.forEach(a => {
-      const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-      const esCoDoc = Boolean(a.esCoDocenciaParvularia || /co-docencia|2da educadora/i.test(a.asignatura));
-      if (!esCoDoc) {
-        mapaHoras.set(a.docenteId, (mapaHoras.get(a.docenteId) || 0) + h);
-      }
-    });
-
-    let titularId = '';
-    let maxH = -1;
-    mapaHoras.forEach((h, docId) => {
-      if (h > maxH) {
-        maxH = h;
-        titularId = docId;
-      }
-    });
-
-    if (!titularId && asigsCursoParv.length > 0) {
-      titularId = asigsCursoParv[0].docenteId;
-    }
-
-    const docTitular = titularId ? docentes.find(d => d.id === titularId) : null;
-    const desgloseTit = docTitular
-      ? calcularHorasFueraAulaDocente(docTitular, asignaciones, colegio?.porcentajePrioritarios || 0)
-      : null;
-    const horasNoAulaTit = desgloseTit ? desgloseTit.horasExentasTotales : 0;
-    const horasDispAulaTit = desgloseTit ? desgloseTit.horasParaDocenciaAula : 0;
-
-    let horasTitular = 0;
-    let horasSegunda = 0;
-    asigsCursoParv.forEach(a => {
-      const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-      if (a.esCoDocenciaParvularia || (docTitular && a.docenteId !== docTitular.id)) {
-        horasSegunda += h;
-      } else {
-        horasTitular += h;
-      }
-    });
-
-    return calcularDotacionParvulariaCurso(
-      {
-        id: cursoActivo.id,
-        nivel: cursoActivo.nivel,
-        letra: cursoActivo.letra,
-        regimen: cursoActivo.regimen,
-        matriculaProyectada: cursoActivo.matriculaProyectada,
-        esCombinado: cursoActivo.esCombinado,
-        regimenProporcion: cursoActivo.regimenProporcion
-      },
-      colegio.porcentajePrioritarios,
-      docTitular ? {
-        horasContrato: docTitular.horasContrato,
-        horasNoAulaDeducibles: horasNoAulaTit,
-        horasContratoDisponiblesAula: horasDispAulaTit,
-        aplicaArticulo69: docTitular.aplicaArticulo69
-      } : null,
-      {
-        horasAsignadasTitular: horasTitular,
-        horasAsignadasSegundaEducadora: horasSegunda
-      }
-    );
-  }, [esCursoParvulario, cursoActivo, colegio, asignaciones, docentes]);
+    return mapaParvulario.get(cursoActivo.id)?.resultado || null;
+  }, [esCursoParvulario, cursoActivo, colegio, mapaParvulario]);
 
   // Asignaciones del curso activo (incluyendo asignaturas compartidas en paralelo con este curso)
   const asignacionesCurso = useMemo(() => {
@@ -743,14 +675,12 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
       );
       const totDocAsig = asigsDoc.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
 
-      // Si es curso parvulario, verificar permanencia cubierta
+      // Si es curso parvulario, verificar permanencia cubierta usando el motor unificado DTO 306
       const esParvC = esNivelParvulario(c.nivel);
       if (esParvC) {
-        // En JEC son 35h 25m (~35.42h), sin JEC 22h
-        const metaMins = c.regimen === 'JEC' ? 2125 : 1320;
-        const minsAsignados = Math.round(totDocAsig * 60);
-        const completo = minsAsignados >= (metaMins - 15);
-        const sobre = minsAsignados > (metaMins + 30);
+        const resParv = mapaParvulario.get(c.id)?.resultado;
+        const completo = resParv ? resParv.coberturaCompletaPermanencia : false;
+        const sobre = resParv ? resParv.minutosCubiertosTotales > resParv.permanenciaMinutos + 30 : false;
 
         if (filtroCoberturaCurso === 'COMPLETO') matchCobertura = completo && !sobre;
         else if (filtroCoberturaCurso === 'DEFICIT') matchCobertura = !completo;
@@ -1020,80 +950,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 const asigsPie = asignaciones.filter(a => a.cursoId === c.id && esApoyoPie(a));
                 const totPieAsig = asigsPie.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
 
-                // Cobertura específica para Educación Parvularia en horas cronológicas (DTO 306)
+                // Cobertura específica para Educación Parvularia en horas cronológicas (motor unificado DTO 306)
                 const esParvC = esNivelParvulario(c.nivel);
-                let parvInfo = null;
-                if (esParvC && colegio) {
-                  const asigsCursoParv = asignaciones.filter(a => {
-                    if (a.cursoId !== c.id || esApoyoPie(a) || a.esTrabajoColaborativo || a.esTallerSep) return false;
-                    const d = docentes.find(doc => doc.id === a.docenteId);
-                    return Boolean(d && (
-                      d.estamento === 'EDUCADORA_PARVULO' ||
-                      Boolean(d.esEducadoraParvulo) ||
-                      Boolean(d.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.cargoInstitucional)) ||
-                      Boolean(d.titulo && /p[aá]rvulo|infantil|preescolar/i.test(d.titulo)) ||
-                      Boolean(d.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(d.funcionPrincipal))
-                    ));
-                  });
-
-                  // Determinar la titular según mayor carga regular
-                  const mapaHC = new Map<string, number>();
-                  asigsCursoParv.forEach(a => {
-                    const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-                    if (!a.esCoDocenciaParvularia && !/co-docencia|2da educadora/i.test(a.asignatura)) {
-                      mapaHC.set(a.docenteId, (mapaHC.get(a.docenteId) || 0) + h);
-                    }
-                  });
-                  let cTitId = '';
-                  let cMaxH = -1;
-                  mapaHC.forEach((hVal, dId) => {
-                    if (hVal > cMaxH) {
-                      cMaxH = hVal;
-                      cTitId = dId;
-                    }
-                  });
-                  if (!cTitId && asigsCursoParv.length > 0) cTitId = asigsCursoParv[0].docenteId;
-
-                  const docTitular = cTitId ? docentes.find(d => d.id === cTitId) : null;
-                  const desgloseCTit = docTitular
-                    ? calcularHorasFueraAulaDocente(docTitular, asignaciones, colegio?.porcentajePrioritarios || 0)
-                    : null;
-                  const cNoAula = desgloseCTit ? desgloseCTit.horasExentasTotales : 0;
-                  const cDispAula = desgloseCTit ? desgloseCTit.horasParaDocenciaAula : 0;
-
-                  let hTitular = 0;
-                  let hSegunda = 0;
-                  asigsCursoParv.forEach(a => {
-                    const h = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-                    if (a.esCoDocenciaParvularia || (docTitular && a.docenteId !== docTitular.id)) {
-                      hSegunda += h;
-                    } else {
-                      hTitular += h;
-                    }
-                  });
-                  parvInfo = calcularDotacionParvulariaCurso(
-                    {
-                      id: c.id,
-                      nivel: c.nivel,
-                      letra: c.letra,
-                      regimen: c.regimen,
-                      matriculaProyectada: c.matriculaProyectada,
-                      esCombinado: c.esCombinado,
-                      regimenProporcion: c.regimenProporcion
-                    },
-                    colegio.porcentajePrioritarios,
-                    docTitular ? {
-                      horasContrato: docTitular.horasContrato,
-                      horasNoAulaDeducibles: cNoAula,
-                      horasContratoDisponiblesAula: cDispAula,
-                      aplicaArticulo69: docTitular.aplicaArticulo69
-                    } : null,
-                    {
-                      horasAsignadasTitular: hTitular,
-                      horasAsignadasSegundaEducadora: hSegunda
-                    }
-                  );
-                }
+                const parvInfo = esParvC && colegio ? (mapaParvulario.get(c.id)?.resultado || null) : null;
 
                 const coberturaDocPct = esParvC && parvInfo 
                   ? parvInfo.porcentajeCoberturaPermanencia
