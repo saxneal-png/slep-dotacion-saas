@@ -633,12 +633,45 @@ export class SupabaseDotacionService {
     }
   }
 
+  private static stripEstablecimientoVtfColumns(row: Record<string, any>): Record<string, any> {
+    const {
+      tipo_perfil: _tp,
+      codigo_junji: _cj,
+      localidad: _loc,
+      horario_apertura: _ha,
+      horario_cierre: _hc,
+      horario_extension_cierre: _he,
+      ...rest
+    } = row;
+    return rest;
+  }
+
+  private static stripCursoVtfColumns(row: Record<string, any>): Record<string, any> {
+    const {
+      edad_meses_minima: _emin,
+      edad_meses_maxima: _emax,
+      codigo_grupo_jisc: _cg,
+      horario_jornada: _hj,
+      tiene_extension_horaria: _teh,
+      matricula_extension: _me,
+      jornada_nivel: _jn,
+      ...rest
+    } = row;
+    return rest;
+  }
+
   // Establecimientos
   static async guardarEstablecimiento(est: Establecimiento): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    const { error } = await supabase
+    const payload = mapEstablecimientoToDb(est);
+    let { error } = await supabase
       .from('establecimientos')
-      .upsert(mapEstablecimientoToDb(est), { onConflict: 'rbd' });
+      .upsert(payload, { onConflict: 'rbd' });
+    if (error?.code === 'PGRST204') {
+      ({ error } = await supabase
+        .from('establecimientos')
+        .upsert(this.stripEstablecimientoVtfColumns(payload), { onConflict: 'rbd' }));
+    }
     if (error) {
       console.error('Error Supabase guardarEstablecimiento:', error);
       throw new Error(`Error Supabase guardarEstablecimiento: ${error.message}`);
@@ -650,9 +683,14 @@ export class SupabaseDotacionService {
     const chunkSize = 250;
     for (let i = 0; i < establecimientos.length; i += chunkSize) {
       const chunk = establecimientos.slice(i, i + chunkSize).map(mapEstablecimientoToDb);
-      const { error } = await supabase
+      let { error } = await supabase
         .from('establecimientos')
         .upsert(chunk, { onConflict: 'rbd' });
+      if (error?.code === 'PGRST204') {
+        ({ error } = await supabase
+          .from('establecimientos')
+          .upsert(chunk.map(r => this.stripEstablecimientoVtfColumns(r)), { onConflict: 'rbd' }));
+      }
       if (error) {
         console.error('Error Supabase guardarEstablecimientosBatch:', error);
         throw new Error(`Error Supabase guardarEstablecimientosBatch: ${error.message}`);
@@ -728,7 +766,11 @@ export class SupabaseDotacionService {
   static async guardarCurso(curso: CursoSae): Promise<void> {
     if (!isSupabaseEnabled()) return;
     await this.asegurarEstablecimientosExisten([curso.rbd]);
-    const { error } = await supabase.from('cursos_sae').upsert(mapCursoToDb(curso), { onConflict: 'id' });
+    const payload = mapCursoToDb(curso);
+    let { error } = await supabase.from('cursos_sae').upsert(payload, { onConflict: 'id' });
+    if (error?.code === 'PGRST204') {
+      ({ error } = await supabase.from('cursos_sae').upsert(this.stripCursoVtfColumns(payload), { onConflict: 'id' }));
+    }
     if (error) {
       console.error('Error Supabase guardarCurso:', error);
       throw new Error(`Error Supabase guardarCurso: ${error.message}`);
@@ -741,7 +783,10 @@ export class SupabaseDotacionService {
     const chunkSize = 250;
     for (let i = 0; i < cursos.length; i += chunkSize) {
       const chunk = cursos.slice(i, i + chunkSize).map(mapCursoToDb);
-      const { error } = await supabase.from('cursos_sae').upsert(chunk, { onConflict: 'id' });
+      let { error } = await supabase.from('cursos_sae').upsert(chunk, { onConflict: 'id' });
+      if (error?.code === 'PGRST204') {
+        ({ error } = await supabase.from('cursos_sae').upsert(chunk.map(r => this.stripCursoVtfColumns(r)), { onConflict: 'id' }));
+      }
       if (error) {
         console.error('Error Supabase guardarCursosBatch:', error);
         throw new Error(`Error Supabase guardarCursosBatch: ${error.message}`);

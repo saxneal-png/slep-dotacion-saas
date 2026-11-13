@@ -140,7 +140,7 @@ export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 
 const SUPER_USUARIO_EMAIL = 'saxneal@gmail.com';
 
 const SUPABASE_USER_PUBLIC_COLUMNS =
-  'id, username, email, nombre_completo, role, cargo, rbd_asignado, cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json, gemini_api_key, activo, debe_cambiar_password, ultimo_acceso, auth_uid';
+  'id, username, email, nombre_completo, role, cargo, rbd_asignado, cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json, gemini_api_key, activo, debe_cambiar_password, ultimo_acceso';
 
 function isNetworkAuthError(err: any): boolean {
   const msg = String(err?.message || err || '').toLowerCase();
