@@ -15,7 +15,8 @@ export async function listarDocentes(rbd: string, periodo: number = 2027): Promi
            horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json,
            horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
            accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
+           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
+      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
     FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY apellidos, nombres
   `, [rbd, periodo, periodo]);
   if (!res.length) return [];
@@ -97,7 +98,13 @@ export async function listarDocentes(rbd: string, periodo: number = 2027): Promi
       observacionesDirector: row[45] ? String(row[45]) : undefined,
       observacionesPal: row[45] ? String(row[45]) : undefined,
       observacionesSlep: row[46] ? String(row[46]) : undefined,
-      requiereAutorizacionDocente: Boolean(row[47])
+      requiereAutorizacionDocente: Boolean(row[47]),
+      esVtf: Boolean(row[48]),
+      funcionVtf: row[49] ? (String(row[49]) as Docente['funcionVtf']) : undefined,
+      grupoJiscId: row[50] ? String(row[50]) : undefined,
+      horaIngresoTurno: row[51] ? String(row[51]) : undefined,
+      horaSalidaTurno: row[52] ? String(row[52]) : undefined,
+      reemplazoDeRun: row[53] ? String(row[53]) : undefined
     };
   });
 }
@@ -114,7 +121,8 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): 
            horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json,
            horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
            accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
+           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
+      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
     FROM docentes
     WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
     ORDER BY rbd ASC, apellidos ASC, nombres ASC
@@ -211,7 +219,13 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): 
       observacionesDirector: row[45] ? String(row[45]) : undefined,
       observacionesPal: row[45] ? String(row[45]) : undefined,
       observacionesSlep: row[46] ? String(row[46]) : undefined,
-      requiereAutorizacionDocente: Boolean(row[47])
+      requiereAutorizacionDocente: Boolean(row[47]),
+      esVtf: Boolean(row[48]),
+      funcionVtf: row[49] ? (String(row[49]) as Docente['funcionVtf']) : undefined,
+      grupoJiscId: row[50] ? String(row[50]) : undefined,
+      horaIngresoTurno: row[51] ? String(row[51]) : undefined,
+      horaSalidaTurno: row[52] ? String(row[52]) : undefined,
+      reemplazoDeRun: row[53] ? String(row[53]) : undefined
     });
   }
 
@@ -298,9 +312,10 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
       funciones_no_aula_json, periodo,
       horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-      situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
+      situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
+      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
       titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -339,7 +354,13 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
       situacion_final_gdp=excluded.situacion_final_gdp,
       observaciones_director=excluded.observaciones_director,
       observaciones_slep=excluded.observaciones_slep,
-      requiere_autorizacion_docente=excluded.requiere_autorizacion_docente;
+      requiere_autorizacion_docente=excluded.requiere_autorizacion_docente,
+      es_vtf=excluded.es_vtf,
+      funcion_vtf=excluded.funcion_vtf,
+      grupo_jisc_id=excluded.grupo_jisc_id,
+      hora_ingreso_turno=excluded.hora_ingreso_turno,
+      hora_salida_turno=excluded.hora_salida_turno,
+      reemplazo_de_run=excluded.reemplazo_de_run;
   `, [
     docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
     subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
@@ -362,7 +383,13 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
     d.situacionFinalGdp || 'Vigente',
     obsDirector,
     d.observacionesSlep || null,
-    d.requiereAutorizacionDocente ? 1 : 0
+    d.requiereAutorizacionDocente ? 1 : 0,
+    d.esVtf ? 1 : 0,
+    d.funcionVtf || null,
+    d.grupoJiscId || null,
+    d.horaIngresoTurno || null,
+    d.horaSalidaTurno || null,
+    d.reemplazoDeRun || null
   ]);
   await persistDb(true);
   if (!skipCloudSync) {
@@ -462,9 +489,10 @@ export async function guardarDocentesBatch(
           funciones_no_aula_json, periodo,
           horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
           accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-          situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente
+          situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
+      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
           titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -503,7 +531,13 @@ export async function guardarDocentesBatch(
           situacion_final_gdp=excluded.situacion_final_gdp,
           observaciones_director=excluded.observaciones_director,
           observaciones_slep=excluded.observaciones_slep,
-          requiere_autorizacion_docente=excluded.requiere_autorizacion_docente;
+          requiere_autorizacion_docente=excluded.requiere_autorizacion_docente,
+          es_vtf=excluded.es_vtf,
+          funcion_vtf=excluded.funcion_vtf,
+          grupo_jisc_id=excluded.grupo_jisc_id,
+          hora_ingreso_turno=excluded.hora_ingreso_turno,
+          hora_salida_turno=excluded.hora_salida_turno,
+          reemplazo_de_run=excluded.reemplazo_de_run;
       `, [
         docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
         subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
@@ -526,7 +560,13 @@ export async function guardarDocentesBatch(
         d.situacionFinalGdp || 'Vigente',
         obsDirector,
         d.observacionesSlep || null,
-        d.requiereAutorizacionDocente ? 1 : 0
+        d.requiereAutorizacionDocente ? 1 : 0,
+        d.esVtf ? 1 : 0,
+        d.funcionVtf || null,
+        d.grupoJiscId || null,
+        d.horaIngresoTurno || null,
+        d.horaSalidaTurno || null,
+        d.reemplazoDeRun || null
       ]);
 
       docentesPersistidos.push({

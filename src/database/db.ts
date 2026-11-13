@@ -128,5 +128,19 @@ export {
   eliminarUsuarioDb
 } from './repositories/usuariosRepo';
 
+export {
+  listarJiscNiveles,
+  listarTodosJiscNiveles,
+  guardarJiscNivel,
+  guardarJiscNivelesBatch,
+  eliminarJiscNivel,
+  listarTurnosVtf,
+  guardarTurnosVtfBatch,
+  eliminarTurnoVtf,
+  listarParvulosB3,
+  guardarParvulosB3Batch
+} from './repositories/jiscParvulariaRepo';
+
+
 
 

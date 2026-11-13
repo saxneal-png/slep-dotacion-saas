@@ -55,6 +55,12 @@ export interface AsistenteEducacion {
   observacionesDirector?: string;
   observacionesSlep?: string;
   observacionesPal?: string;
+  // Campos específicos VTF / JISC
+  esVtf?: boolean;
+  funcionVtf?: 'Función Directiva' | 'Educadora de Párvulos' | 'Técnico de Educación Parvularia' | 'Otros asistentes de la educación';
+  grupoJiscId?: string;
+  horaIngresoTurno?: string;
+  horaSalidaTurno?: string;
 }
 
 export interface AsistenteResumenEstamento {

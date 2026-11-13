@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Layers, School, BookOpen, AlertTriangle, CheckCircle2, Wrench, HeartHandshake, Briefcase } from 'lucide-react';
-import { CursoSae } from '../../../types';
+import { Plus, X, Layers, School, BookOpen, AlertTriangle, CheckCircle2, Wrench, HeartHandshake, Briefcase, Baby } from 'lucide-react';
+import { CursoSae, Establecimiento } from '../../../types';
+import { resolvePerfilEstablecimiento } from '../../../utils/establishmentTypeHelpers';
 import {
   NIVELES_REGULARES,
   NIVELES_TP_ESPECIALIDADES,
@@ -14,10 +15,20 @@ import {
 } from '../types';
 import { extraerGradosDeCurso } from '../../../services/combinacionCursosService';
 
+const NIVELES_PARVULARIA_VTF_PRESETS = [
+  { label: 'Sala Cuna Menor', edadMin: 3, edadMax: 11, cupoDefault: 20, esSalaCuna: true },
+  { label: 'Sala Cuna Mayor', edadMin: 12, edadMax: 23, cupoDefault: 20, esSalaCuna: true },
+  { label: 'Sala Cuna Heterogénea', edadMin: 3, edadMax: 23, cupoDefault: 20, esSalaCuna: true },
+  { label: 'Nivel Medio Menor', edadMin: 24, edadMax: 35, cupoDefault: 28, esSalaCuna: false },
+  { label: 'Nivel Medio Mayor', edadMin: 36, edadMax: 47, cupoDefault: 32, esSalaCuna: false },
+  { label: 'Nivel Medio Mixto', edadMin: 24, edadMax: 47, cupoDefault: 30, esSalaCuna: false },
+];
+
 interface CursoModalFormProps {
   isOpen: boolean;
   onClose: () => void;
   rbd: string;
+  colegio?: Establecimiento;
   periodoActivo: number;
   cursosExistentes?: CursoSae[];
   onGuardarCurso: (curso: CursoSae) => void;
@@ -29,14 +40,19 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
   isOpen,
   onClose,
   rbd,
+  colegio,
   periodoActivo,
   cursosExistentes = [],
   onGuardarCurso,
   onCombinarCursos,
   onCursoCreado
 }) => {
-  const [categoria, setCategoria] = useState<'REGULAR' | 'TP' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA' | 'ESPECIAL' | 'LABORAL'>('REGULAR');
+  const [categoria, setCategoria] = useState<'REGULAR' | 'TP' | 'MULTIGRADO' | 'COMBINADO' | 'EPJA' | 'ESPECIAL' | 'LABORAL' | 'PARVULARIA_VTF'>('REGULAR');
   const [nivel, setNivel] = useState('1° Básico');
+  const [edadMesesMinima, setEdadMesesMinima] = useState(24);
+  const [edadMesesMaxima, setEdadMesesMaxima] = useState(35);
+  const [tieneExtensionHoraria, setTieneExtensionHoraria] = useState(true);
+  const [matriculaExtension, setMatriculaExtension] = useState(12);
   const [gradosCombinados, setGradosCombinados] = useState<string[]>(['1° Básico', '2° Básico']);
   const [cursosExistentesSeleccionados, setCursosExistentesSeleccionados] = useState<string[]>([]);
   const [modoCombinado, setModoCombinado] = useState<'EXISTENTES' | 'NUEVO'>('EXISTENTES');
@@ -83,6 +99,42 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
     }
   }, [cursosExistentesSeleccionados, categoria, modoCombinado]);
 
+  // Adaptar categoría inicial según perfil del establecimiento cuando abre el modal
+  useEffect(() => {
+    if (!isOpen || !colegio) return;
+    const perfil = resolvePerfilEstablecimiento(colegio);
+    if (perfil === 'JARDIN_SALA_CUNA') {
+      const def = NIVELES_PARVULARIA_VTF_PRESETS[3];
+      setCategoria('PARVULARIA_VTF');
+      setNivel(def.label);
+      setEdadMesesMinima(def.edadMin);
+      setEdadMesesMaxima(def.edadMax);
+      setCupoSae(def.cupoDefault);
+      setMatriculaProyectada(24);
+      setLetra('A');
+      setRegimen('JEC');
+      setTieneExtensionHoraria(true);
+      setMatriculaExtension(10);
+      setAlumnosNeet(0);
+      setAlumnosNeep(0);
+    } else if (perfil === 'LICEO_TP') {
+      setCategoria('TP');
+      setNivel(NIVELES_TP_ESPECIALIDADES[1]);
+      setRegimen('JEC');
+    } else if (perfil === 'ESCUELA_ESPECIAL') {
+      setCategoria('ESPECIAL');
+      setNivel('1° y 2° Básico Especial');
+      setCupoSae(15);
+      setMatriculaProyectada(15);
+      setAlumnosNeep(15);
+      setAlumnosNeet(0);
+    } else if (perfil === 'EPJA') {
+      setCategoria('EPJA');
+      setNivel(NIVELES_EPJA_OFICIALES[0].id);
+      setRegimen('No JEC');
+    }
+  }, [isOpen, colegio?.rbd]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -90,9 +142,14 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
     let nivelFinal = nivel;
     let esMulti = false;
     let esComb = false;
-    let tipoMod: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'MEDIA_TP' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' | 'LABORAL' = 'REGULAR';
+    let tipoMod: NonNullable<CursoSae['tipoModalidad']> = 'REGULAR';
 
-    if (categoria === 'TP') {
+    if (categoria === 'PARVULARIA_VTF') {
+      esMulti = false;
+      esComb = false;
+      nivelFinal = nivel;
+      tipoMod = nivel.toLowerCase().includes('sala cuna') ? 'SALA_CUNA' : 'PARVULARIA_VTF';
+    } else if (categoria === 'TP') {
       esMulti = false;
       tipoMod = 'MEDIA_TP';
       nivelFinal = nivel;
@@ -139,7 +196,7 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
     const nuevo: CursoSae = {
       id: `curso-${Date.now()}`,
       rbd,
-      periodo: 2027,
+      periodo: periodoActivo || 2027,
       nivel: nivelFinal,
       letra: letra.trim().toUpperCase() || 'U',
       regimen,
@@ -152,7 +209,12 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
       esCombinado: esComb,
       tipoModalidad: tipoMod,
       gradosCombinados: categoria === 'COMBINADO' ? gradosCombinados : (categoria === 'ESPECIAL' && subTipoEspecial === 'BASICA_COMBINADA' && gradosEspecialSeleccionados.length >= 2 ? gradosEspecialSeleccionados : undefined),
-      especialidadTp: categoria === 'TP' ? nivelFinal : undefined
+      especialidadTp: categoria === 'TP' ? nivelFinal : undefined,
+      edadMesesMinima: categoria === 'PARVULARIA_VTF' ? Number(edadMesesMinima) : undefined,
+      edadMesesMaxima: categoria === 'PARVULARIA_VTF' ? Number(edadMesesMaxima) : undefined,
+      tieneExtensionHoraria: categoria === 'PARVULARIA_VTF' ? tieneExtensionHoraria : undefined,
+      matriculaExtension: categoria === 'PARVULARIA_VTF' && tieneExtensionHoraria ? Number(matriculaExtension) : undefined,
+      horarioJornada: categoria === 'PARVULARIA_VTF' ? (tieneExtensionHoraria ? '08:30-19:30' : '08:30-16:30') : undefined
     };
 
     if (categoria === 'COMBINADO' && modoCombinado === 'EXISTENTES' && cursosExistentesSeleccionados.length >= 2 && onCombinarCursos) {
@@ -187,7 +249,31 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
         </div>
 
         {/* Pestañas Selectoras de Tipo de Curso */}
-        <div className="grid grid-cols-4 sm:grid-cols-7 gap-1 p-1 bg-slate-100 rounded-xl mb-4 border border-slate-200 text-[10px] font-semibold">
+        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-4 border border-slate-200 text-[10px] font-semibold">
+          <button
+            type="button"
+            onClick={() => {
+              const def = NIVELES_PARVULARIA_VTF_PRESETS[3];
+              setCategoria('PARVULARIA_VTF');
+              setNivel(def.label);
+              setEdadMesesMinima(def.edadMin);
+              setEdadMesesMaxima(def.edadMax);
+              setCupoSae(def.cupoDefault);
+              setMatriculaProyectada(24);
+              setLetra('A');
+              setRegimen('JEC');
+              setAlumnosNeet(0);
+              setAlumnosNeep(0);
+            }}
+            className={`py-1.5 px-1 rounded-lg transition-all text-center flex flex-col items-center gap-0.5 ${
+              categoria === 'PARVULARIA_VTF'
+                ? 'bg-white text-pink-950 shadow-sm font-bold border border-pink-300 ring-1 ring-pink-200'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+            }`}
+          >
+            <Baby className="w-3.5 h-3.5 text-pink-600" />
+            <span>Jardín VTF</span>
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -312,6 +398,84 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {categoria === 'PARVULARIA_VTF' && (
+            <div className="space-y-3 p-3 bg-pink-50/70 rounded-xl border border-pink-200/80">
+              <div>
+                <label className="block text-xs font-bold text-pink-950 mb-1">
+                  Nivel Parvulario BCEP 2018 (D.S. 115/2012)
+                </label>
+                <select
+                  value={nivel}
+                  onChange={e => {
+                    const selected = NIVELES_PARVULARIA_VTF_PRESETS.find(p => p.label === e.target.value);
+                    setNivel(e.target.value);
+                    if (selected) {
+                      setEdadMesesMinima(selected.edadMin);
+                      setEdadMesesMaxima(selected.edadMax);
+                      setCupoSae(selected.cupoDefault);
+                      setMatriculaProyectada(Math.min(matriculaProyectada, selected.cupoDefault));
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white border border-pink-300 rounded-lg text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-pink-500"
+                >
+                  {NIVELES_PARVULARIA_VTF_PRESETS.map(p => (
+                    <option key={p.label} value={p.label}>
+                      {p.label} ({p.edadMin}–{p.edadMax} meses | Máx {p.cupoDefault})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[10px] font-bold text-pink-900 mb-1">Edad Mínima (meses)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={72}
+                    value={edadMesesMinima}
+                    onChange={e => setEdadMesesMinima(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-white border border-pink-200 rounded-lg text-xs font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-pink-900 mb-1">Edad Máxima (meses)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={72}
+                    value={edadMesesMaxima}
+                    onChange={e => setEdadMesesMaxima(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-white border border-pink-200 rounded-lg text-xs font-mono font-bold"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <label className="flex items-center gap-2 text-xs font-semibold text-pink-950 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tieneExtensionHoraria}
+                    onChange={e => setTieneExtensionHoraria(e.target.checked)}
+                    className="rounded text-pink-600 focus:ring-pink-500"
+                  />
+                  <span>Extensión Horaria (16:30–19:30)</span>
+                </label>
+                {tieneExtensionHoraria && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-pink-900">Matrícula Ext.:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={32}
+                      value={matriculaExtension}
+                      onChange={e => setMatriculaExtension(Number(e.target.value))}
+                      className="w-16 px-2 py-1 bg-white border border-pink-200 rounded text-xs font-mono font-bold text-center"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {categoria === 'REGULAR' && (
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Nivel Educativo Regular</label>
@@ -753,7 +917,15 @@ export const CursoModalForm: React.FC<CursoModalFormProps> = ({
             </div>
           </div>
 
-          {(categoria === 'ESPECIAL' || categoria === 'LABORAL') ? (
+          {categoria === 'PARVULARIA_VTF' ? (
+            <div className="p-3 bg-pink-50/60 rounded-xl border border-pink-200 text-[11px] text-pink-900">
+              <strong>Coeficiente Normativo D.S. 115/2012:</strong>{' '}
+              {nivel.toLowerCase().includes('sala cuna')
+                ? '1 Educadora cada 42 lactantes + 1 Técnico cada 7 lactantes.'
+                : '1 Educadora cada 32 párvulos + 1 Técnico cada 25–32 párvulos.'}{' '}
+              Además, la jornada completa de funcionamiento (08:30–19:30) considera cobertura de turnos en la pestaña Gestión Jardín.
+            </div>
+          ) : (categoria === 'ESPECIAL' || categoria === 'LABORAL') ? (
             <div className="p-3 bg-teal-50/70 rounded-xl border border-teal-200/80 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-teal-950 flex items-center gap-1.5">

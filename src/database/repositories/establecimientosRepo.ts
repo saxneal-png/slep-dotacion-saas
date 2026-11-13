@@ -1,14 +1,39 @@
 import { Establecimiento } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
+import { findSchoolByRbd, inferTipoPerfilCatalog } from '../../data/slepSchoolsCatalog';
 
-export async function listarEstablecimientos(): Promise<Establecimiento[]> {
-  const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email, subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes FROM establecimientos ORDER BY nombre ASC");
-  if (!res.length) return [];
-  return res[0].values.map(row => ({
+const EST_SELECT_COLS = `
+  id, rbd, nombre, comuna, regimen, porcentaje_prioritarios,
+  director, asesor_uatp, telefono, email,
+  subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes,
+  tipo, tipo_perfil, modalidades_autorizadas_json, codigo_junji, nombre_fantasia,
+  localidad, direccion, horario_apertura, horario_cierre, horario_extension_inicio, horario_extension_cierre
+`;
+
+function mapEstablecimientoRow(row: any[]): Establecimiento {
+  const rbd = String(row[1]);
+  const catalogMatch = findSchoolByRbd(rbd);
+  let modalidadesAutorizadas: string[] | undefined;
+  if (row[16]) {
+    try {
+      modalidadesAutorizadas = JSON.parse(String(row[16]));
+    } catch (_) {}
+  }
+  const rawTipo = row[14] ? String(row[14]) : undefined;
+  const resolvedTipo = (rawTipo || catalogMatch?.tipo || 'ESCUELA') as Establecimiento['tipo'];
+  const rawPerfil = row[15] ? String(row[15]) : undefined;
+  const resolvedPerfil = (rawPerfil ||
+    (catalogMatch ? inferTipoPerfilCatalog(catalogMatch) : undefined) ||
+    (resolvedTipo === 'JARDIN' || resolvedTipo === 'SALA_CUNA'
+      ? 'JARDIN_SALA_CUNA'
+      : resolvedTipo === 'LICEO' || resolvedTipo === 'COLEGIO'
+      ? 'LICEO_HC'
+      : 'ESCUELA_BASICA')) as Establecimiento['tipoPerfil'];
+
+  return {
     id: String(row[0]),
-    rbd: String(row[1]),
+    rbd,
     nombre: String(row[2]),
     comuna: row[3] as any,
     regimen: row[4] as any,
@@ -21,7 +46,25 @@ export async function listarEstablecimientos(): Promise<Establecimiento[]> {
     subvencionProRetencion: Number(row[11] || 0),
     cupoHorasPieDiferencial: Number(row[12] || 0),
     cupoHorasPieAsistentes: Number(row[13] || 0),
-  }));
+    tipo: resolvedTipo,
+    tipoPerfil: resolvedPerfil,
+    modalidadesAutorizadas,
+    codigoJunji: row[17] ? String(row[17]) : undefined,
+    nombreFantasia: row[18] ? String(row[18]) : undefined,
+    localidad: row[19] ? String(row[19]) : undefined,
+    direccion: row[20] ? String(row[20]) : undefined,
+    horarioApertura: row[21] ? String(row[21]) : undefined,
+    horarioCierre: row[22] ? String(row[22]) : undefined,
+    horarioExtensionInicio: row[23] ? String(row[23]) : undefined,
+    horarioExtensionCierre: row[24] ? String(row[24]) : undefined,
+  };
+}
+
+export async function listarEstablecimientos(): Promise<Establecimiento[]> {
+  const db = await getDb();
+  const res = db.exec(`SELECT ${EST_SELECT_COLS} FROM establecimientos ORDER BY nombre ASC`);
+  if (!res.length) return [];
+  return res[0].values.map(mapEstablecimientoRow);
 }
 
 export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: boolean = false): Promise<void> {
@@ -31,6 +74,14 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
   // Si el usuario o Super Usuario guarda un colegio, removerlo de la lista negra de eliminados
   await desmarcarRbdEliminado(rbdNorm);
 
+  const catalogMatch = findSchoolByRbd(rbdNorm);
+  const tipo = e.tipo || catalogMatch?.tipo || 'ESCUELA';
+  const tipoPerfil =
+    e.tipoPerfil ||
+    (catalogMatch ? inferTipoPerfilCatalog({ ...catalogMatch, tipo }) : undefined) ||
+    (tipo === 'JARDIN' || tipo === 'SALA_CUNA' ? 'JARDIN_SALA_CUNA' : tipo === 'LICEO' || tipo === 'COLEGIO' ? 'LICEO_HC' : 'ESCUELA_BASICA');
+  const modalidadesJson = e.modalidadesAutorizadas?.length ? JSON.stringify(e.modalidadesAutorizadas) : null;
+
   // Buscar por RBD o por ID para evitar violación de UNIQUE constraint
   const existing = db.exec("SELECT id FROM establecimientos WHERE rbd = ? OR id = ?", [rbdNorm, e.id]);
   if (existing.length && existing[0].values.length) {
@@ -39,25 +90,35 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
       UPDATE establecimientos SET
         rbd=?, nombre=?, comuna=?, regimen=?, porcentaje_prioritarios=?,
         director=?, asesor_uatp=?, telefono=?, email=?,
-        subvencion_sep_mensual=?, subvencion_pro_retencion=?, cupo_horas_pie_diferencial=?, cupo_horas_pie_asistentes=?
+        subvencion_sep_mensual=?, subvencion_pro_retencion=?, cupo_horas_pie_diferencial=?, cupo_horas_pie_asistentes=?,
+        tipo=?, tipo_perfil=?, modalidades_autorizadas_json=?, codigo_junji=?, nombre_fantasia=?,
+        localidad=?, direccion=?, horario_apertura=?, horario_cierre=?, horario_extension_inicio=?, horario_extension_cierre=?
       WHERE id=?
     `, [
       rbdNorm, e.nombre.trim(), e.comuna, e.regimen, e.porcentajePrioritarios,
       e.director || null, e.asesorUatp || null, e.telefono || null, e.email || null,
       e.subvencionSepMensual || 0, e.subvencionProRetencion || 0, e.cupoHorasPieDiferencial || 0, e.cupoHorasPieAsistentes || 0,
+      tipo, tipoPerfil, modalidadesJson, e.codigoJunji || null, e.nombreFantasia || null,
+      e.localidad || null, e.direccion || null, e.horarioApertura || null, e.horarioCierre || null,
+      e.horarioExtensionInicio || null, e.horarioExtensionCierre || null,
       existingId
     ]);
   } else {
     db.run(`
       INSERT INTO establecimientos (
         id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email,
-        subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes
+        subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes,
+        tipo, tipo_perfil, modalidades_autorizadas_json, codigo_junji, nombre_fantasia,
+        localidad, direccion, horario_apertura, horario_cierre, horario_extension_inicio, horario_extension_cierre
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       e.id, rbdNorm, e.nombre.trim(), e.comuna, e.regimen, e.porcentajePrioritarios,
       e.director || null, e.asesorUatp || null, e.telefono || null, e.email || null,
-      e.subvencionSepMensual || 0, e.subvencionProRetencion || 0, e.cupoHorasPieDiferencial || 0, e.cupoHorasPieAsistentes || 0
+      e.subvencionSepMensual || 0, e.subvencionProRetencion || 0, e.cupoHorasPieDiferencial || 0, e.cupoHorasPieAsistentes || 0,
+      tipo, tipoPerfil, modalidadesJson, e.codigoJunji || null, e.nombreFantasia || null,
+      e.localidad || null, e.direccion || null, e.horarioApertura || null, e.horarioCierre || null,
+      e.horarioExtensionInicio || null, e.horarioExtensionCierre || null
     ]);
   }
   persistDb();
@@ -76,7 +137,7 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
   } catch {}
 
   if (!skipCloudSync) {
-    SupabaseDotacionService.guardarEstablecimiento(e).catch(err =>
+    SupabaseDotacionService.guardarEstablecimiento({ ...e, tipo, tipoPerfil }).catch(err =>
       console.warn('[establecimientosRepo] Aviso sincronizando con Supabase:', err)
     );
   }
@@ -84,25 +145,9 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
 
 export async function obtenerEstablecimientoPorRbd(rbd: string): Promise<Establecimiento | null> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email, subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes FROM establecimientos WHERE rbd = ?", [rbd]);
+  const res = db.exec(`SELECT ${EST_SELECT_COLS} FROM establecimientos WHERE rbd = ?`, [rbd]);
   if (!res.length || !res[0].values.length) return null;
-  const row = res[0].values[0];
-  return {
-    id: String(row[0]),
-    rbd: String(row[1]),
-    nombre: String(row[2]),
-    comuna: row[3] as any,
-    regimen: row[4] as any,
-    porcentajePrioritarios: Number(row[5]),
-    director: row[6] ? String(row[6]) : undefined,
-    asesorUatp: row[7] ? String(row[7]) : undefined,
-    telefono: row[8] ? String(row[8]) : undefined,
-    email: row[9] ? String(row[9]) : undefined,
-    subvencionSepMensual: Number(row[10] || 0),
-    subvencionProRetencion: Number(row[11] || 0),
-    cupoHorasPieDiferencial: Number(row[12] || 0),
-    cupoHorasPieAsistentes: Number(row[13] || 0)
-  };
+  return mapEstablecimientoRow(res[0].values[0]);
 }
 
 export async function registrarRbdEliminado(rbd: string, usuario: string = 'Super Usuario'): Promise<void> {

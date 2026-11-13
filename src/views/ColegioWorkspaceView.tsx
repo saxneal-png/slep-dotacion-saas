@@ -3,7 +3,7 @@ import {
   Scale, Users, BookOpen, ShieldCheck, LayoutGrid,
   FileSpreadsheet, Printer, FileUp, FileDown, Sparkles,
   MapPin, ChevronRight, Calendar, Trash2, ShieldAlert, ChevronDown,
-  RefreshCw, Radio
+  RefreshCw, Radio, Baby
 } from 'lucide-react';
 import { useColaboracionColegio } from '../services/colaboracionService';
 import {
@@ -16,6 +16,8 @@ import {
 } from '../types';
 import { DiagnosticoColegioCompleto } from '../services/dotacionCalculationService';
 import { BalanzaDiagnosticoView } from './BalanzaDiagnosticoView';
+import { JardinVtfWorkspaceView } from './JardinVtfWorkspaceView';
+import { esJardinOSalaCuna, getPerfilEstablecimientoMeta } from '../utils/establishmentTypeHelpers';
 import { DocentesDotacionView } from './DocentesDotacionView';
 import { AsistentesDotacionView } from './AsistentesDotacionView';
 import { CurriculumDemandaView } from './CurriculumDemandaView';
@@ -61,7 +63,7 @@ export interface ColegioWorkspaceViewProps {
   todasLasAsignaciones?: AsignacionHoraria[];
   todosLosCursos?: CursoSae[];
   periodoActivo?: number;
-  initialTab?: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas';
+  initialTab?: 'balanza' | 'jardin_vtf' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas';
   onTogglePeriodo?: (p: number) => void;
   onRefreshData?: () => void;
   onLimpiarDotacionColegio?: (periodo: number, rbd: string) => Promise<void> | void;
@@ -75,7 +77,7 @@ export interface ColegioWorkspaceViewProps {
   guardandoEnNube?: boolean;
   sincronizandoNube?: boolean;
   usuarioActual?: { id: string; nombreCompleto: string; email?: string; role: string } | null;
-  onTabChange?: (tab: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas') => void;
+  onTabChange?: (tab: 'balanza' | 'jardin_vtf' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas') => void;
 }
 
 export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
@@ -123,19 +125,34 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   usuarioActual,
   onTabChange
 }) => {
-  const [tabActiva, setTabActivaState] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>(initialTab || 'balanza');
+  const esJardin = esJardinOSalaCuna(colegio);
+  const perfilMeta = getPerfilEstablecimientoMeta(colegio);
 
-  const setTabActiva = (tab: 'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas') => {
+  type TabWorkspace = 'balanza' | 'jardin_vtf' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas';
+  const resolveDefaultTabForSchool = (tabSolicitado?: TabWorkspace): TabWorkspace => {
+    if (tabSolicitado && !(esJardin && tabSolicitado === 'balanza')) {
+      return tabSolicitado;
+    }
+    return esJardin ? 'jardin_vtf' : (tabSolicitado || 'balanza');
+  };
+
+  const [tabActiva, setTabActivaState] = useState<TabWorkspace>(() => resolveDefaultTabForSchool(initialTab));
+  const prevRbdRef = React.useRef<string>(colegio.rbd);
+
+  const setTabActiva = (tab: TabWorkspace) => {
     setTabActivaState(tab);
     onTabChange?.(tab);
   };
 
   React.useEffect(() => {
-    if (initialTab) {
-      setTabActivaState(initialTab);
-      onTabChange?.(initialTab);
+    const cambioColegio = prevRbdRef.current !== colegio.rbd;
+    prevRbdRef.current = colegio.rbd;
+    if (cambioColegio || initialTab) {
+      const nextTab = resolveDefaultTabForSchool(cambioColegio ? undefined : initialTab);
+      setTabActivaState(nextTab);
+      onTabChange?.(nextTab);
     }
-  }, [initialTab, colegio.rbd]);
+  }, [initialTab, colegio.rbd, esJardin]);
   const [modalMatrizAbierto, setModalMatrizAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
@@ -205,14 +222,23 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
     return Math.round((completados / 5) * 100);
   }, [cursos.length, docentes.length, asignaciones.length, asistentes.length, balance]);
 
-  const tabs = [
-    { id: 'balanza' as const, label: 'Balanza & Diagnóstico', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` },
-    { id: 'docentes' as const, label: 'Nómina Docente (Ley 20.903)', icon: Users, badge: `${docentes.length}` },
-    { id: 'asistentes' as const, label: 'Asistentes Educación', icon: Users, badge: `${asistentes.length}` },
-    { id: 'cursos' as const, label: 'Cursos & Planes MINEDUC', icon: BookOpen, badge: `${cursos.length}` },
-    { id: 'pie' as const, label: 'Auditoría PIE (Dec. 170)', icon: ShieldCheck, badge: `${bg?.horasPieDemandadas || 0}h` },
-    { id: 'salas' as const, label: 'Salas & Aforo SAE (Dec. 548)', icon: LayoutGrid, badge: `${salas.length}` }
-  ];
+  const tabs = esJardin
+    ? [
+        { id: 'jardin_vtf' as const, label: 'Gestión Jardín / D.S. 115', icon: Baby, badge: `${cursos.length} niv` },
+        { id: 'docentes' as const, label: 'Educadoras & Dirección', icon: Users, badge: `${docentes.length}` },
+        { id: 'asistentes' as const, label: 'Técnicos & Auxiliares', icon: Users, badge: `${asistentes.length}` },
+        { id: 'cursos' as const, label: 'Niveles BCEP', icon: BookOpen, badge: `${cursos.length}` },
+        { id: 'salas' as const, label: 'Salas & Aforos (D.S. 548)', icon: LayoutGrid, badge: `${salas.length}` },
+        { id: 'balanza' as const, label: 'Resumen General', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` }
+      ]
+    : [
+        { id: 'balanza' as const, label: 'Balanza & Diagnóstico', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` },
+        { id: 'docentes' as const, label: 'Nómina Docente (Ley 20.903)', icon: Users, badge: `${docentes.length}` },
+        { id: 'asistentes' as const, label: 'Asistentes Educación', icon: Users, badge: `${asistentes.length}` },
+        { id: 'cursos' as const, label: 'Cursos & Planes MINEDUC', icon: BookOpen, badge: `${cursos.length}` },
+        { id: 'pie' as const, label: 'Auditoría PIE (Dec. 170)', icon: ShieldCheck, badge: `${bg?.horasPieDemandadas || 0}h` },
+        { id: 'salas' as const, label: 'Salas & Aforo SAE (Dec. 548)', icon: LayoutGrid, badge: `${salas.length}` }
+      ];
 
   return (
     <div className="space-y-3.5 animate-fade-in">
@@ -223,6 +249,12 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           <div className="min-w-0 flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-mono shrink-0">
               RBD {colegio.rbd}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border shrink-0 ${perfilMeta.badgeClass}`}
+              title={perfilMeta.label}
+            >
+              {perfilMeta.shortLabel}
             </span>
             <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight truncate max-w-full sm:max-w-[320px] xl:max-w-[440px]">
               {colegio.nombre}
@@ -241,9 +273,11 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
                 <MapPin className="w-3 h-3 text-slate-400" /> {colegio.comuna}
               </span>
               <span>·</span>
-              <span>{colegio.regimen}</span>
+              <span>{esJardin ? 'VTF / Parvularia' : colegio.regimen}</span>
               <span>·</span>
-              <span className="font-mono font-semibold">{colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35'}</span>
+              <span className="font-mono font-semibold">
+                {esJardin ? 'D.S. 115' : (colegio.porcentajePrioritarios >= 80 ? '60/40' : '65/35')}
+              </span>
               <span>·</span>
               <span className="truncate max-w-[160px]" title={colegio.director || 'S/I'}>
                 Dir: {colegio.director || 'S/I'}
@@ -561,6 +595,20 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 
       {/* Contenido de Pestaña */}
       <div className="space-y-4">
+        {tabActiva === 'jardin_vtf' && (
+          <JardinVtfWorkspaceView
+            colegio={colegio}
+            periodoActivo={periodoActivo}
+            cursos={cursos}
+            docentes={docentes}
+            asistentes={asistentes}
+            salas={salas}
+            onRefreshData={onRefreshData}
+            onGuardarColegio={onGuardarColegio}
+            onSelectTab={(t) => setTabActiva(t)}
+          />
+        )}
+
         {tabActiva === 'balanza' && (
           <BalanzaDiagnosticoView
             diagnostico={diagnostico}
@@ -600,7 +648,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             colegio={colegio}
             asistentes={asistentes}
             matricula={cursos.reduce((sum, c) => sum + (c.matriculaProyectada || 0), 0)}
-            salasParvulo={salas.filter((s) => s.tipo === 'PARVULARIA').length}
+            salasParvulo={salas.filter((s) => s.tipo === 'PARVULARIA' || s.tipo === 'SALA_CUNA' || s.tipo === 'PARVULARIA_MEDIO').length}
             periodoActivo={periodoActivo}
             onGuardarAsistente={onGuardarAsistente}
             onGuardarAsistentesBatch={onGuardarAsistentesBatch}

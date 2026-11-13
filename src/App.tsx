@@ -134,7 +134,7 @@ export const App: React.FC = () => {
   });
   const [notificacion, setNotificacion] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
   const [guardandoEnNube, setGuardandoEnNube] = useState(false);
-  const [workspaceTabActiva, setWorkspaceTabActiva] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
+  const [workspaceTabActiva, setWorkspaceTabActiva] = useState<'balanza' | 'jardin_vtf' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
   const [estadoSyncNube, setEstadoSyncNube] = useState<'synced' | 'checking' | 'saving' | 'updated_remotely' | 'offline' | 'error'>('synced');
   const [ultimaHoraSyncNube, setUltimaHoraSyncNube] = useState<string>('');
 
@@ -165,7 +165,7 @@ export const App: React.FC = () => {
     const targetApartado: 'docentes' | 'asistentes' | 'cursos' | 'salas' | 'pie' | 'general' =
       apartadoEspecifico ||
       (vistaActiva === 'workflow'
-        ? (workspaceTabActiva === 'balanza' ? 'general' : workspaceTabActiva)
+        ? (workspaceTabActiva === 'balanza' || workspaceTabActiva === 'jardin_vtf' ? 'general' : workspaceTabActiva)
         : 'general');
 
     let apartadosTarget: Array<'docentes' | 'asistentes' | 'cursos' | 'salas' | 'asignaciones' | 'establecimiento'>;
@@ -236,7 +236,7 @@ export const App: React.FC = () => {
       localStorage.setItem('slep_dotacion_periodo_activo', '2027');
     } catch {}
   };
-  const [workspaceInitialTab, setWorkspaceInitialTab] = useState<'balanza' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
+  const [workspaceInitialTab, setWorkspaceInitialTab] = useState<'balanza' | 'jardin_vtf' | 'docentes' | 'asistentes' | 'cursos' | 'pie' | 'salas'>('balanza');
 
   const mostrarMensaje = (mensaje: string, tipo: 'success' | 'error' = 'success') => {
     setNotificacion({ tipo, mensaje });

@@ -20,6 +20,8 @@ import { listarTodosLosCursos } from '../database/repositories/cursosRepo';
 import { listarTodasLasAsignaciones } from '../database/repositories/asignacionesRepo';
 import { extraerGradosDeCurso } from './combinacionCursosService';
 import { cargarPlantillaOficialBuffer } from './templateLoaderService';
+import { findSchoolByRbd, resolveCanonicalRbd } from '../data/slepSchoolsCatalog';
+import { normalizarRut } from '../utils/rutUtils';
 
 /**
  * Calcula las horas de contrato docente reglamentarias MINEDUC para una demanda de aula (Total HA),
@@ -53,6 +55,7 @@ export async function importarPlanillaPalDEP(
 ): Promise<{
   docentesImportados: number;
   asistentesImportados: number;
+  vtfImportados: number;
   colegiosDetectados: number;
 }> {
   const workbook = new ExcelJS.Workbook();
@@ -212,9 +215,129 @@ export async function importarPlanillaPalDEP(
     }
   }
 
+  // 3. Ingesta de Info Funcionario (VTF - Jardines Infantiles y Salas Cuna)
+  const wsVtf = workbook.getWorksheet('Info Funcionario (VTF)');
+  const docentesVtf: Docente[] = [];
+  const asistentesVtf: AsistenteEducacion[] = [];
+
+  if (wsVtf) {
+    wsVtf.eachRow((row, rowNumber) => {
+      if (rowNumber <= 2) return;
+      const rutCell = String(row.getCell(1).text || '').trim();
+      const nombreEE = String(row.getCell(2).text || '').trim();
+      const rbdRaw = String(row.getCell(3).value || row.getCell(3).text || '').trim();
+
+      if (!rutCell || !rbdRaw) return;
+      if (rutCell.toUpperCase().startsWith('XXXX') || rbdRaw === '55555') return; // Omitir filas de ejemplo
+
+      const rbdCanonical = resolveCanonicalRbd(rbdRaw);
+      const rbdNum = Number(rbdCanonical || 0);
+      if (!rbdCanonical || !rbdNum) return;
+
+      const rutNorm = normalizarRut(rutCell) || rutCell;
+      const catalogMatch = findSchoolByRbd(rbdCanonical);
+
+      if (!colegiosMap.has(rbdNum)) {
+        colegiosMap.set(rbdNum, {
+          id: `est-${rbdCanonical}`,
+          rbd: rbdCanonical,
+          nombre: catalogMatch?.nombre || nombreEE || `Jardín RBD ${rbdCanonical}`,
+          comuna: catalogMatch?.comuna || 'Chillán',
+          tipo: catalogMatch?.tipo || 'JARDIN',
+          tipoPerfil: 'JARDIN_SALA_CUNA',
+          regimen: 'No JEC',
+          porcentajePrioritarios: 75,
+        });
+      }
+
+      const estamentoRaw = String(row.getCell(4).text || '').trim();
+      const cargoRaw = String(row.getCell(5).text || '').trim();
+      const funcionRaw = String(row.getCell(6).text || '').trim();
+      const calidadRaw = String(row.getCell(7).text || '').trim();
+      const totalHrs = Number(row.getCell(8).value || 0);
+      const hrsLectivas = Number(row.getCell(9).value || totalHrs || 0);
+      const obs = String(row.getCell(10).text || '').trim();
+
+      const funcLow = funcionRaw.toLowerCase();
+      let funcionVtf: Docente['funcionVtf'] = 'Otros asistentes de la educación';
+      if (funcLow.includes('directiv')) funcionVtf = 'Función Directiva';
+      else if (funcLow.includes('educadora')) funcionVtf = 'Educadora de Párvulos';
+      else if (funcLow.includes('técnico') || funcLow.includes('tecnico')) funcionVtf = 'Técnico de Educación Parvularia';
+
+      const esIndefinido = calidadRaw.toLowerCase().includes('indefin') || calidadRaw.toLowerCase().includes('titular');
+      const rutId = rutNorm.replace(/[^0-9kK]/g, '');
+
+      const esDocenteEducadora =
+        funcionVtf === 'Educadora de Párvulos' ||
+        (funcionVtf === 'Función Directiva' && estamentoRaw.toLowerCase().includes('educadora'));
+
+      if (esDocenteEducadora) {
+        docentesVtf.push({
+          id: `vtf_doc_${rbdCanonical}_${rutId}`,
+          rbd: rbdCanonical,
+          periodo,
+          run: rutNorm,
+          nombres: cargoRaw || funcionVtf,
+          apellidos: '',
+          calidadJuridica: esIndefinido ? 'TITULAR' : 'CONTRATA',
+          estamento: funcionVtf === 'Función Directiva' ? 'DIRECTIVO' : 'EDUCADORA_PARVULO',
+          horasContrato: totalHrs || 44,
+          horasSubvencionGeneralTitular: esIndefinido ? (totalHrs || 44) : 0,
+          horasSubvencionGeneralContrata: !esIndefinido ? (totalHrs || 44) : 0,
+          horasAula: hrsLectivas,
+          horasDirectivas: funcionVtf === 'Función Directiva' ? (totalHrs || 44) : 0,
+          cargoInstitucional: cargoRaw || funcionVtf,
+          funcionPrincipal: funcionVtf,
+          esEducadoraParvulo: true,
+          esVtf: true,
+          funcionVtf,
+          observacionesDirector: obs || undefined,
+          propuestaGdp: 'Continuidad',
+          horasVigentesAnterior: totalHrs || 44,
+        });
+      } else {
+        const esTecnico = funcionVtf === 'Técnico de Educación Parvularia' || /tecnic|técnic/i.test(cargoRaw);
+        const esAuxiliar = /auxiliar|aseo|manipul|servicio/i.test(cargoRaw);
+        asistentesVtf.push({
+          id: `vtf_ae_${rbdCanonical}_${rutId}`,
+          rbd: rbdCanonical,
+          periodo,
+          run: rutNorm,
+          nombres: cargoRaw || funcionVtf,
+          apellidos: '',
+          cargoFuncion: cargoRaw || funcionVtf,
+          estamento: esTecnico ? 'TECNICO' : esAuxiliar ? 'AUXILIAR' : 'ADMINISTRATIVO',
+          horasContrato: totalHrs || 44,
+          horasSubvencionGeneralIndefinido: esIndefinido ? (totalHrs || 44) : 0,
+          horasSubvencionGeneralPlazoFijo: !esIndefinido ? (totalHrs || 44) : 0,
+          horasSepIndefinido: 0,
+          horasSepPlazoFijo: 0,
+          horasPieIndefinido: 0,
+          horasPiePlazoFijo: 0,
+          esTecnicoParvulo: esTecnico,
+          esAuxiliarServicio: esAuxiliar,
+          esVtf: true,
+          funcionVtf,
+          observaciones: obs || undefined,
+          activo: true,
+          propuestaGdp: 'Continuidad',
+          horasVigentesAnterior: totalHrs || 44,
+        });
+      }
+    });
+
+    if (docentesVtf.length > 0) {
+      await guardarDocentesBatch(docentesVtf);
+    }
+    if (asistentesVtf.length > 0) {
+      await guardarAsistentesBatch(asistentesVtf);
+    }
+  }
+
   return {
     docentesImportados: docentesNuevos.length,
     asistentesImportados: asistentesNuevos.length,
+    vtfImportados: docentesVtf.length + asistentesVtf.length,
     colegiosDetectados: colegiosMap.size
   };
 }
@@ -244,19 +367,26 @@ export async function generarExcelConsolidadoPalDEP(
 
   const wsDoc = workbook.getWorksheet('Info Funcionario (DOCENTE)');
   const wsAe = workbook.getWorksheet('Info Funcionario (AE)');
+  const wsVtf = workbook.getWorksheet('Info Funcionario (VTF)');
   const wsEst = workbook.getWorksheet('Info Establecimiento');
 
   if (!wsDoc || !wsAe) {
     throw new Error('La plantilla base no contiene las hojas requeridas Info Funcionario (DOCENTE) o (AE)');
   }
 
+  const esEstablecimientoVtf = (e: Establecimiento) =>
+    e.tipo === 'JARDIN' || e.tipo === 'SALA_CUNA' || e.tipoPerfil === 'JARDIN_SALA_CUNA';
+
+  const establecimientosRegulares = establecimientos.filter(e => !esEstablecimientoVtf(e));
+  const establecimientosVtf = establecimientos.filter(e => esEstablecimientoVtf(e));
+
   // 1. Poblado de Info Funcionario (DOCENTE)
   // Limpiar filas anteriores de la tabla manteniendo estilos de fila 3
   const rowStartDoc = 3;
   let currentRowDoc = rowStartDoc;
 
-  for (const est of establecimientos) {
-    const docColegio = docentesTerritorio.filter(d => String(d.rbd) === String(est.rbd));
+  for (const est of establecimientosRegulares) {
+    const docColegio = docentesTerritorio.filter(d => String(d.rbd) === String(est.rbd) && !d.esVtf);
     const cursosColegio = cursosTerritorio.filter(c => String(c.rbd) === String(est.rbd));
     const asigsColegio = asignacionesTerritorio.filter(a => String(a.rbd) === String(est.rbd));
 
@@ -324,8 +454,8 @@ export async function generarExcelConsolidadoPalDEP(
   const rowStartAe = 3;
   let currentRowAe = rowStartAe;
 
-  for (const est of establecimientos) {
-    const aeColegio = asistentesTerritorio.filter(a => String(a.rbd) === String(est.rbd));
+  for (const est of establecimientosRegulares) {
+    const aeColegio = asistentesTerritorio.filter(a => String(a.rbd) === String(est.rbd) && !a.esVtf);
 
     for (const a of aeColegio) {
       const filasHomologadas = homologarAsistenteAPal(a, est);
@@ -362,6 +492,94 @@ export async function generarExcelConsolidadoPalDEP(
           row.getCell(c).value = null;
         }
         row.commit();
+      }
+    }
+  }
+
+  // 2B. Poblado de Info Funcionario (VTF) - Jardines Infantiles y Salas Cuna
+  if (wsVtf) {
+    let currentRowVtf = 3;
+    for (const est of establecimientosVtf) {
+      const rbdNum = Number(est.rbd) || est.rbd;
+      const docVtf = docentesTerritorio.filter(d => String(d.rbd) === String(est.rbd));
+      const aeVtf = asistentesTerritorio.filter(a => String(a.rbd) === String(est.rbd));
+
+      for (const d of docVtf) {
+        const funcionVtf =
+          d.funcionVtf ||
+          ((d.horasDirectivas || 0) > 0 || d.estamento === 'DIRECTIVO'
+            ? 'Función Directiva'
+            : 'Educadora de Párvulos');
+        const cargoDisplay =
+          d.cargoInstitucional ||
+          d.funcionPrincipal ||
+          (funcionVtf === 'Función Directiva' ? 'DIRECTORA' : 'EDUCADORA DE PARVULOS');
+        const nombreCompleto = `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+        const obsTxt = [nombreCompleto !== cargoDisplay ? nombreCompleto : '', d.observacionesDirector || '']
+          .filter(Boolean)
+          .join(' | ');
+
+        const row = wsVtf.getRow(currentRowVtf);
+        row.getCell(1).value = sanitizeExcelText(d.run);
+        row.getCell(2).value = sanitizeExcelText(est.nombre.toUpperCase());
+        row.getCell(3).value = rbdNum;
+        row.getCell(4).value = 'Educadora de Parvulos';
+        row.getCell(5).value = sanitizeExcelText(cargoDisplay.toUpperCase());
+        row.getCell(6).value = funcionVtf;
+        row.getCell(7).value = d.calidadJuridica === 'TITULAR' ? 'Indefinido' : 'Plazo Fijo';
+        row.getCell(8).value = Number(d.horasContrato || 44);
+        row.getCell(9).value = Number(d.horasAula || d.horasContrato || 44);
+        row.getCell(10).value = sanitizeExcelText(obsTxt);
+        row.commit();
+        currentRowVtf++;
+      }
+
+      for (const a of aeVtf) {
+        const funcionVtf =
+          a.funcionVtf ||
+          (a.esTecnicoParvulo || a.estamento === 'TECNICO'
+            ? 'Técnico de Educación Parvularia'
+            : 'Otros asistentes de la educación');
+        const totalIndef =
+          (a.horasSubvencionGeneralIndefinido || 0) +
+          (a.horasSepIndefinido || 0) +
+          (a.horasPieIndefinido || 0);
+        const totalPf =
+          (a.horasSubvencionGeneralPlazoFijo || 0) +
+          (a.horasSepPlazoFijo || 0) +
+          (a.horasPiePlazoFijo || 0);
+        const calidadStr = totalIndef >= totalPf ? 'Indefinido' : 'Plazo Fijo';
+        const nombreCompleto = `${a.nombres || ''} ${a.apellidos || ''}`.trim();
+        const obsTxt = [nombreCompleto !== a.cargoFuncion ? nombreCompleto : '', a.observaciones || '']
+          .filter(Boolean)
+          .join(' | ');
+
+        const row = wsVtf.getRow(currentRowVtf);
+        row.getCell(1).value = sanitizeExcelText(a.run);
+        row.getCell(2).value = sanitizeExcelText(est.nombre.toUpperCase());
+        row.getCell(3).value = rbdNum;
+        row.getCell(4).value = 'Asistente de la Educación';
+        row.getCell(5).value = sanitizeExcelText((a.cargoFuncion || funcionVtf).toUpperCase());
+        row.getCell(6).value = funcionVtf;
+        row.getCell(7).value = calidadStr;
+        row.getCell(8).value = Number(a.horasContrato || 44);
+        row.getCell(9).value = Number(a.horasContrato || 44);
+        row.getCell(10).value = sanitizeExcelText(obsTxt);
+        row.commit();
+        currentRowVtf++;
+      }
+    }
+
+    if (wsVtf.rowCount > currentRowVtf - 1) {
+      const maxCleanVtf = Math.min(wsVtf.rowCount, currentRowVtf + 300);
+      for (let r = currentRowVtf; r <= maxCleanVtf; r++) {
+        const row = wsVtf.getRow(r);
+        if (row.hasValues) {
+          for (let c = 1; c <= 10; c++) {
+            row.getCell(c).value = null;
+          }
+          row.commit();
+        }
       }
     }
   }

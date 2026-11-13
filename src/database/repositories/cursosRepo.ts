@@ -2,84 +2,68 @@ import { CursoSae } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
+const CURSOS_SELECT_COLS = `
+  id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep,
+  talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad,
+  grados_combinados_json, especialidad_tp, plan_estudio_id,
+  edad_meses_minima, edad_meses_maxima, codigo_grupo_jisc, horario_jornada,
+  tiene_extension_horaria, matricula_extension, jornada_nivel
+`;
+
+function mapCursoRow(row: any[]): CursoSae {
+  let talleresJec = undefined;
+  if (row[10]) {
+    try { talleresJec = JSON.parse(String(row[10])); } catch (_) {}
+  }
+  let gradosCombinados = undefined;
+  if (row[16]) {
+    try { gradosCombinados = JSON.parse(String(row[16])); } catch (_) {}
+  }
+  const nivelStr = String(row[2]);
+  const esMulti = Boolean(row[13]) || nivelStr.toLowerCase().includes('multigrado');
+  const esComb = Boolean(row[14]) || nivelStr.toLowerCase().includes('combinado');
+  return {
+    id: String(row[0]),
+    rbd: String(row[1]),
+    nivel: nivelStr,
+    letra: String(row[3]),
+    regimen: row[4] as any,
+    salaId: row[5] ? String(row[5]) : undefined,
+    cupoSae: Number(row[6]),
+    matriculaProyectada: Number(row[7]),
+    alumnosNeet: Number(row[8]),
+    alumnosNeep: Number(row[9]),
+    talleresJec,
+    periodo: row[11] ? Number(row[11]) : 2027,
+    regimenProporcion: (row[12] as any) || '65_35',
+    esMultigrado: esMulti,
+    esCombinado: esComb,
+    tipoModalidad: (row[15] as any) || (esMulti ? 'MULTIGRADO' : esComb ? 'COMBINADO' : 'REGULAR'),
+    gradosCombinados,
+    especialidadTp: row[17] ? String(row[17]) : undefined,
+    planEstudioId: row[18] ? String(row[18]) : undefined,
+    edadMesesMinima: row[19] !== null && row[19] !== undefined ? Number(row[19]) : undefined,
+    edadMesesMaxima: row[20] !== null && row[20] !== undefined ? Number(row[20]) : undefined,
+    codigoGrupoJisc: row[21] ? String(row[21]) : undefined,
+    horarioJornada: row[22] ? String(row[22]) : undefined,
+    tieneExtensionHoraria: Boolean(row[23]),
+    matriculaExtension: row[24] !== null && row[24] !== undefined ? Number(row[24]) : undefined,
+    jornadaNivel: row[25] ? (String(row[25]) as CursoSae['jornadaNivel']) : undefined,
+  };
+}
+
 export async function listarCursos(rbd: string, periodo: number = 2027): Promise<CursoSae[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY nivel, letra", [rbd, periodo, periodo]);
+  const res = db.exec(`SELECT ${CURSOS_SELECT_COLS} FROM cursos_sae WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY nivel, letra`, [rbd, periodo, periodo]);
   if (!res.length) return [];
-  return res[0].values.map(row => {
-    let talleresJec = undefined;
-    if (row[10]) {
-      try { talleresJec = JSON.parse(String(row[10])); } catch (_) {}
-    }
-    let gradosCombinados = undefined;
-    if (row[16]) {
-      try { gradosCombinados = JSON.parse(String(row[16])); } catch (_) {}
-    }
-    const nivelStr = String(row[2]);
-    const esMulti = Boolean(row[13]) || nivelStr.toLowerCase().includes('multigrado');
-    const esComb = Boolean(row[14]) || nivelStr.toLowerCase().includes('combinado');
-    return {
-      id: String(row[0]),
-      rbd: String(row[1]),
-      nivel: nivelStr,
-      letra: String(row[3]),
-      regimen: row[4] as any,
-      salaId: row[5] ? String(row[5]) : undefined,
-      cupoSae: Number(row[6]),
-      matriculaProyectada: Number(row[7]),
-      alumnosNeet: Number(row[8]),
-      alumnosNeep: Number(row[9]),
-      talleresJec,
-      periodo: row[11] ? Number(row[11]) : 2027,
-      regimenProporcion: (row[12] as any) || '65_35',
-      esMultigrado: esMulti,
-      esComb,
-      tipoModalidad: (row[15] as any) || (esMulti ? 'MULTIGRADO' : esComb ? 'COMBINADO' : 'REGULAR'),
-      gradosCombinados,
-      especialidadTp: row[17] ? String(row[17]) : undefined,
-      planEstudioId: row[18] ? String(row[18]) : undefined
-    };
-  });
+  return res[0].values.map(mapCursoRow);
 }
 
 export async function listarTodosLosCursos(periodo: number = 2027): Promise<CursoSae[]> {
   const db = await getDb();
-  const res = db.exec("SELECT id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id FROM cursos_sae WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY rbd, nivel, letra", [periodo, periodo]);
+  const res = db.exec(`SELECT ${CURSOS_SELECT_COLS} FROM cursos_sae WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY rbd, nivel, letra`, [periodo, periodo]);
   if (!res.length) return [];
-  return res[0].values.map(row => {
-    let talleresJec = undefined;
-    if (row[10]) {
-      try { talleresJec = JSON.parse(String(row[10])); } catch (_) {}
-    }
-    let gradosCombinados = undefined;
-    if (row[16]) {
-      try { gradosCombinados = JSON.parse(String(row[16])); } catch (_) {}
-    }
-    const nivelStr = String(row[2]);
-    const esMulti = Boolean(row[13]) || nivelStr.toLowerCase().includes('multigrado');
-    const esComb = Boolean(row[14]) || nivelStr.toLowerCase().includes('combinado');
-    return {
-      id: String(row[0]),
-      rbd: String(row[1]),
-      nivel: nivelStr,
-      letra: String(row[3]),
-      regimen: row[4] as any,
-      salaId: row[5] ? String(row[5]) : undefined,
-      cupoSae: Number(row[6]),
-      matriculaProyectada: Number(row[7]),
-      alumnosNeet: Number(row[8]),
-      alumnosNeep: Number(row[9]),
-      talleresJec,
-      periodo: row[11] ? Number(row[11]) : 2027,
-      regimenProporcion: (row[12] as any) || '65_35',
-      esMultigrado: esMulti,
-      esCombinado: esComb,
-      tipoModalidad: (row[15] as any) || (esMulti ? 'MULTIGRADO' : esComb ? 'COMBINADO' : 'REGULAR'),
-      gradosCombinados,
-      especialidadTp: row[17] ? String(row[17]) : undefined,
-      planEstudioId: row[18] ? String(row[18]) : undefined
-    };
-  });
+  return res[0].values.map(mapCursoRow);
 }
 
 export async function guardarCurso(c: CursoSae, skipCloudSync: boolean = false): Promise<void> {
@@ -92,8 +76,14 @@ export async function guardarCurso(c: CursoSae, skipCloudSync: boolean = false):
   const esComb = c.esCombinado ? 1 : 0;
   const tipoMod = c.tipoModalidad || (c.esMultigrado ? 'MULTIGRADO' : c.esCombinado ? 'COMBINADO' : 'REGULAR');
   db.run(`
-    INSERT INTO cursos_sae (id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cursos_sae (
+      id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep,
+      talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad,
+      grados_combinados_json, especialidad_tp, plan_estudio_id,
+      edad_meses_minima, edad_meses_maxima, codigo_grupo_jisc, horario_jornada,
+      tiene_extension_horaria, matricula_extension, jornada_nivel
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rbd=excluded.rbd, nivel=excluded.nivel, letra=excluded.letra, regimen=excluded.regimen,
       sala_id=excluded.sala_id, cupo_sae=excluded.cupo_sae,
@@ -107,7 +97,14 @@ export async function guardarCurso(c: CursoSae, skipCloudSync: boolean = false):
       tipo_modalidad=excluded.tipo_modalidad,
       grados_combinados_json=excluded.grados_combinados_json,
       especialidad_tp=excluded.especialidad_tp,
-      plan_estudio_id=excluded.plan_estudio_id;
+      plan_estudio_id=excluded.plan_estudio_id,
+      edad_meses_minima=excluded.edad_meses_minima,
+      edad_meses_maxima=excluded.edad_meses_maxima,
+      codigo_grupo_jisc=excluded.codigo_grupo_jisc,
+      horario_jornada=excluded.horario_jornada,
+      tiene_extension_horaria=excluded.tiene_extension_horaria,
+      matricula_extension=excluded.matricula_extension,
+      jornada_nivel=excluded.jornada_nivel;
   `, [
     c.id,
     c.rbd,
@@ -127,7 +124,14 @@ export async function guardarCurso(c: CursoSae, skipCloudSync: boolean = false):
     tipoMod,
     gradosJson,
     c.especialidadTp || null,
-    c.planEstudioId || null
+    c.planEstudioId || null,
+    c.edadMesesMinima ?? null,
+    c.edadMesesMaxima ?? null,
+    c.codigoGrupoJisc || null,
+    c.horarioJornada || null,
+    c.tieneExtensionHoraria ? 1 : 0,
+    c.matriculaExtension ?? 0,
+    c.jornadaNivel || 'COMPLETA'
   ]);
   persistDb();
   if (!skipCloudSync) {
@@ -151,8 +155,14 @@ export async function guardarCursosBatch(cursos: CursoSae[], skipCloudSync: bool
       const esComb = c.esCombinado ? 1 : 0;
       const tipoMod = c.tipoModalidad || (c.esMultigrado ? 'MULTIGRADO' : c.esCombinado ? 'COMBINADO' : 'REGULAR');
       db.run(`
-        INSERT INTO cursos_sae (id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep, talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad, grados_combinados_json, especialidad_tp, plan_estudio_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO cursos_sae (
+          id, rbd, nivel, letra, regimen, sala_id, cupo_sae, matricula_proyectada, alumnos_neet, alumnos_neep,
+          talleres_jec_json, periodo, regimen_proporcion, es_multigrado, es_combinado, tipo_modalidad,
+          grados_combinados_json, especialidad_tp, plan_estudio_id,
+          edad_meses_minima, edad_meses_maxima, codigo_grupo_jisc, horario_jornada,
+          tiene_extension_horaria, matricula_extension, jornada_nivel
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           rbd=excluded.rbd, nivel=excluded.nivel, letra=excluded.letra, regimen=excluded.regimen,
           sala_id=excluded.sala_id, cupo_sae=excluded.cupo_sae,
@@ -166,7 +176,14 @@ export async function guardarCursosBatch(cursos: CursoSae[], skipCloudSync: bool
           tipo_modalidad=excluded.tipo_modalidad,
           grados_combinados_json=excluded.grados_combinados_json,
           especialidad_tp=excluded.especialidad_tp,
-          plan_estudio_id=excluded.plan_estudio_id;
+          plan_estudio_id=excluded.plan_estudio_id,
+          edad_meses_minima=excluded.edad_meses_minima,
+          edad_meses_maxima=excluded.edad_meses_maxima,
+          codigo_grupo_jisc=excluded.codigo_grupo_jisc,
+          horario_jornada=excluded.horario_jornada,
+          tiene_extension_horaria=excluded.tiene_extension_horaria,
+          matricula_extension=excluded.matricula_extension,
+          jornada_nivel=excluded.jornada_nivel;
       `, [
         c.id,
         c.rbd,
@@ -186,7 +203,14 @@ export async function guardarCursosBatch(cursos: CursoSae[], skipCloudSync: bool
         tipoMod,
         gradosJson,
         c.especialidadTp || null,
-        c.planEstudioId || null
+        c.planEstudioId || null,
+        c.edadMesesMinima ?? null,
+        c.edadMesesMaxima ?? null,
+        c.codigoGrupoJisc || null,
+        c.horarioJornada || null,
+        c.tieneExtensionHoraria ? 1 : 0,
+        c.matriculaExtension ?? 0,
+        c.jornadaNivel || 'COMPLETA'
       ]);
     }
     db.run("COMMIT;");

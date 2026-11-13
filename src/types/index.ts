@@ -9,11 +9,33 @@ export type ComunaValleDiguillin =
 
 export type RegimenJornada = 'JEC' | 'No JEC' | 'Mixto';
 
+export type TipoEstablecimientoBase = 'LICEO' | 'ESCUELA' | 'COLEGIO' | 'JARDIN' | 'SALA_CUNA';
+
+export type TipoPerfilEstablecimiento =
+  | 'ESCUELA_BASICA'
+  | 'LICEO_HC'
+  | 'LICEO_TP'
+  | 'LICEO_POLIVALENTE'
+  | 'ESCUELA_ESPECIAL'
+  | 'EPJA'
+  | 'JARDIN_SALA_CUNA';
+
 export interface Establecimiento {
   id: string;
   rbd: string;
   nombre: string;
   comuna: ComunaValleDiguillin;
+  tipo?: TipoEstablecimientoBase;
+  tipoPerfil?: TipoPerfilEstablecimiento;
+  modalidadesAutorizadas?: string[];
+  codigoJunji?: string;
+  nombreFantasia?: string;
+  localidad?: string;
+  direccion?: string;
+  horarioApertura?: string; // ej: "08:30"
+  horarioCierre?: string; // ej: "16:30"
+  horarioExtensionInicio?: string; // ej: "16:30"
+  horarioExtensionCierre?: string; // ej: "19:30"
   regimen: RegimenJornada;
   porcentajePrioritarios: number; // >= 80% aplica 60/40
   regimenProporcion?: '65_35' | '60_40';
@@ -34,7 +56,7 @@ export interface SalaInfraestructura {
   pabellon?: string;
   nombreSala: string;
   superficieM2: number;
-  tipo: 'REGULAR' | 'PARVULARIA' | 'TALLER';
+  tipo: 'REGULAR' | 'PARVULARIA' | 'SALA_CUNA' | 'PARVULARIA_MEDIO' | 'TALLER';
   aforoMaximo: number;
 }
 
@@ -60,10 +82,28 @@ export interface CursoSae {
   talleresJec?: TallerJec[];
   esMultigrado?: boolean;
   esCombinado?: boolean;
-  tipoModalidad?: 'REGULAR' | 'MULTIGRADO' | 'COMBINADO' | 'MEDIA_TP' | 'EPJA_BASICA' | 'EPJA_MEDIA_HC' | 'EPJA_MEDIA_TP' | 'ESPECIAL' | 'LABORAL';
+  tipoModalidad?:
+    | 'REGULAR'
+    | 'MULTIGRADO'
+    | 'COMBINADO'
+    | 'MEDIA_TP'
+    | 'EPJA_BASICA'
+    | 'EPJA_MEDIA_HC'
+    | 'EPJA_MEDIA_TP'
+    | 'ESPECIAL'
+    | 'LABORAL'
+    | 'PARVULARIA_VTF'
+    | 'SALA_CUNA';
   gradosCombinados?: string[]; // ej: ["1° Básico", "2° Básico"] o ["1° Nivel", "2° Nivel"]
   especialidadTp?: string; // ej: "Electricidad", "Gastronomía", "Programación"
   planEstudioId?: string; // ID del plan de estudio curricular adjunto
+  edadMesesMinima?: number;
+  edadMesesMaxima?: number;
+  codigoGrupoJisc?: string;
+  horarioJornada?: string;
+  tieneExtensionHoraria?: boolean;
+  matriculaExtension?: number;
+  jornadaNivel?: 'COMPLETA' | 'MANANA' | 'TARDE' | 'EXTENSION';
 }
 
 export interface AsignaturaPlanEstudio {
@@ -205,6 +245,13 @@ export interface Docente {
   observacionesDirector?: string;
   observacionesSlep?: string;
   observacionesPal?: string;
+  // Campos específicos VTF / JISC
+  esVtf?: boolean;
+  funcionVtf?: 'Función Directiva' | 'Educadora de Párvulos' | 'Técnico de Educación Parvularia' | 'Otros asistentes de la educación';
+  grupoJiscId?: string;
+  horaIngresoTurno?: string;
+  horaSalidaTurno?: string;
+  reemplazoDeRun?: string;
 }
 
 export interface AsignacionHoraria {
@@ -577,6 +624,85 @@ export interface ConfiguracionGeneral {
   gemini: GeminiConfig;
   ui: PreferenciasUiConfig;
   ultimaModificacion?: string;
+}
+
+export type SubtipoNivelJisc =
+  | 'SALA_CUNA_MENOR'
+  | 'SALA_CUNA_MAYOR'
+  | 'SALA_CUNA_HETEROGENEA'
+  | 'MEDIO_MENOR'
+  | 'MEDIO_MAYOR'
+  | 'MEDIO_HETEROGENEO'
+  | 'HETEROGENEO'
+  | 'TRANSICION';
+
+export interface JiscNivelParvularia {
+  id: string;
+  rbd: string;
+  periodo: number;
+  codigoUeJunji?: string;
+  correlGrupo: number;
+  codPrograma?: string;
+  nivelNombre: string;
+  subtipoNivel: SubtipoNivelJisc;
+  esHeterogeneo: boolean;
+  capacidadAutorizada: number;
+  matriculaActiva: number;
+  retiros: number;
+  asistenciaPromedio?: number;
+  edadMesesMin?: number;
+  edadMesesMax?: number;
+  edadMinimaCriterio?: number;
+  jornada: 'COMPLETA' | 'MANANA' | 'TARDE' | 'EXTENSION';
+  horarioInicio: string;
+  horarioFin: string;
+  tieneExtensionHoraria: boolean;
+  matriculaExtension: number;
+  educadorasAsignadasJisc: number;
+  tecnicosAsignadosJisc: number;
+  directorasAsignadasJisc: number;
+  fuenteDato?: string;
+  updatedAt?: string;
+}
+
+export type FranjaTurnoVtf = 'REGULAR' | 'EXTENSION' | 'MIXTO';
+
+export interface TurnoParvulariaVtf {
+  id: string;
+  rbd: string;
+  periodo: number;
+  nivelJiscId?: string;
+  runFuncionario: string;
+  nombreFuncionario?: string;
+  estamentoVtf: 'DIRECTIVA' | 'EDUCADORA' | 'TECNICO' | 'OTRO_ASISTENTE';
+  diasSemana: string; // ej: "L-V"
+  horaEntrada: string; // ej: "08:30"
+  horaSalida: string; // ej: "17:30"
+  minutosColacion: number;
+  franja: FranjaTurnoVtf;
+  horasSemanalesCronologicas: number;
+  observaciones?: string;
+  updatedAt?: string;
+}
+
+export interface JiscParvuloB3 {
+  id: string;
+  rbd: string;
+  periodo: number;
+  codigoUeJunji?: string;
+  correlGrupo: number;
+  descNivel: string;
+  rutParvulo?: string;
+  edadMeses: number;
+  fechaNacimiento?: string;
+  fechaIngreso?: string;
+  fechaRetiro?: string;
+  activo: boolean;
+  presentesMes?: number;
+  diasTrabajadosMes?: number;
+  porcentajeAsistencia?: number;
+  requiereNee?: boolean;
+  updatedAt?: string;
 }
 
 export * from './asistentesTypes';

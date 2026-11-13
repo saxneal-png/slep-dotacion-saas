@@ -2357,6 +2357,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
         isOpen={modalCursoOpen}
         onClose={() => setModalCursoOpen(false)}
         rbd={colegio.rbd}
+        colegio={colegio}
         periodoActivo={periodoActivo}
         cursosExistentes={cursos}
         onGuardarCurso={onGuardarCurso}

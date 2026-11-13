@@ -26,6 +26,16 @@ CREATE TABLE IF NOT EXISTS public.establecimientos (
   nombre TEXT NOT NULL,
   comuna TEXT NOT NULL,
   tipo TEXT NOT NULL CHECK (tipo IN ('LICEO', 'ESCUELA', 'COLEGIO', 'JARDIN', 'SALA_CUNA')) DEFAULT 'ESCUELA',
+  tipo_perfil TEXT DEFAULT 'ESCUELA_BASICA',
+  modalidades_autorizadas_json JSONB DEFAULT '[]'::jsonb,
+  codigo_junji TEXT,
+  nombre_fantasia TEXT,
+  localidad TEXT,
+  direccion TEXT,
+  horario_apertura TEXT,
+  horario_cierre TEXT,
+  horario_extension_inicio TEXT,
+  horario_extension_cierre TEXT,
   regimen TEXT NOT NULL CHECK (regimen IN ('JEC', 'No JEC', 'Mixto')) DEFAULT 'JEC',
   porcentaje_prioritarios NUMERIC(5,2) NOT NULL DEFAULT 75.00,
   director TEXT,
@@ -79,6 +89,13 @@ CREATE TABLE IF NOT EXISTS public.cursos_sae (
   grados_combinados_json JSONB DEFAULT '[]'::jsonb,
   especialidad_tp TEXT,
   plan_estudio_id TEXT,
+  edad_meses_minima INTEGER,
+  edad_meses_maxima INTEGER,
+  codigo_grupo_jisc TEXT,
+  horario_jornada TEXT,
+  tiene_extension_horaria BOOLEAN DEFAULT FALSE,
+  matricula_extension INTEGER DEFAULT 0,
+  jornada_nivel TEXT DEFAULT 'COMPLETA',
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -210,6 +227,11 @@ CREATE TABLE IF NOT EXISTS public.asistentes_educacion (
   situacion_final_gdp TEXT DEFAULT 'Vigente',
   observaciones_director TEXT,
   observaciones_slep TEXT,
+  es_vtf BOOLEAN DEFAULT FALSE,
+  funcion_vtf TEXT,
+  grupo_jisc_id TEXT,
+  hora_ingreso_turno TEXT,
+  hora_salida_turno TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -324,6 +346,94 @@ CREATE TABLE IF NOT EXISTS public.configuracion_general (
   ultima_modificacion TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- 15. TABLA: NIVELES Y GRUPOS JISC PÁRVULOS (BCEP + D.S. 115/2012)
+CREATE TABLE IF NOT EXISTS public.jisc_niveles_parvularia (
+  id TEXT PRIMARY KEY,
+  rbd VARCHAR(10) NOT NULL REFERENCES public.establecimientos(rbd) ON DELETE CASCADE,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  codigo_ue_junji TEXT,
+  correl_grupo INTEGER NOT NULL,
+  cod_programa TEXT,
+  nivel_nombre TEXT NOT NULL,
+  subtipo_nivel TEXT NOT NULL,
+  es_heterogeneo BOOLEAN NOT NULL DEFAULT FALSE,
+  capacidad_autorizada INTEGER NOT NULL DEFAULT 0,
+  matricula_activa INTEGER NOT NULL DEFAULT 0,
+  retiros INTEGER NOT NULL DEFAULT 0,
+  asistencia_promedio NUMERIC(5,2) DEFAULT 0,
+  edad_meses_min INTEGER,
+  edad_meses_max INTEGER,
+  edad_minima_criterio INTEGER,
+  jornada TEXT NOT NULL DEFAULT 'COMPLETA',
+  horario_inicio TEXT NOT NULL DEFAULT '08:30',
+  horario_fin TEXT NOT NULL DEFAULT '16:30',
+  tiene_extension_horaria BOOLEAN NOT NULL DEFAULT FALSE,
+  matricula_extension INTEGER NOT NULL DEFAULT 0,
+  educadoras_asignadas_jisc INTEGER NOT NULL DEFAULT 0,
+  tecnicos_asignados_jisc INTEGER NOT NULL DEFAULT 0,
+  directoras_asignadas_jisc INTEGER NOT NULL DEFAULT 0,
+  fuente_dato TEXT DEFAULT 'MANUAL',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+DROP TRIGGER IF EXISTS trg_jisc_niveles_parvularia_updated_at ON public.jisc_niveles_parvularia;
+CREATE TRIGGER trg_jisc_niveles_parvularia_updated_at
+BEFORE UPDATE ON public.jisc_niveles_parvularia
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- 16. TABLA: TURNOS DE PERSONAL VTF (Cobertura 08:30 - 19:30)
+CREATE TABLE IF NOT EXISTS public.jisc_turnos_personal (
+  id TEXT PRIMARY KEY,
+  rbd VARCHAR(10) NOT NULL REFERENCES public.establecimientos(rbd) ON DELETE CASCADE,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  nivel_jisc_id TEXT REFERENCES public.jisc_niveles_parvularia(id) ON DELETE SET NULL,
+  run_funcionario TEXT NOT NULL,
+  nombre_funcionario TEXT,
+  estamento_vtf TEXT NOT NULL CHECK (estamento_vtf IN ('DIRECTIVA', 'EDUCADORA', 'TECNICO', 'OTRO_ASISTENTE')),
+  dias_semana TEXT NOT NULL DEFAULT 'L-V',
+  hora_entrada TEXT NOT NULL,
+  hora_salida TEXT NOT NULL,
+  minutos_colacion INTEGER NOT NULL DEFAULT 45,
+  franja TEXT NOT NULL DEFAULT 'REGULAR' CHECK (franja IN ('REGULAR', 'EXTENSION', 'MIXTO')),
+  horas_semanales_cronologicas NUMERIC(5,2) NOT NULL DEFAULT 44,
+  observaciones TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+DROP TRIGGER IF EXISTS trg_jisc_turnos_personal_updated_at ON public.jisc_turnos_personal;
+CREATE TRIGGER trg_jisc_turnos_personal_updated_at
+BEFORE UPDATE ON public.jisc_turnos_personal
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- 17. TABLA: NÓMINA NOMINAL DE PÁRVULOS JISC B3
+CREATE TABLE IF NOT EXISTS public.jisc_parvulos_b3 (
+  id TEXT PRIMARY KEY,
+  rbd VARCHAR(10) NOT NULL REFERENCES public.establecimientos(rbd) ON DELETE CASCADE,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  codigo_ue_junji TEXT,
+  correl_grupo INTEGER NOT NULL,
+  desc_nivel TEXT NOT NULL,
+  rut_parvulo TEXT,
+  edad_meses INTEGER NOT NULL,
+  fecha_nacimiento TEXT,
+  fecha_ingreso TEXT,
+  fecha_retiro TEXT,
+  activo BOOLEAN NOT NULL DEFAULT TRUE,
+  presentes_mes INTEGER DEFAULT 0,
+  dias_trabajados_mes INTEGER DEFAULT 0,
+  porcentaje_asistencia NUMERIC(5,2) DEFAULT 0,
+  requiere_nee BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+DROP TRIGGER IF EXISTS trg_jisc_parvulos_b3_updated_at ON public.jisc_parvulos_b3;
+CREATE TRIGGER trg_jisc_parvulos_b3_updated_at
+BEFORE UPDATE ON public.jisc_parvulos_b3
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- ==============================================================================
 -- ÍNDICES DE RENDIMIENTO Y ACCESO RÁPIDO
 -- ==============================================================================
@@ -339,6 +449,9 @@ CREATE INDEX IF NOT EXISTS idx_salas_rbd ON public.salas_infraestructura(rbd);
 CREATE INDEX IF NOT EXISTS idx_planes_estudio_nivel ON public.planes_estudio_mineduc(nivel, regimen);
 CREATE INDEX IF NOT EXISTS idx_auditoria_rbd_periodo ON public.auditoria_cambios(rbd, periodo);
 CREATE INDEX IF NOT EXISTS idx_usuarios_role ON public.usuarios_sistema(role);
+CREATE INDEX IF NOT EXISTS idx_jisc_niveles_rbd_periodo ON public.jisc_niveles_parvularia(rbd, periodo);
+CREATE INDEX IF NOT EXISTS idx_jisc_turnos_rbd_periodo ON public.jisc_turnos_personal(rbd, periodo);
+CREATE INDEX IF NOT EXISTS idx_jisc_b3_rbd_periodo ON public.jisc_parvulos_b3(rbd, periodo);
 
 -- ==============================================================================
 -- VISTAS ANALÍTICAS Y METODOLOGÍA LEY 20.903
@@ -384,6 +497,9 @@ ALTER TABLE public.auditoria_cambios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.roles_permisos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.roles_permisos_bitacora ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.configuracion_general ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jisc_niveles_parvularia ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jisc_turnos_personal ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jisc_parvulos_b3 ENABLE ROW LEVEL SECURITY;
 
 -- Políticas base: solo usuarios autenticados vía Supabase Auth.
 -- IMPORTANTE: Aplicar inmediatamente database/migrations/20261112_rls_and_updated_at.sql

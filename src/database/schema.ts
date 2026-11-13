@@ -7,6 +7,17 @@ CREATE TABLE IF NOT EXISTS establecimientos (
   rbd TEXT UNIQUE NOT NULL,
   nombre TEXT NOT NULL,
   comuna TEXT NOT NULL,
+  tipo TEXT DEFAULT 'ESCUELA',
+  tipo_perfil TEXT DEFAULT 'ESCUELA_BASICA',
+  modalidades_autorizadas_json TEXT,
+  codigo_junji TEXT,
+  nombre_fantasia TEXT,
+  localidad TEXT,
+  direccion TEXT,
+  horario_apertura TEXT,
+  horario_cierre TEXT,
+  horario_extension_inicio TEXT,
+  horario_extension_cierre TEXT,
   regimen TEXT NOT NULL,
   porcentaje_prioritarios REAL NOT NULL,
   director TEXT,
@@ -222,6 +233,76 @@ CREATE TABLE IF NOT EXISTS establecimientos_eliminados (
   fecha TEXT
 );
 
+CREATE TABLE IF NOT EXISTS jisc_niveles_parvularia (
+  id TEXT PRIMARY KEY,
+  rbd TEXT NOT NULL,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  codigo_ue_junji TEXT,
+  correl_grupo INTEGER NOT NULL,
+  cod_programa TEXT,
+  nivel_nombre TEXT NOT NULL,
+  subtipo_nivel TEXT NOT NULL,
+  es_heterogeneo INTEGER DEFAULT 0,
+  capacidad_autorizada INTEGER DEFAULT 0,
+  matricula_activa INTEGER DEFAULT 0,
+  retiros INTEGER DEFAULT 0,
+  asistencia_promedio REAL DEFAULT 0,
+  edad_meses_min INTEGER,
+  edad_meses_max INTEGER,
+  edad_minima_criterio INTEGER,
+  jornada TEXT DEFAULT 'COMPLETA',
+  horario_inicio TEXT DEFAULT '08:30',
+  horario_fin TEXT DEFAULT '16:30',
+  tiene_extension_horaria INTEGER DEFAULT 0,
+  matricula_extension INTEGER DEFAULT 0,
+  educadoras_asignadas_jisc INTEGER DEFAULT 0,
+  tecnicos_asignados_jisc INTEGER DEFAULT 0,
+  directoras_asignadas_jisc INTEGER DEFAULT 0,
+  fuente_dato TEXT DEFAULT 'MANUAL',
+  updated_at TEXT,
+  FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
+);
+
+CREATE TABLE IF NOT EXISTS jisc_turnos_personal (
+  id TEXT PRIMARY KEY,
+  rbd TEXT NOT NULL,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  nivel_jisc_id TEXT,
+  run_funcionario TEXT NOT NULL,
+  nombre_funcionario TEXT,
+  estamento_vtf TEXT NOT NULL,
+  dias_semana TEXT DEFAULT 'L-V',
+  hora_entrada TEXT NOT NULL,
+  hora_salida TEXT NOT NULL,
+  minutos_colacion INTEGER DEFAULT 45,
+  franja TEXT DEFAULT 'REGULAR',
+  horas_semanales_cronologicas REAL DEFAULT 44,
+  observaciones TEXT,
+  updated_at TEXT,
+  FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
+);
+
+CREATE TABLE IF NOT EXISTS jisc_parvulos_b3 (
+  id TEXT PRIMARY KEY,
+  rbd TEXT NOT NULL,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  codigo_ue_junji TEXT,
+  correl_grupo INTEGER NOT NULL,
+  desc_nivel TEXT NOT NULL,
+  rut_parvulo TEXT,
+  edad_meses INTEGER NOT NULL,
+  fecha_nacimiento TEXT,
+  fecha_ingreso TEXT,
+  fecha_retiro TEXT,
+  activo INTEGER DEFAULT 1,
+  presentes_mes INTEGER DEFAULT 0,
+  dias_trabajados_mes INTEGER DEFAULT 0,
+  porcentaje_asistencia REAL DEFAULT 0,
+  requiere_nee INTEGER DEFAULT 0,
+  updated_at TEXT,
+  FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
+);
+
 CREATE TABLE IF NOT EXISTS __schema_migrations (
   id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL
@@ -230,6 +311,17 @@ CREATE TABLE IF NOT EXISTS __schema_migrations (
 
 const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, string]>> = {
   establecimientos: [
+    ['tipo', "TEXT DEFAULT 'ESCUELA'"],
+    ['tipo_perfil', "TEXT DEFAULT 'ESCUELA_BASICA'"],
+    ['modalidades_autorizadas_json', 'TEXT'],
+    ['codigo_junji', 'TEXT'],
+    ['nombre_fantasia', 'TEXT'],
+    ['localidad', 'TEXT'],
+    ['direccion', 'TEXT'],
+    ['horario_apertura', 'TEXT'],
+    ['horario_cierre', 'TEXT'],
+    ['horario_extension_inicio', 'TEXT'],
+    ['horario_extension_cierre', 'TEXT'],
     ['subvencion_sep_mensual', 'REAL DEFAULT 0'],
     ['subvencion_pro_retencion', 'REAL DEFAULT 0'],
     ['cupo_horas_pie_diferencial', 'REAL DEFAULT 0'],
@@ -244,7 +336,14 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['tipo_modalidad', "TEXT DEFAULT 'REGULAR'"],
     ['grados_combinados_json', 'TEXT'],
     ['especialidad_tp', 'TEXT'],
-    ['plan_estudio_id', 'TEXT']
+    ['plan_estudio_id', 'TEXT'],
+    ['edad_meses_minima', 'INTEGER'],
+    ['edad_meses_maxima', 'INTEGER'],
+    ['codigo_grupo_jisc', 'TEXT'],
+    ['horario_jornada', 'TEXT'],
+    ['tiene_extension_horaria', 'INTEGER DEFAULT 0'],
+    ['matricula_extension', 'INTEGER DEFAULT 0'],
+    ['jornada_nivel', "TEXT DEFAULT 'COMPLETA'"]
   ],
   docentes: [
     ['horas_subvencion_general_titular', 'REAL DEFAULT 0'],
@@ -283,7 +382,13 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['horas_aprobadas_gdp', 'REAL DEFAULT 0'],
     ['situacion_final_gdp', "TEXT DEFAULT 'Vigente'"],
     ['observaciones_director', 'TEXT'],
-    ['observaciones_slep', 'TEXT']
+    ['observaciones_slep', 'TEXT'],
+    ['es_vtf', 'INTEGER DEFAULT 0'],
+    ['funcion_vtf', 'TEXT'],
+    ['grupo_jisc_id', 'TEXT'],
+    ['hora_ingreso_turno', 'TEXT'],
+    ['hora_salida_turno', 'TEXT'],
+    ['reemplazo_de_run', 'TEXT']
   ],
   asignaciones_horarias: [
     ['co_docente_id', 'TEXT'],
@@ -314,7 +419,12 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['horas_aprobadas_gdp', 'REAL DEFAULT 0'],
     ['situacion_final_gdp', "TEXT DEFAULT 'Vigente'"],
     ['observaciones_director', 'TEXT'],
-    ['observaciones_slep', 'TEXT']
+    ['observaciones_slep', 'TEXT'],
+    ['es_vtf', 'INTEGER DEFAULT 0'],
+    ['funcion_vtf', 'TEXT'],
+    ['grupo_jisc_id', 'TEXT'],
+    ['hora_ingreso_turno', 'TEXT'],
+    ['hora_salida_turno', 'TEXT']
   ],
   usuarios_sistema: [
     ['debe_cambiar_password', 'INTEGER DEFAULT 0']
@@ -379,7 +489,10 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_asistentes_run ON asistentes_educacion(run);',
     'CREATE INDEX IF NOT EXISTS idx_asistentes_estamento ON asistentes_educacion(estamento);',
     'CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios_sistema(email);',
-    'CREATE INDEX IF NOT EXISTS idx_usuarios_role ON usuarios_sistema(role);'
+    'CREATE INDEX IF NOT EXISTS idx_usuarios_role ON usuarios_sistema(role);',
+    'CREATE INDEX IF NOT EXISTS idx_jisc_niveles_rbd_periodo ON jisc_niveles_parvularia(rbd, periodo);',
+    'CREATE INDEX IF NOT EXISTS idx_jisc_turnos_rbd_periodo ON jisc_turnos_personal(rbd, periodo);',
+    'CREATE INDEX IF NOT EXISTS idx_jisc_b3_rbd_periodo ON jisc_parvulos_b3(rbd, periodo);'
   ];
 
   for (const idxSql of indexes) {

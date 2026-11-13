@@ -49,7 +49,17 @@ export function mapEstablecimientoToDb(est: Establecimiento) {
     id: est.id || `est-${est.rbd.trim()}`,
     nombre: est.nombre,
     comuna: est.comuna,
-    tipo: (est as any).tipo || 'ESCUELA',
+    tipo: est.tipo || 'ESCUELA',
+    tipo_perfil: est.tipoPerfil || 'ESCUELA_BASICA',
+    modalidades_autorizadas_json: est.modalidadesAutorizadas || [],
+    codigo_junji: est.codigoJunji || null,
+    nombre_fantasia: est.nombreFantasia || null,
+    localidad: est.localidad || null,
+    direccion: est.direccion || null,
+    horario_apertura: est.horarioApertura || null,
+    horario_cierre: est.horarioCierre || null,
+    horario_extension_inicio: est.horarioExtensionInicio || null,
+    horario_extension_cierre: est.horarioExtensionCierre || null,
     regimen: est.regimen || 'JEC',
     porcentaje_prioritarios: est.porcentajePrioritarios ?? 75.0,
     director: est.director || null,
@@ -65,11 +75,32 @@ export function mapEstablecimientoToDb(est: Establecimiento) {
 }
 
 export function mapEstablecimientoFromDb(row: any): Establecimiento {
+  let modalidadesAutorizadas: string[] | undefined;
+  try {
+    const raw = row.modalidades_autorizadas_json;
+    if (typeof raw === 'string' && raw.trim()) {
+      modalidadesAutorizadas = JSON.parse(raw);
+    } else if (Array.isArray(raw)) {
+      modalidadesAutorizadas = raw;
+    }
+  } catch (_) {}
+
   return {
     id: row.id || `est-${row.rbd}`,
     rbd: row.rbd,
     nombre: row.nombre,
     comuna: row.comuna,
+    tipo: row.tipo || undefined,
+    tipoPerfil: row.tipo_perfil || undefined,
+    modalidadesAutorizadas,
+    codigoJunji: row.codigo_junji || undefined,
+    nombreFantasia: row.nombre_fantasia || undefined,
+    localidad: row.localidad || undefined,
+    direccion: row.direccion || undefined,
+    horarioApertura: row.horario_apertura || undefined,
+    horarioCierre: row.horario_cierre || undefined,
+    horarioExtensionInicio: row.horario_extension_inicio || undefined,
+    horarioExtensionCierre: row.horario_extension_cierre || undefined,
     regimen: row.regimen,
     porcentajePrioritarios: Number(row.porcentaje_prioritarios ?? 75),
     director: row.director || undefined,
@@ -127,7 +158,14 @@ export function mapCursoToDb(curso: CursoSae) {
     tipo_modalidad: curso.tipoModalidad || 'REGULAR',
     grados_combinados_json: curso.gradosCombinados ? JSON.stringify(curso.gradosCombinados) : '[]',
     especialidad_tp: curso.especialidadTp || null,
-    plan_estudio_id: curso.planEstudioId || null
+    plan_estudio_id: curso.planEstudioId || null,
+    edad_meses_minima: curso.edadMesesMinima ?? null,
+    edad_meses_maxima: curso.edadMesesMaxima ?? null,
+    codigo_grupo_jisc: curso.codigoGrupoJisc || null,
+    horario_jornada: curso.horarioJornada || null,
+    tiene_extension_horaria: Boolean(curso.tieneExtensionHoraria),
+    matricula_extension: curso.matriculaExtension ?? 0,
+    jornada_nivel: curso.jornadaNivel || 'COMPLETA'
   };
 }
 
@@ -161,7 +199,14 @@ export function mapCursoFromDb(row: any): CursoSae {
     tipoModalidad: row.tipo_modalidad,
     gradosCombinados: grados,
     especialidadTp: row.especialidad_tp || undefined,
-    planEstudioId: row.plan_estudio_id || undefined
+    planEstudioId: row.plan_estudio_id || undefined,
+    edadMesesMinima: row.edad_meses_minima !== null && row.edad_meses_minima !== undefined ? Number(row.edad_meses_minima) : undefined,
+    edadMesesMaxima: row.edad_meses_maxima !== null && row.edad_meses_maxima !== undefined ? Number(row.edad_meses_maxima) : undefined,
+    codigoGrupoJisc: row.codigo_grupo_jisc || undefined,
+    horarioJornada: row.horario_jornada || undefined,
+    tieneExtensionHoraria: Boolean(row.tiene_extension_horaria),
+    matriculaExtension: row.matricula_extension !== null && row.matricula_extension !== undefined ? Number(row.matricula_extension) : undefined,
+    jornadaNivel: row.jornada_nivel || undefined
   };
 }
 

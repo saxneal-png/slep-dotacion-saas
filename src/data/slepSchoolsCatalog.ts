@@ -1,16 +1,43 @@
-import { ComunaValleDiguillin } from '../types';
+import { ComunaValleDiguillin, TipoPerfilEstablecimiento } from '../types';
 
 export interface SlepSchoolCatalogItem {
   rbd: string;
   nombre: string;
   comuna: ComunaValleDiguillin;
   tipo: 'LICEO' | 'ESCUELA' | 'COLEGIO' | 'JARDIN' | 'SALA_CUNA';
+  tipoPerfil?: TipoPerfilEstablecimiento;
   director?: string;
+}
+
+/** Alias de RBD detectados en planillas oficiales DEP/JISC vs BDcolegios.xlsx */
+export const RBD_ALIAS_MAP: Record<string, string> = {
+  '34646': '36646', // Sala Cuna y Jardín Infantil Rios del Sur 2 (JISC/PAL VTF usan 34646)
+};
+
+export function resolveCanonicalRbd(rbd: string | number | undefined | null): string {
+  if (rbd === undefined || rbd === null) return '';
+  const withoutDv = String(rbd).trim().split('-')[0].trim();
+  const clean = withoutDv.replace(/^[0]+/, '');
+  return RBD_ALIAS_MAP[clean] || clean;
+}
+
+export function inferTipoPerfilCatalog(item: Pick<SlepSchoolCatalogItem, 'rbd' | 'nombre' | 'tipo' | 'tipoPerfil'>): TipoPerfilEstablecimiento {
+  if (item.tipoPerfil) return item.tipoPerfil;
+  const rbd = resolveCanonicalRbd(item.rbd);
+  if (item.tipo === 'JARDIN' || item.tipo === 'SALA_CUNA') return 'JARDIN_SALA_CUNA';
+  if (rbd === '3649') return 'ESCUELA_ESPECIAL';
+  if (rbd === '3938' || rbd === '3979') return 'EPJA';
+  const upper = (item.nombre || '').toUpperCase();
+  if (upper.includes('ESPECIAL')) return 'ESCUELA_ESPECIAL';
+  if (upper.includes('ADULTO') || upper.includes('CEIA') || upper.includes('EPJA')) return 'EPJA';
+  if (upper.includes('POLIVALENTE') || upper.includes('POLITECNICO') || upper.includes('TECNICO')) return 'LICEO_POLIVALENTE';
+  if (item.tipo === 'LICEO' || item.tipo === 'COLEGIO') return 'LICEO_HC';
+  return 'ESCUELA_BASICA';
 }
 
 /**
  * Catálogo Maestro Oficial del Servicio Local de Educación Pública Valle Diguillín.
- * Comprende los 121 establecimientos y jardines infantiles de las 6 comunas territoriales.
+ * Sincronizado con BDcolegios.xlsx (131 establecimientos).
  */
 export const SLEP_VALLE_DIGUILLIN_SCHOOLS: SlepSchoolCatalogItem[] = [
   { rbd: '3638', nombre: 'LICEO BICENTENARIO MARTA BRUNET CÁRAVES', comuna: 'Chillán', tipo: 'LICEO' },
@@ -138,12 +165,12 @@ export const SLEP_VALLE_DIGUILLIN_SCHOOLS: SlepSchoolCatalogItem[] = [
   { rbd: '34671', nombre: 'JARDIN INFANTIL PAPELUCHO', comuna: 'Pemuco', tipo: 'JARDIN' },
   { rbd: '34672', nombre: 'SALA CUNA PASITOS', comuna: 'Pemuco', tipo: 'SALA_CUNA' },
   { rbd: '34713', nombre: 'JARDIN INFANTIL RAYITO DE SOL PUEBLO SECO', comuna: 'San Ignacio', tipo: 'JARDIN' },
-  { rbd: '34722', nombre: 'JARDIN INFANTIL CAMPANITAS', comuna: 'Yungay', tipo: 'JARDIN' },
-  { rbd: '34724', nombre: 'JARDIN INFANTIL ANGELITOS DE AMOR', comuna: 'Yungay', tipo: 'JARDIN' },
-  { rbd: '34725', nombre: 'JARDIN INFANTIL CUNCUNITA', comuna: 'Yungay', tipo: 'JARDIN' },
-  { rbd: '34726', nombre: 'JARDIN INFANTIL MUNDO DE AMOR', comuna: 'Yungay', tipo: 'JARDIN' },
-  { rbd: '36646', nombre: 'SALA CUNA Y JARDIN INFANTIL RIOS DEL SUR 2', comuna: 'Chillán Viejo', tipo: 'JARDIN' },
-  { rbd: '34727', nombre: 'SALA CUNA PARQUE ESTADIO', comuna: 'Yungay', tipo: 'SALA_CUNA' },
+  { rbd: '34722', nombre: 'Jardín Infantil Campanitas', comuna: 'Yungay', tipo: 'JARDIN', tipoPerfil: 'JARDIN_SALA_CUNA' },
+  { rbd: '34724', nombre: 'Jardín infantil Angelitos de amor', comuna: 'Yungay', tipo: 'JARDIN', tipoPerfil: 'JARDIN_SALA_CUNA' },
+  { rbd: '34725', nombre: 'Jardín infantil Cuncunita', comuna: 'Yungay', tipo: 'JARDIN', tipoPerfil: 'JARDIN_SALA_CUNA' },
+  { rbd: '34726', nombre: 'Jardín infantil Mundo de Amor', comuna: 'Yungay', tipo: 'JARDIN', tipoPerfil: 'JARDIN_SALA_CUNA' },
+  { rbd: '36646', nombre: 'Sala Cuna y Jardín Infantil Rios del Sur 2', comuna: 'Chillán Viejo', tipo: 'JARDIN', tipoPerfil: 'JARDIN_SALA_CUNA' },
+  { rbd: '34727', nombre: 'SALA CUNA PARQUE ESTADIO', comuna: 'Yungay', tipo: 'SALA_CUNA', tipoPerfil: 'JARDIN_SALA_CUNA' },
 ];
 
 // Mapas indexados para búsqueda rápida en O(1)
@@ -160,19 +187,24 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-// Inicialización de índices
+// Inicialización de índices y perfil normativo
 for (const item of SLEP_VALLE_DIGUILLIN_SCHOOLS) {
+  if (!item.tipoPerfil) {
+    item.tipoPerfil = inferTipoPerfilCatalog(item);
+  }
   catalogByRbd.set(item.rbd, item);
   catalogByNameNormalized.set(normalizeText(item.nombre), item);
 }
 
 /**
- * Busca un establecimiento oficial por su RBD exacto.
+ * Busca un establecimiento oficial por su RBD exacto (incluyendo alias JISC/PAL).
  */
 export function findSchoolByRbd(rbd: string | number | undefined | null): SlepSchoolCatalogItem | undefined {
   if (!rbd) return undefined;
-  const clean = String(rbd).trim().replace(/^[0]+/, ''); // Quitar ceros a la izquierda
-  return catalogByRbd.get(clean) || catalogByRbd.get(String(rbd).trim());
+  const raw = String(rbd).trim();
+  const clean = raw.replace(/^[0]+/, ''); // Quitar ceros a la izquierda
+  const canonical = resolveCanonicalRbd(clean);
+  return catalogByRbd.get(canonical) || catalogByRbd.get(clean) || catalogByRbd.get(raw);
 }
 
 /**

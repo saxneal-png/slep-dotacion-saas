@@ -4,8 +4,19 @@ import {
   ShieldAlert, Phone, Mail, User, School, Sparkles, Filter, AlertOctagon,
   ArrowRight, Check, RefreshCw
 } from 'lucide-react';
-import { Establecimiento, ComunaValleDiguillin, RegimenJornada } from '../types';
+import {
+  Establecimiento,
+  ComunaValleDiguillin,
+  RegimenJornada,
+  TipoEstablecimientoBase,
+  TipoPerfilEstablecimiento,
+} from '../types';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
+import {
+  PERFILES_ESTABLECIMIENTO_OPTIONS,
+  getPerfilEstablecimientoMeta,
+  resolvePerfilEstablecimiento,
+} from '../utils/establishmentTypeHelpers';
 
 export interface GestionEstablecimientosModalProps {
   isOpen: boolean;
@@ -39,18 +50,25 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
   const [tab, setTab] = useState<'lista' | 'nuevo'>('lista');
   const [busqueda, setBusqueda] = useState('');
   const [filtroComuna, setFiltroComuna] = useState<string>('ALL');
+  const [filtroTipo, setFiltroTipo] = useState<'ALL' | TipoPerfilEstablecimiento>('ALL');
   
   // Estado para creación / edición
   const [editingEst, setEditingEst] = useState<Establecimiento | null>(null);
   const [formRbd, setFormRbd] = useState('');
   const [formNombre, setFormNombre] = useState('');
+  const [formTipoPerfil, setFormTipoPerfil] = useState<TipoPerfilEstablecimiento>('ESCUELA_BASICA');
   const [formComuna, setFormComuna] = useState<ComunaValleDiguillin>('Chillán');
+  const [formLocalidad, setFormLocalidad] = useState('');
   const [formRegimen, setFormRegimen] = useState<RegimenJornada>('JEC');
   const [formPrioritarios, setFormPrioritarios] = useState(80);
   const [formDirector, setFormDirector] = useState('');
   const [formAsesor, setFormAsesor] = useState('UATP Valle Diguillín');
   const [formTelefono, setFormTelefono] = useState('');
   const [formEmail, setFormEmail] = useState('');
+  const [formCodigoJunji, setFormCodigoJunji] = useState('');
+  const [formHorarioApertura, setFormHorarioApertura] = useState('08:30');
+  const [formHorarioCierre, setFormHorarioCierre] = useState('16:30');
+  const [formHorarioExtensionCierre, setFormHorarioExtensionCierre] = useState('19:30');
   const [formSubvencionSep, setFormSubvencionSep] = useState<number>(0);
   const [formSubvencionProRet, setFormSubvencionProRet] = useState<number>(0);
   const [formCupoPieDiferencial, setFormCupoPieDiferencial] = useState<number>(0);
@@ -98,29 +116,38 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
   const filteredColegios = useMemo(() => {
     return colegios.filter(c => {
       if (filtroComuna !== 'ALL' && c.comuna !== filtroComuna) return false;
+      if (filtroTipo !== 'ALL' && resolvePerfilEstablecimiento(c) !== filtroTipo) return false;
       if (!busqueda) return true;
       const q = busqueda.toLowerCase().trim();
       return (
         c.nombre.toLowerCase().includes(q) ||
         c.rbd.toLowerCase().includes(q) ||
         (c.comuna && c.comuna.toLowerCase().includes(q)) ||
+        (c.localidad && c.localidad.toLowerCase().includes(q)) ||
+        (c.codigoJunji && c.codigoJunji.toLowerCase().includes(q)) ||
         (c.director && c.director.toLowerCase().includes(q)) ||
         (c.asesorUatp && c.asesorUatp.toLowerCase().includes(q))
       );
     }).sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [colegios, busqueda, filtroComuna]);
+  }, [colegios, busqueda, filtroComuna, filtroTipo]);
 
   const abrirFormularioNuevo = () => {
     setEditingEst(null);
     setFormRbd('');
     setFormNombre('');
+    setFormTipoPerfil('ESCUELA_BASICA');
     setFormComuna('Chillán');
+    setFormLocalidad('');
     setFormRegimen('JEC');
     setFormPrioritarios(80);
     setFormDirector('');
     setFormAsesor('UATP Valle Diguillín');
     setFormTelefono('');
     setFormEmail('');
+    setFormCodigoJunji('');
+    setFormHorarioApertura('08:30');
+    setFormHorarioCierre('16:30');
+    setFormHorarioExtensionCierre('19:30');
     setFormSubvencionSep(0);
     setFormSubvencionProRet(0);
     setFormCupoPieDiferencial(0);
@@ -133,13 +160,19 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
     setEditingEst(est);
     setFormRbd(est.rbd);
     setFormNombre(est.nombre);
+    setFormTipoPerfil(resolvePerfilEstablecimiento(est));
     setFormComuna(est.comuna);
+    setFormLocalidad(est.localidad || '');
     setFormRegimen(est.regimen);
     setFormPrioritarios(est.porcentajePrioritarios ?? 80);
     setFormDirector(est.director || '');
     setFormAsesor(est.asesorUatp || 'UATP Valle Diguillín');
     setFormTelefono(est.telefono || '');
     setFormEmail(est.email || '');
+    setFormCodigoJunji(est.codigoJunji || '');
+    setFormHorarioApertura(est.horarioApertura || '08:30');
+    setFormHorarioCierre(est.horarioCierre || '16:30');
+    setFormHorarioExtensionCierre(est.horarioExtensionCierre || '19:30');
     setFormSubvencionSep(est.subvencionSepMensual || 0);
     setFormSubvencionProRet(est.subvencionProRetencion || 0);
     setFormCupoPieDiferencial(est.cupoHorasPieDiferencial || 0);
@@ -179,17 +212,33 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
 
     setGuardando(true);
     try {
+      const perfilOption = PERFILES_ESTABLECIMIENTO_OPTIONS.find(o => o.value === formTipoPerfil);
+      const upperNombre = nombreClean.toUpperCase();
+      const tipoResuelto: TipoEstablecimientoBase =
+        formTipoPerfil === 'JARDIN_SALA_CUNA'
+          ? upperNombre.startsWith('SALA CUNA') && !upperNombre.includes('JARD')
+            ? 'SALA_CUNA'
+            : 'JARDIN'
+          : (perfilOption?.tipoBaseDefault || 'ESCUELA');
+
       const datos: Establecimiento = {
         id: editingEst ? editingEst.id : `est-${rbdClean}`,
         rbd: rbdClean,
         nombre: nombreClean,
+        tipo: tipoResuelto,
+        tipoPerfil: formTipoPerfil,
         comuna: formComuna,
+        localidad: formLocalidad.trim() || undefined,
         regimen: formRegimen,
         porcentajePrioritarios: Number(formPrioritarios),
         director: formDirector.trim() || undefined,
         asesorUatp: formAsesor.trim() || undefined,
         telefono: formTelefono.trim() || undefined,
         email: formEmail.trim() || undefined,
+        codigoJunji: formTipoPerfil === 'JARDIN_SALA_CUNA' ? (formCodigoJunji.trim() || undefined) : editingEst?.codigoJunji,
+        horarioApertura: formTipoPerfil === 'JARDIN_SALA_CUNA' ? (formHorarioApertura.trim() || '08:30') : editingEst?.horarioApertura,
+        horarioCierre: formTipoPerfil === 'JARDIN_SALA_CUNA' ? (formHorarioCierre.trim() || '16:30') : editingEst?.horarioCierre,
+        horarioExtensionCierre: formTipoPerfil === 'JARDIN_SALA_CUNA' ? (formHorarioExtensionCierre.trim() || '19:30') : editingEst?.horarioExtensionCierre,
         subvencionSepMensual: Number(formSubvencionSep) || 0,
         subvencionProRetencion: Number(formSubvencionProRet) || 0,
         cupoHorasPieDiferencial: Number(formCupoPieDiferencial) || 0,
@@ -321,8 +370,18 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
                 />
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <select
+                  value={filtroTipo}
+                  onChange={(e) => setFiltroTipo(e.target.value as 'ALL' | TipoPerfilEstablecimiento)}
+                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 rounded-xl px-2.5 py-2 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="ALL">Todos los Tipos</option>
+                  {PERFILES_ESTABLECIMIENTO_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
                 <select
                   value={filtroComuna}
                   onChange={(e) => setFiltroComuna(e.target.value)}
@@ -377,6 +436,7 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
               ) : (
                 filteredColegios.map((col) => {
                   const esActivo = colegioActivo?.id === col.id || colegioActivo?.rbd === col.rbd;
+                  const perfilMeta = getPerfilEstablecimientoMeta(col);
                   return (
                     <div
                       key={col.id || col.rbd}
@@ -392,9 +452,15 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
                         </div>
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-black text-slate-900 dark:text-white truncate">
                               {col.nombre}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${perfilMeta.badgeClass}`}
+                              title={perfilMeta.label}
+                            >
+                              {perfilMeta.shortLabel}
                             </span>
                             {esActivo && (
                               <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider">
@@ -404,17 +470,37 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">📍 {col.comuna}</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">📍 {col.comuna}{col.localidad ? ` (${col.localidad})` : ''}</span>
                             <span>•</span>
-                            <span>Régimen: <strong>{col.regimen}</strong></span>
-                            <span>•</span>
-                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                              col.porcentajePrioritarios >= 80
-                                ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                            }`}>
-                              {col.porcentajePrioritarios >= 80 ? '60/40 (≥80% SEP)' : '65/35'}
-                            </span>
+                            {perfilMeta.esJardinOSalaCuna ? (
+                              <>
+                                <span>Modalidad: <strong>VTF / D.S. 115</strong></span>
+                                {col.codigoJunji && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-mono text-[11px] bg-pink-50 dark:bg-pink-950/40 text-pink-700 dark:text-pink-300 px-1.5 rounded">
+                                      JISC {col.codigoJunji}
+                                    </span>
+                                  </>
+                                )}
+                                <span>•</span>
+                                <span className="text-[11px] font-mono">
+                                  {col.horarioApertura || '08:30'}–{col.horarioExtensionCierre || col.horarioCierre || '16:30'}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Régimen: <strong>{col.regimen}</strong></span>
+                                <span>•</span>
+                                <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                                  col.porcentajePrioritarios >= 80
+                                    ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                }`}>
+                                  {col.porcentajePrioritarios >= 80 ? '60/40 (≥80% SEP)' : '65/35'}
+                                </span>
+                              </>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 mt-1">
@@ -517,6 +603,94 @@ export const GestionEstablecimientosModal: React.FC<GestionEstablecimientosModal
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="sm:col-span-2">
+                <label className="text-[11px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                  Perfil / Modalidad Normativa *
+                </label>
+                <select
+                  value={formTipoPerfil}
+                  onChange={(e) => setFormTipoPerfil(e.target.value as TipoPerfilEstablecimiento)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                >
+                  {PERFILES_ESTABLECIMIENTO_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] uppercase font-black text-slate-600 dark:text-slate-300 block mb-1">
+                  Localidad / Sector
+                </label>
+                <input
+                  type="text"
+                  value={formLocalidad}
+                  onChange={(e) => setFormLocalidad(e.target.value)}
+                  placeholder="Ej: Pueblo Seco, Chillán Urbano"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {formTipoPerfil === 'JARDIN_SALA_CUNA' && (
+              <div className="p-4 rounded-xl bg-pink-50/70 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-800/70 space-y-3">
+                <h4 className="text-xs font-black text-pink-900 dark:text-pink-200 uppercase tracking-wider">
+                  Configuración Jardín Infantil / Sala Cuna (VTF · D.S. 115 / JISC)
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-pink-800 dark:text-pink-300 block mb-1">
+                      Código Unidad JISC
+                    </label>
+                    <input
+                      type="text"
+                      value={formCodigoJunji}
+                      onChange={(e) => setFormCodigoJunji(e.target.value)}
+                      placeholder="Ej: 16101018"
+                      className="w-full bg-white dark:bg-slate-900 border border-pink-200 dark:border-pink-800 rounded-lg p-2 text-xs font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-pink-800 dark:text-pink-300 block mb-1">
+                      Apertura Normal
+                    </label>
+                    <input
+                      type="text"
+                      value={formHorarioApertura}
+                      onChange={(e) => setFormHorarioApertura(e.target.value)}
+                      placeholder="08:30"
+                      className="w-full bg-white dark:bg-slate-900 border border-pink-200 dark:border-pink-800 rounded-lg p-2 text-xs font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-pink-800 dark:text-pink-300 block mb-1">
+                      Cierre Jornada Normal
+                    </label>
+                    <input
+                      type="text"
+                      value={formHorarioCierre}
+                      onChange={(e) => setFormHorarioCierre(e.target.value)}
+                      placeholder="16:30"
+                      className="w-full bg-white dark:bg-slate-900 border border-pink-200 dark:border-pink-800 rounded-lg p-2 text-xs font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-pink-800 dark:text-pink-300 block mb-1">
+                      Cierre Extensión Horaria
+                    </label>
+                    <input
+                      type="text"
+                      value={formHorarioExtensionCierre}
+                      onChange={(e) => setFormHorarioExtensionCierre(e.target.value)}
+                      placeholder="19:30"
+                      className="w-full bg-white dark:bg-slate-900 border border-pink-200 dark:border-pink-800 rounded-lg p-2 text-xs font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>

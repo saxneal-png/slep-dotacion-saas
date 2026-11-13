@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { LayoutGrid, Plus, AlertTriangle, CheckCircle2, Info, Building, Trash2, Edit } from 'lucide-react';
 import { Establecimiento, SalaInfraestructura, CursoSae } from '../types';
-import { evaluarCapacidadSaeYInfraestructura } from '@slep/mineduc-engine';
+import { evaluarCapacidadSaeYInfraestructura, calcularAforoFisicoSala } from '@slep/mineduc-engine';
+import { esJardinOSalaCuna } from '../utils/establishmentTypeHelpers';
 
 interface SalasSaeViewProps {
   colegio: Establecimiento | null;
@@ -25,7 +26,7 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
   const [nombreSala, setNombreSala] = useState('');
   const [pabellon, setPabellon] = useState('');
   const [superficieM2, setSuperficieM2] = useState(45);
-  const [tipoSala, setTipoSala] = useState<'REGULAR' | 'PARVULARIA' | 'TALLER'>('REGULAR');
+  const [tipoSala, setTipoSala] = useState<SalaInfraestructura['tipo']>('REGULAR');
 
   if (!colegio) {
     return (
@@ -35,12 +36,14 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
     );
   }
 
+  const esJardin = esJardinOSalaCuna(colegio);
+
   const abrirModalNueva = () => {
     setEditingSala(null);
     setNombreSala(`Sala ${salas.length + 1}`);
     setPabellon('');
-    setSuperficieM2(45);
-    setTipoSala('REGULAR');
+    setSuperficieM2(esJardin ? 35 : 45);
+    setTipoSala(esJardin ? 'PARVULARIA_MEDIO' : 'REGULAR');
     setModalSalaOpen(true);
   };
 
@@ -55,8 +58,7 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
 
   const handleGuardarSala = (e: React.FormEvent) => {
     e.preventDefault();
-    const factor = tipoSala === 'PARVULARIA' ? 1.5 : tipoSala === 'TALLER' ? 1.8 : 1.1;
-    const aforo = Math.floor(superficieM2 / factor);
+    const { aforoMaximo: aforo } = calcularAforoFisicoSala(superficieM2, tipoSala);
     const nombreFinal = nombreSala.trim() || (editingSala ? editingSala.nombreSala : `Sala ${salas.length + 1}`);
 
     const salaObj: SalaInfraestructura = {
@@ -346,18 +348,29 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">Tipo de Espacio *</label>
                   <select
                     value={tipoSala}
-                    onChange={e => setTipoSala(e.target.value as any)}
+                    onChange={e => setTipoSala(e.target.value as SalaInfraestructura['tipo'])}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
                   >
-                    <option value="REGULAR">Aula Común (1.1 m²)</option>
-                    <option value="PARVULARIA">Parvularia (1.5 m²)</option>
+                    <option value="REGULAR">Aula Común (1.1 m² / máx. 45)</option>
+                    <option value="SALA_CUNA">Sala Cuna VTF (2.5 m² / máx. 20)</option>
+                    <option value="PARVULARIA_MEDIO">Nivel Medio VTF (1.1 m² / máx. 32)</option>
+                    <option value="PARVULARIA">Parvularia Transición NT1/NT2 (1.5 m² / máx. 35)</option>
                     <option value="TALLER">Taller / Lab (1.8 m²)</option>
                   </select>
                 </div>
               </div>
 
               <div className="p-3 bg-amber-50 rounded-lg text-amber-800 text-[11px]">
-                Aforo físico calculado automáticamente: <strong>{Math.floor(superficieM2 / (tipoSala === 'PARVULARIA' ? 1.5 : tipoSala === 'TALLER' ? 1.8 : 1.1))} estudiantes</strong> (Decreto 548).
+                {(() => {
+                  const calc = calcularAforoFisicoSala(superficieM2, tipoSala);
+                  return (
+                    <>
+                      Aforo físico calculado automáticamente:{' '}
+                      <strong>{calc.aforoMaximo} {tipoSala === 'SALA_CUNA' ? 'lactantes' : 'estudiantes'}</strong>{' '}
+                      ({calc.factorM2} m²/niño, D.S. 548 / OGUC Art. 4.5.6).
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t">

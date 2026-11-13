@@ -573,6 +573,62 @@ export function validarEleccionEstudianteHc(nombresAsignaturas: string[]): {
 }
 
 export const DATA_PLANES_ESTUDIO_MINEDUC = {
+  "sala_cuna": {
+    nombre: "Sala Cuna (Menor, Mayor y Heterogénea - BCEP 2018 / VTF)",
+    referenciaFuente: "Bases Curriculares Educación Parvularia (Dto. 28/2019), D.S. 315/2010 y D.S. 115/2012",
+    regimen: {
+      JEC: { total: 40, libre: 0 },
+      No_JEC: { total: 40, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social (Identidad, Autonomía y Corporalidad)", JEC: 16, No_JEC: 16 },
+      { nombre: "Ámbito Comunicación Integral (Lenguaje Verbal y Artístico Temprano)", JEC: 10, No_JEC: 10 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 8, No_JEC: 8 },
+      { nombre: "Bienestar Integral, Alimentación y Apego Seguro", JEC: 6, No_JEC: 6 }
+    ]
+  },
+  "medio_menor": {
+    nombre: "Nivel Medio Menor (BCEP 2018 / VTF)",
+    referenciaFuente: "Bases Curriculares Educación Parvularia (Dto. 28/2019), D.S. 315/2010 y D.S. 115/2012",
+    regimen: {
+      JEC: { total: 40, libre: 0 },
+      No_JEC: { total: 40, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 14, No_JEC: 14 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 12, No_JEC: 12 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 10, No_JEC: 10 },
+      { nombre: "Juego Libre y Experiencias Integradas", JEC: 4, No_JEC: 4 }
+    ]
+  },
+  "medio_mayor": {
+    nombre: "Nivel Medio Mayor (BCEP 2018 / VTF)",
+    referenciaFuente: "Bases Curriculares Educación Parvularia (Dto. 28/2019), D.S. 315/2010 y D.S. 115/2012",
+    regimen: {
+      JEC: { total: 40, libre: 0 },
+      No_JEC: { total: 40, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 12, No_JEC: 12 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 13, No_JEC: 13 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 11, No_JEC: 11 },
+      { nombre: "Juego Libre y Experiencias Integradas", JEC: 4, No_JEC: 4 }
+    ]
+  },
+  "nivel_heterogeneo_vtf": {
+    nombre: "Nivel Medio Mixto / Heterogéneo VTF (BCEP 2018)",
+    referenciaFuente: "Bases Curriculares Educación Parvularia (Dto. 28/2019), D.S. 315/2010 y D.S. 115/2012",
+    regimen: {
+      JEC: { total: 40, libre: 0 },
+      No_JEC: { total: 40, libre: 0 }
+    },
+    asignaturas: [
+      { nombre: "Ámbito Desarrollo Personal y Social", JEC: 13, No_JEC: 13 },
+      { nombre: "Ámbito Comunicación Integral", JEC: 13, No_JEC: 13 },
+      { nombre: "Ámbito Interacción y Comprensión del Entorno", JEC: 10, No_JEC: 10 },
+      { nombre: "Juego Libre y Experiencias Multietarias", JEC: 4, No_JEC: 4 }
+    ]
+  },
   "prekinder": {
     nombre: "Educación Parvularia - Primer Nivel de Transición (Pre-Kínder)",
     referenciaFuente: "Decreto Supremo N° 306/2007 (JECD), Dto. 315/2010 y Bases Curriculares Dto. 28/2019",
@@ -1762,7 +1818,11 @@ export function getPlanesMineducConvertidos(): PlanEstudioNivel[] {
     }
   };
 
-  // 0. Parvularia
+  // 0. Parvularia y Jardines Infantiles VTF (BCEP 2018)
+  addSimplePlan("sala_cuna", "Sala Cuna (Menor, Mayor y Heterogénea - BCEP 2018 / VTF)", "PARVULARIA");
+  addSimplePlan("medio_menor", "Nivel Medio Menor (BCEP 2018 / VTF)", "PARVULARIA");
+  addSimplePlan("medio_mayor", "Nivel Medio Mayor (BCEP 2018 / VTF)", "PARVULARIA");
+  addSimplePlan("nivel_heterogeneo_vtf", "Nivel Medio Mixto / Heterogéneo VTF (BCEP 2018)", "PARVULARIA");
   addSimplePlan("prekinder", "Educación Parvularia - Primer Nivel de Transición (Pre-Kínder)", "PARVULARIA");
   addSimplePlan("kinder", "Educación Parvularia - Segundo Nivel de Transición (Kínder)", "PARVULARIA");
   addSimplePlan("parvularia", "Educación Parvularia (NT1 y NT2)", "PARVULARIA");
@@ -1944,7 +2004,16 @@ export function obtenerPlanPorCurso(
   let grupo = '';
 
   // 1. EPJA - EDUCACIÓN DE ADULTOS (Bases Curriculares Decreto 10/2022)
-  if (c.includes('adulto') || c.includes('epja') || c.includes('nivel basico') || c.includes('nivel medio') || c.includes('oficio')) {
+  // Excluir expresamente niveles de Jardín Infantil / Sala Cuna ("Nivel Medio Menor/Mayor/Mixto")
+  const esParvulariaVtfNivel =
+    c.includes('sala cuna') ||
+    c.includes('salacuna') ||
+    c.includes('medio menor') ||
+    c.includes('medio mayor') ||
+    c.includes('medio mixto') ||
+    (c.includes('nivel') && c.includes('heterog'));
+
+  if (!esParvulariaVtfNivel && (c.includes('adulto') || c.includes('epja') || c.includes('nivel basico') || c.includes('nivel medio') || c.includes('oficio'))) {
     if (c.includes('oficio')) {
       grupo = "Educación Media TP en Oficios - Niveles 1 y 2 (1° a 4° Medio TP)";
     } else if (c.includes('especialidad') || (c.includes('tp') && (c.includes('medio') || c.includes('nivel')))) {
@@ -2109,9 +2178,18 @@ export function obtenerPlanPorCurso(
       grupo = "1° y 2° Básico Combinado (1° Ciclo Básica)";
     }
   }
-  // 6. PARVULARIA REGULAR (Pre-Kínder, Kínder, Transición, Medio Menor/Mayor)
-  else if (c.includes('medio menor') || c.includes('medio mayor')) {
-    grupo = "Educación Parvularia Especial (Decreto 83 / Decretos Supremos)";
+  // 6. PARVULARIA REGULAR Y JARDINES VTF (Sala Cuna, Niveles Medios, Transición)
+  else if (c.includes('sala cuna') || c.includes('salacuna')) {
+    grupo = "Sala Cuna (Menor, Mayor y Heterogénea - BCEP 2018 / VTF)";
+  }
+  else if (c.includes('medio mixto') || (c.includes('nivel') && c.includes('heterog'))) {
+    grupo = "Nivel Medio Mixto / Heterogéneo VTF (BCEP 2018)";
+  }
+  else if (c.includes('medio menor')) {
+    grupo = "Nivel Medio Menor (BCEP 2018 / VTF)";
+  }
+  else if (c.includes('medio mayor')) {
+    grupo = "Nivel Medio Mayor (BCEP 2018 / VTF)";
   }
   else if ((c.includes('prekinder') || c.includes('pre-kinder') || c.includes('pre-k') || c.includes('pk') || c.includes('nt1') || c.includes('primer nivel de transicion') || c.includes('transicion 1') || c.includes('transicion menor') || c.includes('1er nivel transicion')) && !c.includes('medio') && !c.includes('tp') && !c.includes('especialidad')) {
     grupo = "Educación Parvularia - Primer Nivel de Transición (Pre-Kínder)";

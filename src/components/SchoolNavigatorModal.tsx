@@ -3,6 +3,10 @@ import { Search, School, ArrowRight, X, Building2, Users, AlertTriangle, CheckCi
 import type { Establecimiento } from '../types';
 import type { DiagnosticoColegioCompleto } from '../services/dotacionCalculationService';
 import { cargarConfiguracionGeneral } from '../services/configuracionGeneralService';
+import {
+  getPerfilEstablecimientoMeta,
+  resolvePerfilEstablecimiento,
+} from '../utils/establishmentTypeHelpers';
 
 export interface SchoolNavigatorModalProps {
   isOpen: boolean;
@@ -28,6 +32,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
   const [config] = useState(() => cargarConfiguracionGeneral());
   const [query, setQuery] = useState('');
   const [selectedComuna, setSelectedComuna] = useState<string>('ALL');
+  const [selectedTipo, setSelectedTipo] = useState<'ALL' | 'BASICA' | 'LICEO' | 'JARDIN' | 'ESPECIAL_EPJA'>('ALL');
   const [soloMisAsesorias, setSoloMisAsesorias] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -36,6 +41,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
     if (isOpen) {
       setQuery('');
       setSelectedComuna('ALL');
+      setSelectedTipo('ALL');
       setSelectedIndex(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
@@ -48,6 +54,13 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
       }
     }
     if (selectedComuna !== 'ALL' && c.comuna !== selectedComuna) return false;
+    if (selectedTipo !== 'ALL') {
+      const perfil = resolvePerfilEstablecimiento(c);
+      if (selectedTipo === 'BASICA' && perfil !== 'ESCUELA_BASICA') return false;
+      if (selectedTipo === 'LICEO' && !['LICEO_HC', 'LICEO_TP', 'LICEO_POLIVALENTE'].includes(perfil)) return false;
+      if (selectedTipo === 'JARDIN' && perfil !== 'JARDIN_SALA_CUNA') return false;
+      if (selectedTipo === 'ESPECIAL_EPJA' && !['ESCUELA_ESPECIAL', 'EPJA'].includes(perfil)) return false;
+    }
     if (!query) return true;
     const q = query.toLowerCase();
     return (
@@ -158,6 +171,34 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
           ))}
         </div>
 
+        {/* Chips de Filtro por Perfil / Modalidad */}
+        <div className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-50/60 border-b border-slate-100 overflow-x-auto text-[11px] shrink-0">
+          <span className="text-slate-400 font-bold shrink-0">Tipo:</span>
+          {[
+            { id: 'ALL' as const, label: 'Todos' },
+            { id: 'BASICA' as const, label: 'Escuelas Básicas' },
+            { id: 'LICEO' as const, label: 'Liceos HC/TP' },
+            { id: 'JARDIN' as const, label: 'Jardines / Salas Cuna VTF' },
+            { id: 'ESPECIAL_EPJA' as const, label: 'Especial / EPJA' },
+          ].map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setSelectedTipo(t.id);
+                setSelectedIndex(0);
+              }}
+              className={`px-2 py-0.5 rounded-md font-semibold shrink-0 transition-colors ${
+                selectedTipo === t.id
+                  ? 'bg-slate-800 text-white shadow-xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         {/* Lista de Establecimientos */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1 divide-y divide-slate-50 custom-scrollbar">
           {filteredColegios.length === 0 ? (
@@ -181,6 +222,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
               const isActive = colegioActivo?.id === col.id;
               const isSelected = selectedIndex === idx;
               const diag = diagnosticos.find(d => d.establecimiento.rbd === col.rbd);
+              const perfilMeta = getPerfilEstablecimientoMeta(col);
 
               return (
                 <div
@@ -207,9 +249,15 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
                       <Building2 className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-slate-900 truncate">
                           {col.nombre}
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${perfilMeta.badgeClass}`}
+                          title={perfilMeta.label}
+                        >
+                          {perfilMeta.shortLabel}
                         </span>
                         {isActive && (
                           <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-wider">
@@ -220,7 +268,7 @@ export const SchoolNavigatorModal: React.FC<SchoolNavigatorModalProps> = ({
                       <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
                         <span className="font-mono">RBD: {col.rbd}</span>
                         <span>•</span>
-                        <span>{col.regimen}</span>
+                        <span>{perfilMeta.esJardinOSalaCuna ? 'VTF / D.S. 115' : col.regimen}</span>
                         {col.comuna && (
                           <>
                             <span>•</span>

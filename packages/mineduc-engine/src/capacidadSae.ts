@@ -10,7 +10,7 @@ export interface SalaInfraestructura {
   nombreSala: string;
   pabellon?: string;
   superficieM2: number;
-  tipo?: 'REGULAR' | 'PARVULARIA' | 'TALLER' | 'MULTIGRADO' | 'ESPECIAL';
+  tipo?: 'REGULAR' | 'PARVULARIA' | 'SALA_CUNA' | 'PARVULARIA_MEDIO' | 'TALLER' | 'MULTIGRADO' | 'ESPECIAL';
   esParvularia?: boolean;
   esTallerOTecnico?: boolean;
 }
@@ -62,6 +62,14 @@ export function obtenerAforoMaximoNormativo(
     return 25;
   }
 
+  if (m.includes('sala cuna') || m.includes('salacuna') || m.includes('lactante')) {
+    return 20;
+  }
+
+  if (m.includes('medio menor') || m.includes('medio mayor') || m.includes('medio mixto') || m.includes('heterogeneo')) {
+    return 32;
+  }
+
   if (m.includes('parvularia') || m.includes('kinder') || m.includes('nt1') || m.includes('nt2')) {
     return 35;
   }
@@ -70,28 +78,36 @@ export function obtenerAforoMaximoNormativo(
 }
 
 /**
- * Calcula el aforo máximo físico según Decreto 548 (Infraestructura Escolar MINEDUC):
+ * Calcula el aforo máximo físico según Decreto 548 e Infraestructura OGUC Art. 4.5.6:
  * - Educación Regular (Básica y Media): 1.1 m² por alumno
- * - Educación Parvularia: 1.5 m² por alumno
+ * - Sala Cuna (OGUC / D.S. 548): 2.50 m² por lactante (tope operativo 20)
+ * - Nivel Medio Parvularia (OGUC Art. 4.5.6): 1.10 m² por párvulo (tope 32)
+ * - Educación Parvularia Transición (NT1/NT2): 1.5 m² por alumno (tope 35)
  * - Talleres / Laboratorios / Salas Especiales: 1.8 m² por alumno
  * - Educación Especial: 2.0 m² por alumno (espacio para movilidad y apoyos)
  * Además, respeta el tope normativo de la modalidad si se especifica.
  */
 export function calcularAforoFisicoSala(
   superficieM2: number,
-  tipo: 'REGULAR' | 'PARVULARIA' | 'TALLER' | 'MULTIGRADO' | 'ESPECIAL' = 'REGULAR',
+  tipo: 'REGULAR' | 'PARVULARIA' | 'SALA_CUNA' | 'PARVULARIA_MEDIO' | 'TALLER' | 'MULTIGRADO' | 'ESPECIAL' = 'REGULAR',
   modalidadOCurso?: string
 ): { aforoMaximo: number; factorM2: number; topeNormativoModalidad?: number } {
   let factorM2 = 1.1;
-  if (tipo === 'PARVULARIA') factorM2 = 1.5;
-  if (tipo === 'TALLER') factorM2 = 1.8;
-  if (tipo === 'ESPECIAL') factorM2 = 2.0;
+  if (tipo === 'SALA_CUNA') factorM2 = 2.5;
+  else if (tipo === 'PARVULARIA_MEDIO') factorM2 = 1.1;
+  else if (tipo === 'PARVULARIA') factorM2 = 1.5;
+  else if (tipo === 'TALLER') factorM2 = 1.8;
+  else if (tipo === 'ESPECIAL') factorM2 = 2.0;
 
   const aforoCalculadoSuperficie = Math.floor(Math.round((superficieM2 / factorM2) * 1000) / 1000);
 
   let topeNormativoModalidad: number | undefined;
   if (modalidadOCurso) {
     topeNormativoModalidad = obtenerAforoMaximoNormativo(modalidadOCurso);
+  } else if (tipo === 'SALA_CUNA') {
+    topeNormativoModalidad = 20;
+  } else if (tipo === 'PARVULARIA_MEDIO') {
+    topeNormativoModalidad = 32;
   } else if (tipo === 'MULTIGRADO') {
     topeNormativoModalidad = 15;
   } else if (tipo === 'ESPECIAL') {
@@ -114,11 +130,14 @@ export function evaluarCapacidadSaeYInfraestructura(
   cupoSae: number,
   matriculaProyectada: number
 ): EvaluacionCapacidadSaeCurso {
-  let tipoDetectado: 'REGULAR' | 'PARVULARIA' | 'TALLER' | 'MULTIGRADO' | 'ESPECIAL' =
+  let tipoDetectado: 'REGULAR' | 'PARVULARIA' | 'SALA_CUNA' | 'PARVULARIA_MEDIO' | 'TALLER' | 'MULTIGRADO' | 'ESPECIAL' =
     sala.tipo || (sala.esParvularia ? 'PARVULARIA' : sala.esTallerOTecnico ? 'TALLER' : 'REGULAR');
 
-  if (tipoDetectado === 'REGULAR') {
-    if (esModalidadEspecial(cursoNombre)) tipoDetectado = 'ESPECIAL';
+  const cursoLower = (cursoNombre || '').toLowerCase();
+  if (tipoDetectado === 'REGULAR' || tipoDetectado === 'PARVULARIA') {
+    if (cursoLower.includes('sala cuna') || cursoLower.includes('salacuna')) tipoDetectado = 'SALA_CUNA';
+    else if (cursoLower.includes('medio menor') || cursoLower.includes('medio mayor') || cursoLower.includes('medio mixto')) tipoDetectado = 'PARVULARIA_MEDIO';
+    else if (esModalidadEspecial(cursoNombre)) tipoDetectado = 'ESPECIAL';
     else if (esModalidadMultigradoOCombinado(cursoNombre)) tipoDetectado = 'MULTIGRADO';
   }
 
