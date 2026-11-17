@@ -48,6 +48,7 @@ export const CATALOGO_PERMISOS: ModuloPermiso[] = [
   { id: 'cartera', nombre: 'Cartera Territorial', descripcion: 'Cartera de colegios y reasignación de asesores', grupo: 'territorial', acciones: ['ver', 'editar'] },
   { id: 'consolidador', nombre: 'Consolidado Master', descripcion: 'Consolidado territorial de dotación e inconsistencias', grupo: 'territorial', acciones: ['ver', 'exportar'] },
   { id: 'estadisticas', nombre: 'Estadísticas', descripcion: 'Indicadores y estadísticas de horas', grupo: 'territorial', acciones: ['ver', 'exportar'] },
+  { id: 'monitoreo_actividad', nombre: 'Actividad en Tiempo Real', descripcion: 'Visualización de usuarios y escuelas activas en la plataforma', grupo: 'territorial', acciones: ['ver'] },
 
   // ── Establecimiento ──
   { id: 'workflow', nombre: 'Espacio Escolar', descripcion: 'Espacio de trabajo del establecimiento', grupo: 'establecimiento', acciones: ['ver'] },
@@ -138,6 +139,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
 
   asesor_uatp: [
     ...solo('ver', ...MODS_TERRITORIAL),
+    k('monitoreo_actividad', 'ver'),
     ...todo(...MODS_ESTABLECIMIENTO),
     ...todo(...MODS_DATOS),
     ...todo('traspaso_periodos'),

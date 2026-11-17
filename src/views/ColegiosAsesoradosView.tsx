@@ -12,6 +12,7 @@ import { GdpParametrosModal } from '../components/GdpParametrosModal';
 import { usePermisos } from '../security/PermisosContext';
 import { AuthService } from '../services/authService';
 import { UsuarioSistema } from '../types/authTypes';
+import { PresenciaGlobalUsuario } from '../services/colaboracionService';
 
 export interface ColegiosAsesoradosViewProps {
   colegios: Establecimiento[];
@@ -34,6 +35,8 @@ export interface ColegiosAsesoradosViewProps {
   onImportarCarteraSlep?: (file: File) => Promise<void>;
   onAbrirModuloSige?: () => void;
   onAbrirGestionEstablecimientos?: () => void;
+  presenciaPorRbd?: Map<string, PresenciaGlobalUsuario[]>;
+  onAbrirMonitorActividad?: () => void;
 }
 
 export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
@@ -56,7 +59,9 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   onExportarCarteraSlep,
   onImportarCarteraSlep,
   onAbrirModuloSige,
-  onAbrirGestionEstablecimientos
+  onAbrirGestionEstablecimientos,
+  presenciaPorRbd,
+  onAbrirMonitorActividad
 }) => {
   const { rol, legado: permisos, esSuperUsuario } = usePermisos();
   const session = useMemo(() => AuthService.getSessionActual(), []);
@@ -776,6 +781,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                     (diag?.balanzaGeneral.alertasAforoPie?.length || 0);
                   const isActivo = colegioActivo?.rbd === est.rbd;
                   const isChecked = colegiosSeleccionadosBatch.includes(est.rbd);
+                  const conectados = presenciaPorRbd?.get(est.rbd) || [];
 
                   return (
                     <tr
@@ -797,18 +803,34 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                         {est.rbd}
                       </td>
                       <td className="py-2 px-2">
-                        <button
-                          type="button"
-                          onClick={() => onAbrirWorkflow(est)}
-                          className="text-left font-bold text-slate-900 dark:text-white hover:text-orange-600 dark:hover:text-orange-400 transition-colors flex items-center gap-1.5"
-                        >
-                          <span className="truncate max-w-[240px] xl:max-w-[320px]">{est.nombre}</span>
-                          {isActivo && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 shrink-0">
-                              Activo
-                            </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => onAbrirWorkflow(est)}
+                            className="text-left font-bold text-slate-900 dark:text-white hover:text-orange-600 dark:hover:text-orange-400 transition-colors flex items-center gap-1.5"
+                          >
+                            <span className="truncate max-w-[240px] xl:max-w-[320px]">{est.nombre}</span>
+                            {isActivo && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 shrink-0">
+                                Activo
+                              </span>
+                            )}
+                          </button>
+                          {conectados.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onAbrirMonitorActividad?.();
+                              }}
+                              title={conectados.map(u => `${u.nombreCompleto} (${u.apartadoActivo || u.vistaActiva})`).join('\n')}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 shrink-0"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>{conectados.length} en línea</span>
+                            </button>
                           )}
-                        </button>
+                        </div>
                         <div className="text-[10px] text-slate-400 truncate max-w-[240px]">
                           {est.regimen} · {est.director || 'Sin director'}
                         </div>
@@ -962,6 +984,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
               (diag?.balanzaGeneral.alertasAforoPie?.length || 0);
             const isActivo = colegioActivo?.rbd === est.rbd;
             const isChecked = colegiosSeleccionadosBatch.includes(est.rbd);
+            const conectados = presenciaPorRbd?.get(est.rbd) || [];
 
             return (
               <div
@@ -985,6 +1008,17 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
                           RBD {est.rbd}
                         </span>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400">{est.comuna}</span>
+                        {conectados.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => onAbrirMonitorActividad?.()}
+                            title={conectados.map(u => `${u.nombreCompleto} (${u.apartadoActivo || u.vistaActiva})`).join('\n')}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>{conectados.length} en línea</span>
+                          </button>
+                        )}
                       </div>
                       <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate mt-1">
                         {est.nombre}

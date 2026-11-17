@@ -40,6 +40,10 @@ interface HeaderProps {
   sincronizandoNube?: boolean;
   estadoSincronizacionNube?: 'synced' | 'checking' | 'saving' | 'updated_remotely' | 'offline' | 'error';
   ultimaSincronizacionNube?: string;
+  puedeVerMonitorActividad?: boolean;
+  usuariosActivosCount?: number;
+  escuelasActivasCount?: number;
+  onAbrirMonitorActividad?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -63,7 +67,11 @@ export const Header: React.FC<HeaderProps> = ({
   onRefrescarNube,
   sincronizandoNube = false,
   estadoSincronizacionNube = 'synced',
-  ultimaSincronizacionNube = ''
+  ultimaSincronizacionNube = '',
+  puedeVerMonitorActividad = false,
+  usuariosActivosCount = 0,
+  escuelasActivasCount = 0,
+  onAbrirMonitorActividad
 }) => {
   const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -268,8 +276,29 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </nav>
 
-          {/* ── 3. DERECHA: 4 Controles Limpios (Cloud Unificado + IA + Módulos + Cuenta) ── */}
+          {/* ── 3. DERECHA: Monitor en Vivo + Cloud Unificado + IA + Módulos + Cuenta ── */}
           <div className="flex items-center gap-1.5 shrink-0">
+
+            {/* 3.0. Indicador de Actividad en Tiempo Real (Super Usuario / Asesor UATP) */}
+            {puedeVerMonitorActividad && onAbrirMonitorActividad && (
+              <button
+                type="button"
+                onClick={onAbrirMonitorActividad}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-400/35 text-emerald-200 transition-all"
+                title={`Ver quién está trabajando en tiempo real (${usuariosActivosCount} usuarios en ${escuelasActivasCount} escuelas)`}
+              >
+                <span className="relative flex h-2 w-2 shrink-0">
+                  {usuariosActivosCount > 0 && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  )}
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                </span>
+                <span className="tabular-nums">{usuariosActivosCount}</span>
+                <span className="hidden xl:inline text-[11px] font-semibold text-emerald-100/90">
+                  en línea
+                </span>
+              </button>
+            )}
 
             {/* 3.1. Centro Cloud Unificado (Único punto de Guardado & Sincronización) */}
             {(colegioActivo || onGuardarCambiosEnNube || onRefrescarNube) && (

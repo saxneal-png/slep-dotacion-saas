@@ -7,6 +7,7 @@ const DotacionCopilotDrawer = React.lazy(() => import('./components/DotacionCopi
 const ModalTraspasoDotacion = React.lazy(() => import('./components/ModalTraspasoDotacion').then(m => ({ default: m.ModalTraspasoDotacion })));
 const ComparadorPeriodosModal = React.lazy(() => import('./components/ComparadorPeriodosModal').then(m => ({ default: m.ComparadorPeriodosModal })));
 const GestionEstablecimientosModal = React.lazy(() => import('./components/GestionEstablecimientosModal').then(m => ({ default: m.GestionEstablecimientosModal })));
+const PanelActividadTiempoRealModal = React.lazy(() => import('./components/PanelActividadTiempoRealModal').then(m => ({ default: m.PanelActividadTiempoRealModal })));
 import { Sparkles } from 'lucide-react';
 
 const CarteraView = React.lazy(() => import('./views/CarteraView').then(m => ({ default: m.CarteraView })));
@@ -87,6 +88,11 @@ import { AuthSession, UsuarioSistema } from './types/authTypes';
 import { useEvaluadorPermisos, PermisosProvider } from './security/PermisosContext';
 import { getDefinicionRol, normalizarRol } from './security/rolesDefinitions';
 import { colegiosVisibles, puedeAccederRbd } from './services/scopeService';
+import {
+  usePresenciaGlobal,
+  filtrarPresenciaPorAlcance,
+  PresenciaGlobalUsuario
+} from './services/colaboracionService';
 import { LoginModal } from './components/auth/LoginModal';
 import { CambiarPasswordModal } from './components/auth/CambiarPasswordModal';
 import { OlvidoPasswordModal } from './components/auth/OlvidoPasswordModal';
@@ -221,6 +227,7 @@ export const App: React.FC = () => {
   const [modalTraspasoAbierto, setModalTraspasoAbierto] = useState(false);
   const [modalComparadorAbierto, setModalComparadorAbierto] = useState(false);
   const [modalGestionEstablecimientosAbierto, setModalGestionEstablecimientosAbierto] = useState(false);
+  const [modalMonitorActividadAbierto, setModalMonitorActividadAbierto] = useState(false);
   const [periodoActivo, setPeriodoActivoState] = useState<number>(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -1099,6 +1106,39 @@ export const App: React.FC = () => {
     return colegiosVisibles(session.usuario, colegios, usuariosSistema);
   }, [colegios, session, usuariosSistema]);
 
+  const rolNormalizado = session ? normalizarRol(session.usuario.role) : null;
+  const puedeVerMonitorActividad = Boolean(
+    session &&
+    (evaluadorPermisos.can('monitoreo_actividad.ver') ||
+      rolNormalizado === 'super_usuario' ||
+      rolNormalizado === 'asesor_uatp')
+  );
+
+  const { sesionesActivas: sesionesPresenciaBrutas, estadoConexion: estadoConexionPresencia } = usePresenciaGlobal({
+    usuarioActual: session?.usuario,
+    colegioActivo,
+    vistaActiva,
+    apartadoActivo: workspaceTabActiva,
+    periodo: periodoActivo,
+    puedeVerMonitor: puedeVerMonitorActividad
+  });
+
+  const sesionesPresenciaVisibles = useMemo(() => {
+    const rbdsPermitidos = new Set(colegiosPermitidos.map(c => c.rbd));
+    return filtrarPresenciaPorAlcance(sesionesPresenciaBrutas, rbdsPermitidos, alcanceReal);
+  }, [sesionesPresenciaBrutas, colegiosPermitidos, alcanceReal]);
+
+  const presenciaPorRbd = useMemo(() => {
+    const mapa = new Map<string, PresenciaGlobalUsuario[]>();
+    sesionesPresenciaVisibles.forEach(s => {
+      if (!s.rbd) return;
+      const arr = mapa.get(s.rbd) || [];
+      arr.push(s);
+      mapa.set(s.rbd, arr);
+    });
+    return mapa;
+  }, [sesionesPresenciaVisibles]);
+
   // Colecciones acotadas estrictamente a los colegios visibles/autorizados para el usuario
   const {
     cursosScope,
@@ -1304,6 +1344,10 @@ export const App: React.FC = () => {
         onRefrescarNube={handleRefrescarDesdeNube}
         estadoSincronizacionNube={estadoSyncNube}
         ultimaSincronizacionNube={ultimaHoraSyncNube}
+        puedeVerMonitorActividad={puedeVerMonitorActividad}
+        usuariosActivosCount={sesionesPresenciaVisibles.length}
+        escuelasActivasCount={presenciaPorRbd.size}
+        onAbrirMonitorActividad={() => setModalMonitorActividadAbierto(true)}
       />
 
       {/* Toast Notificación */}
@@ -1344,6 +1388,8 @@ export const App: React.FC = () => {
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onAbrirModuloSige={() => setVistaActiva('sige')}
             onAbrirGestionEstablecimientos={() => setModalGestionEstablecimientosAbierto(true)}
+            presenciaPorRbd={puedeVerMonitorActividad ? presenciaPorRbd : undefined}
+            onAbrirMonitorActividad={puedeVerMonitorActividad ? () => setModalMonitorActividadAbierto(true) : undefined}
           />
         )}
 
@@ -1694,6 +1740,21 @@ export const App: React.FC = () => {
         onGuardarColegio={handleGuardarColegio}
         onEliminarColegio={handleEliminarColegio}
       />
+
+      {puedeVerMonitorActividad && (
+        <PanelActividadTiempoRealModal
+          isOpen={modalMonitorActividadAbierto}
+          onClose={() => setModalMonitorActividadAbierto(false)}
+          sesiones={sesionesPresenciaVisibles}
+          estadoConexion={estadoConexionPresencia}
+          colegios={colegiosPermitidos}
+          onIrAEscuela={(est) => {
+            handleSelectColegio(est);
+            setVistaActiva('workflow');
+          }}
+          alcanceUsuario={alcanceReal}
+        />
+      )}
         </React.Suspense>
       )}
 
