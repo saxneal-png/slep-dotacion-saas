@@ -38,6 +38,10 @@ import {
   esAsignacionLibreDisposicionJec,
   sonAsignaturasEquivalentes
 } from './curricularPlanService';
+import {
+  esAsignacionTrabajoColaborativo,
+  obtenerHorasCronologicasTrabajoColab
+} from './auditoriaDocenteService';
 
 export interface DiagnosticoEspecialidad {
   asignatura: string;
@@ -380,15 +384,23 @@ export function calcularDiagnosticoColegio(
 
     // Clasificar asignaciones del docente en este establecimiento
     const coDocenteAsigs = coAsigsPorDocente.get(doc.id) || [];
+    const asigsTrabajoColaborativo = docenteAsigs.filter(a => esAsignacionTrabajoColaborativo(a));
 
     const asigsCoDocencia = [
-      ...docenteAsigs.filter(a => a.esCoDocencia || a.esCoDocenciaParvularia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'),
+      ...docenteAsigs.filter(
+        a =>
+          !asigsTrabajoColaborativo.includes(a) &&
+          (a.esCoDocencia ||
+            a.esCoDocenciaParvularia ||
+            a.esAgrupacionFlexible ||
+            a.tipoApoyo === 'CO_DOCENCIA' ||
+            a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
+            a.tipoApoyo === 'REFUERZO_AULA' ||
+            a.tipoApoyo === 'APOYO_DOCENTE')
+      ),
       ...coDocenteAsigs
     ];
     const asigsTallerSep = docenteAsigs.filter(a => (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a));
-    const asigsTrabajoColaborativo = docenteAsigs.filter(
-      a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO' || a.asignatura.toLowerCase().includes('colaborativ')
-    );
 
     const subTotalDoc = Number(doc.horasSubvencionGeneralTitular || 0) + Number(doc.horasSubvencionGeneralContrata || 0);
     const contratoSepDoc = Number(doc.horasSepTitular || 0) + Number(doc.horasSepContrata || 0);
@@ -490,8 +502,8 @@ export function calcularDiagnosticoColegio(
       !asigsCoDocenciaPieProporcional.includes(a)
     );
 
-    // Conversión rigurosa de horas cronológicas
-    const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
+    // Conversión rigurosa de horas cronológicas: Trabajo Colaborativo Art. 86 es 1:1 cronológico para Docente de Aula (!isPieDoc)
+    const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + obtenerHorasCronologicasTrabajoColab(a, isPieDoc), 0);
     const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
     const cronCoDocenciaSep = asigsCoDocenciaSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
     const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
@@ -515,14 +527,15 @@ export function calcularDiagnosticoColegio(
           : 0)
       : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
-    const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
+    const colabPieEfectivo = Math.max(cronTrabajoColab, hColabDoc);
+    const hNoAulaPieEfectivas = Math.max(colabPieEfectivo + hCoordPie, sumFuncionesNoAulaPie);
     const pieCronologicas = isPieDoc
       ? (asigsCoDocenciaPieProporcional.length > 0
-          ? (cronApoyoPie + hNoAulaPieEfectivas)
+          ? (cronCoDocenciaPie + hNoAulaPieEfectivas)
           : (cronApoyoPie > 0
-              ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+              ? Math.max(cronCoDocenciaPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
               : hNoAulaPieEfectivas))
-      : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
+      : Math.max(cronCoDocenciaPie + colabPieEfectivo + sumFuncionesNoAulaPie, colabPieEfectivo + hCoordPie);
 
     const hInstNoAula = sumFuncionesNoAulaSubvGen;
     const hExentas = hInstNoAula + sepExentas + pieCronologicas;
@@ -1067,14 +1080,23 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       const asigsColegio = asigsPorColegioDocente.get(doc.rbd + "_" + doc.id) || [];
 
+      const asigsTrabajoColaborativo = asigsColegio.filter(
+        a => a.docenteId === doc.id && esAsignacionTrabajoColaborativo(a)
+      );
       const asigsCoDocencia = asigsColegio.filter(
-        a => (a.coDocenteId === doc.id && a.tieneCoDocente) || (a.docenteId === doc.id && (a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE'))
+        a =>
+          !asigsTrabajoColaborativo.includes(a) &&
+          ((a.coDocenteId === doc.id && a.tieneCoDocente) ||
+            (a.docenteId === doc.id &&
+              (a.esCoDocencia ||
+                a.esAgrupacionFlexible ||
+                a.tipoApoyo === 'CO_DOCENCIA' ||
+                a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
+                a.tipoApoyo === 'REFUERZO_AULA' ||
+                a.tipoApoyo === 'APOYO_DOCENTE')))
       );
       const asigsTallerSep = asigsColegio.filter(
         a => a.docenteId === doc.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a)
-      );
-      const asigsTrabajoColaborativo = asigsColegio.filter(
-        a => a.docenteId === doc.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO' || a.asignatura.toLowerCase().includes('colaborativ'))
       );
 
       // Fuentes de financiamiento
@@ -1198,8 +1220,8 @@ export function obtenerDocentesConsolidadosTerritorio(
         !asigsCoDocenciaPieProporcional.includes(a)
       );
 
-      // Conversión rigurosa de horas cronológicas
-      const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
+      // Conversión rigurosa de horas cronológicas: Trabajo Colaborativo Art. 86 es 1:1 cronológico para Docente de Aula (!isPieDoc)
+      const cronTrabajoColab = asigsTrabajoColaborativo.reduce((s, a) => s + obtenerHorasCronologicasTrabajoColab(a, isPieDoc), 0);
       const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
       const cronCoDocenciaSep = asigsCoDocenciaSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
       const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
@@ -1226,14 +1248,15 @@ export function obtenerDocentesConsolidadosTerritorio(
             : 0)
         : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
-      const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
+      const colabPieEfectivo = Math.max(cronTrabajoColab, hColabDoc);
+      const hNoAulaPieEfectivas = Math.max(colabPieEfectivo + hCoordPie, sumFuncionesNoAulaPie);
       const pieCronologicas = isPieDoc
         ? (asigsCoDocenciaPieProporcional.length > 0
-            ? (cronApoyoPie + hNoAulaPieEfectivas)
+            ? (cronCoDocenciaPie + hNoAulaPieEfectivas)
             : (cronApoyoPie > 0
-                ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+                ? Math.max(cronCoDocenciaPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
                 : hNoAulaPieEfectivas))
-        : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
+        : Math.max(cronCoDocenciaPie + colabPieEfectivo + sumFuncionesNoAulaPie, colabPieEfectivo + hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;

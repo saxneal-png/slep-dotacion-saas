@@ -201,7 +201,7 @@ export function calcularAuditoriaDocenteMultitramo(
     }
   }
 
-  const saldoHoras = contratoReal > 0 ? (contratoReal - contratoCalculadoTotal) : 0;
+  const saldoHoras = contratoReal > 0 ? Number((contratoReal - contratoCalculadoTotal).toFixed(2)) : 0;
   const horasVacantes = Math.max(0, saldoHoras);
   let estadoSaldo: 'EXACTO' | 'HOLGURA' | 'DEFICIT' | 'POR_AUDITAR' = 'POR_AUDITAR';
   let mensajeAuditoria = '';

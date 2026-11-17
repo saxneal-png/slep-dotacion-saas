@@ -205,6 +205,14 @@ export async function guardarUsuarioDb(u: UsuarioSistema, skipCloudSync: boolean
 
     if (error) {
       console.error('[usuariosRepo] Error guardando usuario en Supabase:', error);
+      const esErrorRls =
+        error.code === '42501' ||
+        (error.message || '').toLowerCase().includes('row-level security');
+      if (esErrorRls) {
+        throw new Error(
+          'Permiso denegado en la nube (RLS): tu sesión actual no está autenticada como Super Usuario en Supabase Auth o tu cuenta aún no tiene el auth_uid vinculado. Cierra sesión y vuelve a ingresar con tu cuenta Super Usuario.'
+        );
+      }
       throw new Error(`No se pudo guardar el usuario en Supabase: ${error.message}`);
     }
 

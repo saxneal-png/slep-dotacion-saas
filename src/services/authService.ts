@@ -498,15 +498,17 @@ export class AuthService {
               (await verifyPassword(passwordPlain, encontrado.salt, encontrado.passwordHash));
 
             if (localMatch) {
-              const { data: signUpData } = await supabase.auth.signUp({
+              const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
                 email: resolvedEmail,
                 password: passwordPlain
               });
-              if (signUpData?.session || signUpData?.user) {
-                authenticatedViaSupabase = Boolean(signUpData?.session);
-                if (authenticatedViaSupabase) {
-                  await supabase.rpc('link_my_auth_uid').then(() => {}, () => {});
-                }
+              if (signUpData?.session) {
+                authenticatedViaSupabase = true;
+                await supabase.rpc('link_my_auth_uid').then(() => {}, () => {});
+              } else if (signUpData?.user && !signUpErr) {
+                throw new Error(
+                  'Se envió un enlace de confirmación a tu correo electrónico para activar el acceso seguro en la nube. Confírmalo e inicia sesión nuevamente.'
+                );
               }
             } else {
               throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
@@ -1483,6 +1485,22 @@ export class AuthService {
     }
     if (!session || !session.usuario || !isSupabaseEnabled()) {
       return checkLocal;
+    }
+
+    const estaOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (estaOnline) {
+      try {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        if (!sbSessionData?.session?.access_token) {
+          return {
+            valida: false,
+            motivo: 'Tu sesión local requiere revalidación de seguridad en la nube. Por favor inicia sesión nuevamente.'
+          };
+        }
+        await supabase.rpc('link_my_auth_uid').then(() => {}, () => {});
+      } catch {
+        // Si falla por red, no bloquear offline
+      }
     }
 
     const emailNorm = (session.usuario.email || '').toLowerCase();

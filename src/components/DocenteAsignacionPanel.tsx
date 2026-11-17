@@ -153,27 +153,35 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
   );
 
-  const esApoyoAulaCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
   const esDocenteDiferencialFila = docente.estamento === 'DOCENTE_DIFERENCIAL' || 
     (docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0;
+  const esTrabajoColabDocenteAula = esTrabajoNoAula && !esDocenteDiferencialFila;
+  const esApoyoAulaCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO') && !esTrabajoColabDocenteAula;
+
+  const obtenerValorInicialHoras = () => {
+    if (esTrabajoColabDocenteAula) {
+      if (Number(a.horasColaborativas) > 0) return Number(a.horasColaborativas);
+      const ha = Number(a.horasPedagogicasAula) || 0;
+      const cron = a.horasCronologicasPie;
+      if (ha > 0 && (cron === undefined || cron === null || Math.abs(ha * 0.75 - cron) < 0.15)) {
+        return ha;
+      }
+      return cron || ha || 0;
+    }
+    return esApoyoAulaCurso
+      ? (a.horasPedagogicasAula || a.horasCronologicasPie || 0)
+      : (a.horasCronologicasPie || a.horasPedagogicasAula || 0);
+  };
 
   // En todas las asignaturas asignadas a curso, las horas son siempre pedagógicas (45m)
-  // y sujetas a cálculo de proporción docente Ley 20.903 (salvo párvulos con DTO 306).
-  const [localHoras, setLocalHoras] = useState<number | string>(
-    esApoyoAulaCurso
-      ? (a.horasPedagogicasAula || a.horasCronologicasPie || 0)
-      : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
-  );
+  // y sujetas a cálculo de proporción docente Ley 20.903 (salvo párvulos con DTO 306 y Trabajo Colaborativo Art. 86 de docente de aula).
+  const [localHoras, setLocalHoras] = useState<number | string>(obtenerValorInicialHoras());
 
   useEffect(() => {
     setNombreManual(a.asignatura);
     setAsigTransversal(a.asignatura);
-    setLocalHoras(
-      esApoyoAulaCurso
-        ? (a.horasPedagogicasAula || a.horasCronologicasPie || 0)
-        : (a.horasCronologicasPie || a.horasPedagogicasAula || 0)
-    );
-  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.cursoId, esApoyoAulaCurso]);
+    setLocalHoras(obtenerValorInicialHoras());
+  }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.horasColaborativas, a.cursoId, esApoyoAulaCurso, esTrabajoColabDocenteAula]);
 
   const cursoActual = useMemo(() => {
     return cursos.find(c => c.id === a.cursoId) || null;
@@ -572,7 +580,17 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
               onBlur={async () => {
                 const h = Number(localHoras);
                 if (h > 0 && onGuardarAsignacion) {
-                  if (esApoyoAulaCurso) {
+                  if (esTrabajoColabDocenteAula) {
+                    if (h !== a.horasCronologicasPie || h !== a.horasColaborativas || a.esProporcionDocente !== false) {
+                      await onGuardarAsignacion({
+                        ...a,
+                        horasCronologicasPie: h,
+                        horasColaborativas: h,
+                        horasPedagogicasAula: h,
+                        esProporcionDocente: false
+                      });
+                    }
+                  } else if (esApoyoAulaCurso) {
                     if (h !== a.horasPedagogicasAula || a.esProporcionDocente !== true) {
                       await onGuardarAsignacion({ 
                         ...a, 

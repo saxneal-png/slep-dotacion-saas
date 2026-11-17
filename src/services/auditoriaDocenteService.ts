@@ -81,6 +81,34 @@ export function getHorasAulaLectivaAsig(a: AsignacionHoraria): number {
   return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
 }
 
+export function esAsignacionTrabajoColaborativo(a: AsignacionHoraria): boolean {
+  return Boolean(
+    a.esTrabajoColaborativo ||
+      a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
+      (a.tipoApoyo && /colaborativ|art\.?\s*86/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /colaborativ|art\.?\s*86/i.test(a.asignatura))
+  );
+}
+
+/**
+ * Para Docente de Aula Regular (!isPieDoc), el Trabajo Colaborativo PIE Art. 86 es 1:1 en horas cronológicas.
+ * Para Educadora Diferencial (isPieDoc), sus horas en curso se consideran pedagógicas (45 min) o su equivalente 0.75 cronológico.
+ */
+export function obtenerHorasCronologicasTrabajoColab(a: AsignacionHoraria, isPieDoc: boolean): number {
+  const ha = Number(a.horasPedagogicasAula) || 0;
+  const cron = a.horasCronologicasPie;
+  if (!isPieDoc) {
+    if (Number(a.horasColaborativas) > 0) {
+      return Number(a.horasColaborativas);
+    }
+    if (ha > 0 && (cron === undefined || cron === null || Math.abs(ha * 0.75 - cron) < 0.15)) {
+      return ha;
+    }
+    return cron ?? ha;
+  }
+  return cron ?? Math.round(ha * 0.75 * 10) / 10;
+}
+
 export interface DesgloseHorasFueraAulaDocente {
   horasInstitucionalesSubvGen: number;
   sepExentasCronologicas: number;
@@ -146,13 +174,7 @@ export function calcularHorasFueraAulaDocente(
 
   const asigsDocente = asignacionesDocente.filter(a => a.docenteId === doc.id);
 
-  const asigsTrabajoColaborativo = asigsDocente.filter(
-    a =>
-      a.esTrabajoColaborativo ||
-      a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
-      (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-      (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-  );
+  const asigsTrabajoColaborativo = asigsDocente.filter(a => esAsignacionTrabajoColaborativo(a));
 
   const esSepAsigCheck = (a: AsignacionHoraria) =>
     Boolean(
@@ -226,7 +248,7 @@ export function calcularHorasFueraAulaDocente(
   );
 
   const cronTrabajoColab = asigsTrabajoColaborativo.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasTrabajoColab(a, isPieDoc),
     0
   );
   const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce(
@@ -388,29 +410,25 @@ export function auditarCargaDocenteIntegral(
     );
 
   // Clasificar asignaciones
+  const asigsTrabajoColaborativo = docenteAsigs.filter(a => esAsignacionTrabajoColaborativo(a));
+
   const asigsCoDocencia = [
     ...docenteAsigs.filter(
       a =>
-        a.esCoDocencia ||
-        a.esCoDocenciaParvularia ||
-        a.esAgrupacionFlexible ||
-        a.tipoApoyo === 'CO_DOCENCIA' ||
-        a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
-        a.tipoApoyo === 'REFUERZO_AULA' ||
-        a.tipoApoyo === 'APOYO_DOCENTE'
+        !asigsTrabajoColaborativo.includes(a) &&
+        (a.esCoDocencia ||
+          a.esCoDocenciaParvularia ||
+          a.esAgrupacionFlexible ||
+          a.tipoApoyo === 'CO_DOCENCIA' ||
+          a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
+          a.tipoApoyo === 'REFUERZO_AULA' ||
+          a.tipoApoyo === 'APOYO_DOCENTE')
     ),
     ...coDocenteAsigs
   ];
 
   const asigsTallerSep = docenteAsigs.filter(
     a => (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a)
-  );
-
-  const asigsTrabajoColaborativo = docenteAsigs.filter(
-    a =>
-      a.esTrabajoColaborativo ||
-      a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
-      (a.asignatura && a.asignatura.toLowerCase().includes('colaborativ'))
   );
 
   const asigsCoDocenciaPie = asigsCoDocencia.filter(a => esPieAsig(a));
@@ -497,7 +515,7 @@ export function auditarCargaDocenteIntegral(
   );
 
   const cronTrabajoColab = asigsTrabajoColaborativo.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasTrabajoColab(a, isPieDoc),
     0
   );
   const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce(
@@ -541,13 +559,14 @@ export function auditarCargaDocenteIntegral(
         : 0
       : hTallerSepDoc + sumFuncionesNoAulaSep;
 
-  const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
+  const colabPieEfectivo = Math.max(cronTrabajoColab, hColabDoc);
+  const hNoAulaPieEfectivas = Math.max(colabPieEfectivo + hCoordPie, sumFuncionesNoAulaPie);
   const pieCronologicas = isPieDoc
     ? asigsCoDocenciaPieProporcional.length > 0
-      ? cronApoyoPie + hNoAulaPieEfectivas
+      ? cronCoDocenciaPie + hNoAulaPieEfectivas
       : cronApoyoPie > 0
       ? Math.max(
-          cronApoyoPie + hNoAulaPieEfectivas,
+          cronCoDocenciaPie + hNoAulaPieEfectivas,
           Math.min(
             contratoPieDoc,
             buscarContratoMinimoPorTabla(haCoDocencia + haTrabajoColab, regimenTabla) +
@@ -555,7 +574,7 @@ export function auditarCargaDocenteIntegral(
           )
         )
       : hNoAulaPieEfectivas
-    : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
+    : Math.max(cronCoDocenciaPie + colabPieEfectivo + sumFuncionesNoAulaPie, colabPieEfectivo + hCoordPie);
 
   const horasInstitucionalesSubvGen = sumFuncionesNoAulaSubvGen;
   const horasExentasTotales =

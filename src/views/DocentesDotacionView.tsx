@@ -52,7 +52,11 @@ import {
   buscarContratoMinimoParvulariaPorMinutos
 } from '@slep/mineduc-engine';
 import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalculationService';
-import { esDocenteEducadoraParvulos } from '../services/auditoriaDocenteService';
+import {
+  esDocenteEducadoraParvulos,
+  esAsignacionTrabajoColaborativo,
+  obtenerHorasCronologicasTrabajoColab
+} from '../services/auditoriaDocenteService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
 import { DocenteAsignacionPanel } from '../components/DocenteAsignacionPanel';
@@ -187,9 +191,19 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   const docentesAuditados = useMemo(() => {
     return docentes.map(d => {
       const asigs = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
-      const asigsCoDocencia = asigs.filter(a => (a.coDocenteId === d.id && a.tieneCoDocente) || a.esCoDocencia || a.esAgrupacionFlexible || a.tipoApoyo === 'CO_DOCENCIA' || a.tipoApoyo === 'AGRUPACION_FLEXIBLE' || a.tipoApoyo === 'REFUERZO_AULA' || a.tipoApoyo === 'APOYO_DOCENTE');
+      const asigsTrabajoColab = asigs.filter(a => a.docenteId === d.id && esAsignacionTrabajoColaborativo(a));
+      const asigsCoDocencia = asigs.filter(
+        a =>
+          !asigsTrabajoColab.includes(a) &&
+          ((a.coDocenteId === d.id && a.tieneCoDocente) ||
+            a.esCoDocencia ||
+            a.esAgrupacionFlexible ||
+            a.tipoApoyo === 'CO_DOCENCIA' ||
+            a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
+            a.tipoApoyo === 'REFUERZO_AULA' ||
+            a.tipoApoyo === 'APOYO_DOCENTE')
+      );
       const asigsTallerSep = asigs.filter(a => a.docenteId === d.id && (a.esTallerSep || a.tipoApoyo === 'TALLER_SEP') && !asigsCoDocencia.includes(a));
-      const asigsTrabajoColab = asigs.filter(a => a.docenteId === d.id && (a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO'));
 
       const subTotalDoc = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
       const contratoSepDoc = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
@@ -299,8 +313,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         !asigsCoDocenciaPieProporcional.includes(a)
       );
 
-      // Conversión rigurosa de horas cronológicas: si no tiene horasCronologicasPie explícitas, 1 HA = 45 min = 0.75 hrs cronológicas
-      const cronTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
+      // Conversión rigurosa de horas cronológicas: para Docente de Aula (!isPieDoc), Trabajo Colaborativo Art. 86 es 1:1 cronológico
+      const cronTrabajoColab = asigsTrabajoColab.reduce((s, a) => s + obtenerHorasCronologicasTrabajoColab(a, isPieDoc), 0);
       const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
       const cronCoDocenciaSep = asigsCoDocenciaSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
       const cronTallerSep = asigsTallerSep.reduce((s, a) => s + (a.horasCronologicasPie ?? Math.round(a.horasPedagogicasAula * 0.75 * 10) / 10), 0);
@@ -324,14 +338,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
             : 0)
         : (hTallerSepDoc + sumFuncionesNoAulaSep);
 
-      const hNoAulaPieEfectivas = Math.max(hColabDoc + hCoordPie, sumFuncionesNoAulaPie);
+      const colabPieEfectivo = Math.max(cronTrabajoColab, hColabDoc);
+      const hNoAulaPieEfectivas = Math.max(colabPieEfectivo + hCoordPie, sumFuncionesNoAulaPie);
       const pieCronologicas = isPieDoc
         ? (asigsCoDocenciaPieProporcional.length > 0
-            ? (cronApoyoPie + hNoAulaPieEfectivas)
+            ? (cronCoDocenciaPie + hNoAulaPieEfectivas)
             : (cronApoyoPie > 0
-                ? Math.max(cronApoyoPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
+                ? Math.max(cronCoDocenciaPie + hNoAulaPieEfectivas, Math.min(contratoPieDoc, buscarContratoMinimoPorTabla(pedCoDocencia + pedTrabajoColab, regimenTabla) + hNoAulaPieEfectivas))
                 : hNoAulaPieEfectivas))
-        : Math.max(cronApoyoPie + sumFuncionesNoAulaPie, hColabDoc + hCoordPie);
+        : Math.max(cronCoDocenciaPie + colabPieEfectivo + sumFuncionesNoAulaPie, colabPieEfectivo + hCoordPie);
 
       const hInstNoAula = sumFuncionesNoAulaSubvGen;
       const hExentas = hInstNoAula + sepExentas + pieCronologicas;

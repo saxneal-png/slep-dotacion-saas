@@ -362,4 +362,69 @@ describe('Cálculo de Carga Horaria para Docente de Aula con Co-Docencia / Apoyo
     // 6. No debe marcar infracción de exceso lectivo
     expect(docContrato.esInfractorExcesoLectivo).toBe(false);
   });
+
+  it('audita caso real de Paulina Andrea Albornoz Acuña (Liceo Campanario: 3 HA 65/35 + 28 HA 60/40 + 3h Trabajo Colaborativo Art. 86): 41h exactas sin decimales ni doble conteo', () => {
+    const docentePaulina: Docente = {
+      id: 'doc-paulina-albornoz',
+      rbd: '12345',
+      periodo: 2027,
+      run: '16.961.754-5',
+      nombres: 'Paulina Andrea',
+      apellidos: 'Albornoz Acuña',
+      estamento: 'DOCENTE_AULA',
+      calidadJuridica: 'TITULAR',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44
+    };
+
+    const cursosCampanario: CursoSae[] = [
+      { id: 'c-4b', rbd: '12345', periodo: 2027, nivel: '4° Básico', letra: 'A', regimen: 'JEC', cupoSae: 35, matriculaProyectada: 30, regimenProporcion: '60_40' },
+      { id: 'c-3b', rbd: '12345', periodo: 2027, nivel: '3° Básico', letra: 'A', regimen: 'JEC', cupoSae: 35, matriculaProyectada: 30, regimenProporcion: '60_40' },
+      { id: 'c-8b', rbd: '12345', periodo: 2027, nivel: '8° Básico', letra: 'A', regimen: 'JEC', cupoSae: 35, matriculaProyectada: 30, regimenProporcion: '65_35' }
+    ];
+
+    const asignacionesPaulina: AsignacionHoraria[] = [
+      { id: 'p-1', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Lenguaje y Comunicación', horasPedagogicasAula: 8 },
+      { id: 'p-2', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Tecnología', horasPedagogicasAula: 1 },
+      { id: 'p-3', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Matemática', horasPedagogicasAula: 6 },
+      { id: 'p-4', rbd: '12345', periodo: 2027, cursoId: 'c-8b', docenteId: 'doc-paulina-albornoz', asignatura: 'Artes Visuales y Música', horasPedagogicasAula: 2 },
+      { id: 'p-5', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Taller Lectura y Escritura', horasPedagogicasAula: 2, esTallerJec: true },
+      { id: 'p-6', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Ciencias Naturales', horasPedagogicasAula: 3 },
+      { id: 'p-7', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Historia, Geografía y Ciencias Sociales', horasPedagogicasAula: 3 },
+      { id: 'p-8', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Música', horasPedagogicasAula: 2 },
+      { id: 'p-9', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Artes Visuales', horasPedagogicasAula: 2 },
+      { id: 'p-10', rbd: '12345', periodo: 2027, cursoId: 'c-8b', docenteId: 'doc-paulina-albornoz', asignatura: 'Tecnología', horasPedagogicasAula: 1 },
+      { id: 'p-11', rbd: '12345', periodo: 2027, cursoId: 'c-4b', docenteId: 'doc-paulina-albornoz', asignatura: 'Orientación', horasPedagogicasAula: 1 },
+      {
+        id: 'p-colab',
+        rbd: '12345',
+        periodo: 2027,
+        cursoId: 'c-3b',
+        docenteId: 'doc-paulina-albornoz',
+        asignatura: 'Trabajo Colaborativo / Co-Planificación PIE Art. 86',
+        horasPedagogicasAula: 3,
+        horasCronologicasPie: 2.3, // Simula dato histórico convertido por * 0.75
+        esTrabajoColaborativo: true,
+        esCoDocencia: true // Simula flag mixto que antes duplicaba 2.3 + 2.3 = 4.6
+      }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio(
+      [colegioMock],
+      [docentePaulina],
+      asignacionesPaulina,
+      cursosCampanario
+    );
+
+    const docContrato = consolidado[0]?.contratos[0];
+    expect(docContrato).toBeDefined();
+    if (!docContrato) return;
+
+    expect(docContrato.horasAula65_35).toBe(3);
+    expect(docContrato.horasAula60_40).toBe(28);
+    expect(docContrato.horasPieCronologicas).toBe(3); // 1:1 cronológico, nunca 2.3 ni 4.6
+    expect(docContrato.contratoCalculadoTotal).toBe(41); // 3h + 35h + 3h
+    expect(docContrato.saldoHoras).toBe(3); // 44 - 41 = 3 entero exacto
+    expect(docContrato.estadoSaldo).toBe('HOLGURA');
+  });
 });
