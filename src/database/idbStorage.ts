@@ -8,9 +8,13 @@ const DB_NAME = 'slep_valle_diguillin_idb';
 const STORE_NAME = 'sqlite_storage';
 const DB_VERSION = 1;
 
+let cachedDbPromise: Promise<IDBDatabase> | null = null;
+
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (cachedDbPromise) return cachedDbPromise;
+  cachedDbPromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
+      cachedDbPromise = null;
       return reject(new Error('IndexedDB no está disponible en este entorno'));
     }
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -20,9 +24,18 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_NAME);
       }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onclose = () => { cachedDbPromise = null; };
+      db.onversionchange = () => { db.close(); cachedDbPromise = null; };
+      resolve(db);
+    };
+    request.onerror = () => {
+      cachedDbPromise = null;
+      reject(request.error);
+    };
   });
+  return cachedDbPromise;
 }
 
 export async function getIdbBytes(key: string): Promise<Uint8Array | null> {
@@ -59,9 +72,10 @@ export async function setIdbBytes(key: string, data: Uint8Array): Promise<void> 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const req = store.put(data, key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    store.put(data, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Transacción IndexedDB abortada'));
   });
 }
 
@@ -71,8 +85,9 @@ export async function deleteIdbBytes(key: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    const req = store.delete(key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    store.delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Transacción IndexedDB abortada'));
   });
 }

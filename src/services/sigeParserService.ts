@@ -321,12 +321,42 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
     throw new Error('El archivo proporcionado está vacío.');
   }
 
-  // Detectar delimitador (punto y coma prioritario en SIGE, o coma si fue exportado por Excel)
-  const primeraLinea = lineas[0];
+  // Detectar fila de cabecera real y delimitador (RFC-4180)
+  const splitCsvLine = (line: string, sep: string): string[] => {
+    const out: string[] = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === sep && !inQuotes) {
+        out.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  };
+
+  let headerIdx = 0;
+  for (let l = 0; l < Math.min(10, lineas.length); l++) {
+    if (/(DOC_RUN|\bRUN\b|\bRUT\b|R\.U\.N\.)/i.test(lineas[l])) {
+      headerIdx = l;
+      break;
+    }
+  }
+  const primeraLinea = lineas[headerIdx];
   const separador = primeraLinea.includes(';') ? ';' : ',';
 
-  const cabeceras = primeraLinea
-    .split(separador)
+  const cabeceras = splitCsvLine(primeraLinea, separador)
     .map(c => limpiarTextoMineduc(c).toUpperCase());
 
   // Búsqueda flexible de columnas por nombres estándar de SIGE o reportes de personal
@@ -374,8 +404,8 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
   let rbdDetectado = rbdDestino || '';
   let nombreColegioDetectado = '';
 
-  for (let i = 1; i < lineas.length; i++) {
-    const cols = lineas[i].split(separador).map(c => c.trim());
+  for (let i = headerIdx + 1; i < lineas.length; i++) {
+    const cols = splitCsvLine(lineas[i], separador);
     if (cols.length < 3) continue;
 
     const rawRunStr = cols[idxRun] || '';
@@ -447,8 +477,13 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
     
     const parseIntSafe = (idx: number) => {
       if (idx === -1) return 0;
-      const v = cols[idx]?.replace(/\D/g, '');
-      return v ? parseInt(v, 10) : 0;
+      const raw = (cols[idx] || '').trim().replace(/\s+/g, '');
+      if (!raw) return 0;
+      const norm = raw.includes(',') && raw.includes('.')
+        ? raw.replace(/\./g, '').replace(',', '.')
+        : raw.replace(',', '.');
+      const num = Number.parseFloat(norm.replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(num) && num >= 0 ? Math.round(num * 100) / 100 : 0;
     };
 
     const hContrato = parseIntSafe(idxHorasContrato);
@@ -490,7 +525,7 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
   }
 
   // Convertir a modelos Docente de la aplicación respetando el RBD propio de cada fila
-  const docentesConvertidos: Docente[] = filas.map(f => {
+  const docentesConvertidos: Docente[] = filas.map((f, idx) => {
     const rbdDocente = f.rbd || rbdDestino || rbdDetectado || '0';
     let estamento: EstamentoDocente = 'DOCENTE_AULA';
     const funcUpper = f.funcionPrincipal.toUpperCase();
@@ -521,7 +556,7 @@ export function parsearPlanillaSige(contenidoTexto: string, rbdDestino?: string,
     if (!asignatura || asignatura === '--') asignatura = f.funcionPrincipal;
 
     return {
-      id: `doc-${rbdDocente}-${f.run}`,
+      id: `doc-${rbdDocente}-${periodo}-${f.run}-${idx}`,
       rbd: rbdDocente,
       periodo: periodo,
       run: f.runCompleto,

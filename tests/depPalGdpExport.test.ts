@@ -475,21 +475,21 @@ describe('Generación de Libros Excel Oficiales (PAL 2027 y GDP)', () => {
   }, 15000);
 
   it('calcula con precisión matemática las horas de contrato docente reglamentarias según tabla MINEDUC (65/35 y 60/40)', () => {
-    // Régimen Regular 65/35 (Max HA = 38 por 44 hrs)
+    // Régimen Regular 65/35 (Tabla oficial MINEDUC, Max HA = 38 por 44 hrs)
     expect(calcularHorasContratoPorPlan(0, '65_35')).toBe(0);
-    expect(calcularHorasContratoPorPlan(22, '65_35')).toBe(26);
+    expect(calcularHorasContratoPorPlan(22, '65_35')).toBe(25);
     expect(calcularHorasContratoPorPlan(38, '65_35')).toBe(44);
-    expect(calcularHorasContratoPorPlan(40, '65_35')).toBe(47);
+    expect(calcularHorasContratoPorPlan(40, '65_35')).toBe(46);
     expect(calcularHorasContratoPorPlan(42, '65_35')).toBe(49);
     expect(calcularHorasContratoPorPlan(80, '65_35')).toBe(93);
 
-    // Régimen Vulnerable 60/40 (Max HA = 35 por 44 hrs)
+    // Régimen Vulnerable 60/40 (Tabla oficial MINEDUC, Max HA = 35 por 44 hrs)
     expect(calcularHorasContratoPorPlan(0, '60_40')).toBe(0);
     expect(calcularHorasContratoPorPlan(30, '60_40')).toBe(38);
     expect(calcularHorasContratoPorPlan(35, '60_40')).toBe(44);
     expect(calcularHorasContratoPorPlan(38, '60_40')).toBe(48);
-    expect(calcularHorasContratoPorPlan(40, '60_40')).toBe(51);
-    expect(calcularHorasContratoPorPlan(80, '60_40')).toBe(101);
+    expect(calcularHorasContratoPorPlan(40, '60_40')).toBe(50);
+    expect(calcularHorasContratoPorPlan(80, '60_40')).toBe(100);
   });
 
   it('genera la Planilla GDP oficial del colegio con sus 6 hojas y fórmulas nativas', async () => {

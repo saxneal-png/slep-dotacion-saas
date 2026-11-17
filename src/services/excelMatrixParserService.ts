@@ -147,16 +147,16 @@ export function normalizarEncabezadoCurso(header: string): { nivel: string; letr
   return null;
 }
 
-export function extraerHorasCelda(val: any): number {
+export function extraerHorasCelda(val: any, isTimeFmt: boolean = false): number {
   if (val === null || val === undefined || val === '') return 0;
 
   if (typeof val === 'object' && val !== null) {
     if ('result' in val) {
-      return extraerHorasCelda(val.result);
+      return extraerHorasCelda(val.result, isTimeFmt);
     }
     if (val instanceof Date) {
-      const hours = val.getHours();
-      const mins = val.getMinutes();
+      const hours = val.getUTCHours();
+      const mins = val.getUTCMinutes();
       const total = hours + mins / 60;
       if (total > 0 && total <= 50) return Math.round(total * 100) / 100;
       return 0;
@@ -165,7 +165,7 @@ export function extraerHorasCelda(val: any): number {
 
   if (typeof val === 'number') {
     if (isNaN(val)) return 0;
-    if (val > 0 && val < 1) {
+    if (isTimeFmt && val > 0 && val < 2.5) {
       const conv = val * 24;
       if (conv > 0 && conv <= 50) return Math.round(conv * 100) / 100;
     }
@@ -188,7 +188,7 @@ export function extraerHorasCelda(val: any): number {
   if (numMatch) {
     const parsed = parseFloat(numMatch[1].replace(',', '.'));
     if (!isNaN(parsed)) {
-      if (parsed > 0 && parsed < 1) {
+      if (isTimeFmt && parsed > 0 && parsed < 2.5) {
         const conv = parsed * 24;
         if (conv > 0 && conv <= 50) return Math.round(conv * 100) / 100;
       }

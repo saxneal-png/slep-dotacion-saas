@@ -4,11 +4,17 @@ import { INIT_SCHEMA_SQL, runMigrations, hasAppliedMigration, markAppliedMigrati
 import { getIdbBytes, setIdbBytes, deleteIdbBytes } from './idbStorage';
 
 let dbInstance: Database | null = null;
+let dbInitPromise: Promise<Database> | null = null;
+let dirtyVersion = 0;
+let persistedVersion = 0;
 const STORAGE_KEY = 'slep_valle_diguillin_sqlite_db_2027';
 const LEGACY_STORAGE_KEY = 'slep_valle_diguillin_sqlite_db';
 
 export async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
+  if (dbInitPromise) return dbInitPromise;
+
+  dbInitPromise = (async () => {
 
   // Limpieza proactiva de caché previa pre-2027 en el navegador
   if (typeof localStorage !== 'undefined') {
@@ -101,6 +107,13 @@ export async function getDb(): Promise<Database> {
 
   persistDb();
   return dbInstance;
+  })();
+
+  try {
+    return await dbInitPromise;
+  } finally {
+    dbInitPromise = null;
+  }
 }
 
 let lastPersistTime: string = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -137,8 +150,9 @@ if (typeof window !== 'undefined') {
 }
 
 export function flushPersistAsync(): Promise<void> {
-  if (!dbInstance || !isDbDirty) return persistChain;
+  if (!dbInstance || dirtyVersion <= persistedVersion) return persistChain;
 
+  const targetVersion = dirtyVersion;
   let snapshot: Uint8Array;
   try {
     snapshot = dbInstance.export();
@@ -157,7 +171,10 @@ export function flushPersistAsync(): Promise<void> {
       } else if (typeof localStorage !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(snapshot)));
       }
-      isDbDirty = false; // Solo marcar como limpio cuando IndexedDB haya completado con éxito
+      if (targetVersion > persistedVersion) {
+        persistedVersion = targetVersion;
+      }
+      isDbDirty = dirtyVersion > persistedVersion;
       persistListeners.forEach(l => l('saved', timestamp));
     } catch (err: any) {
       isDbDirty = true; // Mantener dirty para reintentar si falló el I/O
@@ -173,6 +190,7 @@ export function flushPersistAsync(): Promise<void> {
 }
 
 export function persistDb(forceImmediate = false): Promise<void> {
+  dirtyVersion += 1;
   isDbDirty = true;
 
   if (persistDebounceTimer) {
@@ -207,6 +225,12 @@ export async function exportarBaseDatosSqlite(): Promise<Uint8Array> {
  * Restaura la base de datos SQLite directamente desde un archivo binario (.sqlite / .db)
  */
 export async function importarBaseDatosSqlite(bytes: Uint8Array): Promise<void> {
+  if (persistDebounceTimer) {
+    clearTimeout(persistDebounceTimer);
+    persistDebounceTimer = null;
+  }
+  await persistChain;
+
   let SQL: any;
   try {
     const wasmBytes = getEmbeddedSqlWasm();
@@ -224,7 +248,7 @@ export async function importarBaseDatosSqlite(bytes: Uint8Array): Promise<void> 
     db.run("PRAGMA foreign_keys = ON;");
   } catch (_) {}
   runMigrations(db);
-  persistDb();
+  await persistDb(true);
 }
 /**
  * Borra masivamente la dotación de un periodo específico (opcionalmente filtrado por RBD).

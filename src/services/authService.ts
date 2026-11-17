@@ -546,7 +546,11 @@ export class AuthService {
 
     // 3. Validación criptográfica local PBKDF2 (obligatoria en modo offline / Vitest; en online actualiza verificador local)
     if (!authenticatedViaSupabase) {
+      const env = (import.meta as any).env || {};
+      const permiteSelladoTest = env.MODE === 'test' || env.VITE_ALLOW_LOCAL_SUPERADMIN_SEAL === 'true';
       const esSuperUsuarioInicial =
+        permiteSelladoTest &&
+        !isSupabaseEnabled() &&
         (encontrado.email || '').toLowerCase() === SUPER_USUARIO_EMAIL &&
         !encontrado.passwordHash &&
         !encontrado.salt &&

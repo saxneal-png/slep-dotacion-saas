@@ -12,6 +12,7 @@ import {
 } from '../data/slepSchoolsCatalog';
 import { esJardinOSalaCuna } from '../utils/establishmentTypeHelpers';
 import { limpiarRutParaId, normalizarRut } from '../utils/rutUtils';
+import { calcularJornadaMinutos } from '@slep/mineduc-engine';
 import {
   guardarAsistentesBatch,
   guardarDocentesBatch,
@@ -288,7 +289,8 @@ export async function importarDetalleCentroCostoVtf(
     const termino = colTermino ? cellText(row.getCell(colTermino).value) : '';
     const programa = colPrograma ? cellText(row.getCell(colPrograma).value) : '';
     const tipoContrato = colTipoContrato ? cellText(row.getCell(colTipoContrato).value) : 'Indefinido';
-    const horas = Math.min(44, Math.max(1, Math.round(colHoras ? cellNumber(row.getCell(colHoras).value) : 44) || 44));
+    const horasRaw = colHoras ? cellNumber(row.getCell(colHoras).value) : 44;
+    const horas = Math.min(44, Math.max(0, Math.round(horasRaw)));
 
     const notasPartes = [
       `Centro Costo: ${centroCosto}`,
@@ -310,7 +312,7 @@ export async function importarDetalleCentroCostoVtf(
       const calidad = mapCalidadDocente(tipoContrato);
       const isTitular = calidad === 'TITULAR';
       const funcionVtf = esDirector ? 'Función Directiva' : 'Educadora de Párvulos';
-      const horasAula = esDirector ? 0 : Math.round(horas * 0.65);
+      const horasAula = esDirector || horas <= 0 ? 0 : calcularJornadaMinutos(horas, 0, '65_35').horasPedagogicasDisponiblesMax;
 
       const doc: Docente = {
         id: `doc-${rbd}-${periodo}-${runClean}`,

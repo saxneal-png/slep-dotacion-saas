@@ -11,7 +11,12 @@ import {
   sanitizeExcelText,
   homologarNivelExcelPal
 } from './depHomologationEngine';
-import { calcularHorasPlanCurso, obtenerPlanPorCurso } from '@slep/mineduc-engine';
+import {
+  buscarContratoMinimoPorTabla,
+  calcularHorasPlanCurso,
+  determinarRegimenNormativo,
+  obtenerPlanPorCurso
+} from '@slep/mineduc-engine';
 import { guardarDocentesBatch } from '../database/repositories/docentesRepo';
 import { guardarAsistentesBatch } from '../database/repositories/asistentesRepo';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/repositories/establecimientosRepo';
@@ -36,7 +41,19 @@ export function calcularHorasContratoPorPlan(
 ): number {
   if (totalHA <= 0) return 0;
   const maxHA = regimen === '60_40' ? 35 : 38;
-  return Math.ceil((totalHA * 44) / maxHA);
+  const bloques44 = Math.floor(totalHA / maxHA);
+  const restoHA = totalHA - bloques44 * maxHA;
+  return bloques44 * 44 + (restoHA > 0 ? buscarContratoMinimoPorTabla(Math.ceil(restoHA), regimen) : 0);
+}
+
+function leerNumeroExcel(val: any): number {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'object' && 'result' in val) {
+    const n = Number(val.result);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(val);
+  return Number.isFinite(n) ? n : 0;
 }
 
 /**
@@ -97,12 +114,12 @@ export async function importarPlanillaPalDEP(
       const funcionStr = String(row.getCell(7).text || '').trim();
       const art69Str = String(row.getCell(9).text || '').trim();
 
-      const totalHrsContrato = Number(row.getCell(10).value || 0);
-      const hrsBasica = Number(row.getCell(11).value || 0);
-      const hrsMedia = Number(row.getCell(12).value || 0);
-      const hrsPie = Number(row.getCell(16).value || 0);
-      const hrsSep = Number(row.getCell(17).value || 0);
-      const otrasFunciones = Number(row.getCell(18).value || 0);
+      const totalHrsContrato = leerNumeroExcel(row.getCell(10).value);
+      const hrsBasica = leerNumeroExcel(row.getCell(11).value);
+      const hrsMedia = leerNumeroExcel(row.getCell(12).value);
+      const hrsPie = leerNumeroExcel(row.getCell(16).value);
+      const hrsSep = leerNumeroExcel(row.getCell(17).value);
+      const otrasFunciones = leerNumeroExcel(row.getCell(18).value);
       const obs = String(row.getCell(19).text || '').trim();
 
       // Desglose por fuente según calidad jurídica
@@ -124,15 +141,25 @@ export async function importarPlanillaPalDEP(
         sepCtta = hrsSep;
       }
 
+      const estamentoTexto = String(row.getCell(5).text || '').toLowerCase();
+      let estamentoDoc: Docente['estamento'] = 'DOCENTE_AULA';
+      if (/diferencial|pie/i.test(estamentoTexto) || /diferencial/i.test(cargoStr)) {
+        estamentoDoc = 'DOCENTE_DIFERENCIAL';
+      } else if (/directiv|director|utp|inspector/i.test(estamentoTexto) || /directiv|director|utp/i.test(funcionStr)) {
+        estamentoDoc = 'DIRECTIVO';
+      } else if (/educadora|p[aá]rvulo/i.test(estamentoTexto)) {
+        estamentoDoc = 'OTRA_ESTABLECIMIENTO';
+      }
+
       docentesNuevos.push({
-        id: `pal_doc_${rbdNum}_${rutRaw.replace(/[^0-9kK]/g, '')}`,
+        id: `pal_doc_${rbdNum}_${rutRaw.replace(/[^0-9kK]/g, '')}_${calidadJuridica}_${rowNumber}`,
         rbd: String(rbdNum),
         periodo,
         run: rutRaw,
         nombres: cargoStr || 'Docente',
         apellidos: '',
         calidadJuridica,
-        estamento: /educadora/i.test(String(row.getCell(5).text || '')) ? 'OTRA_ESTABLECIMIENTO' : 'DOCENTE_AULA',
+        estamento: estamentoDoc,
         horasContrato: totalHrsContrato,
         horasSubvencionGeneralTitular: subvTit,
         horasSubvencionGeneralContrata: subvCtta,
@@ -179,14 +206,14 @@ export async function importarPlanillaPalDEP(
       else if (/técnic/i.test(funcionStr)) estamento = 'TECNICO';
       else if (/auxiliar/i.test(funcionStr)) estamento = 'AUXILIAR';
 
-      const totalHrs = Number(row.getCell(9).value || 0);
-      const hGral = Number(row.getCell(10).value || 0);
-      const hPie = Number(row.getCell(11).value || 0);
-      const hSep = Number(row.getCell(12).value || 0);
+      const totalHrs = leerNumeroExcel(row.getCell(9).value);
+      const hGral = leerNumeroExcel(row.getCell(10).value);
+      const hPie = leerNumeroExcel(row.getCell(11).value);
+      const hSep = leerNumeroExcel(row.getCell(12).value);
       const obs = String(row.getCell(13).text || '').trim();
 
       asistentesNuevos.push({
-        id: `pal_ae_${rbdNum}_${rutRaw.replace(/[^0-9kK]/g, '')}`,
+        id: `pal_ae_${rbdNum}_${rutRaw.replace(/[^0-9kK]/g, '')}_${esIndefinido ? 'INDEF' : 'PF'}_${rowNumber}`,
         rbd: String(rbdNum),
         periodo,
         run: rutRaw,
@@ -438,7 +465,7 @@ export async function generarExcelConsolidadoPalDEP(
 
   // Si quedaron filas residuales de la plantilla previa, limpiarlas
   if (wsDoc.rowCount > currentRowDoc - 1) {
-    const maxCleanDoc = Math.min(wsDoc.rowCount, currentRowDoc + 200);
+    const maxCleanDoc = wsDoc.rowCount;
     for (let r = currentRowDoc; r <= maxCleanDoc; r++) {
       const row = wsDoc.getRow(r);
       if (row.hasValues) {
@@ -484,7 +511,7 @@ export async function generarExcelConsolidadoPalDEP(
   }
 
   if (wsAe.rowCount > currentRowAe - 1) {
-    const maxCleanAe = Math.min(wsAe.rowCount, currentRowAe + 200);
+    const maxCleanAe = wsAe.rowCount;
     for (let r = currentRowAe; r <= maxCleanAe; r++) {
       const row = wsAe.getRow(r);
       if (row.hasValues) {
@@ -562,8 +589,8 @@ export async function generarExcelConsolidadoPalDEP(
         row.getCell(5).value = sanitizeExcelText((a.cargoFuncion || funcionVtf).toUpperCase());
         row.getCell(6).value = funcionVtf;
         row.getCell(7).value = calidadStr;
-        row.getCell(8).value = Number(a.horasContrato || 44);
-        row.getCell(9).value = Number(a.horasContrato || 44);
+        row.getCell(8).value = Number(a.horasContrato ?? 44);
+        row.getCell(9).value = Number(a.horasContrato ?? 44);
         row.getCell(10).value = sanitizeExcelText(obsTxt);
         row.commit();
         currentRowVtf++;
@@ -571,7 +598,7 @@ export async function generarExcelConsolidadoPalDEP(
     }
 
     if (wsVtf.rowCount > currentRowVtf - 1) {
-      const maxCleanVtf = Math.min(wsVtf.rowCount, currentRowVtf + 300);
+      const maxCleanVtf = wsVtf.rowCount;
       for (let r = currentRowVtf; r <= maxCleanVtf; r++) {
         const row = wsVtf.getRow(r);
         if (row.hasValues) {
@@ -721,7 +748,7 @@ export async function generarExcelConsolidadoPalDEP(
         const hPlan = calcularPlanNormativoCurso(c);
         const esCombinadoOMulti = Boolean(c.esMultigrado || c.esCombinado || (c.gradosCombinados && c.gradosCombinados.length > 0));
         const grados = extraerGradosDeCurso(c);
-        const regimenProp: '65_35' | '60_40' = c.regimenProporcion || estRegimen;
+        const regimenProp: '65_35' | '60_40' = c.regimenProporcion || determinarRegimenNormativo(est.porcentajePrioritarios || 0, c.nivel);
 
         if (esCombinadoOMulti && grados.length > 1) {
           // Multigrado o Combinado que abarca múltiples grados

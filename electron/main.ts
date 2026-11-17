@@ -32,7 +32,15 @@ function createWindow() {
 
   mainWindow.removeMenu();
 
-  if (process.env.VITE_DEV_SERVER_URL) {
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    const devUrl = !app.isPackaged ? process.env.VITE_DEV_SERVER_URL : undefined;
+    if (devUrl && targetUrl.startsWith(devUrl)) return;
+    if (targetUrl.startsWith('file://')) return;
+    event.preventDefault();
+  });
+
+  if (!app.isPackaged && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
@@ -101,7 +109,8 @@ ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     }
     const resolved = path.resolve(filePath);
     const appDir = path.resolve(app.getAppPath());
-    const isAppAsset = resolved.startsWith(appDir);
+    const rel = path.relative(appDir, resolved);
+    const isAppAsset = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 
     if (!authorizedReadPaths.has(resolved) && !isAppAsset) {
       throw new Error('Operación bloqueada por seguridad: la ruta de lectura no fue autorizada mediante un diálogo de apertura.');
@@ -111,7 +120,14 @@ ipcMain.handle('fs:readFile', async (_, filePath: string) => {
       throw new Error(`Extensión de archivo no permitida: ${ext}`);
     }
 
+    const isBinary = ext === '.xlsx' || ext === '.sqlite' || ext === '.db' || ext === '.pdf';
+    if (isBinary) {
+      const buf = await fs.promises.readFile(resolved);
+      authorizedReadPaths.delete(resolved);
+      return { success: true, data: new Uint8Array(buf), isBinary: true };
+    }
     const content = await fs.promises.readFile(resolved, 'utf-8');
+    authorizedReadPaths.delete(resolved);
     return { success: true, data: content };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -140,10 +156,7 @@ ipcMain.handle('secrets:setGeminiKey', async (_, plainKey: string) => {
       await fs.promises.writeFile(secretPath, encrypted);
       return { success: true };
     } else {
-      // Fallback base64 ofuscado si safeStorage no estuviese activo en el host
-      const b64 = Buffer.from(trimmed, 'utf-8').toString('base64');
-      await fs.promises.writeFile(secretPath, b64, 'utf-8');
-      return { success: true };
+      throw new Error('Almacenamiento cifrado del sistema operativo (safeStorage) no disponible.');
     }
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -190,30 +203,22 @@ ipcMain.handle('api:geminiRequest', async (_, urlOrModel: string, options?: any)
         if (safeStorage && safeStorage.isEncryptionAvailable()) {
           const encBuffer = await fs.promises.readFile(secretPath);
           apiKey = safeStorage.decryptString(encBuffer);
-        } else {
-          const b64 = await fs.promises.readFile(secretPath, 'utf-8');
-          apiKey = Buffer.from(b64, 'base64').toString('utf-8');
         }
       } catch (err) {
         console.warn('Advertencia al recuperar API key de safeStorage:', err);
       }
     }
 
-    if (!apiKey && options?.apiKey) {
-      apiKey = options.apiKey;
-    }
-
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(options?.headers || {})
+      'Content-Type': 'application/json'
     };
 
     if (apiKey) {
-      headers['x-goog-api-key'] = apiKey; // Inyección segura en header, nunca en la URL
+      headers['x-goog-api-key'] = apiKey; // Inyección segura en header, nunca desde renderer ni en URL
     }
 
     const fetchOptions: any = {
-      method: options?.method || 'POST',
+      method: 'POST',
       headers,
     };
     if (options?.body) {

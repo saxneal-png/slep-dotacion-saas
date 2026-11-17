@@ -175,19 +175,6 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     );
   }, [a.id, a.asignatura, a.horasPedagogicasAula, a.horasCronologicasPie, a.cursoId, esApoyoAulaCurso]);
 
-  // Asegurar proporción docente activa en toda asignación frente a curso
-  useEffect(() => {
-    if (esApoyoAulaCurso && !esTrabajoNoAula && a.esProporcionDocente !== true && onGuardarAsignacion) {
-      const ha = a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-      onGuardarAsignacion({
-        ...a,
-        horasPedagogicasAula: ha,
-        esProporcionDocente: true,
-        horasCronologicasPie: esPie ? Math.round(ha * 0.75 * 10) / 10 : undefined
-      });
-    }
-  }, [a.id, esApoyoAulaCurso, esTrabajoNoAula, a.esProporcionDocente, esPie]);
-
   const cursoActual = useMemo(() => {
     return cursos.find(c => c.id === a.cursoId) || null;
   }, [cursos, a.cursoId]);
@@ -217,19 +204,6 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   // Verificar si la asignatura actual coincide con alguna del plan (solo si no es Libre Disposición)
   const esLibreDisposicion = esAsignacionLibreDisposicionJec(a, cursoActual, infoPlan);
   const asigEnPlan = esLibreDisposicion ? undefined : infoPlan.asignaturas.find(p => sonAsignaturasEquivalentes(p.nombre, a.asignatura));
-
-  // Autocorrección reactiva: si la fila pertenecía a un curso EPJA y tenía esTallerJec: true por error previo, limpiarlo
-  useEffect(() => {
-    if (esCursoEpjaFila && a.esTallerJec && onGuardarAsignacion) {
-      const resCod = resolverCodigoYAmbitoAsignatura(a.asignatura, { nivelCurso: cursoActual?.nivel, esJec: false });
-      onGuardarAsignacion({
-        ...a,
-        esTallerJec: false,
-        codigoAsignatura: resCod.codigo,
-        ambitoCurricular: resCod.ambito
-      });
-    }
-  }, [a.id, esCursoEpjaFila, a.esTallerJec]);
 
   const esMedio34Fila = esCursoNivelMedio34(cursoActual, infoPlan);
 

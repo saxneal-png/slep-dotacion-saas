@@ -33,7 +33,7 @@ export function crearEvaluador(rol: RolId | null) {
     if (!rol) return false;
     if (vista === 'configuraciones') return canAny(PERMISOS_CONFIGURACIONES);
     const req = PERMISO_POR_VISTA[vista];
-    return req ? can(req) : true;
+    return req ? can(req) : false;
   };
   return { can, canAny, puedeVerVista };
 }

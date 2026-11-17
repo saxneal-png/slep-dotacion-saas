@@ -90,19 +90,19 @@ export interface ResultadoAuditoriaDocenteMultitramo {
 export function calcularAuditoriaDocenteMultitramo(
   params: ParametrosAuditoriaDocenteMultitramo
 ): ResultadoAuditoriaDocenteMultitramo {
-  const l65 = Math.max(0, Math.round(params.horasAula65_35 || 0));
-  const l60 = Math.max(0, Math.round(params.horasAula60_40 || 0));
-  const pie = Math.max(0, Math.round(params.horasPieCronologicas ?? (params.horasPieSepCronologicas !== undefined ? params.horasPieSepCronologicas : 0)));
-  const tallerSep = Math.max(0, Math.round(params.horasTallerSepExento || 0));
-  const noAula = Math.max(0, Math.round(params.horasNoAulaInstitucionales || 0));
-  const contratoReal = Math.max(0, Math.round(params.horasContratoReal || 0));
+  const l65 = Math.max(0, Number(params.horasAula65_35 || 0));
+  const l60 = Math.max(0, Number(params.horasAula60_40 || 0));
+  const pie = Math.max(0, Number(params.horasPieCronologicas ?? (params.horasPieSepCronologicas !== undefined ? params.horasPieSepCronologicas : 0)));
+  const tallerSep = Math.max(0, Number(params.horasTallerSepExento || 0));
+  const noAula = Math.max(0, Number(params.horasNoAulaInstitucionales || 0));
+  const contratoReal = Math.max(0, Number(params.horasContratoReal || 0));
 
   // 1. Obtención de jornadas requeridas por tramos independientes según tablas oficiales
-  const detalle65 = buscarDetallePorHorasAula(l65, '65_35');
-  const detalle60 = buscarDetallePorHorasAula(l60, '60_40');
+  const detalle65 = buscarDetallePorHorasAula(Math.ceil(l65), '65_35');
+  const detalle60 = buscarDetallePorHorasAula(Math.ceil(l60), '60_40');
   const req65 = detalle65.jornada;
   const req60 = detalle60.jornada;
-  const contratoCalculadoTotal = req65 + req60 + pie + tallerSep + noAula;
+  const contratoCalculadoTotal = Number((req65 + req60 + pie + tallerSep + noAula).toFixed(2));
 
   // 2. División del contrato base regular entre ambos regímenes (descontando funciones exentas PIE, SEP exento y No Aula)
   let cReg = 0;
@@ -142,12 +142,12 @@ export function calcularAuditoriaDocenteMultitramo(
     }
   }
 
+  const clampJornada = (val: number) => Math.min(44, Math.max(1, Math.round(val)));
+
   // 3. Consultar y acumular minutos oficiales correspondientes a la carga lectiva asignada
   let totalRecreoMins = detalle65.recreoMinutos + detalle60.recreoMinutos;
   let totalHnlMins = detalle65.hnlMinutos + detalle60.hnlMinutos;
   let totalLectivaCronMins = detalle65.lectivasMinutos + detalle60.lectivasMinutos;
-
-  const clampJornada = (val: number) => Math.min(44, Math.max(1, val));
 
   // Límite legal permitido en minutos cronológicos de docencia de aula según la jornada contractual
   let minutosLimitePermitido = 0;
@@ -172,8 +172,12 @@ export function calcularAuditoriaDocenteMultitramo(
   let reduccionArt69Mins = 0;
   if (params.aplicaArticulo69 && totalLectivaCronMins > 1440) {
     reduccionArt69Mins = totalLectivaCronMins - 1440;
+    const ratioEscala = 1440 / totalLectivaCronMins;
+    const nuevoRecreo = Math.round(totalRecreoMins * ratioEscala);
+    const deltaRecreo = totalRecreoMins - nuevoRecreo;
+    totalRecreoMins = nuevoRecreo;
     totalLectivaCronMins = 1440;
-    totalHnlMins += reduccionArt69Mins;
+    totalHnlMins += reduccionArt69Mins + deltaRecreo;
   }
   if (params.aplicaArticulo69 && minutosLimitePermitido > 1440) {
     minutosLimitePermitido = 1440;
@@ -182,7 +186,7 @@ export function calcularAuditoriaDocenteMultitramo(
   const hnlPlanificacion40 = Math.round(totalHnlMins * 0.40);
 
   // 4. Auditoría de límites y exceso lectivo ponderado según tablas oficiales MINEDUC
-  const minutosLectivosAula = (l65 + l60) * 45;
+  const minutosLectivosAula = Math.round((l65 + l60) * 45);
 
   let esInfractor = false;
   let limitePonderadoPct = 0;

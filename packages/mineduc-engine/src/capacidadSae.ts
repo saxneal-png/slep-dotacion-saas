@@ -137,6 +137,7 @@ export function evaluarCapacidadSaeYInfraestructura(
   if (tipoDetectado === 'REGULAR' || tipoDetectado === 'PARVULARIA') {
     if (cursoLower.includes('sala cuna') || cursoLower.includes('salacuna')) tipoDetectado = 'SALA_CUNA';
     else if (cursoLower.includes('medio menor') || cursoLower.includes('medio mayor') || cursoLower.includes('medio mixto')) tipoDetectado = 'PARVULARIA_MEDIO';
+    else if (/\b(nt1|nt2|pre[-\s]?k[ií]nder|k[ií]nder|transici[oó]n)\b/i.test(cursoLower)) tipoDetectado = 'PARVULARIA';
     else if (esModalidadEspecial(cursoNombre)) tipoDetectado = 'ESPECIAL';
     else if (esModalidadMultigradoOCombinado(cursoNombre)) tipoDetectado = 'MULTIGRADO';
   }
@@ -170,6 +171,10 @@ export function evaluarCapacidadSaeYInfraestructura(
     observaciones.push(
       `⚠️ Exceso SAE: Matrícula proyectada (${matriculaProyectada}) supera el cupo declarado en el Sistema de Admisión Escolar (${cupoSae}).`
     );
+  } else if (cupoSae === 0 && matriculaProyectada > 0) {
+    observaciones.push(
+      `⚠️ Sin Cupo SAE Declarado: El curso registra ${matriculaProyectada} alumnos proyectados con cupo SAE en 0.`
+    );
   }
 
   // 3. Inconsistencia si el cupo SAE declarado es mayor al aforo físico real de la sala
@@ -181,7 +186,7 @@ export function evaluarCapacidadSaeYInfraestructura(
 
   // 4. Detección de necesidad de desdoblamiento
   const umbralDesdoble = topeNormativoModalidad ? topeNormativoModalidad : 45;
-  if (matriculaProyectada > umbralDesdoble || matriculaProyectada > aforoMaximo * 1.15) {
+  if (matriculaProyectada > umbralDesdoble || matriculaProyectada > aforoMaximo) {
     requiereDesdoblamiento = true;
     observaciones.push(
       `📢 Se recomienda desdoblar en 2 secciones (A y B) para cumplir con aforo normativo y asegurar subvención regular.`

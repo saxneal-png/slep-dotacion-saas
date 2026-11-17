@@ -318,12 +318,13 @@ export async function ejecutarTraspasoPeriodoColegio(
   // 5. Asignaciones Curriculares
   let asignacionesCreadas = 0;
   if (opciones.estrategiaAsignaciones === 'REPLICAR_CONTINUIDAD') {
+    let asigIdx = 0;
     for (const a of asignacionesOrigen) {
       const nuevoCursoId = idCursoMap.get(a.cursoId);
       const nuevoDocId = idDocenteMap.get(a.docenteId);
 
       if (nuevoCursoId && nuevoDocId) {
-        const nuevaAsigId = `asig_${rbd}_${periodoDestino}_${nuevoCursoId}_${nuevoDocId}_${a.asignatura}`.replace(/[\s°]/g, '_');
+        const nuevaAsigId = `asig_${rbd}_${periodoDestino}_${nuevoCursoId}_${nuevoDocId}_${a.asignatura}_${asigIdx++}`.replace(/[\s°]/g, '_');
         const asigProyectada: AsignacionHoraria = {
           ...a,
           id: nuevaAsigId,

@@ -270,8 +270,21 @@ export const App: React.FC = () => {
       if (!check.valida) {
         const motivoMsg =
           check.motivo || 'Su sesión ha sido pausada temporalmente por período de revisión técnica interna UATP.';
+        loadRequestIdRef.current++;
         AuthService.logout();
         setSession(null);
+        setColegioActivo(null);
+        setSalas([]);
+        setCursos([]);
+        setDocentes([]);
+        setAsignaciones([]);
+        setAsistentes([]);
+        setModalNavegadorAbierto(false);
+        setModalRespaldosAbierto(false);
+        setModalCopilotAbierto(false);
+        setModalTraspasoAbierto(false);
+        setModalComparadorAbierto(false);
+        setModalGestionEstablecimientosAbierto(false);
         setAvisoSesionPausada(motivoMsg);
         mostrarMensaje(motivoMsg, 'error');
       }
@@ -720,7 +733,7 @@ export const App: React.FC = () => {
 
   const handleGuardarSala = async (s: SalaInfraestructura) => {
     await guardarSala(s);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const allSalas = await listarTodasLasSalas();
     setTodasLasSalas(allSalas);
     mostrarMensaje(`Sala ${s.nombreSala} guardada.`);
@@ -728,7 +741,7 @@ export const App: React.FC = () => {
 
   const handleEliminarSala = async (id: string) => {
     await eliminarSala(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const allSalas = await listarTodasLasSalas();
     setTodasLasSalas(allSalas);
     mostrarMensaje('Sala eliminada.');
@@ -741,7 +754,7 @@ export const App: React.FC = () => {
       return;
     }
     await guardarCurso(c);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const allCursos = await listarTodosLosCursos(periodoActivo);
     setTodosLosCursos(allCursos);
     mostrarMensaje(`Curso ${c.nivel} ${c.letra} actualizado.`);
@@ -749,7 +762,7 @@ export const App: React.FC = () => {
 
   const handleEliminarCurso = async (id: string) => {
     await eliminarCurso(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const allCursos = await listarTodosLosCursos(periodoActivo);
     setTodosLosCursos(allCursos);
     mostrarMensaje('Curso eliminado.');
@@ -757,7 +770,7 @@ export const App: React.FC = () => {
 
   const handleGuardarDocente = async (d: Docente) => {
     await guardarDocente(d);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const all = await listarTodosLosDocentesTerritorio(periodoActivo);
     setTodosLosDocentes(all);
     mostrarMensaje(`Docente ${d.nombres} ${d.apellidos} guardado.`);
@@ -821,7 +834,7 @@ export const App: React.FC = () => {
 
   const handleGuardarAsistente = async (a: AsistenteEducacion) => {
     await guardarAsistente(a);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const all = await listarTodosLosAsistentesTerritorio(periodoActivo);
     setTodosLosAsistentes(all);
     mostrarMensaje(`Asistente ${a.nombres} guardado exitosamente.`);
@@ -830,7 +843,7 @@ export const App: React.FC = () => {
   const handleGuardarAsistentesBatch = async (batch: AsistenteEducacion[], reemplazar: boolean = false) => {
     if (!colegioActivo) return;
     await guardarAsistentesBatch(batch, colegioActivo.rbd, periodoActivo, reemplazar);
-    await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const all = await listarTodosLosAsistentesTerritorio(periodoActivo);
     setTodosLosAsistentes(all);
     mostrarMensaje(`Se guardaron ${batch.length} asistentes exitosamente.`);
@@ -838,7 +851,7 @@ export const App: React.FC = () => {
 
   const handleEliminarAsistente = async (id: string) => {
     await eliminarAsistente(id);
-    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo);
+    if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const all = await listarTodosLosAsistentesTerritorio(periodoActivo);
     setTodosLosAsistentes(all);
     mostrarMensaje('Asistente eliminado de la dotación.');
@@ -1227,6 +1240,7 @@ export const App: React.FC = () => {
               setAvisoSesionPausada(null);
               setSession(newSession);
               mostrarMensaje(`¡Bienvenido, ${newSession.usuario.nombreCompleto}!`);
+              cargarDatos(periodoActivo);
               const defRol = getDefinicionRol(normalizarRol(newSession.usuario.role));
               if (defRol.alcance === 'establecimiento' && newSession.usuario.rbdAsignado) {
                 const esc = colegios.find(c => c.rbd === newSession.usuario.rbdAsignado);
@@ -1523,6 +1537,7 @@ export const App: React.FC = () => {
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onExportarExcel={handleExportarExcel}
             onRecargarDatos={handleSincronizarCarteraCompletaDesdeNube}
+            onGuardarColegio={handleGuardarColegio}
           />
         )}
 
@@ -1575,6 +1590,8 @@ export const App: React.FC = () => {
         </React.Suspense>
       </main>
 
+      {session && (
+        <React.Suspense fallback={null}>
       {/* Modal Navegador Rápido de Colegios (Spotlight / Ctrl+K) */}
       {(!permisos || permisos.puedeAccederTodasEscuelas) && (
         <SchoolNavigatorModal
@@ -1677,10 +1694,12 @@ export const App: React.FC = () => {
         onGuardarColegio={handleGuardarColegio}
         onEliminarColegio={handleEliminarColegio}
       />
+        </React.Suspense>
+      )}
 
 
       {/* Botón Flotante Solo en Pantallas Móviles (en Desktop/Notebooks vive en la barra superior) */}
-      {(!permisos || permisos.puedeUsarCopilotIa) && (
+      {session && (!permisos || permisos.puedeUsarCopilotIa) && (
         <aside aria-label="Asistente de Dotación Flotante" className="sm:hidden fixed bottom-4 right-4 z-40">
           <button
             onClick={() => setModalCopilotAbierto(true)}

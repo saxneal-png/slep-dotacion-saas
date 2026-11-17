@@ -150,9 +150,9 @@ export async function guardarUsuarioDb(u: UsuarioSistema, skipCloudSync: boolean
       role: u.role,
       cargo: u.cargo || null,
       rbd_asignado: rbdClean,
-      cartera_rbds_json: carteraJson,
-      asesores_supervisados_json: asesoresJson,
-      comunas_permitidas_json: comunasJson,
+      cartera_rbds_json: carteraArr,
+      asesores_supervisados_json: asesoresArr,
+      comunas_permitidas_json: comunasArr,
       activo: u.activo !== false,
       ultimo_acceso: u.ultimoAcceso || null,
       debe_cambiar_password: u.debeCambiarPassword ?? false,
@@ -215,8 +215,7 @@ export async function guardarUsuarioDb(u: UsuarioSistema, skipCloudSync: boolean
         await SupabaseDotacionService.asegurarEstablecimientosExisten(carteraArr);
         const rowsCartera = carteraArr.map(rbd => ({
           usuario_id: u.id,
-          rbd,
-          rol_asignacion: u.role === 'coordinador_uatp' ? 'COORDINADOR' : 'TITULAR'
+          rbd
         }));
         await supabase.from('asesor_cartera').upsert(rowsCartera, { onConflict: 'usuario_id,rbd' });
       }
@@ -316,9 +315,9 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipClo
             role: u.role,
             cargo: u.cargo || null,
             rbd_asignado: sanitizeRbdAsignado(u.rbdAsignado),
-            cartera_rbds_json: JSON.stringify(carteraArr),
-            asesores_supervisados_json: JSON.stringify(asesoresArr),
-            comunas_permitidas_json: JSON.stringify(comunasArr),
+            cartera_rbds_json: carteraArr,
+            asesores_supervisados_json: asesoresArr,
+            comunas_permitidas_json: comunasArr,
             activo: u.activo !== false,
             ultimo_acceso: u.ultimoAcceso || null,
             debe_cambiar_password: u.debeCambiarPassword ?? false,
@@ -333,6 +332,19 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipClo
             const { error } = await supabase.from('usuarios_sistema').upsert(chunk, { onConflict: 'id' });
             if (error) {
               console.warn('[usuariosRepo] Aviso sincronizando bloque de usuarios en Supabase:', error);
+            }
+          }
+          for (const u of usuarios) {
+            if (u.role === 'asesor_uatp' || u.role === 'coordinador_uatp') {
+              const carteraArr = (u.carteraRbds || []).map(String).filter(Boolean);
+              await supabase.from('asesor_cartera').delete().eq('usuario_id', u.id);
+              if (carteraArr.length > 0) {
+                await SupabaseDotacionService.asegurarEstablecimientosExisten(carteraArr);
+                await supabase.from('asesor_cartera').upsert(
+                  carteraArr.map(rbd => ({ usuario_id: u.id, rbd })),
+                  { onConflict: 'usuario_id,rbd' }
+                );
+              }
             }
           }
         } catch (err) {

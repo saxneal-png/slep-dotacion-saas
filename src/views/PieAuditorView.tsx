@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Sparkles, AlertCircle, CheckCircle, Users, Clock, ShieldCheck } from 'lucide-react';
 import { Establecimiento, CursoSae, Docente, AsignacionHoraria, AsistenteEducacion } from '../types';
 import {
   calcularDemandaNormativaPieCurso,
-  autoAsignarHorasPieCursos,
-  esModalidadAdultos
+  esModalidadAdultos,
+  esModalidadEspecial
 } from '@slep/mineduc-engine';
 
 interface PieAuditorViewProps {
@@ -28,6 +28,8 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   onGuardarAsignacion,
   onEliminarAsignacion
 }) => {
+  const [draftInputs, setDraftInputs] = useState<Record<string, { neet?: number; neep?: number }>>({});
+
   if (!colegio) {
     return (
       <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-500">
@@ -40,7 +42,8 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const demandasCursos = cursos.map(c => {
     const isJec = c.regimen === 'JEC';
     const esEpja = esModalidadAdultos(c.nivel) || ((c as any).nombre ? esModalidadAdultos((c as any).nombre) : false);
-    const dem = esEpja
+    const esExentoPie = esEpja || esModalidadEspecial(c.nivel);
+    const dem = esExentoPie
       ? {
           horasTotalCronologicas: 0,
           horasDiferencialDecimal: 0,
@@ -52,13 +55,15 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
           neepCount: c.alumnosNeep,
           isJec,
           cumpleAforo: true,
-          observacionNormativa: "EPJA no elegible para Programa de Integración Escolar (PIE)."
+          observacionNormativa: esEpja
+            ? "EPJA no elegible para Programa de Integración Escolar (PIE)."
+            : "Modalidad Especial no elegible para cupos PIE."
         }
       : calcularDemandaNormativaPieCurso(c.alumnosNeet, c.alumnosNeep, isJec);
 
     const asigsCurso = asignaciones.filter(a => a.cursoId === c.id);
     const asigsPie = asigsCurso.filter(a => {
-      if (a.esTallerSep || (a.tipoApoyo && /sep/i.test(a.tipoApoyo))) return false;
+      if (a.esTallerSep || a.esTrabajoColaborativo || (a.tipoApoyo && /sep|colaborativ/i.test(a.tipoApoyo))) return false;
       const doc = docentes.find(d => d.id === a.docenteId || d.id === a.coDocenteId);
       const esDocPie = doc && (doc.estamento === 'DOCENTE_DIFERENCIAL' || doc.estamento === 'PROFESIONAL_PAE');
       return Boolean(
@@ -83,7 +88,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     .filter(d => d.estamento === 'DOCENTE_DIFERENCIAL')
     .map(d => {
       const hPie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
-      const horasTotal = hPie > 0 ? hPie : d.horasContrato;
+      const horasTotal = hPie;
       const horasCoord = d.horasCoordinacionPie || 0;
       const horasDirectasDisponibles = Math.max(0, horasTotal - horasCoord);
       return {
@@ -104,7 +109,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     .filter(d => d.estamento === 'PROFESIONAL_PAE')
     .map(d => {
       const hPie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
-      const horasPae = hPie > 0 ? hPie : d.horasContrato;
+      const horasPae = hPie;
       return {
         id: d.id,
         run: d.run,
@@ -120,7 +125,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     .filter(a => a.activo !== false && (a.esEquipoPie || (a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0) > 0))
     .map(a => {
       const hPie = (a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0);
-      const horasPae = hPie > 0 ? hPie : a.horasContrato;
+      const horasPae = hPie;
       return {
         id: a.id,
         run: a.run,
@@ -230,12 +235,20 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                         type="number"
                         min="0"
                         max="10"
-                        value={curso.alumnosNeet}
+                        aria-label={`Alumnos NEET ${curso.nivel} ${curso.letra}`}
+                        value={draftInputs[curso.id]?.neet ?? curso.alumnosNeet}
                         onChange={e => {
-                          onGuardarCurso({ ...curso, alumnosNeet: parseInt(e.target.value) || 0 });
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setDraftInputs(prev => ({ ...prev, [curso.id]: { ...prev[curso.id], neet: val } }));
+                        }}
+                        onBlur={() => {
+                          const val = draftInputs[curso.id]?.neet;
+                          if (val !== undefined && val !== curso.alumnosNeet) {
+                            onGuardarCurso({ ...curso, alumnosNeet: val });
+                          }
                         }}
                         className={`w-14 text-center border rounded px-1.5 py-0.5 font-bold ${
-                          curso.alumnosNeet > 5 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
+                          (draftInputs[curso.id]?.neet ?? curso.alumnosNeet) > 5 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
                         }`}
                       />
                     </td>
@@ -245,12 +258,20 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                         type="number"
                         min="0"
                         max="15"
-                        value={curso.alumnosNeep}
+                        aria-label={`Alumnos NEEP ${curso.nivel} ${curso.letra}`}
+                        value={draftInputs[curso.id]?.neep ?? curso.alumnosNeep}
                         onChange={e => {
-                          onGuardarCurso({ ...curso, alumnosNeep: parseInt(e.target.value) || 0 });
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setDraftInputs(prev => ({ ...prev, [curso.id]: { ...prev[curso.id], neep: val } }));
+                        }}
+                        onBlur={() => {
+                          const val = draftInputs[curso.id]?.neep;
+                          if (val !== undefined && val !== curso.alumnosNeep) {
+                            onGuardarCurso({ ...curso, alumnosNeep: val });
+                          }
                         }}
                         className={`w-14 text-center border rounded px-1.5 py-0.5 font-bold ${
-                          curso.alumnosNeep > 2 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
+                          (draftInputs[curso.id]?.neep ?? curso.alumnosNeep) > 2 ? 'border-red-500 bg-red-50 text-red-700' : 'text-slate-800'
                         }`}
                       />
                     </td>

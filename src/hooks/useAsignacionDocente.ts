@@ -25,6 +25,7 @@ export interface NuevaAsignacionInput {
   curso: CursoSae | null; // null => TRANSVERSAL
   asignatura: string;
   horas: number;
+  targetDocId?: string;
   esTallerJec?: boolean;
   esTallerSep?: boolean;
   esCoDocencia?: boolean;
@@ -162,7 +163,8 @@ export function useAsignacionDocente(
 
   const crearAsignacion = useCallback(
     async (input: NuevaAsignacionInput): Promise<AsignacionHoraria | null> => {
-      if (!docente || !onGuardarAsignacion) return null;
+      const docIdEfectivo = input.targetDocId || docente?.id;
+      if (!docIdEfectivo || !onGuardarAsignacion) return null;
       const nombreLimpio = input.asignatura.trim();
       if (!nombreLimpio || input.horas <= 0) return null;
 
@@ -190,7 +192,7 @@ export function useAsignacionDocente(
         rbd: colegio.rbd,
         periodo: periodoActivo,
         cursoId: input.curso ? input.curso.id : 'TRANSVERSAL',
-        docenteId: docente.id,
+        docenteId: docIdEfectivo,
         asignatura: nombreLimpio,
         codigoAsignatura: resCod.codigo,
         ambitoCurricular: esTallerJec ? 'LIBRE_DISPOSICION_JEC' : resCod.ambito,

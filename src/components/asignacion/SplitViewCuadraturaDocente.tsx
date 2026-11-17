@@ -271,6 +271,7 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
       curso: v.curso,
       asignatura: v.asignatura,
       horas: v.horasDisponibles,
+      targetDocId: targetDoc.id,
       esTallerJec: Boolean(v.esLibreJec),
       esCoDocencia: Boolean(v.esCoDocenciaParvularia),
       esCoDocenciaParvularia: Boolean(v.esCoDocenciaParvularia),

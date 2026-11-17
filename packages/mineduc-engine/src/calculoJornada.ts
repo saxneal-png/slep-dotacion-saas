@@ -62,7 +62,10 @@ export function determinarRegimenNormativo(
  */
 export function obtenerTramoMineduc(horasContrato: number, regimen: RegimenHorario = '65_35'): MineducTramoMinutos | null {
   const mapa = regimen === '60_40' ? MAPA_MINEDUC_60_40 : MAPA_MINEDUC_65_35;
-  const horasEnteras = Math.floor(horasContrato);
+  const horasEnteras = Math.round(horasContrato);
+  if (Math.abs(horasContrato - horasEnteras) > 1e-6) {
+    return null;
+  }
   return mapa.get(horasEnteras) || null;
 }
 
@@ -81,17 +84,43 @@ export function calcularJornadaMinutos(
   const minutosContratoTotales = Math.round(horasContrato * 60);
 
   if (!tramo) {
-    const porcentajeLectivoMax = regimen === '60_40' ? 0.60 : 0.65;
-    let maxLectivoMin = Math.floor(minutosContratoTotales * porcentajeLectivoMax);
-    let maxHorasPed = Math.floor(maxLectivoMin / 45);
-    let maxRecreoMin = Math.round(maxLectivoMin * (180 / 1710));
+    const mapa = regimen === '60_40' ? MAPA_MINEDUC_60_40 : MAPA_MINEDUC_65_35;
+    const tramo44 = mapa.get(44)!;
+    const ratioRecreo = tramo44.recreoMinutosCronologicos / tramo44.lectivasMinutosCronologicos;
+    let maxLectivoMin = 0;
+    let maxHorasPed = 0;
+    let maxRecreoMin = 0;
+
+    if (horasContrato > 44) {
+      const bloques44 = Math.floor(horasContrato / 44);
+      const resto = horasContrato - bloques44 * 44;
+      const restoEntero = Math.round(resto);
+      const tramoResto = Math.abs(resto - restoEntero) < 1e-6 && restoEntero >= 1 ? mapa.get(restoEntero) : null;
+      if (tramoResto || resto === 0) {
+        maxLectivoMin = bloques44 * tramo44.lectivasMinutosCronologicos + (tramoResto ? tramoResto.lectivasMinutosCronologicos : 0);
+        maxHorasPed = bloques44 * tramo44.lectivasHorasPedagogicas + (tramoResto ? tramoResto.lectivasHorasPedagogicas : 0);
+        maxRecreoMin = bloques44 * tramo44.recreoMinutosCronologicos + (tramoResto ? tramoResto.recreoMinutosCronologicos : 0);
+      } else {
+        const refMins = Math.round(resto * 60);
+        const porcentajeLectivoMax = regimen === '60_40' ? 0.60 : 0.65;
+        const lectResto = Math.floor(refMins * porcentajeLectivoMax);
+        maxLectivoMin = bloques44 * tramo44.lectivasMinutosCronologicos + lectResto;
+        maxHorasPed = bloques44 * tramo44.lectivasHorasPedagogicas + Math.floor(lectResto / 45);
+        maxRecreoMin = bloques44 * tramo44.recreoMinutosCronologicos + Math.round(lectResto * ratioRecreo);
+      }
+    } else {
+      const porcentajeLectivoMax = regimen === '60_40' ? 0.60 : 0.65;
+      maxLectivoMin = Math.floor(minutosContratoTotales * porcentajeLectivoMax);
+      maxHorasPed = Math.floor(maxLectivoMin / 45);
+      maxRecreoMin = Math.round(maxLectivoMin * ratioRecreo);
+    }
     let reduccionArt69Mins = 0;
 
     if (aplicaArticulo69 && maxLectivoMin > 1440) {
       reduccionArt69Mins = maxLectivoMin - 1440;
       maxLectivoMin = 1440;
       maxHorasPed = 32;
-      maxRecreoMin = Math.round(1440 * (180 / 1710));
+      maxRecreoMin = Math.round(1440 * ratioRecreo);
     }
 
     const minsNoLectivos = Math.max(0, minutosContratoTotales - maxLectivoMin - maxRecreoMin);

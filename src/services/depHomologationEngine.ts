@@ -4,7 +4,14 @@
  */
 
 import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria } from '../types';
-import { determinarRegimenNormativo } from '@slep/mineduc-engine';
+import {
+  buscarContratoMinimoPorTabla,
+  buscarDetallePorHorasAula,
+  determinarRegimenNormativo,
+  MAPA_MINEDUC_60_40,
+  MAPA_MINEDUC_65_35
+} from '@slep/mineduc-engine';
+import { formatearRut } from '../utils/rutUtils';
 
 // Tablas de Referencia Normativa Oficiales de la DEP (Rango A4:D47)
 // Mapeo exacto de Horas Aula Pedagógicas (HA) a [HA, Horas Lectivas Cronológicas, Horas No Lectivas Cronológicas, Jornada]
@@ -89,17 +96,20 @@ export const TABLA_60_40_OFICIAL: Record<number, { lectivasCrono: number; noLect
 
 export function evaluarVlookupPal(ha: number, proporcion: '65/35' | '60/40'): { lectivasCrono: number; noLectivasCrono: number } {
   if (ha <= 0) return { lectivasCrono: 0, noLectivasCrono: 0 };
-  const tabla = proporcion === '60/40' ? TABLA_60_40_OFICIAL : TABLA_65_35_OFICIAL;
-  const match = tabla[ha];
-  if (match) {
-    return { lectivasCrono: match.lectivasCrono, noLectivasCrono: match.noLectivasCrono };
-  }
-  // Interpolación de respaldo para HA mayor a 38 o intermedia
-  const lectivasCrono = round(ha * 0.75, 2);
-  const ratio = proporcion === '60/40' ? 0.6 : 0.65;
-  const jornadaAprox = round(lectivasCrono / ratio, 0);
-  const noLectivasCrono = round(jornadaAprox - lectivasCrono, 2);
-  return { lectivasCrono, noLectivasCrono };
+  const regimen = proporcion === '60/40' ? '60_40' : '65_35';
+  const maxHA = regimen === '60_40' ? 35 : 38;
+  const bloques44 = Math.floor(ha / maxHA);
+  const restoHA = ha - bloques44 * maxHA;
+  const det44 = buscarDetallePorHorasAula(maxHA, regimen);
+  const detResto = restoHA > 0 ? buscarDetallePorHorasAula(Math.ceil(restoHA), regimen) : null;
+  const lectMins = bloques44 * det44.lectivasMinutos + (detResto ? detResto.lectivasMinutos : 0);
+  const hnlMins =
+    bloques44 * (det44.recreoMinutos + det44.hnlMinutos) +
+    (detResto ? detResto.recreoMinutos + detResto.hnlMinutos : 0);
+  return {
+    lectivasCrono: round(lectMins / 60, 2),
+    noLectivasCrono: round(hnlMins / 60, 2)
+  };
 }
 
 function round(val: number, decimals: number = 2): number {
@@ -107,20 +117,7 @@ function round(val: number, decimals: number = 2): number {
 }
 
 export function formatRut(rutRaw: string): string {
-  const clean = rutRaw.replace(/[^0-9kK]/g, '').toUpperCase();
-  if (clean.length < 2) return rutRaw;
-  const dv = clean.slice(-1);
-  const body = clean.slice(0, -1);
-  let formatted = '';
-  let count = 0;
-  for (let i = body.length - 1; i >= 0; i--) {
-    formatted = body[i] + formatted;
-    count++;
-    if (count % 3 === 0 && i !== 0) {
-      formatted = '.' + formatted;
-    }
-  }
-  return `${formatted}-${dv}`;
+  return formatearRut(rutRaw);
 }
 
 /**
@@ -143,23 +140,17 @@ export function obtenerMaxHaParaJornada(
   proporcion: '65/35' | '60/40'
 ): number {
   if (jornadaDisponible <= 0) return 0;
-  const tabla = proporcion === '60/40' ? TABLA_60_40_OFICIAL : TABLA_65_35_OFICIAL;
-  let maxHa = 0;
-  for (const [haStr, item] of Object.entries(tabla)) {
-    const ha = Number(haStr);
-    if (item.jornada <= jornadaDisponible && ha > maxHa) {
-      maxHa = ha;
-    }
-  }
-  return maxHa;
+  const mapa = proporcion === '60/40' ? MAPA_MINEDUC_60_40 : MAPA_MINEDUC_65_35;
+  const bloques44 = Math.floor(jornadaDisponible / 44);
+  const resto = Math.floor(jornadaDisponible - bloques44 * 44);
+  const max44 = mapa.get(44)?.lectivasHorasPedagogicas || 0;
+  const maxResto = resto > 0 ? (mapa.get(resto)?.lectivasHorasPedagogicas || 0) : 0;
+  return bloques44 * max44 + maxResto;
 }
 
 /**
  * Calcula las horas de contrato docente reglamentarias MINEDUC para una demanda de aula (Total HA),
- * aplicando la proporción legal del establecimiento y nivel (Ley N° 20.903 y DFL 1/1996)
- * con las adecuaciones de la tabla reglamentaria oficial para entregar un número entero cerrado:
- * - Régimen 65/35: jornada de 44 hrs cubre hasta 38 HA -> Math.ceil(totalHA * 44 / 38)
- * - Régimen 60/40: jornada de 44 hrs cubre hasta 35 HA -> Math.ceil(totalHA * 44 / 35)
+ * aplicando estrictamente las tablas oficiales MINEDUC (65/35 y 60/40) en minutos enteros.
  */
 export function calcularHorasContratoPorPlan(
   totalHA: number,
@@ -167,7 +158,9 @@ export function calcularHorasContratoPorPlan(
 ): number {
   if (totalHA <= 0) return 0;
   const maxHA = regimen === '60_40' ? 35 : 38;
-  return Math.ceil((totalHA * 44) / maxHA);
+  const bloques44 = Math.floor(totalHA / maxHA);
+  const restoHA = totalHA - bloques44 * maxHA;
+  return bloques44 * 44 + (restoHA > 0 ? buscarContratoMinimoPorTabla(Math.ceil(restoHA), regimen) : 0);
 }
 
 export interface PalDocenteRowData {

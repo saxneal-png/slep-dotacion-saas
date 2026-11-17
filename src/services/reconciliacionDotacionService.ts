@@ -3,6 +3,7 @@ import {
   obtenerPlanPorCurso,
   calcularHorasPlanCurso,
   calcularJornadaMinutos,
+  determinarRegimenNormativo,
   esModalidadTp,
   esModalidadMultigradoOCombinado,
   esModalidadAdultos,
@@ -85,7 +86,7 @@ export function analizarSincronizacionDotacion(
   }
 
   // 3. Evaluar disponibilidad horaria de cada docente
-  const proporcionColegio = colegio.porcentajePrioritarios >= 80 ? '60_40' : '65_35';
+  const proporcionColegio = determinarRegimenNormativo(colegio.porcentajePrioritarios || 0);
   const docentesConHorasDisponibles = docentes
     .filter(d => d.estamento === 'DOCENTE_AULA' || d.estamento === 'DOCENTE_DIFERENCIAL')
     .map(d => {
@@ -98,7 +99,7 @@ export function analizarSincronizacionDotacion(
       );
       const horasLectivas = jornada.horasPedagogicasDisponiblesMax;
       
-      const asigsD = asignaciones.filter(a => a.docenteId === d.id);
+      const asigsD = asignaciones.filter(a => a.docenteId === d.id && !a.esTrabajoColaborativo && !a.esTallerSep);
       const horasAsignadas = asigsD.reduce((s, a) => s + (a.horasPedagogicasAula || 0), 0);
       const horasDisponibles = Math.max(0, Math.round(horasLectivas - horasAsignadas));
 
@@ -239,7 +240,7 @@ export async function ejecutarAutoAsignacionMallaDesdeNomina(
   const asignacionesVigentes = await listarAsignaciones(rbd, periodo);
 
   // 2. Filtrar docentes de aula disponibles y descontar horas ya asignadas en SQLite
-  const proporcionColegio = colegio.porcentajePrioritarios >= 80 ? '60_40' : '65_35';
+  const proporcionColegio = determinarRegimenNormativo(colegio.porcentajePrioritarios || 0);
   
   // Mapa mutable de horas lectivas disponibles por docente
   const disponibilidad = new Map<string, number>();
@@ -278,7 +279,7 @@ export async function ejecutarAutoAsignacionMallaDesdeNomina(
       const yaCubiertas = asigsCursoVigentes
         .filter(a => {
           const normA = normalizarTexto(a.asignatura || '');
-          return normA.includes(normPlan) || normPlan.includes(normA);
+          return normA.length > 0 && (normA.includes(normPlan) || normPlan.includes(normA));
         })
         .reduce((acc, a) => acc + (a.horasPedagogicasAula || 0), 0);
 

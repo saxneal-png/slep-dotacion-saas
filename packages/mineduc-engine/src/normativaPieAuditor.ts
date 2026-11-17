@@ -449,10 +449,11 @@ export function autoAsignarHorasPieCursos(
     for (const doc of educadores) {
       if (horasDifFaltantes <= 0) break;
       if (doc.horasRestantes > 0) {
-        const horasAAsignar = Math.min(doc.horasRestantes, horasDifFaltantes);
-        doc.horasRestantes -= horasAAsignar;
-        horasDifFaltantes -= horasAAsignar;
-        totalHorasAsignadasDiferencial += horasAAsignar;
+        const minsAsignar = Math.round(Math.min(doc.horasRestantes, horasDifFaltantes) * 60);
+        const horasAAsignar = Number((minsAsignar / 60).toFixed(2));
+        doc.horasRestantes = Number(((Math.round(doc.horasRestantes * 60) - minsAsignar) / 60).toFixed(2));
+        horasDifFaltantes = Number(((Math.round(horasDifFaltantes * 60) - minsAsignar) / 60).toFixed(2));
+        totalHorasAsignadasDiferencial = Number(((Math.round(totalHorasAsignadasDiferencial * 60) + minsAsignar) / 60).toFixed(2));
 
         asigsCurso.push({
           id: `auto-dif-${curso.nombre}-${doc.run}`,
@@ -460,25 +461,26 @@ export function autoAsignarHorasPieCursos(
           nombre: doc.nombre,
           cargo: doc.cargo || 'Docente Diferencial',
           tipo_profesional: 'Docente Diferencial',
-          horas_asignadas: parseFloat(horasAAsignar.toFixed(1)),
+          horas_asignadas: horasAAsignar,
           tipo_apoyo: 'Co-docencia Aula Común',
         });
       }
     }
 
-    if (horasDifFaltantes > 0) {
-      resumenPokaYoke.push(`⚠️ ${curso.nombre}: Faltan ${horasDifFaltantes.toFixed(1)}h de Educador Diferencial.`);
+    if (Math.round(horasDifFaltantes * 60) > 0) {
+      resumenPokaYoke.push(`⚠️ ${curso.nombre}: Faltan ${horasDifFaltantes.toFixed(2)}h de Educador Diferencial.`);
     }
 
     // 2. Asignar horas Asistente PAE Profesional (Aula de recursos / apoyo clínico)
     let horasPaeFaltantes = demanda.horasPaeDecimal;
     for (const asis of asistentes) {
-      if (horasPaeFaltantes <= 0) break;
-      if (asis.horasRestantes > 0) {
-        const horasAAsignar = Math.min(asis.horasRestantes, horasPaeFaltantes);
-        asis.horasRestantes -= horasAAsignar;
-        horasPaeFaltantes -= horasAAsignar;
-        totalHorasAsignadasPae += horasAAsignar;
+      if (Math.round(horasPaeFaltantes * 60) <= 0) break;
+      if (Math.round(asis.horasRestantes * 60) > 0) {
+        const minsAsignar = Math.round(Math.min(asis.horasRestantes, horasPaeFaltantes) * 60);
+        const horasAAsignar = Number((minsAsignar / 60).toFixed(2));
+        asis.horasRestantes = Number(((Math.round(asis.horasRestantes * 60) - minsAsignar) / 60).toFixed(2));
+        horasPaeFaltantes = Number(((Math.round(horasPaeFaltantes * 60) - minsAsignar) / 60).toFixed(2));
+        totalHorasAsignadasPae = Number(((Math.round(totalHorasAsignadasPae * 60) + minsAsignar) / 60).toFixed(2));
 
         asigsCurso.push({
           id: `auto-pae-${curso.nombre}-${asis.run}`,
@@ -486,14 +488,14 @@ export function autoAsignarHorasPieCursos(
           nombre: asis.nombre,
           cargo: asis.cargo || 'Profesional Asistente PAE',
           tipo_profesional: 'Profesional Asistente PAE',
-          horas_asignadas: parseFloat(horasAAsignar.toFixed(1)),
+          horas_asignadas: horasAAsignar,
           tipo_apoyo: 'Aula de Recursos',
         });
       }
     }
 
-    if (horasPaeFaltantes > 0) {
-      resumenPokaYoke.push(`⚠️ ${curso.nombre}: Faltan ${horasPaeFaltantes.toFixed(1)}h de Asistente PAE.`);
+    if (Math.round(horasPaeFaltantes * 60) > 0) {
+      resumenPokaYoke.push(`⚠️ ${curso.nombre}: Faltan ${horasPaeFaltantes.toFixed(2)}h de Asistente PAE.`);
     }
 
     // 3. Asignar Asistente Técnico en Educación Especial (si hay disponibles y tiene PIE)

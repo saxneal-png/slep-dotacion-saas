@@ -63,21 +63,22 @@ export async function generarExcelGdpColegio(
   const wsPie = workbook.getWorksheet('PIE');
   if (wsPie) {
     // 1.1 Docentes Diferenciales PIE (Filas 8 a 35)
-    const docPie = docentesColegio.filter(d => 
-      (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0) > 0) ||
-      d.estamento === 'DOCENTE_DIFERENCIAL' ||
-      /diferencial|pie/i.test(d.titulo || d.funcionPrincipal || '')
+    const docPie = docentesColegio.filter(d =>
+      (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0
     );
 
-    const sumaHorasPieDoc = docPie.reduce((s, d) => s + (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0) || d.horasContrato || 0), 0);
+    const sumaHorasPieDoc = docPie.reduce(
+      (s, d) => s + Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0),
+      0
+    );
     // F4: Total horas por asignar (Input)
-    wsPie.getCell('F4').value = establecimiento.cupoHorasPieDiferencial || sumaHorasPieDoc;
+    wsPie.getCell('F4').value = establecimiento.cupoHorasPieDiferencial ?? sumaHorasPieDoc;
 
     let rIdx = 8;
     let limDoc = 35;
     for (const d of docPie) {
       limDoc = asegurarCapacidadFila(wsPie, rIdx, limDoc);
-      const hPie = (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) || d.horasContrato || 0;
+      const hPie = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
       const hVig = d.horasVigentesAnterior !== undefined ? d.horasVigentesAnterior : hPie;
       const prop = d.propuestaGdp || inferirPropuestaGdp(hVig, hPie, false);
 
@@ -93,7 +94,7 @@ export async function generarExcelGdpColegio(
       row.getCell('K').value = hPie; // Horas solicitadas
       row.getCell('L').value = sanitizeExcelText(d.observacionesDirector || '');
       row.getCell('M').value = d.estadoSancionGdp || 'Pendiente';
-      row.getCell('N').value = d.horasAprobadasGdp || hPie;
+      row.getCell('N').value = d.horasAprobadasGdp ?? hPie;
       row.getCell('O').value = sanitizeExcelText(d.observacionesSlep || '');
       row.commit();
       rIdx++;
@@ -132,14 +133,14 @@ export async function generarExcelGdpColegio(
       row.getCell('C').value = sanitizeExcelText(`${a.nombres} ${a.apellidos}`.trim().toUpperCase());
       row.getCell('D').value = sanitizeExcelText(formatRut(a.run));
       row.getCell('E').value = sanitizeExcelText(a.cargoFuncion || 'Psicólogo/a');
-      row.getCell('G').value = (Number(a.horasPieIndefinido || 0) > 0) ? 'COD. DEL TRAB.' : 'COD. DEL TRAB.';
+      row.getCell('G').value = (Number(a.horasPieIndefinido || 0) > 0) ? 'COD. DEL TRAB. INDEF.' : 'PLAZO FIJO';
       row.getCell('H').value = a.fechaTerminoContrato || '28-02-2027';
       row.getCell('I').value = hVig;
       row.getCell('J').value = prop;
       row.getCell('K').value = hPie;
       row.getCell('L').value = sanitizeExcelText(a.observacionesDirector || '');
       row.getCell('M').value = a.estadoSancionGdp || 'Pendiente';
-      row.getCell('N').value = a.horasAprobadasGdp || hPie;
+      row.getCell('N').value = a.horasAprobadasGdp ?? hPie;
       row.getCell('O').value = sanitizeExcelText(a.observacionesSlep || '');
       row.commit();
       rAeIdx++;
@@ -404,16 +405,25 @@ export async function generarExcelGdpColegio(
   // ==========================================
   const wsAeNormal = workbook.getWorksheet('Subv. Normal AA.EE');
   if (wsAeNormal) {
-    const aeNormal = asistentesColegio.filter(a => 
-      Number(a.horasSubvencionGeneralIndefinido || 0) + Number(a.horasSubvencionGeneralPlazoFijo || 0) > 0 ||
-      (Number(a.horasPieIndefinido || 0) === 0 && Number(a.horasSepIndefinido || 0) === 0)
-    );
+    const aeNormal = asistentesColegio.filter(a => {
+      const hGral = Number(a.horasSubvencionGeneralIndefinido || 0) + Number(a.horasSubvencionGeneralPlazoFijo || 0);
+      if (hGral > 0) return true;
+      const otrasFuentes =
+        Number(a.horasPieIndefinido || 0) +
+        Number(a.horasPiePlazoFijo || 0) +
+        Number(a.horasSepIndefinido || 0) +
+        Number(a.horasSepPlazoFijo || 0) +
+        Number(a.horasHonorarios || 0) +
+        Number(a.horasProRetencion || 0);
+      return otrasFuentes === 0 && Number(a.horasContrato || 0) > 0;
+    });
 
     let rAeIdx = 8;
     let limAeNormal = 37;
     for (const a of aeNormal) {
       limAeNormal = asegurarCapacidadFila(wsAeNormal, rAeIdx, limAeNormal);
-      const hGral = (Number(a.horasSubvencionGeneralIndefinido || 0) + Number(a.horasSubvencionGeneralPlazoFijo || 0)) || a.horasContrato || 0;
+      const hGralDirecto = Number(a.horasSubvencionGeneralIndefinido || 0) + Number(a.horasSubvencionGeneralPlazoFijo || 0);
+      const hGral = hGralDirecto > 0 ? hGralDirecto : Number(a.horasContrato || 0);
       const hVig = a.horasVigentesAnterior !== undefined ? a.horasVigentesAnterior : hGral;
       const prop = a.propuestaGdp || inferirPropuestaGdp(hVig, hGral, false);
 
@@ -428,7 +438,7 @@ export async function generarExcelGdpColegio(
       row.getCell('J').value = hGral;
       row.getCell('K').value = sanitizeExcelText(a.observacionesDirector || '');
       row.getCell('L').value = a.estadoSancionGdp || 'Pendiente';
-      row.getCell('M').value = a.horasAprobadasGdp || hGral;
+      row.getCell('M').value = a.horasAprobadasGdp ?? hGral;
       row.getCell('N').value = sanitizeExcelText(a.observacionesSlep || '');
       row.getCell('P').value = a.fechaInicioContrato || '01-03-2026';
       row.getCell('Q').value = a.fechaTerminoContrato || 'Indefinido';

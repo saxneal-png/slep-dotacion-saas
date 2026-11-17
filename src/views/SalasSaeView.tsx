@@ -68,7 +68,7 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
       pabellon: pabellon.trim() || undefined,
       superficieM2: Number(superficieM2) || 45,
       tipo: tipoSala,
-      aforoMaximo: editingSala && editingSala.aforoMaximo ? editingSala.aforoMaximo : aforo
+      aforoMaximo: aforo
     };
     onGuardarSala(salaObj);
     setEditingSala(null);

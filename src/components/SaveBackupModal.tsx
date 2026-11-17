@@ -67,6 +67,16 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
   const [localEstado, setLocalEstado] = useState<'saved' | 'error'>(propEstado || 'saved');
   const [localHora, setLocalHora] = useState<string>(propUltimaHora || getUltimaHoraGuardado());
   const [localError, setLocalError] = useState<string | undefined>(propError);
+  const [pendingAction, setPendingAction] = useState<
+    | { type: 'sqlite'; file: File }
+    | { type: 'slep'; file: File }
+    | { type: 'vaciar' }
+    | { type: 'reiniciar' }
+    | null
+  >(null);
+  const [confirmText, setConfirmText] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isExecutingAction, setIsExecutingAction] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -84,45 +94,53 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleFileSqlite = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSqlite = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-
-    if (!confirm('¿Está seguro de restaurar una base de datos SQLite? Esto reemplazará toda la información actual.')) {
-      e.target.value = '';
-      return;
-    }
-
-    setIsImporting(true);
-    try {
-      await onImportarSqlite(file);
-      onClose();
-    } catch (err: any) {
-      alert(`Error al importar SQLite: ${err.message || err}`);
-    } finally {
-      setIsImporting(false);
-      e.target.value = '';
-    }
+    setActionError(null);
+    setConfirmText('');
+    setPendingAction({ type: 'sqlite', file });
   };
 
-  const handleFileSlep = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSlep = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+    setActionError(null);
+    setConfirmText('');
+    setPendingAction({ type: 'slep', file });
+  };
 
-    if (!confirm('¿Desea incorporar la cartera territorial desde este archivo?')) {
-      e.target.value = '';
+  const ejecutarAccionConfirmada = async () => {
+    if (!pendingAction) return;
+    if (pendingAction.type === 'reiniciar' && confirmText.trim() !== 'REINICIAR') {
+      setActionError('Debe escribir exactamente REINICIAR para confirmar.');
       return;
     }
-
-    setIsImporting(true);
+    setActionError(null);
+    setIsExecutingAction(true);
+    if (pendingAction.type === 'sqlite' || pendingAction.type === 'slep') {
+      setIsImporting(true);
+    }
     try {
-      await onImportarCarteraSlep(file);
+      if (pendingAction.type === 'sqlite') {
+        await onImportarSqlite(pendingAction.file);
+      } else if (pendingAction.type === 'slep') {
+        await onImportarCarteraSlep(pendingAction.file);
+      } else if (pendingAction.type === 'vaciar' && onBorrarDotacionPeriodo && colegioActivo) {
+        await onBorrarDotacionPeriodo(periodoActivo, colegioActivo.rbd);
+      } else if (pendingAction.type === 'reiniciar' && onReiniciarBaseDatos) {
+        await onReiniciarBaseDatos();
+      }
+      setPendingAction(null);
+      setConfirmText('');
       onClose();
     } catch (err: any) {
-      alert(`Error al importar cartera: ${err.message || err}`);
+      setActionError(err?.message || String(err));
     } finally {
       setIsImporting(false);
-      e.target.value = '';
+      setIsExecutingAction(false);
     }
   };
 
@@ -356,13 +374,10 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (confirm(`¿CONFIRMAS VACIAR LA DOTACIÓN DE "${colegioActivo.nombre}" (RBD ${colegioActivo.rbd}) para el Periodo ${periodoActivo}?\n\nEsta acción solo afectará a este colegio. Los demás colegios no serán modificados.`)) {
-                          if (onBorrarDotacionPeriodo) {
-                            await onBorrarDotacionPeriodo(periodoActivo, colegioActivo.rbd);
-                            onClose();
-                          }
-                        }
+                      onClick={() => {
+                        setActionError(null);
+                        setConfirmText('');
+                        setPendingAction({ type: 'vaciar' });
                       }}
                       className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shrink-0 shadow-2xs transition-colors"
                     >
@@ -381,16 +396,10 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
               <div className="pt-1">
                 <button
                   type="button"
-                  onClick={async () => {
-                    const promptVal = prompt('Para REINICIAR COMPLETAMENTE la base de datos a su estado de fábrica inicial, escribe "REINICIAR":');
-                    if (promptVal === 'REINICIAR') {
-                      if (onReiniciarBaseDatos) {
-                        await onReiniciarBaseDatos();
-                        onClose();
-                      }
-                    } else if (promptVal !== null) {
-                      alert('Texto de confirmación incorrecto. Operación cancelada.');
-                    }
+                  onClick={() => {
+                    setActionError(null);
+                    setConfirmText('');
+                    setPendingAction({ type: 'reiniciar' });
                   }}
                   className="w-full p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all"
                 >
@@ -398,6 +407,47 @@ export const SaveBackupModal: React.FC<SaveBackupModalProps> = ({
                   <span>Reiniciar Base de Datos a Estado de Fábrica</span>
                 </button>
               </div>
+
+              {pendingAction && (
+                <div className="mt-3 p-3.5 rounded-xl border border-red-300 bg-red-50 space-y-2.5">
+                  <div className="text-xs font-bold text-red-900">
+                    {pendingAction.type === 'sqlite' && `Confirmar restauración SQLite (${pendingAction.file.name})`}
+                    {pendingAction.type === 'slep' && `Confirmar importación de cartera (${pendingAction.file.name})`}
+                    {pendingAction.type === 'vaciar' && `Confirmar vaciado de ${colegioActivo?.nombre} (Periodo ${periodoActivo})`}
+                    {pendingAction.type === 'reiniciar' && 'Confirmar reinicio total a estado de fábrica'}
+                  </div>
+                  {pendingAction.type === 'reiniciar' && (
+                    <input
+                      type="text"
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                      placeholder='Escriba "REINICIAR"'
+                      className="w-full px-3 py-1.5 text-xs border border-red-300 rounded-lg bg-white text-slate-900"
+                    />
+                  )}
+                  {actionError && (
+                    <div className="text-[11px] font-semibold text-red-700">{actionError}</div>
+                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={isExecutingAction}
+                      onClick={() => { setPendingAction(null); setActionError(null); }}
+                      className="px-3 py-1 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-100"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isExecutingAction}
+                      onClick={ejecutarAccionConfirmada}
+                      className="px-3 py-1 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50"
+                    >
+                      {isExecutingAction ? 'Procesando...' : 'Confirmar'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
