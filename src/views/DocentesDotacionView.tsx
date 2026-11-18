@@ -55,7 +55,8 @@ import { obtenerDocentesConsolidadosTerritorio } from '../services/dotacionCalcu
 import {
   esDocenteEducadoraParvulos,
   esAsignacionTrabajoColaborativo,
-  obtenerHorasCronologicasTrabajoColab
+  obtenerHorasCronologicasTrabajoColab,
+  esExentoImprocedenciaPieEspecial
 } from '../services/auditoriaDocenteService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
@@ -478,7 +479,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
       const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
       // Las horas de co-docencia de docentes de aula regular pueden ser financiadas con cualquier subvención (Subv. General, SEP o PIE).
-      const asigsCurricularesTitulares = asigs.filter(a => a.docenteId === d.id && !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColab.includes(a));
+      const asigsCurricularesTitulares = asigs.filter(
+        a =>
+          a.docenteId === d.id &&
+          !asigsCoDocencia.includes(a) &&
+          !asigsTallerSep.includes(a) &&
+          !asigsTrabajoColab.includes(a) &&
+          !esExentoImprocedenciaPieEspecial(d, cursos.find(x => x.id === a.cursoId))
+      );
       const pedCurricular65 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursos.find(x => x.id === a.cursoId);

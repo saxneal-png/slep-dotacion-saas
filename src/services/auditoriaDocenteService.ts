@@ -4,8 +4,31 @@ import {
   buscarContratoMinimoPorTabla,
   esNivelParvulario,
   buscarContratoMinimoParvulariaPorMinutos,
-  obtenerTramoMineduc
+  obtenerTramoMineduc,
+  esModalidadEspecial,
+  esModalidadLaboral
 } from '@slep/mineduc-engine';
+
+export function esCursoEspecialOLaboral(c: CursoSae | undefined): boolean {
+  return Boolean(
+    c &&
+      (esModalidadEspecial(c.nivel) ||
+        esModalidadLaboral(c.nivel) ||
+        c.tipoModalidad === 'ESPECIAL' ||
+        c.tipoModalidad === 'LABORAL')
+  );
+}
+
+export function esExentoImprocedenciaPieEspecial(doc: Docente, curso: CursoSae | undefined): boolean {
+  const contratoPie = Number(doc.horasPieTitular || 0) + Number(doc.horasPieContrata || 0);
+  const contratoSep = Number(doc.horasSepTitular || 0) + Number(doc.horasSepContrata || 0);
+  return (
+    doc.estamento === 'DOCENTE_DIFERENCIAL' &&
+    contratoPie > 0 &&
+    contratoSep === 0 &&
+    esCursoEspecialOLaboral(curso)
+  );
+}
 
 export type AuditoriaDocenteMultitramoResult = ReturnType<typeof calcularAuditoriaDocenteMultitramo>;
 
@@ -961,7 +984,8 @@ export function auditarCargaDocenteIntegral(
     a =>
       !asigsCoDocencia.includes(a) &&
       !asigsTallerSep.includes(a) &&
-      !asigsTrabajoColaborativo.includes(a)
+      !asigsTrabajoColaborativo.includes(a) &&
+      !esExentoImprocedenciaPieEspecial(doc, cursosMap.get(a.cursoId))
   );
   const pedCurricular65 = asigsCurricularesTitulares
     .filter(a => {

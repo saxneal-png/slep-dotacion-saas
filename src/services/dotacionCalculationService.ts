@@ -16,6 +16,7 @@ import {
   ConsolidadoDotacionParvulariaColegio,
   ResultadoDotacionParvulariaCurso
 } from '@slep/mineduc-engine';
+import { esExentoImprocedenciaPieEspecial } from './auditoriaDocenteService';
 import {
   Establecimiento,
   SalaInfraestructura,
@@ -644,7 +645,13 @@ export function calcularDiagnosticoColegio(
 
     // Auditoría Financiera: El Plan de Estudio titular debe financiarse con Subvención General.
     // Para docentes de aula regular, las horas de co-docencia frente a curso pueden ser financiadas con cualquier subvención (Subv. General, SEP o PIE), por lo que NO deben imputarse como requerimiento forzoso de Subvención General ni marcar improcedencia.
-    const asigsCurricularesTitulares = docenteAsigs.filter(a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a));
+    const asigsCurricularesTitulares = docenteAsigs.filter(
+      a =>
+        !asigsCoDocencia.includes(a) &&
+        !asigsTallerSep.includes(a) &&
+        !asigsTrabajoColaborativo.includes(a) &&
+        !esExentoImprocedenciaPieEspecial(doc, cursosMap.get(a.cursoId))
+    );
     const pedCurricular65 = asigsCurricularesTitulares
       .filter(a => {
         const c = cursosMap.get(a.cursoId);
@@ -1396,7 +1403,13 @@ export function obtenerDocentesConsolidadosTerritorio(
 
       // Auditoría Financiera: Restricción de financiamiento de Plan de Estudio con SEP/PIE
       // Las horas de co-docencia de docentes de aula regular pueden financiarse con cualquier subvención (Subv. General, SEP o PIE).
-      const asigsCurricularesTitulares = asigsColegio.filter(a => !asigsCoDocencia.includes(a) && !asigsTallerSep.includes(a) && !asigsTrabajoColaborativo.includes(a));
+      const asigsCurricularesTitulares = asigsColegio.filter(
+        a =>
+          !asigsCoDocencia.includes(a) &&
+          !asigsTallerSep.includes(a) &&
+          !asigsTrabajoColaborativo.includes(a) &&
+          !esExentoImprocedenciaPieEspecial(doc, cursosMap.get(a.cursoId) || cursosColegio.find(x => x.id === a.cursoId))
+      );
       const pedCurricular65 = asigsCurricularesTitulares
         .filter(a => {
           const c = cursosMap.get(a.cursoId) || cursosColegio.find(x => x.id === a.cursoId);
