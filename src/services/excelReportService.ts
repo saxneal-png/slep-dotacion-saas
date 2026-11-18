@@ -261,6 +261,7 @@ export async function generarExcelConsolidadoSlep(
   for (const diag of diagnosticos) {
     for (const ev of diag.evaluacionesSalasSae) {
       const row = wsSalas.getRow(rSalas);
+      const excedeSae = ev.estadoAforo === 'EXCEDE_SAE' || (ev.cupoDeclaradoSae > 0 && ev.matriculaProyectada > ev.cupoDeclaradoSae);
       row.values = [
         diag.establecimiento.rbd,
         diag.establecimiento.nombre,
@@ -270,19 +271,19 @@ export async function generarExcelConsolidadoSlep(
         ev.aforoMaximoFisico,
         ev.cupoDeclaradoSae,
         ev.matriculaProyectada,
-        ev.estadoAforo === 'ALERTA_SOBRECUPO_FISICO'
-          ? 'HACINAMIENTO FÍSICO'
-          : ev.estadoAforo === 'EXCEDE_SAE'
-            ? 'EXCEDE CUPO SAE'
-            : ev.estadoAforo === 'SUBUTILIZADO'
-              ? 'SUBUTILIZADO'
+        excedeSae
+          ? 'EXCEDE CUPO SAE'
+          : ev.estadoAforo === 'SUBUTILIZADO'
+            ? 'SUBUTILIZADO'
+            : ev.estadoAforo === 'ALERTA_SOBRECUPO_FISICO'
+              ? 'AFORO NO EVALUADO'
               : 'CONFORME A NORMA'
       ];
 
       for (let col = 1; col <= 9; col++) {
         const c = row.getCell(col);
         c.border = borderStyle;
-        if (col === 9 && (ev.estadoAforo === 'ALERTA_SOBRECUPO_FISICO' || ev.estadoAforo === 'EXCEDE_SAE')) {
+        if (col === 9 && excedeSae) {
           c.font = { color: { argb: 'DC2626' }, bold: true };
         }
       }

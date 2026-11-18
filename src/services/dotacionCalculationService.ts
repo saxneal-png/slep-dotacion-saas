@@ -147,9 +147,9 @@ export function calcularDiagnosticoColegio(
     );
     evaluacionesSalasSae.push(ev);
 
-    if (ev.estadoAforo === 'ALERTA_SOBRECUPO_FISICO') {
-      alertasInfraestructura.push(`${ev.cursoNombre}: Hacinamiento físico en ${ev.salaAsignada}.`);
-    } else if (ev.estadoAforo === 'EXCEDE_SAE') {
+    // Nota: Alertas de hacinamiento físico (ALERTA_SOBRECUPO_FISICO) deshabilitadas temporalmente
+    // mientras no se integre el aforo real por sala reportado por la plataforma.
+    if (ev.estadoAforo === 'EXCEDE_SAE') {
       alertasInfraestructura.push(`${ev.cursoNombre}: Matrícula supera cupo SAE.`);
     }
   }

@@ -209,35 +209,44 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
                     </td>
 
                     <td className="px-4 py-3 text-center">
-                      {ev.estadoAforo === 'ALERTA_SOBRECUPO_FISICO' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">
-                          <AlertTriangle className="w-3 h-3 text-red-600" />
-                          Hacinamiento Físico
-                        </span>
-                      )}
-                      {ev.estadoAforo === 'EXCEDE_SAE' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                          <AlertTriangle className="w-3 h-3 text-amber-600" />
-                          Excede Cupo SAE
-                        </span>
-                      )}
-                      {ev.estadoAforo === 'SUBUTILIZADO' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                          <Info className="w-3 h-3 text-blue-600" />
-                          Subutilizado
-                        </span>
-                      )}
-                      {ev.estadoAforo === 'OPTIMO' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          Conforme a Norma
-                        </span>
-                      )}
+                      {(() => {
+                        const excedeSae = ev.estadoAforo === 'EXCEDE_SAE' || (curso.cupoSae > 0 && curso.matriculaProyectada > curso.cupoSae);
+                        if (excedeSae) {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              Excede Cupo SAE
+                            </span>
+                          );
+                        }
+                        if (ev.estadoAforo === 'SUBUTILIZADO') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                              <Info className="w-3 h-3 text-blue-600" />
+                              Subutilizado
+                            </span>
+                          );
+                        }
+                        if (ev.estadoAforo === 'ALERTA_SOBRECUPO_FISICO') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              <Info className="w-3 h-3 text-slate-500" />
+                              Aforo No Evaluado
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            Conforme a Norma
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     <td className="px-4 py-3 text-center">
                       <div className="text-[10px] text-slate-500 max-w-xs text-left">
-                        {ev.observaciones[0]}
+                        {ev.observaciones.find(o => !o.includes('Hacinamiento Físico')) || 'Sin observaciones activas.'}
                       </div>
                     </td>
                   </tr>
