@@ -344,7 +344,8 @@ export function calcularEstadisticasAsistentesColegio(
   let pieCount = 0;
   let pieHorasTotales = 0;
 
-  for (const a of asistentes) {
+  const asistentesActivos = asistentes.filter(a => a.activo !== false);
+  for (const a of asistentesActivos) {
     const hrs = Number(a.horasContrato) || 0;
     totalHoras += hrs;
 
@@ -407,7 +408,7 @@ export function calcularEstadisticasAsistentesColegio(
   const ratioAux = auxCount > 0 && matricula > 0 ? Math.round(matricula / auxCount) : 0;
 
   return {
-    totalAsistentes: asistentes.length,
+    totalAsistentes: asistentesActivos.length,
     totalHorasContrato: totalHoras,
     horasIndefinidas,
     horasPlazoFijo,
@@ -640,17 +641,17 @@ export function calcularEstadisticasColegio(
 
     horasAulaPedagogicasAsignadas += haRegular;
     horasCoDocenciaTotal += haCoDocencia;
-    horasTrabajoColaborativoTotal += (dColab + haTrabajoColab);
+    horasTrabajoColaborativoTotal += Math.max(dColab, haTrabajoColab);
 
     horasLectivasMaximasPermitidas += maxHAPermitidas;
     minutosNoLectivosCalculadosTotal += auditDoc.minutosHnlTotal;
     minutosRecreoCalculadosTotal += auditDoc.minutosRecreoTotal;
 
-    totalHorasLibresColegio += horasLibresDocente;
+    totalHorasLibresColegio = Number((totalHorasLibresColegio + horasLibresDocente).toFixed(2));
 
-    horasSepSinAsignarTotal += sepSinAsignarDoc;
-    horasPieSinAsignarTotal += pieSinAsignarDoc;
-    horasSubvGeneralSinAsignarTotal += subvGenSinAsignarDoc;
+    horasSepSinAsignarTotal = Number((horasSepSinAsignarTotal + sepSinAsignarDoc).toFixed(2));
+    horasPieSinAsignarTotal = Number((horasPieSinAsignarTotal + pieSinAsignarDoc).toFixed(2));
+    horasSubvGeneralSinAsignarTotal = Number((horasSubvGeneralSinAsignarTotal + subvGenSinAsignarDoc).toFixed(2));
 
     return {
       id: doc.id,
@@ -866,16 +867,17 @@ export function calcularEstadisticasTerritoriales(
     return calcularEstadisticasColegio(col, cursosCol, docentesCol, asigsCol, asistCol);
   });
 
+  const asistentesActivosTerritorio = todosLosAsistentes.filter(a => a.activo !== false);
   const runsUnicosDocentes = new Set(todosLosDocentes.map(d => normalizarRut(d.run)).filter(Boolean)).size;
-  const runsUnicosAsistentes = new Set(todosLosAsistentes.map(a => normalizarRut(a.run)).filter(Boolean)).size;
+  const runsUnicosAsistentes = new Set(asistentesActivosTerritorio.map(a => normalizarRut(a.run)).filter(Boolean)).size;
 
   let totalMatricula = 0;
   let totalCursos = 0;
   let horasContratoTotal = 0;
   let horasAulaPedagogicasTotal = 0;
   let horasAulaCronologicasTotal = 0;
-  let horasNoLectivasTotal = 0;
-  let horasRecreosTotal = 0;
+  let minutosNoLectivosGlobalTotal = 0;
+  let minutosRecreoGlobalTotal = 0;
   let horasColaborativoTotal = 0;
   let horasCoDocenciaTotal = 0;
   let horasDemandadasPlanTotal = 0;
@@ -938,8 +940,8 @@ export function calcularEstadisticasTerritoriales(
     horasContratoTotal += st.horasContratoTotal;
     horasAulaPedagogicasTotal += st.horasAulaPedagogicasAsignadas;
     horasAulaCronologicasTotal += st.horasAulaCronologicasAsignadas;
-    horasNoLectivasTotal += st.horasNoLectivasCalculadas;
-    horasRecreosTotal += st.horasRecreoCalculadas;
+    minutosNoLectivosGlobalTotal += st.minutosNoLectivosCalculados;
+    minutosRecreoGlobalTotal += st.minutosRecreoCalculados;
     horasColaborativoTotal += st.horasTrabajoColaborativo;
     horasCoDocenciaTotal += st.horasCoDocencia;
     horasDemandadasPlanTotal += st.horasAulaDemandadasPlan;
@@ -1029,14 +1031,17 @@ export function calcularEstadisticasTerritoriales(
     pc.horasNoLectivas += st.horasNoLectivasCalculadas;
     pc.horasRecreos += st.horasRecreoCalculadas;
     pc.horasColaborativo += st.horasTrabajoColaborativo;
-    pc.sepTotal += (st.financiamiento.sepTotal + as.sepHoras);
-    pc.pieTotal += (st.financiamiento.pieTotal + as.pieHoras);
-    pc.subvGeneralTotal += (st.financiamiento.subvencionGeneralTotal + as.subvencionGeneralHoras);
+    pc.sepTotal = Number((pc.sepTotal + st.financiamiento.sepTotal + as.sepHoras).toFixed(2));
+    pc.pieTotal = Number((pc.pieTotal + st.financiamiento.pieTotal + as.pieHoras).toFixed(2));
+    pc.subvGeneralTotal = Number((pc.subvGeneralTotal + st.financiamiento.subvencionGeneralTotal + as.subvencionGeneralHoras).toFixed(2));
     pc.balanceLectivo += st.balanceAulaLectiva;
     pc.titularesHoras += st.calidadJuridica.titularesHoras;
     pc.contrataHoras += (st.calidadJuridica.contrataHoras + st.calidadJuridica.reemplazantesHoras);
     pc.pctContrata = pc.docentesHoras > 0 ? Math.round((pc.contrataHoras / pc.docentesHoras) * 1000) / 10 : 0;
   }
+
+  const horasNoLectivasTotal = Math.round((minutosNoLectivosGlobalTotal / 60) * 10) / 10;
+  const horasRecreosTotal = Math.round((minutosRecreoGlobalTotal / 60) * 10) / 10;
 
   const pctAula = horasContratoTotal > 0 ? Math.round((horasAulaCronologicasTotal / horasContratoTotal) * 100) : 0;
   const pctNoLectivo = horasContratoTotal > 0 ? Math.round((horasNoLectivasTotal / horasContratoTotal) * 100) : 0;
@@ -1066,11 +1071,11 @@ export function calcularEstadisticasTerritoriales(
     totalCursos,
     totalMatricula,
 
-    totalPersonalSlep: todosLosDocentes.length + todosLosAsistentes.length,
+    totalPersonalSlep: todosLosDocentes.length + asistentesActivosTerritorio.length,
     totalHorasPersonalSlep: horasContratoTotal + asistTotalHoras,
-    totalHorasSubvencionGeneralPersonal: (subvTit + subvCon) + asistSubvGen,
-    totalHorasSepPersonal: (sepTit + sepCon) + asistSep,
-    totalHorasPiePersonal: (pieTit + pieCon) + asistPie,
+    totalHorasSubvencionGeneralPersonal: Number(((subvTit + subvCon) + asistSubvGen).toFixed(2)),
+    totalHorasSepPersonal: Number(((sepTit + sepCon) + asistSep).toFixed(2)),
+    totalHorasPiePersonal: Number(((pieTit + pieCon) + asistPie).toFixed(2)),
 
     calidadJuridicaDocente: {
       titularesCount: titularesDocCount,
@@ -1086,7 +1091,7 @@ export function calcularEstadisticasTerritoriales(
     },
 
     asistentesTerritorio: {
-      totalAsistentes: todosLosAsistentes.length,
+      totalAsistentes: asistentesActivosTerritorio.length,
       asistentesUnicosRun: runsUnicosAsistentes,
       totalHoras: asistTotalHoras,
       horasIndefinidas: asistHorasIndefinidas,

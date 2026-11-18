@@ -358,9 +358,12 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                   <div className="text-xs text-purple-800 mt-1 font-semibold">
                     Subv. General: {statsTerritoriales.totalHorasSubvencionGeneralPersonal.toLocaleString()}h
                   </div>
-                  <div className="mt-3 pt-3 border-t border-purple-100 flex items-center justify-between text-[11px] text-purple-800">
+                  <div className="mt-3 pt-3 border-t border-purple-100 flex items-center justify-between text-[11px] text-purple-800 gap-1 flex-wrap">
                     <span>SEP: <strong>{statsTerritoriales.totalHorasSepPersonal.toLocaleString()}h</strong></span>
                     <span>PIE: <strong>{statsTerritoriales.totalHorasPiePersonal.toLocaleString()}h</strong></span>
+                    {statsTerritoriales.asistentesTerritorio.horasHonorarios > 0 && (
+                      <span>Hon: <strong>{statsTerritoriales.asistentesTerritorio.horasHonorarios.toLocaleString()}h</strong></span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -494,7 +497,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="bg-white p-4 rounded-xl border border-purple-200 bg-purple-50/20 shadow-sm">
                   <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block">No Lectivas + Recreos</span>
                   <div className="text-xl font-black text-purple-900 mt-1">
-                    {(statsTerritoriales.horasNoLectivasTotal + statsTerritoriales.horasRecreosTotal).toFixed(1)} <span className="text-xs font-bold text-purple-400">hrs</span>
+                    {Math.round(statsTerritoriales.horasNoLectivasTotal + statsTerritoriales.horasRecreosTotal).toLocaleString()} <span className="text-xs font-bold text-purple-400">hrs</span>
                   </div>
                   <span className="text-[11px] text-purple-700 mt-0.5 block font-semibold">
                     HNL: {statsTerritoriales.horasNoLectivasTotal}h • Rec: {statsTerritoriales.horasRecreosTotal}h

@@ -753,13 +753,13 @@ export function auditarCargaDocenteIntegral(
       : pieCronologicas
     : pieCronologicas;
 
-  const horasSepSinAsignar = Math.max(0, contratoSepDoc - reqSepDoc);
-  const horasPieSinAsignar = Math.max(0, contratoPieDoc - pieAsignadasDoc);
-  const horasSubvGenSinAsignar = Math.max(0, subTotalDoc - reqSubvGenDoc);
-  const totalHorasSinAsignar = horasSepSinAsignar + horasPieSinAsignar + horasSubvGenSinAsignar;
+  const horasSepSinAsignar = Math.max(0, Number((contratoSepDoc - reqSepDoc).toFixed(2)));
+  const horasPieSinAsignar = Math.max(0, Number((contratoPieDoc - pieAsignadasDoc).toFixed(2)));
+  const horasSubvGenSinAsignar = Math.max(0, Number((subTotalDoc - reqSubvGenDoc).toFixed(2)));
+  const totalHorasSinAsignar = Number((horasSepSinAsignar + horasPieSinAsignar + horasSubvGenSinAsignar).toFixed(2));
 
   const horasComprometidasDocente = auditDoc.contratoCalculadoTotal;
-  const horasLibresDocente = Math.max(0, hContrato - horasComprometidasDocente);
+  const horasLibresDocente = Math.max(0, Number((hContrato - horasComprometidasDocente).toFixed(2)));
   const estaSobreasignado =
     auditDoc.esInfractorExcesoLectivo || (hContrato > 0 && auditDoc.saldoHoras < 0);
 
