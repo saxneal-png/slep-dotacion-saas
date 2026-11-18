@@ -82,3 +82,40 @@ export function formatearRut(rut: string): string {
   const cuerpoFormateado = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${cuerpoFormateado}-${dv}`;
 }
+
+const PLACEHOLDER_RUNS_DEDUP = new Set([
+  '123456',
+  '1234567',
+  '12345678',
+  '123456789',
+  '12344556679',
+  '0000000',
+  '00000000',
+  '000000000'
+]);
+
+/**
+ * Indica si una cadena RUN representa un identificador real apto para deduplicación
+ * (descarta vacíos, textos "POR PROVEER", "N/N" o secuencias ficticias repetidas).
+ */
+export function esRunValidoParaDedup(val: any): boolean {
+  const clean = limpiarRutParaId(val);
+  if (clean.length < 7 || clean.length > 9) return false;
+  if (!/^[0-9]{6,8}[0-9K]$/.test(clean)) return false;
+  if (PLACEHOLDER_RUNS_DEDUP.has(clean)) return false;
+  if (/^(\d)\1+$/.test(clean)) return false;
+  return true;
+}
+
+/**
+ * Retorna clave única de deduplicación para un funcionario en un RBD:
+ * usa el RUN limpio cuando es válido y preserva el ID en cargos vacantes ("Por proveer").
+ */
+export function claveDedupFuncionario(rbd: string, run: any, fallbackId: string): string {
+  const rbdClean = String(rbd || '').trim();
+  if (esRunValidoParaDedup(run)) {
+    return `${rbdClean}_${limpiarRutParaId(run)}`;
+  }
+  return `${rbdClean}__ID_${String(fallbackId || '').trim()}`;
+}
+

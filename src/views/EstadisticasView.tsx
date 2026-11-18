@@ -65,6 +65,38 @@ const COMUNAS: ComunaValleDiguillin[] = [
   'Yungay'
 ];
 
+export function formatearHorasExactas(horas: number): string {
+  const signo = horas < 0 ? '-' : '';
+  const totalMin = Math.round(Math.abs(Number(horas) || 0) * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m === 0 ? `${signo}${h.toLocaleString('es-CL')}h` : `${signo}${h.toLocaleString('es-CL')}h ${m}m`;
+}
+
+export function formatearValorHorasExactas(horas: number, sufijoSiEntero: string = 'hrs'): {
+  texto: string;
+  sufijo: string | null;
+} {
+  const signo = horas < 0 ? '-' : '';
+  const totalMin = Math.round(Math.abs(Number(horas) || 0) * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (m === 0) {
+    return { texto: `${signo}${h.toLocaleString('es-CL')}`, sufijo: sufijoSiEntero };
+  }
+  return { texto: `${signo}${h.toLocaleString('es-CL')}h ${m}m`, sufijo: null };
+}
+
+export function formatearHaExactas(ha: number, incluirSufijo: boolean = true): string {
+  const totalMin = Math.max(0, Math.round((Number(ha) || 0) * 60));
+  const ent = Math.floor(totalMin / 60);
+  const rem = totalMin % 60;
+  if (rem === 0) {
+    return incluirSufijo ? `${ent.toLocaleString('es-CL')} HA` : `${ent.toLocaleString('es-CL')}`;
+  }
+  return incluirSufijo ? `${ent.toLocaleString('es-CL')} HA ${rem}m` : `${ent.toLocaleString('es-CL')}h ${rem}m`;
+}
+
 export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   colegios,
   colegioActivo,
@@ -423,12 +455,12 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                             <td className="px-2 py-2.5 text-center">{data.colegiosCount}</td>
                             <td className="px-2 py-2.5 text-center font-semibold">{data.matriculaTotal.toLocaleString()}</td>
                             <td className="px-2 py-2.5 text-center font-bold text-blue-800">{data.docentesCount}</td>
-                            <td className="px-2 py-2.5 text-center font-mono text-blue-900">{data.docentesHoras.toLocaleString()}h</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-blue-900">{formatearHorasExactas(data.docentesHoras)}</td>
                             <td className="px-2 py-2.5 text-center font-bold text-emerald-800">{data.asistentesCount}</td>
-                            <td className="px-2 py-2.5 text-center font-mono text-emerald-900">{data.asistentesHoras.toLocaleString()}h</td>
-                            <td className="px-2 py-2.5 text-center font-mono">{data.subvGeneralTotal.toLocaleString()}h</td>
-                            <td className="px-2 py-2.5 text-center font-mono text-purple-700">{data.sepTotal.toLocaleString()}h</td>
-                            <td className="px-2 py-2.5 text-center font-mono text-blue-700">{data.pieTotal.toLocaleString()}h</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-emerald-900">{formatearHorasExactas(data.asistentesHoras)}</td>
+                            <td className="px-2 py-2.5 text-center font-mono">{formatearHorasExactas(data.subvGeneralTotal)}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-purple-700">{formatearHorasExactas(data.sepTotal)}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-blue-700">{formatearHorasExactas(data.pieTotal)}</td>
                             <td className="px-2 py-2.5 text-center">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
                                 cumple20 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
@@ -486,10 +518,19 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/20 shadow-sm">
                   <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">Aula Asignada</span>
                   <div className="text-xl font-black text-blue-900 mt-1">
-                    {statsTerritoriales.horasAulaPedagogicasTotal.toLocaleString()} <span className="text-xs font-bold text-blue-400">HA</span>
+                    {(() => {
+                      const totalMin = Math.max(0, Math.round((Number(statsTerritoriales.horasAulaPedagogicasTotal) || 0) * 60));
+                      const ent = Math.floor(totalMin / 60);
+                      const rem = totalMin % 60;
+                      return rem === 0 ? (
+                        <>{ent.toLocaleString('es-CL')} <span className="text-xs font-bold text-blue-400">HA</span></>
+                      ) : (
+                        <>{formatearHaExactas(statsTerritoriales.horasAulaPedagogicasTotal)}</>
+                      );
+                    })()}
                   </div>
                   <span className="text-[11px] text-blue-700 mt-0.5 block font-semibold">
-                    {statsTerritoriales.horasAulaCronologicasTotal}h cron. ({statsTerritoriales.porcentajeAulaGlobal}%)
+                    {formatearHorasExactas(statsTerritoriales.horasAulaCronologicasTotal)} cron. ({statsTerritoriales.porcentajeAulaGlobal}%)
                   </span>
                 </div>
 
@@ -497,10 +538,15 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="bg-white p-4 rounded-xl border border-purple-200 bg-purple-50/20 shadow-sm">
                   <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block">No Lectivas + Recreos</span>
                   <div className="text-xl font-black text-purple-900 mt-1">
-                    {Math.round(statsTerritoriales.horasNoLectivasTotal + statsTerritoriales.horasRecreosTotal).toLocaleString()} <span className="text-xs font-bold text-purple-400">hrs</span>
+                    {(() => {
+                      const v = formatearValorHorasExactas(statsTerritoriales.horasNoLectivasTotal + statsTerritoriales.horasRecreosTotal);
+                      return v.sufijo ? (
+                        <>{v.texto} <span className="text-xs font-bold text-purple-400">{v.sufijo}</span></>
+                      ) : v.texto;
+                    })()}
                   </div>
                   <span className="text-[11px] text-purple-700 mt-0.5 block font-semibold">
-                    HNL: {statsTerritoriales.horasNoLectivasTotal}h • Rec: {statsTerritoriales.horasRecreosTotal}h
+                    HNL: {formatearHorasExactas(statsTerritoriales.horasNoLectivasTotal)} • Rec: {formatearHorasExactas(statsTerritoriales.horasRecreosTotal)}
                   </span>
                 </div>
 
@@ -508,10 +554,15 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Gestión Institucional</span>
                   <div className="text-xl font-black text-slate-800 mt-1">
-                    {statsTerritoriales.horasInstitucionalesTotal.toLocaleString()} <span className="text-xs font-bold text-slate-400">hrs</span>
+                    {(() => {
+                      const v = formatearValorHorasExactas(statsTerritoriales.horasInstitucionalesTotal);
+                      return v.sufijo ? (
+                        <>{v.texto} <span className="text-xs font-bold text-slate-400">{v.sufijo}</span></>
+                      ) : v.texto;
+                    })()}
                   </div>
                   <span className="text-[11px] text-slate-500 mt-0.5 block">
-                    Dir: {statsTerritoriales.horasDirectivasTotal}h • UTP: {statsTerritoriales.horasTecnicoPedagogicasTotal}h
+                    Dir: {formatearHorasExactas(statsTerritoriales.horasDirectivasTotal)} • UTP: {formatearHorasExactas(statsTerritoriales.horasTecnicoPedagogicasTotal)}
                   </span>
                 </div>
 
@@ -519,7 +570,12 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm" title="Horas de contrato formal pagadas a las que no se les ha asignado ninguna función en específico (ni aula, ni directivas, ni UTP, ni talleres).">
                   <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Horas Holgura (Sin Función)</span>
                   <div className="text-xl font-black text-amber-900 mt-1">
-                    {statsTerritoriales.horasVacantesLibresTotal.toLocaleString()} <span className="text-xs font-bold text-amber-400">hrs</span>
+                    {(() => {
+                      const v = formatearValorHorasExactas(statsTerritoriales.horasVacantesLibresTotal);
+                      return v.sufijo ? (
+                        <>{v.texto} <span className="text-xs font-bold text-amber-400">{v.sufijo}</span></>
+                      ) : v.texto;
+                    })()}
                   </div>
                   <span className="text-[11px] text-amber-700 mt-0.5 block font-semibold">
                     {statsTerritoriales.porcentajeVacantesGlobal}% contrato sin función asignada
@@ -554,35 +610,35 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                   <div
                     style={{ width: `${Math.max(5, statsTerritoriales.porcentajeAulaGlobal)}%` }}
                     className="bg-blue-600 h-full flex items-center justify-center text-[11px] font-black text-white px-2 transition-all first:rounded-l-lg"
-                    title={`Aula: ${statsTerritoriales.horasAulaCronologicasTotal}h (${statsTerritoriales.porcentajeAulaGlobal}%)`}
+                    title={`Aula: ${formatearHorasExactas(statsTerritoriales.horasAulaCronologicasTotal)} (${statsTerritoriales.porcentajeAulaGlobal}%)`}
                   >
                     Aula {statsTerritoriales.porcentajeAulaGlobal}%
                   </div>
                   <div
                     style={{ width: `${Math.max(5, statsTerritoriales.porcentajeNoLectivoGlobal)}%` }}
                     className="bg-purple-600 h-full flex items-center justify-center text-[11px] font-black text-white px-2 transition-all"
-                    title={`No Lectivo: ${statsTerritoriales.horasNoLectivasTotal}h (${statsTerritoriales.porcentajeNoLectivoGlobal}%)`}
+                    title={`No Lectivo: ${formatearHorasExactas(statsTerritoriales.horasNoLectivasTotal)} (${statsTerritoriales.porcentajeNoLectivoGlobal}%)`}
                   >
                     No Lect. {statsTerritoriales.porcentajeNoLectivoGlobal}%
                   </div>
                   <div
                     style={{ width: `${Math.max(4, statsTerritoriales.porcentajeRecreoGlobal)}%` }}
                     className="bg-amber-500 h-full flex items-center justify-center text-[11px] font-black text-white px-2 transition-all"
-                    title={`Recreos: ${statsTerritoriales.horasRecreosTotal}h (${statsTerritoriales.porcentajeRecreoGlobal}%)`}
+                    title={`Recreos: ${formatearHorasExactas(statsTerritoriales.horasRecreosTotal)} (${statsTerritoriales.porcentajeRecreoGlobal}%)`}
                   >
                     Rec. {statsTerritoriales.porcentajeRecreoGlobal}%
                   </div>
                   <div
                     style={{ width: `${Math.max(3, statsTerritoriales.porcentajeInstitucionalGlobal)}%` }}
                     className="bg-slate-400 h-full flex items-center justify-center text-[11px] font-black text-white px-2 transition-all"
-                    title={`Institucional: ${statsTerritoriales.horasInstitucionalesTotal}h (${statsTerritoriales.porcentajeInstitucionalGlobal}%)`}
+                    title={`Institucional: ${formatearHorasExactas(statsTerritoriales.horasInstitucionalesTotal)} (${statsTerritoriales.porcentajeInstitucionalGlobal}%)`}
                   >
                     Inst. {statsTerritoriales.porcentajeInstitucionalGlobal}%
                   </div>
                   <div
                     style={{ width: `${Math.max(4, statsTerritoriales.porcentajeVacantesGlobal)}%` }}
                     className="bg-emerald-500 h-full flex items-center justify-center text-[11px] font-black text-white px-2 transition-all last:rounded-r-lg"
-                    title={`Horas Libres: ${statsTerritoriales.horasVacantesLibresTotal}h (${statsTerritoriales.porcentajeVacantesGlobal}%)`}
+                    title={`Horas Libres: ${formatearHorasExactas(statsTerritoriales.horasVacantesLibresTotal)} (${statsTerritoriales.porcentajeVacantesGlobal}%)`}
                   >
                     Libres {statsTerritoriales.porcentajeVacantesGlobal}%
                   </div>
@@ -793,7 +849,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                           {st.totalDocentes}
                         </td>
                         <td className="px-2 py-2.5 text-center font-bold text-slate-800">
-                          {st.horasContratoTotal}h
+                          {formatearHorasExactas(st.horasContratoTotal)}
                         </td>
                         <td className="px-2 py-2.5 text-center">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
@@ -809,18 +865,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                           {st.asistentes.totalHorasContrato}h
                         </td>
                         <td className="px-2 py-2.5 text-center font-bold text-purple-700">
-                          {st.horasAulaPedagogicasAsignadas} HA
+                          {formatearHaExactas(st.horasAulaPedagogicasAsignadas)}
                         </td>
                         <td className="px-2 py-2.5 text-center font-mono">
-                          {st.financiamiento.sepTotal + st.asistentes.sepHoras}h
+                          {formatearHorasExactas(st.financiamiento.sepTotal + st.asistentes.sepHoras)}
                         </td>
                         <td className="px-2 py-2.5 text-center font-mono">
-                          {st.financiamiento.pieTotal + st.asistentes.pieHoras}h
+                          {formatearHorasExactas(st.financiamiento.pieTotal + st.asistentes.pieHoras)}
                         </td>
                         <td className="px-2 py-2.5 text-center">
                           {st.horasVacantesLibresTotal > 0 ? (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              {st.horasVacantesLibresTotal}h
+                              {formatearHorasExactas(st.horasVacantesLibresTotal)}
                             </span>
                           ) : (
                             <span className="text-slate-400 text-[10px]">0h</span>
@@ -938,20 +994,34 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/20 shadow-sm">
                   <span className="text-[10px] font-bold text-blue-700 uppercase block">Aula Asignada</span>
                   <div className="text-xl font-black text-blue-900 mt-1">
-                    {statsColegioActivo.horasAulaPedagogicasAsignadas} <span className="text-xs font-bold text-blue-400">HA</span>
+                    {(() => {
+                      const totalMin = Math.max(0, Math.round((Number(statsColegioActivo.horasAulaPedagogicasAsignadas) || 0) * 60));
+                      const ent = Math.floor(totalMin / 60);
+                      const rem = totalMin % 60;
+                      return rem === 0 ? (
+                        <>{ent.toLocaleString('es-CL')} <span className="text-xs font-bold text-blue-400">HA</span></>
+                      ) : (
+                        <>{formatearHaExactas(statsColegioActivo.horasAulaPedagogicasAsignadas)}</>
+                      );
+                    })()}
                   </div>
                   <span className="text-[11px] text-blue-700 mt-0.5 block font-semibold">
-                    {statsColegioActivo.horasAulaCronologicasAsignadas} hrs cron. ({statsColegioActivo.porcentajeAula}%)
+                    {formatearHorasExactas(statsColegioActivo.horasAulaCronologicasAsignadas)} cron. ({statsColegioActivo.porcentajeAula}%)
                   </span>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-purple-200 bg-purple-50/20 shadow-sm">
                   <span className="text-[10px] font-bold text-purple-700 uppercase block">No Lectivo + Recreos</span>
                   <div className="text-xl font-black text-purple-900 mt-1">
-                    {(statsColegioActivo.horasNoLectivasCalculadas + statsColegioActivo.horasRecreoCalculadas).toFixed(1)} <span className="text-xs font-bold text-purple-400">hrs</span>
+                    {(() => {
+                      const v = formatearValorHorasExactas(statsColegioActivo.horasNoLectivasCalculadas + statsColegioActivo.horasRecreoCalculadas);
+                      return v.sufijo ? (
+                        <>{v.texto} <span className="text-xs font-bold text-purple-400">{v.sufijo}</span></>
+                      ) : v.texto;
+                    })()}
                   </div>
                   <span className="text-[11px] text-purple-700 mt-0.5 block font-semibold">
-                    HNL: {statsColegioActivo.horasNoLectivasCalculadas}h • Rec: {statsColegioActivo.horasRecreoCalculadas}h
+                    HNL: {formatearHorasExactas(statsColegioActivo.horasNoLectivasCalculadas)} • Rec: {formatearHorasExactas(statsColegioActivo.horasRecreoCalculadas)}
                   </span>
                 </div>
 
@@ -961,14 +1031,19 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     {statsColegioActivo.asistentes.totalAsistentes} <span className="text-xs font-bold text-emerald-400">pers</span>
                   </div>
                   <span className="text-[11px] text-emerald-700 mt-0.5 block font-semibold">
-                    {statsColegioActivo.asistentes.totalHorasContrato}h contratadas
+                    {formatearHorasExactas(statsColegioActivo.asistentes.totalHorasContrato)} contratadas
                   </span>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm" title="Horas de contrato formal pagadas a las que no se les ha asignado ninguna función en específico (ni aula, ni directivas, ni UTP, ni talleres).">
                   <span className="text-[10px] font-bold text-amber-700 uppercase block">Horas Holgura (Sin Función)</span>
                   <div className="text-xl font-black text-amber-900 mt-1">
-                    {statsColegioActivo.horasVacantesLibresTotal} <span className="text-xs font-bold text-amber-400">hrs</span>
+                    {(() => {
+                      const v = formatearValorHorasExactas(statsColegioActivo.horasVacantesLibresTotal);
+                      return v.sufijo ? (
+                        <>{v.texto} <span className="text-xs font-bold text-amber-400">{v.sufijo}</span></>
+                      ) : v.texto;
+                    })()}
                   </div>
                   <span className="text-[11px] text-amber-700 mt-0.5 block font-semibold">
                     {statsColegioActivo.porcentajeVacantes}% sin función asignada
@@ -1105,18 +1180,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                               {d.calidadJuridica}
                             </span>
                           </td>
-                          <td className="px-2 py-2.5 text-center font-bold text-slate-800">{d.horasContrato}h</td>
-                          <td className="px-2 py-2.5 text-center font-bold text-blue-700">{d.horasAulaPedagogicas} HA</td>
-                          <td className="px-2 py-2.5 text-center font-semibold text-purple-700">{d.horasNoLectivas}h</td>
-                          <td className="px-2 py-2.5 text-center font-semibold text-amber-700">{d.horasRecreo}h</td>
-                          <td className="px-2 py-2.5 text-center font-semibold text-emerald-700">{d.horasColaborativo}h</td>
-                          <td className="px-2 py-2.5 text-center font-mono">{d.horasSep}h</td>
-                          <td className="px-2 py-2.5 text-center font-mono">{d.horasPie}h</td>
-                          <td className="px-2 py-2.5 text-center font-mono">{d.horasSubvGeneral}h</td>
+                          <td className="px-2 py-2.5 text-center font-bold text-slate-800">{formatearHorasExactas(d.horasContrato)}</td>
+                          <td className="px-2 py-2.5 text-center font-bold text-blue-700">{formatearHaExactas(d.horasAulaPedagogicas)}</td>
+                          <td className="px-2 py-2.5 text-center font-semibold text-purple-700">{formatearHorasExactas(d.horasNoLectivas)}</td>
+                          <td className="px-2 py-2.5 text-center font-semibold text-amber-700">{formatearHorasExactas(d.horasRecreo)}</td>
+                          <td className="px-2 py-2.5 text-center font-semibold text-emerald-700">{formatearHorasExactas(d.horasColaborativo)}</td>
+                          <td className="px-2 py-2.5 text-center font-mono">{formatearHorasExactas(d.horasSep)}</td>
+                          <td className="px-2 py-2.5 text-center font-mono">{formatearHorasExactas(d.horasPie)}</td>
+                          <td className="px-2 py-2.5 text-center font-mono">{formatearHorasExactas(d.horasSubvGeneral)}</td>
                           <td className="px-2 py-2.5 text-center">
                             {d.horasLibresDocente > 0 ? (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200" title={`Docente tiene ${d.horasLibresDocente}h libres sin función asignada`}>
-                                +{d.horasLibresDocente}h libres
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200" title={`Docente tiene ${formatearHorasExactas(d.horasLibresDocente)} libres sin función asignada`}>
+                                +{formatearHorasExactas(d.horasLibresDocente)} libres
                               </span>
                             ) : (
                               <span className="text-slate-400 text-[10px]">0h (Completo)</span>

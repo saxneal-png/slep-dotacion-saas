@@ -14,8 +14,12 @@ import {
   calcularHorasPlanCurso,
   calcularDemandaNormativaPieCurso
 } from '@slep/mineduc-engine';
-import { normalizarRut } from '../utils/rutUtils';
-import { auditarCargaDocenteIntegral } from './auditoriaDocenteService';
+import { normalizarRut, claveDedupFuncionario } from '../utils/rutUtils';
+import {
+  auditarCargaDocenteIntegral,
+  normalizarFuentesFinanciamientoDocente,
+  normalizarFuentesFinanciamientoAsistente
+} from './auditoriaDocenteService';
 
 export interface EstadisticasAsistentesColegio {
   totalAsistentes: number;
@@ -344,32 +348,61 @@ export function calcularEstadisticasAsistentesColegio(
   let pieCount = 0;
   let pieHorasTotales = 0;
 
-  const asistentesActivos = asistentes.filter(a => a.activo !== false);
+  const asistentesActivosBrutos = asistentes.filter(a => a.activo !== false);
+  const asistOrdenados = [...asistentesActivosBrutos].sort((a, b) => {
+    const sumA =
+      (Number(a.horasSubvencionGeneralIndefinido) || 0) +
+      (Number(a.horasSubvencionGeneralPlazoFijo) || 0) +
+      (Number(a.horasSepIndefinido) || 0) +
+      (Number(a.horasSepPlazoFijo) || 0) +
+      (Number(a.horasPieIndefinido) || 0) +
+      (Number(a.horasPiePlazoFijo) || 0);
+    const sumB =
+      (Number(b.horasSubvencionGeneralIndefinido) || 0) +
+      (Number(b.horasSubvencionGeneralPlazoFijo) || 0) +
+      (Number(b.horasSepIndefinido) || 0) +
+      (Number(b.horasSepPlazoFijo) || 0) +
+      (Number(b.horasPieIndefinido) || 0) +
+      (Number(b.horasPiePlazoFijo) || 0);
+    return sumB - sumA;
+  });
+  const seenAstKeys = new Set<string>();
+  const asistentesActivos: AsistenteEducacion[] = [];
+  for (const a of asistOrdenados) {
+    const key = claveDedupFuncionario(a.rbd || colegio.rbd, a.run, a.id);
+    if (seenAstKeys.has(key)) continue;
+    seenAstKeys.add(key);
+    asistentesActivos.push(a);
+  }
+
   for (const a of asistentesActivos) {
     const hrs = Number(a.horasContrato) || 0;
     totalHoras += hrs;
 
-    const sInd = Number(a.horasSubvencionGeneralIndefinido) || 0;
-    const sPla = Number(a.horasSubvencionGeneralPlazoFijo) || 0;
-    const spInd = Number(a.horasSepIndefinido) || 0;
-    const spPla = Number(a.horasSepPlazoFijo) || 0;
-    const pInd = Number(a.horasPieIndefinido) || 0;
-    const pPla = Number(a.horasPiePlazoFijo) || 0;
-    const hon = Number(a.horasHonorarios) || 0;
+    const fuentes = normalizarFuentesFinanciamientoAsistente(
+      hrs,
+      Number(a.horasSubvencionGeneralIndefinido) || 0,
+      Number(a.horasSubvencionGeneralPlazoFijo) || 0,
+      Number(a.horasSepIndefinido) || 0,
+      Number(a.horasSepPlazoFijo) || 0,
+      Number(a.horasPieIndefinido) || 0,
+      Number(a.horasPiePlazoFijo) || 0,
+      Number(a.horasHonorarios) || 0
+    );
+    const sInd = fuentes.subvGenIndefinido;
+    const sPla = fuentes.subvGenPlazoFijo;
+    const spInd = fuentes.sepIndefinido;
+    const spPla = fuentes.sepPlazoFijo;
+    const pInd = fuentes.pieIndefinido;
+    const pPla = fuentes.piePlazoFijo;
+    const hon = fuentes.honorarios;
 
-    const sumaFuentes = sInd + sPla + spInd + spPla + pInd + pPla + hon;
-    if (sumaFuentes > 0) {
-      subvGenHoras += (sInd + sPla);
-      sepHoras += (spInd + spPla);
-      pieHoras += (pInd + pPla);
-      horasHonorarios += hon;
-      horasIndefinidas += (sInd + spInd + pInd);
-      horasPlazoFijo += (sPla + spPla + pPla);
-    } else {
-      // Inferencia por defecto si no están desglosadas las fuentes
-      subvGenHoras += hrs;
-      horasPlazoFijo += hrs;
-    }
+    subvGenHoras += sInd + sPla;
+    sepHoras += spInd + spPla;
+    pieHoras += pInd + pPla;
+    horasHonorarios += hon;
+    horasIndefinidas += sInd + spInd + pInd;
+    horasPlazoFijo += sPla + spPla + pPla;
 
     // Estamentos Ley 21.109
     const est = String(a.estamento || '').toUpperCase();
@@ -436,8 +469,52 @@ export function calcularEstadisticasAsistentesColegio(
       cantidad: pieCount,
       horasTotales: pieHorasTotales
     },
-    desglose: asistentes
+    desglose: asistentesActivos
   };
+}
+
+const GENERIC_TALLER_JEC_RX = /^(taller(\s+jec)?(\s*\/\s*libre\s+disposici[oó]n)?|taller\s+de\s+libre\s+disposici[oó]n|taller\s+institucional(\s+transversal)?)$/i;
+
+function calcularPorcentajesJornadaDocente(
+  horasContratoTotal: number,
+  horasAulaCronologicas: number,
+  horasNoLectivas: number,
+  horasRecreos: number,
+  horasInstitucionales: number,
+  horasVacantes: number
+): {
+  pctAula: number;
+  pctNoLectivo: number;
+  pctRecreo: number;
+  pctInst: number;
+  pctVacantes: number;
+} {
+  if (horasContratoTotal <= 0) {
+    return { pctAula: 0, pctNoLectivo: 0, pctRecreo: 0, pctInst: 0, pctVacantes: 0 };
+  }
+  const pctVacantes = horasVacantes <= 0
+    ? 0
+    : Math.min(100, Math.max(0, Math.round((horasVacantes / horasContratoTotal) * 100)));
+  let pctAula = Math.max(0, Math.round((horasAulaCronologicas / horasContratoTotal) * 100));
+  let pctNoLectivo = Math.max(0, Math.round((horasNoLectivas / horasContratoTotal) * 100));
+  let pctRecreo = Math.max(0, Math.round((horasRecreos / horasContratoTotal) * 100));
+  let pctInst = Math.max(0, Math.round((horasInstitucionales / horasContratoTotal) * 100));
+
+  const sum = pctAula + pctNoLectivo + pctRecreo + pctInst + pctVacantes;
+  if (sum !== 100) {
+    const diff = 100 - sum;
+    // Ajustar el segmento no-vacante predominante para cerrar exactamente en 100% sin inventar % libres cuando holgura = 0h
+    if (pctNoLectivo + diff >= 0 && pctNoLectivo >= pctAula && pctNoLectivo >= pctInst) {
+      pctNoLectivo += diff;
+    } else if (pctAula + diff >= 0 && pctAula >= pctInst) {
+      pctAula += diff;
+    } else if (pctInst + diff >= 0) {
+      pctInst += diff;
+    } else if (pctRecreo + diff >= 0) {
+      pctRecreo += diff;
+    }
+  }
+  return { pctAula, pctNoLectivo, pctRecreo, pctInst, pctVacantes };
 }
 
 /**
@@ -478,8 +555,61 @@ export function calcularEstadisticasColegio(
     }
   }
 
+  // Pre-deduplicación defensiva de asignaciones exactas (excluyendo talleres genéricos JEC) y docentes por RUN
+  const rawAsigCountByDoc = new Map<string, number>();
+  for (const a of asignaciones) {
+    if (a.docenteId) {
+      rawAsigCountByDoc.set(a.docenteId, (rawAsigCountByDoc.get(a.docenteId) || 0) + 1);
+    }
+    if (a.coDocenteId && a.tieneCoDocente) {
+      rawAsigCountByDoc.set(a.coDocenteId, (rawAsigCountByDoc.get(a.coDocenteId) || 0) + 1);
+    }
+  }
+
+  const docentesOrdenados = [...docentes].sort(
+    (a, b) => (rawAsigCountByDoc.get(b.id) || 0) - (rawAsigCountByDoc.get(a.id) || 0)
+  );
+  const docentesDedup: Docente[] = [];
+  const docIdByDedupKey = new Map<string, string>();
+  const docIdAliasMap = new Map<string, string>();
+
+  for (const doc of docentesOrdenados) {
+    const key = claveDedupFuncionario(doc.rbd || colegio.rbd, doc.run, doc.id);
+    const canonicalId = docIdByDedupKey.get(key);
+    if (canonicalId) {
+      docIdAliasMap.set(doc.id, canonicalId);
+      continue;
+    }
+    docIdByDedupKey.set(key, doc.id);
+    docIdAliasMap.set(doc.id, doc.id);
+    docentesDedup.push(doc);
+  }
+
+  const seenExactAsigKeys = new Set<string>();
+  const asignacionesDedup: AsignacionHoraria[] = [];
+  for (const a of asignaciones) {
+    const canonicalDocId = docIdAliasMap.get(a.docenteId) || a.docenteId;
+    const canonicalCoDocId = a.coDocenteId ? (docIdAliasMap.get(a.coDocenteId) || a.coDocenteId) : a.coDocenteId;
+    const asigNorm = (a.asignatura || '').trim().toLowerCase();
+    const haNorm = Number(a.horasPedagogicasAula) || 0;
+    const esTallerGenerico = GENERIC_TALLER_JEC_RX.test(asigNorm) ||
+      (asigNorm.includes('taller jec') && asigNorm.includes('libre disposic'));
+    if (!esTallerGenerico && canonicalDocId) {
+      const exactKey = `${a.cursoId || ''}__${canonicalDocId}__${asigNorm}__${haNorm}`;
+      if (seenExactAsigKeys.has(exactKey)) {
+        continue;
+      }
+      seenExactAsigKeys.add(exactKey);
+    }
+    asignacionesDedup.push(
+      canonicalDocId !== a.docenteId || canonicalCoDocId !== a.coDocenteId
+        ? { ...a, docenteId: canonicalDocId, coDocenteId: canonicalCoDocId }
+        : a
+    );
+  }
+
   // 1.1 Talleres Institucionales / Transversales (no asociados a un curso específico)
-  const asignacionesTransversales = asignaciones.filter(
+  const asignacionesTransversales = asignacionesDedup.filter(
     a => !a.cursoId || a.cursoId === 'TRANSVERSAL' || a.cursoId === 'SIN_CURSO'
   );
   for (const asig of asignacionesTransversales) {
@@ -493,7 +623,7 @@ export function calcularEstadisticasColegio(
   const asigsPorDocente = new Map<string, AsignacionHoraria[]>();
   const coAsigsPorDocente = new Map<string, AsignacionHoraria[]>();
 
-  for (const a of asignaciones) {
+  for (const a of asignacionesDedup) {
     if (a.docenteId) {
       let arr = asigsPorDocente.get(a.docenteId);
       if (!arr) {
@@ -524,7 +654,9 @@ export function calcularEstadisticasColegio(
 
   // 3. Acumuladores de Planta Docente
   let horasContratoTotal = 0;
+  let horasAulaCurricularAsignadas = 0;
   let horasAulaPedagogicasAsignadas = 0;
+  let minutosAulaCronologicaEfectiva = 0;
   let horasLectivasMaximasPermitidas = 0;
   let minutosNoLectivosCalculadosTotal = 0;
   let minutosRecreoCalculadosTotal = 0;
@@ -546,9 +678,9 @@ export function calcularEstadisticasColegio(
   let horasSepSinAsignarTotal = 0;
   let horasPieSinAsignarTotal = 0;
   let horasSubvGeneralSinAsignarTotal = 0;
-  let totalHorasLibresColegio = 0;
+  let totalMinutosLibresColegio = 0;
 
-  const desgloseDocentes = docentes.map(doc => {
+  const desgloseDocentes = docentesDedup.map(doc => {
     const hContrato = Number(doc.horasContrato) || 0;
     horasContratoTotal += hContrato;
 
@@ -568,22 +700,23 @@ export function calcularEstadisticasColegio(
       contrataHoras += hContrato;
     }
 
-    // Financiamiento docente
-    let sTit = Number(doc.horasSubvencionGeneralTitular) || 0;
-    let sCon = Number(doc.horasSubvencionGeneralContrata) || 0;
-    let spTit = Number(doc.horasSepTitular) || 0;
-    let spCon = Number(doc.horasSepContrata) || 0;
-    let pTit = Number(doc.horasPieTitular) || 0;
-    let pCon = Number(doc.horasPieContrata) || 0;
-
-    const sumaFuentesDoc = sTit + sCon + spTit + spCon + pTit + pCon;
-    if (sumaFuentesDoc === 0 && hContrato > 0) {
-      if (calJur === 'TITULAR') {
-        sTit = hContrato;
-      } else {
-        sCon = hContrato;
-      }
-    }
+    // Financiamiento docente normalizado (garantiza suma exacta = horasContrato)
+    const fuentesDoc = normalizarFuentesFinanciamientoDocente(
+      hContrato,
+      calJur,
+      Number(doc.horasSubvencionGeneralTitular) || 0,
+      Number(doc.horasSubvencionGeneralContrata) || 0,
+      Number(doc.horasSepTitular) || 0,
+      Number(doc.horasSepContrata) || 0,
+      Number(doc.horasPieTitular) || 0,
+      Number(doc.horasPieContrata) || 0
+    );
+    const sTit = fuentesDoc.subvGenTitular;
+    const sCon = fuentesDoc.subvGenContrata;
+    const spTit = fuentesDoc.sepTitular;
+    const spCon = fuentesDoc.sepContrata;
+    const pTit = fuentesDoc.pieTitular;
+    const pCon = fuentesDoc.pieContrata;
 
     subvTit += sTit;
     subvCon += sCon;
@@ -624,6 +757,7 @@ export function calcularEstadisticasColegio(
       haRegular,
       haCoDocencia,
       haTrabajoColab,
+      haDocenciaEfectiva,
       maxHAPermitidas,
       horasNoLectivasCronologicas: horasNoLectivasDoc,
       horasRecreoCronologicas: horasRecreoDoc,
@@ -636,18 +770,25 @@ export function calcularEstadisticasColegio(
       horasSepSinAsignar: sepSinAsignarDoc,
       horasPieSinAsignar: pieSinAsignarDoc,
       horasSubvGenSinAsignar: subvGenSinAsignarDoc,
-      totalHorasSinAsignar: totalSinAsignarDoc
+      totalHorasSinAsignar: totalSinAsignarDoc,
+      isEducadoraParvulo
     } = integral;
 
-    horasAulaPedagogicasAsignadas += haRegular;
+    horasAulaCurricularAsignadas += haRegular;
+    horasAulaPedagogicasAsignadas += haDocenciaEfectiva;
+    minutosAulaCronologicaEfectiva += Math.round(
+      haDocenciaEfectiva * (isEducadoraParvulo ? 60 : 45)
+    );
     horasCoDocenciaTotal += haCoDocencia;
-    horasTrabajoColaborativoTotal += Math.max(dColab, haTrabajoColab);
+    const hColabDocEfectivo = Math.max(dColab, haTrabajoColab);
+    horasTrabajoColaborativoTotal += hColabDocEfectivo;
 
     horasLectivasMaximasPermitidas += maxHAPermitidas;
     minutosNoLectivosCalculadosTotal += auditDoc.minutosHnlTotal;
     minutosRecreoCalculadosTotal += auditDoc.minutosRecreoTotal;
 
-    totalHorasLibresColegio = Number((totalHorasLibresColegio + horasLibresDocente).toFixed(2));
+    const minLibresDoc = Math.round(horasLibresDocente * 60);
+    totalMinutosLibresColegio += minLibresDoc;
 
     horasSepSinAsignarTotal = Number((horasSepSinAsignarTotal + sepSinAsignarDoc).toFixed(2));
     horasPieSinAsignarTotal = Number((horasPieSinAsignarTotal + pieSinAsignarDoc).toFixed(2));
@@ -660,10 +801,10 @@ export function calcularEstadisticasColegio(
       estamento: doc.estamento,
       calidadJuridica: doc.calidadJuridica,
       horasContrato: hContrato,
-      horasAulaPedagogicas: haRegular,
+      horasAulaPedagogicas: Number(haDocenciaEfectiva.toFixed(2)),
       horasNoLectivas: horasNoLectivasDoc,
       horasRecreo: horasRecreoDoc,
-      horasColaborativo: dColab + haTrabajoColab,
+      horasColaborativo: hColabDocEfectivo,
       horasSep: spTit + spCon,
       horasPie: pTit + pCon,
       horasSubvGeneral: sTit + sCon,
@@ -680,28 +821,38 @@ export function calcularEstadisticasColegio(
     };
   });
 
-  const horasAulaCronologicasAsignadas = Math.round((horasAulaPedagogicasAsignadas * 45 / 60) * 10) / 10;
-  const horasNoLectivasCalculadas = Math.round((minutosNoLectivosCalculadosTotal / 60) * 10) / 10;
-  const horasRecreoCalculadas = Math.round((minutosRecreoCalculadosTotal / 60) * 10) / 10;
+  const horasAulaPedagogicasRedondeadas = Number(horasAulaPedagogicasAsignadas.toFixed(2));
+  const horasAulaCronologicasAsignadas = Number((minutosAulaCronologicaEfectiva / 60).toFixed(4));
+  const horasNoLectivasCalculadas = Number((minutosNoLectivosCalculadosTotal / 60).toFixed(4));
+  const horasRecreoCalculadas = Number((minutosRecreoCalculadosTotal / 60).toFixed(4));
   const horasInstitucionalesTotal = hDirectivas + hInspector + hTecnico + hCoord + hTallerSep;
 
   const totalFinanciamientoDocente = subvTit + subvCon + sepTit + sepCon + pieTit + pieCon;
   const minutosContratoTotal = Math.round(horasContratoTotal * 60);
 
   // Horas de holgura / vacantes sin función asignada (ni aula, ni directivas, ni UTP, ni talleres)
-  const horasVacantesLibresTotal = totalHorasLibresColegio;
+  const horasVacantesLibresTotal = Number((totalMinutosLibresColegio / 60).toFixed(2));
 
-  const pctAula = horasContratoTotal > 0 ? Math.round((horasAulaCronologicasAsignadas / horasContratoTotal) * 100) : 0;
-  const pctNoLectivo = horasContratoTotal > 0 ? Math.round((horasNoLectivasCalculadas / horasContratoTotal) * 100) : 0;
-  const pctRecreo = horasContratoTotal > 0 ? Math.round((horasRecreoCalculadas / horasContratoTotal) * 100) : 0;
-  const pctInst = horasContratoTotal > 0 ? Math.round((horasInstitucionalesTotal / horasContratoTotal) * 100) : 0;
-  const pctVacantes = Math.max(0, 100 - (pctAula + pctNoLectivo + pctRecreo + pctInst));
+  const {
+    pctAula,
+    pctNoLectivo,
+    pctRecreo,
+    pctInst,
+    pctVacantes
+  } = calcularPorcentajesJornadaDocente(
+    horasContratoTotal,
+    horasAulaCronologicasAsignadas,
+    horasNoLectivasCalculadas,
+    horasRecreoCalculadas,
+    horasInstitucionalesTotal,
+    horasVacantesLibresTotal
+  );
 
-  // Cobertura Curricular
+  // Cobertura Curricular (solo aula titular del plan curricular, sin inflar con co-docencia)
   const coberturaCurricularPorcentaje = horasAulaDemandadasPlan > 0
-    ? Math.min(100, Math.round((horasAulaPedagogicasAsignadas / horasAulaDemandadasPlan) * 100))
+    ? Math.min(100, Math.round((horasAulaCurricularAsignadas / horasAulaDemandadasPlan) * 100))
     : 100;
-  const deficitAulaCurricular = Math.max(0, horasAulaDemandadasPlan - horasAulaPedagogicasAsignadas);
+  const deficitAulaCurricular = Math.max(0, Number((horasAulaDemandadasPlan - horasAulaCurricularAsignadas).toFixed(2)));
 
   // Calidad Jurídica y Regla 80/20
   const pctContrata = horasContratoTotal > 0
@@ -713,7 +864,7 @@ export function calcularEstadisticasColegio(
   const statsAsistentes = calcularEstadisticasAsistentesColegio(colegio, asistentes, totalMatricula);
 
   // 10. Consolidado Todo el Personal
-  const totalFuncionarios = docentes.length + statsAsistentes.totalAsistentes;
+  const totalFuncionarios = docentesDedup.length + statsAsistentes.totalAsistentes;
   const totalHorasPersonal = horasContratoTotal + statsAsistentes.totalHorasContrato;
 
   return {
@@ -723,7 +874,7 @@ export function calcularEstadisticasColegio(
     regimen: colegio.regimen,
     porcentajePrioritarios: colegio.porcentajePrioritarios,
     regimenProporcion,
-    totalDocentes: docentes.length,
+    totalDocentes: docentesDedup.length,
     totalCursos: cursos.length,
     totalMatricula,
 
@@ -743,7 +894,7 @@ export function calcularEstadisticasColegio(
     horasContratoTotal,
     minutosContratoTotal,
 
-    horasAulaPedagogicasAsignadas,
+    horasAulaPedagogicasAsignadas: horasAulaPedagogicasRedondeadas,
     horasAulaCronologicasAsignadas,
     horasAulaDemandadasPlan,
     horasLectivasMaximasPermitidas,
@@ -867,9 +1018,14 @@ export function calcularEstadisticasTerritoriales(
     return calcularEstadisticasColegio(col, cursosCol, docentesCol, asigsCol, asistCol);
   });
 
-  const asistentesActivosTerritorio = todosLosAsistentes.filter(a => a.activo !== false);
-  const runsUnicosDocentes = new Set(todosLosDocentes.map(d => normalizarRut(d.run)).filter(Boolean)).size;
-  const runsUnicosAsistentes = new Set(asistentesActivosTerritorio.map(a => normalizarRut(a.run)).filter(Boolean)).size;
+  const totalDocentesPlanta = porColegio.reduce((s, c) => s + c.totalDocentes, 0);
+  const totalAsistentesTerritorio = porColegio.reduce((s, c) => s + c.asistentes.totalAsistentes, 0);
+  const runsUnicosDocentes = new Set(
+    porColegio.flatMap(c => c.desgloseDocentes.map(d => normalizarRut(d.run))).filter(Boolean)
+  ).size;
+  const runsUnicosAsistentes = new Set(
+    porColegio.flatMap(c => c.asistentes.desglose.map(a => normalizarRut(a.run))).filter(Boolean)
+  ).size;
 
   let totalMatricula = 0;
   let totalCursos = 0;
@@ -1040,17 +1196,29 @@ export function calcularEstadisticasTerritoriales(
     pc.pctContrata = pc.docentesHoras > 0 ? Math.round((pc.contrataHoras / pc.docentesHoras) * 1000) / 10 : 0;
   }
 
-  const horasNoLectivasTotal = Math.round((minutosNoLectivosGlobalTotal / 60) * 10) / 10;
-  const horasRecreosTotal = Math.round((minutosRecreoGlobalTotal / 60) * 10) / 10;
+  const horasNoLectivasTotal = Number((minutosNoLectivosGlobalTotal / 60).toFixed(4));
+  const horasRecreosTotal = Number((minutosRecreoGlobalTotal / 60).toFixed(4));
+  const horasVacantesLibresRounded = Number(horasVacantesLibresTotal.toFixed(2));
 
-  const pctAula = horasContratoTotal > 0 ? Math.round((horasAulaCronologicasTotal / horasContratoTotal) * 100) : 0;
-  const pctNoLectivo = horasContratoTotal > 0 ? Math.round((horasNoLectivasTotal / horasContratoTotal) * 100) : 0;
-  const pctRecreo = horasContratoTotal > 0 ? Math.round((horasRecreosTotal / horasContratoTotal) * 100) : 0;
-  const pctInst = horasContratoTotal > 0 ? Math.round((hInstitucionalesTotal / horasContratoTotal) * 100) : 0;
-  const pctVac = Math.max(0, 100 - (pctAula + pctNoLectivo + pctRecreo + pctInst));
+  const {
+    pctAula,
+    pctNoLectivo,
+    pctRecreo,
+    pctInst,
+    pctVacantes: pctVac
+  } = calcularPorcentajesJornadaDocente(
+    horasContratoTotal,
+    horasAulaCronologicasTotal,
+    horasNoLectivasTotal,
+    horasRecreosTotal,
+    hInstitucionalesTotal,
+    horasVacantesLibresRounded
+  );
 
+  // Cobertura Curricular territorial coherente (sobre demanda curricular plan sin inflar)
+  const totalAulaCurricularAsignada = Math.max(0, horasDemandadasPlanTotal - deficitCurricularGlobalTotal);
   const coberturaGlobalPct = horasDemandadasPlanTotal > 0
-    ? Math.min(100, Math.round((horasAulaPedagogicasTotal / horasDemandadasPlanTotal) * 100))
+    ? Math.min(100, Math.round((totalAulaCurricularAsignada / horasDemandadasPlanTotal) * 100))
     : 100;
 
   // Calidad Jurídica Docente Territorial (Regla 80/20)
@@ -1066,12 +1234,12 @@ export function calcularEstadisticasTerritoriales(
 
   return {
     totalEstablecimientos: colegios.length,
-    totalDocentesPlanta: todosLosDocentes.length,
+    totalDocentesPlanta,
     docentesUnicosRun: runsUnicosDocentes,
     totalCursos,
     totalMatricula,
 
-    totalPersonalSlep: todosLosDocentes.length + asistentesActivosTerritorio.length,
+    totalPersonalSlep: totalDocentesPlanta + totalAsistentesTerritorio,
     totalHorasPersonalSlep: horasContratoTotal + asistTotalHoras,
     totalHorasSubvencionGeneralPersonal: Number(((subvTit + subvCon) + asistSubvGen).toFixed(2)),
     totalHorasSepPersonal: Number(((sepTit + sepCon) + asistSep).toFixed(2)),
@@ -1091,7 +1259,7 @@ export function calcularEstadisticasTerritoriales(
     },
 
     asistentesTerritorio: {
-      totalAsistentes: asistentesActivosTerritorio.length,
+      totalAsistentes: totalAsistentesTerritorio,
       asistentesUnicosRun: runsUnicosAsistentes,
       totalHoras: asistTotalHoras,
       horasIndefinidas: asistHorasIndefinidas,
@@ -1114,10 +1282,10 @@ export function calcularEstadisticasTerritoriales(
     },
 
     horasContratoTotal,
-    horasAulaPedagogicasTotal,
-    horasAulaCronologicasTotal: Math.round(horasAulaCronologicasTotal * 10) / 10,
-    horasNoLectivasTotal: Math.round(horasNoLectivasTotal * 10) / 10,
-    horasRecreosTotal: Math.round(horasRecreosTotal * 10) / 10,
+    horasAulaPedagogicasTotal: Number(horasAulaPedagogicasTotal.toFixed(2)),
+    horasAulaCronologicasTotal: Number(horasAulaCronologicasTotal.toFixed(4)),
+    horasNoLectivasTotal,
+    horasRecreosTotal,
     horasColaborativoTotal,
     horasCoDocenciaTotal,
     horasDemandadasPlanTotal,
@@ -1144,7 +1312,7 @@ export function calcularEstadisticasTerritoriales(
     horasTecnicoPedagogicasTotal: hTecnicoTotal,
     horasCoordinacionTotal: hCoordTotal,
     horasInstitucionalesTotal: hInstitucionalesTotal,
-    horasVacantesLibresTotal,
+    horasVacantesLibresTotal: horasVacantesLibresRounded,
 
     horasSepSinAsignarTotal,
     horasPieSinAsignarTotal,

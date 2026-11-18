@@ -70,7 +70,7 @@ export async function auditarIntegridadColegio(
   periodo: number = 2027
 ): Promise<ReporteIntegridadColegio> {
   const cleanRbd = rbd.trim();
-  const docentes = await listarDocentes(cleanRbd, periodo);
+  const docentes = await listarDocentes(cleanRbd, periodo, true);
   const asignaciones = await listarAsignaciones(cleanRbd, periodo);
   const cursos = await listarCursos(cleanRbd, periodo);
 

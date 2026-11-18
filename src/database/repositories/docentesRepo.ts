@@ -1,267 +1,203 @@
 import { Docente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
-import { normalizarRut, limpiarRutParaId } from '../../utils/rutUtils';
+import { normalizarRut, limpiarRutParaId, esRunValidoParaDedup, claveDedupFuncionario } from '../../utils/rutUtils';
+import { normalizarFuentesFinanciamientoDocente } from '../../services/auditoriaDocenteService';
 
-export async function listarDocentes(rbd: string, periodo: number = 2027): Promise<Docente[]> {
+const DOCENTE_SELECT_COLS = `
+  id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
+  horas_subvencion_general_titular, horas_subvencion_general_contrata,
+  horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
+  horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
+  horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
+  periodo, horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
+  horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json,
+  horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
+  accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
+  situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
+  es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
+`;
+
+function mapRowToDocente(row: any[]): Docente {
+  const horasContrato = Number(row[8]) || 0;
+  const calJuridica = row[6] as any;
+  const normFuentes = normalizarFuentesFinanciamientoDocente(
+    horasContrato,
+    calJuridica,
+    Number(row[9] || 0),
+    Number(row[10] || 0),
+    Number(row[11] || 0),
+    Number(row[12] || 0),
+    Number(row[13] || 0),
+    Number(row[14] || 0)
+  );
+
+  let funcionesNoAula: any[] = [];
+  if (row[33]) {
+    try {
+      funcionesNoAula = JSON.parse(String(row[33]));
+    } catch (_) {}
+  }
+
+  return {
+    id: String(row[0]),
+    rbd: String(row[1]),
+    run: String(row[2]),
+    nombres: String(row[3]),
+    apellidos: String(row[4]),
+    titulo: row[5] ? String(row[5]) : undefined,
+    calidadJuridica: calJuridica,
+    estamento: row[7] as any,
+    horasContrato,
+    horasSubvencionGeneralTitular: normFuentes.subvGenTitular,
+    horasSubvencionGeneralContrata: normFuentes.subvGenContrata,
+    horasSepTitular: normFuentes.sepTitular,
+    horasSepContrata: normFuentes.sepContrata,
+    horasPieTitular: normFuentes.pieTitular,
+    horasPieContrata: normFuentes.pieContrata,
+    horasDirectivas: Number(row[15] || 0),
+    horasInspectorGeneral: Number(row[16] || 0),
+    horasTecnicoPedagogicas: Number(row[17] || 0),
+    horasCoordinacion: Number(row[18] || 0),
+    tipoCoordinacion: row[19] ? String(row[19]) : undefined,
+    horasAula: Number(row[20] || 0),
+    horasIngles: Number(row[21] || 0),
+    funcionPrincipal: row[22] ? String(row[22]) : undefined,
+    funcionSecundaria: row[23] ? String(row[23]) : undefined,
+    asignaturaPrincipal: row[24] ? String(row[24]) : undefined,
+    aplicaArticulo69: Boolean(row[25]),
+    periodo: row[26] ? Number(row[26]) : 2027,
+    horasCoordinacionPie: Number(row[27] || 0),
+    horasConvivenciaEscolar: Number(row[28] || 0),
+    horasExtraescolar: Number(row[29] || 0),
+    cargoInstitucional: row[30] ? String(row[30]) : undefined,
+    horasTallerSep: Number(row[31] || 0),
+    horasTrabajoColaborativo: Number(row[32] || 0),
+    funcionesNoAula: funcionesNoAula.length > 0 ? funcionesNoAula : undefined,
+    horasVigentesAnterior: row[34] !== undefined && row[34] !== null ? Number(row[34]) : horasContrato,
+    propuestaGdp: row[35] ? String(row[35]) : 'Continuidad',
+    remuneracionMensualApp: Number(row[36] || 0),
+    remuneracionMensual: Number(row[36] || 0),
+    fechaInicioContrato: row[37] ? String(row[37]) : '01-03-2026',
+    fechaTerminoContrato: row[38] ? String(row[38]) : (calJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
+    accionPmeSep: row[39] ? String(row[39]) : undefined,
+    accionPme: row[39] ? String(row[39]) : undefined,
+    horasProRetencion: Number(row[40] || 0),
+    descripcionFuncionGdp: row[41] ? String(row[41]) : undefined,
+    estadoSancionGdp: (row[42] as any) || 'Pendiente',
+    horasAprobadasGdp: Number(row[43] || 0),
+    situacionFinalGdp: row[44] ? String(row[44]) : 'Vigente',
+    observacionesDirector: row[45] ? String(row[45]) : undefined,
+    observacionesPal: row[45] ? String(row[45]) : undefined,
+    observacionesSlep: row[46] ? String(row[46]) : undefined,
+    requiereAutorizacionDocente: Boolean(row[47]),
+    esVtf: Boolean(row[48]),
+    funcionVtf: row[49] ? (String(row[49]) as Docente['funcionVtf']) : undefined,
+    grupoJiscId: row[50] ? String(row[50]) : undefined,
+    horaIngresoTurno: row[51] ? String(row[51]) : undefined,
+    horaSalidaTurno: row[52] ? String(row[52]) : undefined,
+    reemplazoDeRun: row[53] ? String(row[53]) : undefined
+  };
+}
+
+function deduplicarDocentesRows(rows: any[][]): Docente[] {
+  const seenRbdRun = new Set<string>();
+  const docentes: Docente[] = [];
+  for (const row of rows) {
+    const doc = mapRowToDocente(row);
+    const key = claveDedupFuncionario(doc.rbd, doc.run, doc.id);
+    if (seenRbdRun.has(key)) continue;
+    seenRbdRun.add(key);
+    docentes.push(doc);
+  }
+  return docentes;
+}
+
+export async function listarDocentes(
+  rbd: string,
+  periodo: number = 2027,
+  incluirDuplicados: boolean = false
+): Promise<Docente[]> {
   const db = await getDb();
   const res = db.exec(`
-    SELECT id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
-           horas_subvencion_general_titular, horas_subvencion_general_contrata,
-           horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
-           horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
-           horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-           periodo, horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
-           horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json,
-           horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
-           accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
-      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
-    FROM docentes WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027)) ORDER BY apellidos, nombres
-  `, [rbd, periodo, periodo]);
+    SELECT ${DOCENTE_SELECT_COLS}
+    FROM docentes
+    WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))
+    ORDER BY (
+      SELECT COUNT(*) FROM asignaciones_horarias a
+      WHERE (a.docente_id = docentes.id OR a.co_docente_id = docentes.id)
+        AND a.rbd = docentes.rbd
+        AND (a.periodo = ? OR (a.periodo IS NULL AND ? = 2027))
+    ) DESC, apellidos ASC, nombres ASC
+  `, [rbd, periodo, periodo, periodo, periodo]);
   if (!res.length) return [];
-  return res[0].values.map(row => {
-    const horasContrato = Number(row[8]);
-    const calJuridica = row[6] as any;
-    let subvGenTitular = Number(row[9] || 0);
-    let subvGenContrata = Number(row[10] || 0);
-    let sepTitular = Number(row[11] || 0);
-    let sepContrata = Number(row[12] || 0);
-    let pieTitular = Number(row[13] || 0);
-    let pieContrata = Number(row[14] || 0);
-
-    // Si todas las fuentes están en 0 (registro previo), inferir por defecto según calidad jurídica
-    const sumaFuentes = subvGenTitular + subvGenContrata + sepTitular + sepContrata + pieTitular + pieContrata;
-    if (sumaFuentes === 0 && horasContrato > 0) {
-      if (calJuridica === 'TITULAR') {
-        subvGenTitular = horasContrato;
-      } else {
-        subvGenContrata = horasContrato;
-      }
-    }
-
-    let funcionesNoAula: any[] = [];
-    if (row[33]) {
-      try {
-        funcionesNoAula = JSON.parse(String(row[33]));
-      } catch (_) {}
-    }
-
-    return {
-      id: String(row[0]),
-      rbd: String(row[1]),
-      run: String(row[2]),
-      nombres: String(row[3]),
-      apellidos: String(row[4]),
-      titulo: row[5] ? String(row[5]) : undefined,
-      calidadJuridica: calJuridica,
-      estamento: row[7] as any,
-      horasContrato,
-      horasSubvencionGeneralTitular: subvGenTitular,
-      horasSubvencionGeneralContrata: subvGenContrata,
-      horasSepTitular: sepTitular,
-      horasSepContrata: sepContrata,
-      horasPieTitular: pieTitular,
-      horasPieContrata: pieContrata,
-      horasDirectivas: Number(row[15] || 0),
-      horasInspectorGeneral: Number(row[16] || 0),
-      horasTecnicoPedagogicas: Number(row[17] || 0),
-      horasCoordinacion: Number(row[18] || 0),
-      tipoCoordinacion: row[19] ? String(row[19]) : undefined,
-      horasAula: Number(row[20] || 0),
-      horasIngles: Number(row[21] || 0),
-      funcionPrincipal: row[22] ? String(row[22]) : undefined,
-      funcionSecundaria: row[23] ? String(row[23]) : undefined,
-      asignaturaPrincipal: row[24] ? String(row[24]) : undefined,
-      aplicaArticulo69: Boolean(row[25]),
-      periodo: row[26] ? Number(row[26]) : 2027,
-      horasCoordinacionPie: Number(row[27] || 0),
-      horasConvivenciaEscolar: Number(row[28] || 0),
-      horasExtraescolar: Number(row[29] || 0),
-      cargoInstitucional: row[30] ? String(row[30]) : undefined,
-      horasTallerSep: Number(row[31] || 0),
-      horasTrabajoColaborativo: Number(row[32] || 0),
-      funcionesNoAula: funcionesNoAula.length > 0 ? funcionesNoAula : undefined,
-      horasVigentesAnterior: row[34] !== undefined && row[34] !== null ? Number(row[34]) : horasContrato,
-      propuestaGdp: row[35] ? String(row[35]) : 'Continuidad',
-      remuneracionMensualApp: Number(row[36] || 0),
-      remuneracionMensual: Number(row[36] || 0),
-      fechaInicioContrato: row[37] ? String(row[37]) : '01-03-2026',
-      fechaTerminoContrato: row[38] ? String(row[38]) : (calJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
-      accionPmeSep: row[39] ? String(row[39]) : undefined,
-      accionPme: row[39] ? String(row[39]) : undefined,
-      horasProRetencion: Number(row[40] || 0),
-      descripcionFuncionGdp: row[41] ? String(row[41]) : undefined,
-      estadoSancionGdp: (row[42] as any) || 'Pendiente',
-      horasAprobadasGdp: Number(row[43] || 0),
-      situacionFinalGdp: row[44] ? String(row[44]) : 'Vigente',
-      observacionesDirector: row[45] ? String(row[45]) : undefined,
-      observacionesPal: row[45] ? String(row[45]) : undefined,
-      observacionesSlep: row[46] ? String(row[46]) : undefined,
-      requiereAutorizacionDocente: Boolean(row[47]),
-      esVtf: Boolean(row[48]),
-      funcionVtf: row[49] ? (String(row[49]) as Docente['funcionVtf']) : undefined,
-      grupoJiscId: row[50] ? String(row[50]) : undefined,
-      horaIngresoTurno: row[51] ? String(row[51]) : undefined,
-      horaSalidaTurno: row[52] ? String(row[52]) : undefined,
-      reemplazoDeRun: row[53] ? String(row[53]) : undefined
-    };
-  });
+  const docentes = incluirDuplicados
+    ? res[0].values.map(mapRowToDocente)
+    : deduplicarDocentesRows(res[0].values);
+  docentes.sort((a, b) =>
+    `${a.apellidos} ${a.nombres}`.localeCompare(`${b.apellidos} ${b.nombres}`, 'es')
+  );
+  return docentes;
 }
 
 export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): Promise<Docente[]> {
   const db = await getDb();
   const res = db.exec(`
-    SELECT id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
-           horas_subvencion_general_titular, horas_subvencion_general_contrata,
-           horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
-           horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
-           horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-           periodo, horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
-           horas_taller_sep, horas_trabajo_colaborativo, funciones_no_aula_json,
-           horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
-           accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
-      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
+    SELECT ${DOCENTE_SELECT_COLS}
     FROM docentes
     WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
-    ORDER BY rbd ASC, apellidos ASC, nombres ASC
-  `, [periodo, periodo]);
+    ORDER BY (
+      SELECT COUNT(*) FROM asignaciones_horarias a
+      WHERE (a.docente_id = docentes.id OR a.co_docente_id = docentes.id)
+        AND a.rbd = docentes.rbd
+        AND (a.periodo = ? OR (a.periodo IS NULL AND ? = 2027))
+    ) DESC, rbd ASC, apellidos ASC, nombres ASC
+  `, [periodo, periodo, periodo, periodo]);
   if (!res.length) return [];
-
-  const seenRbdRun = new Set<string>();
-  const docentes: Docente[] = [];
-
-  for (const row of res[0].values) {
-    const horasContrato = Number(row[8]);
-    const calJuridica = row[6] as any;
-    let subvGenTitular = Number(row[9] || 0);
-    let subvGenContrata = Number(row[10] || 0);
-    let sepTitular = Number(row[11] || 0);
-    let sepContrata = Number(row[12] || 0);
-    let pieTitular = Number(row[13] || 0);
-    let pieContrata = Number(row[14] || 0);
-
-    const sumaFuentes = subvGenTitular + subvGenContrata + sepTitular + sepContrata + pieTitular + pieContrata;
-    if (sumaFuentes === 0 && horasContrato > 0) {
-      if (calJuridica === 'TITULAR') {
-        subvGenTitular = horasContrato;
-      } else {
-        subvGenContrata = horasContrato;
-      }
-    }
-
-    let funcionesNoAula: any[] = [];
-    if (row[33]) {
-      try {
-        funcionesNoAula = JSON.parse(String(row[33]));
-      } catch (_) {}
-    }
-
-    const rbdStr = String(row[1]);
-    const runStr = String(row[2]);
-    const cleanRun = runStr.replace(/[.\s-]/g, '').toUpperCase();
-    const key = `${rbdStr}_${cleanRun || row[0]}`;
-
-    if (seenRbdRun.has(key)) {
-      continue;
-    }
-    seenRbdRun.add(key);
-
-    docentes.push({
-      id: String(row[0]),
-      rbd: rbdStr,
-      run: runStr,
-      nombres: String(row[3]),
-      apellidos: String(row[4]),
-      titulo: row[5] ? String(row[5]) : undefined,
-      calidadJuridica: calJuridica,
-      estamento: row[7] as any,
-      horasContrato,
-      horasSubvencionGeneralTitular: subvGenTitular,
-      horasSubvencionGeneralContrata: subvGenContrata,
-      horasSepTitular: sepTitular,
-      horasSepContrata: sepContrata,
-      horasPieTitular: pieTitular,
-      horasPieContrata: pieContrata,
-      horasDirectivas: Number(row[15] || 0),
-      horasInspectorGeneral: Number(row[16] || 0),
-      horasTecnicoPedagogicas: Number(row[17] || 0),
-      horasCoordinacion: Number(row[18] || 0),
-      tipoCoordinacion: row[19] ? String(row[19]) : undefined,
-      horasAula: Number(row[20] || 0),
-      horasIngles: Number(row[21] || 0),
-      funcionPrincipal: row[22] ? String(row[22]) : undefined,
-      funcionSecundaria: row[23] ? String(row[23]) : undefined,
-      asignaturaPrincipal: row[24] ? String(row[24]) : undefined,
-      aplicaArticulo69: Boolean(row[25]),
-      periodo: row[26] ? Number(row[26]) : 2027,
-      horasCoordinacionPie: Number(row[27] || 0),
-      horasConvivenciaEscolar: Number(row[28] || 0),
-      horasExtraescolar: Number(row[29] || 0),
-      cargoInstitucional: row[30] ? String(row[30]) : undefined,
-      horasTallerSep: Number(row[31] || 0),
-      horasTrabajoColaborativo: Number(row[32] || 0),
-      funcionesNoAula: funcionesNoAula.length > 0 ? funcionesNoAula : undefined,
-      horasVigentesAnterior: row[34] !== undefined && row[34] !== null ? Number(row[34]) : horasContrato,
-      propuestaGdp: row[35] ? String(row[35]) : 'Continuidad',
-      remuneracionMensualApp: Number(row[36] || 0),
-      remuneracionMensual: Number(row[36] || 0),
-      fechaInicioContrato: row[37] ? String(row[37]) : '01-03-2026',
-      fechaTerminoContrato: row[38] ? String(row[38]) : (calJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
-      accionPmeSep: row[39] ? String(row[39]) : undefined,
-      accionPme: row[39] ? String(row[39]) : undefined,
-      horasProRetencion: Number(row[40] || 0),
-      descripcionFuncionGdp: row[41] ? String(row[41]) : undefined,
-      estadoSancionGdp: (row[42] as any) || 'Pendiente',
-      horasAprobadasGdp: Number(row[43] || 0),
-      situacionFinalGdp: row[44] ? String(row[44]) : 'Vigente',
-      observacionesDirector: row[45] ? String(row[45]) : undefined,
-      observacionesPal: row[45] ? String(row[45]) : undefined,
-      observacionesSlep: row[46] ? String(row[46]) : undefined,
-      requiereAutorizacionDocente: Boolean(row[47]),
-      esVtf: Boolean(row[48]),
-      funcionVtf: row[49] ? (String(row[49]) as Docente['funcionVtf']) : undefined,
-      grupoJiscId: row[50] ? String(row[50]) : undefined,
-      horaIngresoTurno: row[51] ? String(row[51]) : undefined,
-      horaSalidaTurno: row[52] ? String(row[52]) : undefined,
-      reemplazoDeRun: row[53] ? String(row[53]) : undefined
-    });
-  }
-
+  const docentes = deduplicarDocentesRows(res[0].values);
+  docentes.sort((a, b) => {
+    const rbdCmp = a.rbd.localeCompare(b.rbd);
+    if (rbdCmp !== 0) return rbdCmp;
+    return `${a.apellidos} ${a.nombres}`.localeCompare(`${b.apellidos} ${b.nombres}`, 'es');
+  });
   return docentes;
 }
 
 export async function guardarDocente(d: Docente, skipCloudSync: boolean = false): Promise<void> {
   const db = await getDb();
   const docPeriodo = d.periodo || 2027;
-  const runNorm = normalizarRut(d.run);
+  const runValido = esRunValidoParaDedup(d.run);
+  const runNorm = runValido ? normalizarRut(d.run) : String(d.run || '').trim();
   const cleanRun = limpiarRutParaId(d.run);
   d.run = d.run || runNorm;
-  
+
   // Aislamiento estricto por periodo:
   // 1. Si d.id ya viene definido, respetarlo como ID canónico
   let docId: string = d.id ? String(d.id).trim() : '';
 
-  // 2. Si no viene ID, buscar por RUN (normalizado o limpio) en este (rbd, periodo)
-  if (!docId) {
+  // 2. Si no viene ID, buscar por RUN válido en este (rbd, periodo)
+  if (!docId && runValido) {
     const existingByRun = db.exec(
       `SELECT id FROM docentes 
        WHERE rbd = ? AND periodo = ? 
          AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?)
-       LIMIT 1`, 
+       LIMIT 1`,
       [d.rbd, docPeriodo, runNorm, d.run, cleanRun]
     );
     if (existingByRun.length && existingByRun[0].values.length) {
       docId = String(existingByRun[0].values[0][0]);
-    } else {
-      docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
     }
   }
+  if (!docId) {
+    docId = runValido
+      ? `doc_${d.rbd}_${docPeriodo}_${cleanRun}`
+      : `doc_${d.rbd}_${docPeriodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  }
 
-  // 3. Limpiar cualquier registro duplicado previo del mismo RUN en este RBD y periodo con id diferente
+  // 3. Limpiar cualquier registro duplicado previo del mismo RUN válido en este RBD y periodo con id diferente
   // y re-enlazar asignaciones si apuntaban al id anterior para no perder horas
-  if (docId) {
+  const deletedOldIds: string[] = [];
+  if (docId && runValido) {
     const viejos = db.exec(
       `SELECT id FROM docentes WHERE rbd = ? AND periodo = ? AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?) AND id != ?`,
       [d.rbd, docPeriodo, runNorm, d.run, cleanRun, docId]
@@ -272,26 +208,29 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
         db.run("UPDATE asignaciones_horarias SET docente_id = ? WHERE docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
         db.run("UPDATE asignaciones_horarias SET co_docente_id = ? WHERE co_docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
         db.run("DELETE FROM docentes WHERE id = ?", [oldId]);
+        deletedOldIds.push(oldId);
       }
     }
   }
   d.id = docId;
 
-  let subvGenTitular = Number(d.horasSubvencionGeneralTitular || 0);
-  let subvGenContrata = Number(d.horasSubvencionGeneralContrata || 0);
-  let sepTitular = Number(d.horasSepTitular || 0);
-  let sepContrata = Number(d.horasSepContrata || 0);
-  let pieTitular = Number(d.horasPieTitular || 0);
-  let pieContrata = Number(d.horasPieContrata || 0);
-
-  const sumaFuentes = subvGenTitular + subvGenContrata + sepTitular + sepContrata + pieTitular + pieContrata;
-  if (sumaFuentes === 0 && d.horasContrato > 0) {
-    if (d.calidadJuridica === 'TITULAR') {
-      subvGenTitular = d.horasContrato;
-    } else {
-      subvGenContrata = d.horasContrato;
-    }
-  }
+  const {
+    subvGenTitular,
+    subvGenContrata,
+    sepTitular,
+    sepContrata,
+    pieTitular,
+    pieContrata
+  } = normalizarFuentesFinanciamientoDocente(
+    d.horasContrato,
+    d.calidadJuridica,
+    Number(d.horasSubvencionGeneralTitular || 0),
+    Number(d.horasSubvencionGeneralContrata || 0),
+    Number(d.horasSepTitular || 0),
+    Number(d.horasSepContrata || 0),
+    Number(d.horasPieTitular || 0),
+    Number(d.horasPieContrata || 0)
+  );
 
   const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
 
@@ -393,7 +332,22 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
   ]);
   await persistDb(true);
   if (!skipCloudSync) {
-    SupabaseDotacionService.guardarDocente({ ...d, id: docId, periodo: docPeriodo }).catch(err =>
+    for (const oldId of deletedOldIds) {
+      SupabaseDotacionService.eliminarDocente(oldId).catch(err =>
+        console.warn('[docentesRepo] Aviso purgando duplicado en Supabase:', err)
+      );
+    }
+    SupabaseDotacionService.guardarDocente({
+      ...d,
+      id: docId,
+      periodo: docPeriodo,
+      horasSubvencionGeneralTitular: subvGenTitular,
+      horasSubvencionGeneralContrata: subvGenContrata,
+      horasSepTitular: sepTitular,
+      horasSepContrata: sepContrata,
+      horasPieTitular: pieTitular,
+      horasPieContrata: pieContrata
+    }).catch(err =>
       console.warn('[docentesRepo] Aviso sincronizando con Supabase:', err)
     );
   }
@@ -413,32 +367,37 @@ export async function guardarDocentesBatch(
   if (!docentes.length) return 0;
   const db = await getDb();
   const docentesPersistidos: Docente[] = [];
+  const deletedOldIds: string[] = [];
   db.run("BEGIN TRANSACTION;");
   try {
     for (const d of docentes) {
       const docPeriodo = d.periodo || 2027;
-      const runNorm = normalizarRut(d.run);
+      const runValido = esRunValidoParaDedup(d.run);
+      const runNorm = runValido ? normalizarRut(d.run) : String(d.run || '').trim();
       const cleanRun = limpiarRutParaId(d.run);
       d.run = d.run || runNorm;
 
       let docId: string = d.id ? String(d.id).trim() : '';
 
-      if (!docId) {
+      if (!docId && runValido) {
         const existing = db.exec(
           `SELECT id FROM docentes 
            WHERE rbd = ? AND periodo = ? 
              AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?)
-           LIMIT 1`, 
+           LIMIT 1`,
           [d.rbd, docPeriodo, runNorm, d.run, cleanRun]
         );
         if (existing.length && existing[0].values.length) {
           docId = String(existing[0].values[0][0]);
-        } else {
-          docId = `doc_${d.rbd}_${docPeriodo}_${cleanRun}`;
         }
       }
+      if (!docId) {
+        docId = runValido
+          ? `doc_${d.rbd}_${docPeriodo}_${cleanRun}`
+          : `doc_${d.rbd}_${docPeriodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      }
 
-      if (docId) {
+      if (docId && runValido) {
         const viejos = db.exec(
           `SELECT id FROM docentes WHERE rbd = ? AND periodo = ? AND (run = ? OR run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?) AND id != ?`,
           [d.rbd, docPeriodo, runNorm, d.run, cleanRun, docId]
@@ -449,26 +408,29 @@ export async function guardarDocentesBatch(
             db.run("UPDATE asignaciones_horarias SET docente_id = ? WHERE docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
             db.run("UPDATE asignaciones_horarias SET co_docente_id = ? WHERE co_docente_id = ? AND rbd = ? AND periodo = ?", [docId, oldId, d.rbd, docPeriodo]);
             db.run("DELETE FROM docentes WHERE id = ?", [oldId]);
+            deletedOldIds.push(oldId);
           }
         }
       }
       d.id = docId;
 
-      let subvGenTitular = Number(d.horasSubvencionGeneralTitular || 0);
-      let subvGenContrata = Number(d.horasSubvencionGeneralContrata || 0);
-      let sepTitular = Number(d.horasSepTitular || 0);
-      let sepContrata = Number(d.horasSepContrata || 0);
-      let pieTitular = Number(d.horasPieTitular || 0);
-      let pieContrata = Number(d.horasPieContrata || 0);
-
-      const sumaFuentes = subvGenTitular + subvGenContrata + sepTitular + sepContrata + pieTitular + pieContrata;
-      if (sumaFuentes === 0 && d.horasContrato > 0) {
-        if (d.calidadJuridica === 'TITULAR') {
-          subvGenTitular = d.horasContrato;
-        } else {
-          subvGenContrata = d.horasContrato;
-        }
-      }
+      const {
+        subvGenTitular,
+        subvGenContrata,
+        sepTitular,
+        sepContrata,
+        pieTitular,
+        pieContrata
+      } = normalizarFuentesFinanciamientoDocente(
+        d.horasContrato,
+        d.calidadJuridica,
+        Number(d.horasSubvencionGeneralTitular || 0),
+        Number(d.horasSubvencionGeneralContrata || 0),
+        Number(d.horasSepTitular || 0),
+        Number(d.horasSepContrata || 0),
+        Number(d.horasPieTitular || 0),
+        Number(d.horasPieContrata || 0)
+      );
 
       const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
 
@@ -572,7 +534,13 @@ export async function guardarDocentesBatch(
       docentesPersistidos.push({
         ...d,
         id: docId,
-        periodo: docPeriodo
+        periodo: docPeriodo,
+        horasSubvencionGeneralTitular: subvGenTitular,
+        horasSubvencionGeneralContrata: subvGenContrata,
+        horasSepTitular: sepTitular,
+        horasSepContrata: sepContrata,
+        horasPieTitular: pieTitular,
+        horasPieContrata: pieContrata
       });
     }
     db.run("COMMIT;");
@@ -582,6 +550,11 @@ export async function guardarDocentesBatch(
   }
   await persistDb(true);
   if (!skipCloudSync) {
+    for (const oldId of deletedOldIds) {
+      SupabaseDotacionService.eliminarDocente(oldId).catch(err =>
+        console.warn('[docentesRepo] Aviso purgando duplicado en Supabase:', err)
+      );
+    }
     if (esperarSyncNube) {
       await SupabaseDotacionService.guardarDocentesBatch(docentesPersistidos);
     } else {

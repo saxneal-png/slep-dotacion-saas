@@ -10,6 +10,10 @@ import {
 } from '../types';
 import { UsuarioSistema } from '../types/authTypes';
 import { SLEP_VALLE_DIGUILLIN_SCHOOLS } from '../data/slepSchoolsCatalog';
+import {
+  normalizarFuentesFinanciamientoDocente,
+  normalizarFuentesFinanciamientoAsistente
+} from './auditoriaDocenteService';
 
 /**
  * Normaliza y sanea cadenas de fecha para compatibilidad con tipo DATE de PostgreSQL (YYYY-MM-DD o null)
@@ -248,6 +252,18 @@ export function mapDocenteToDb(docente: Docente, incluirColumnaRequiere: boolean
     funcionesArr.push({ __metaCalidadJuridica: calidadOriginal });
   }
 
+  const horasContratoNorm = Math.max(1, Math.min(44, toIntHoras(docente.horasContrato || 44)));
+  const fuentesNorm = normalizarFuentesFinanciamientoDocente(
+    horasContratoNorm,
+    calidadOriginal,
+    Number(docente.horasSubvencionGeneralTitular || 0),
+    Number(docente.horasSubvencionGeneralContrata || 0),
+    Number(docente.horasSepTitular || 0),
+    Number(docente.horasSepContrata || 0),
+    Number(docente.horasPieTitular || 0),
+    Number(docente.horasPieContrata || 0)
+  );
+
   const base: any = {
     id: docente.id,
     rbd: docente.rbd.trim(),
@@ -258,13 +274,13 @@ export function mapDocenteToDb(docente: Docente, incluirColumnaRequiere: boolean
     titulo: docente.titulo || null,
     calidad_juridica: calidadRemota,
     estamento: docente.estamento || 'DOCENTE_AULA',
-    horas_contrato: Math.max(1, Math.min(44, toIntHoras(docente.horasContrato || 44))),
-    horas_subvencion_general_titular: docente.horasSubvencionGeneralTitular || 0,
-    horas_subvencion_general_contrata: docente.horasSubvencionGeneralContrata || 0,
-    horas_sep_titular: docente.horasSepTitular || 0,
-    horas_sep_contrata: docente.horasSepContrata || 0,
-    horas_pie_titular: docente.horasPieTitular || 0,
-    horas_pie_contrata: docente.horasPieContrata || 0,
+    horas_contrato: horasContratoNorm,
+    horas_subvencion_general_titular: fuentesNorm.subvGenTitular,
+    horas_subvencion_general_contrata: fuentesNorm.subvGenContrata,
+    horas_sep_titular: fuentesNorm.sepTitular,
+    horas_sep_contrata: fuentesNorm.sepContrata,
+    horas_pie_titular: fuentesNorm.pieTitular,
+    horas_pie_contrata: fuentesNorm.pieContrata,
     horas_directivas: toIntHoras(docente.horasDirectivas),
     horas_inspector_general: docente.horasInspectorGeneral || 0,
     horas_tecnico_pedagogica: toIntHoras(docente.horasTecnicoPedagogicas),
@@ -328,6 +344,19 @@ export function mapDocenteFromDb(row: any): Docente {
     ? funcionesNoAula.filter((f: any) => !f || (f.__metaRequiereAutorizacionDocente === undefined && f.__metaCalidadJuridica === undefined))
     : [];
 
+  const horasContratoNum = Number(row.horas_contrato || 0);
+  const calidadResuelta = (metaCalidad ? metaCalidad.__metaCalidadJuridica : row.calidad_juridica);
+  const fuentesNorm = normalizarFuentesFinanciamientoDocente(
+    horasContratoNum,
+    calidadResuelta,
+    Number(row.horas_subvencion_general_titular || 0),
+    Number(row.horas_subvencion_general_contrata || 0),
+    Number(row.horas_sep_titular || 0),
+    Number(row.horas_sep_contrata || 0),
+    Number(row.horas_pie_titular || 0),
+    Number(row.horas_pie_contrata || 0)
+  );
+
   return {
     id: row.id,
     rbd: row.rbd,
@@ -336,15 +365,15 @@ export function mapDocenteFromDb(row: any): Docente {
     nombres: row.nombres,
     apellidos: row.apellidos,
     titulo: row.titulo || undefined,
-    calidadJuridica: (metaCalidad ? metaCalidad.__metaCalidadJuridica : row.calidad_juridica),
+    calidadJuridica: calidadResuelta,
     estamento: row.estamento,
-    horasContrato: Number(row.horas_contrato || 0),
-    horasSubvencionGeneralTitular: Number(row.horas_subvencion_general_titular || 0),
-    horasSubvencionGeneralContrata: Number(row.horas_subvencion_general_contrata || 0),
-    horasSepTitular: Number(row.horas_sep_titular || 0),
-    horasSepContrata: Number(row.horas_sep_contrata || 0),
-    horasPieTitular: Number(row.horas_pie_titular || 0),
-    horasPieContrata: Number(row.horas_pie_contrata || 0),
+    horasContrato: horasContratoNum,
+    horasSubvencionGeneralTitular: fuentesNorm.subvGenTitular,
+    horasSubvencionGeneralContrata: fuentesNorm.subvGenContrata,
+    horasSepTitular: fuentesNorm.sepTitular,
+    horasSepContrata: fuentesNorm.sepContrata,
+    horasPieTitular: fuentesNorm.pieTitular,
+    horasPieContrata: fuentesNorm.pieContrata,
     horasDirectivas: Number(row.horas_directivas || 0),
     horasInspectorGeneral: Number(row.horas_inspector_general || 0),
     horasTecnicoPedagogicas: Number(row.horas_tecnico_pedagogica || 0),
@@ -442,6 +471,17 @@ export function mapAsignacionFromDb(row: any): AsignacionHoraria {
 }
 
 export function mapAsistenteToDb(ast: AsistenteEducacion) {
+  const horasContratoAst = ast.horasContrato ?? 44;
+  const fuentes = normalizarFuentesFinanciamientoAsistente(
+    horasContratoAst,
+    Number(ast.horasSubvencionGeneralIndefinido || 0),
+    Number(ast.horasSubvencionGeneralPlazoFijo || 0),
+    Number(ast.horasSepIndefinido || 0),
+    Number(ast.horasSepPlazoFijo || 0),
+    Number(ast.horasPieIndefinido || 0),
+    Number(ast.horasPiePlazoFijo || 0),
+    Number(ast.horasHonorarios || 0)
+  );
   return {
     id: ast.id,
     rbd: ast.rbd.trim(),
@@ -451,14 +491,14 @@ export function mapAsistenteToDb(ast: AsistenteEducacion) {
     apellidos: ast.apellidos,
     cargo_funcion: ast.cargoFuncion,
     estamento: ast.estamento,
-    horas_contrato: ast.horasContrato || 44,
-    horas_subvencion_general_indefinido: ast.horasSubvencionGeneralIndefinido || 0,
-    horas_subvencion_general_plazo_fijo: ast.horasSubvencionGeneralPlazoFijo || 0,
-    horas_sep_indefinido: ast.horasSepIndefinido || 0,
-    horas_sep_plazo_fijo: ast.horasSepPlazoFijo || 0,
-    horas_pie_indefinido: ast.horasPieIndefinido || 0,
-    horas_pie_plazo_fijo: ast.horasPiePlazoFijo || 0,
-    horas_honorarios: ast.horasHonorarios || 0,
+    horas_contrato: horasContratoAst,
+    horas_subvencion_general_indefinido: fuentes.subvGenIndefinido,
+    horas_subvencion_general_plazo_fijo: fuentes.subvGenPlazoFijo,
+    horas_sep_indefinido: fuentes.sepIndefinido,
+    horas_sep_plazo_fijo: fuentes.sepPlazoFijo,
+    horas_pie_indefinido: fuentes.pieIndefinido,
+    horas_pie_plazo_fijo: fuentes.piePlazoFijo,
+    horas_honorarios: fuentes.honorarios,
     es_dupla_psicosocial: Boolean(ast.esDuplaPsicosocial),
     es_equipo_pie: Boolean(ast.esEquipoPie),
     es_tecnico_parvulo: Boolean(ast.esTecnicoParvulo),
@@ -483,6 +523,17 @@ export function mapAsistenteToDb(ast: AsistenteEducacion) {
 }
 
 export function mapAsistenteFromDb(row: any): AsistenteEducacion {
+  const horasContratoAst = Number(row.horas_contrato || 0);
+  const fuentes = normalizarFuentesFinanciamientoAsistente(
+    horasContratoAst,
+    Number(row.horas_subvencion_general_indefinido || 0),
+    Number(row.horas_subvencion_general_plazo_fijo || 0),
+    Number(row.horas_sep_indefinido || 0),
+    Number(row.horas_sep_plazo_fijo || 0),
+    Number(row.horas_pie_indefinido || 0),
+    Number(row.horas_pie_plazo_fijo || 0),
+    Number(row.horas_honorarios || 0)
+  );
   return {
     id: row.id,
     rbd: row.rbd,
@@ -492,14 +543,14 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
     apellidos: row.apellidos,
     cargoFuncion: row.cargo_funcion,
     estamento: row.estamento,
-    horasContrato: Number(row.horas_contrato || 0),
-    horasSubvencionGeneralIndefinido: Number(row.horas_subvencion_general_indefinido || 0),
-    horasSubvencionGeneralPlazoFijo: Number(row.horas_subvencion_general_plazo_fijo || 0),
-    horasSepIndefinido: Number(row.horas_sep_indefinido || 0),
-    horasSepPlazoFijo: Number(row.horas_sep_plazo_fijo || 0),
-    horasPieIndefinido: Number(row.horas_pie_indefinido || 0),
-    horasPiePlazoFijo: Number(row.horas_pie_plazo_fijo || 0),
-    horasHonorarios: Number(row.horas_honorarios || 0),
+    horasContrato: horasContratoAst,
+    horasSubvencionGeneralIndefinido: fuentes.subvGenIndefinido,
+    horasSubvencionGeneralPlazoFijo: fuentes.subvGenPlazoFijo,
+    horasSepIndefinido: fuentes.sepIndefinido,
+    horasSepPlazoFijo: fuentes.sepPlazoFijo,
+    horasPieIndefinido: fuentes.pieIndefinido,
+    horasPiePlazoFijo: fuentes.piePlazoFijo,
+    horasHonorarios: fuentes.honorarios,
     esDuplaPsicosocial: Boolean(row.es_dupla_psicosocial),
     esEquipoPie: Boolean(row.es_equipo_pie),
     esTecnicoParvulo: Boolean(row.es_tecnico_parvulo),

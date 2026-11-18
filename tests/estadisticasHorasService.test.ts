@@ -4,6 +4,12 @@ import {
   calcularEstadisticasTerritoriales,
   calcularEstadisticasAsistentesColegio
 } from '../src/services/estadisticasHorasService';
+import {
+  esDocenteEducacionEspecialPie,
+  normalizarFuentesFinanciamientoDocente,
+  normalizarFuentesFinanciamientoAsistente,
+  obtenerHorasCronologicasExactasAsig
+} from '../src/services/auditoriaDocenteService';
 import { Establecimiento, CursoSae, Docente, AsignacionHoraria, AsistenteEducacion } from '../src/types';
 
 describe('Servicio de Estadísticas y Auditoría de Dotación de Personal SLEP', () => {
@@ -257,5 +263,174 @@ describe('Servicio de Estadísticas y Auditoría de Dotación de Personal SLEP',
     expect(statsTerr.porComuna['San Ignacio'].colegiosCount).toBe(1);
     expect(statsTerr.porComuna['Yungay']).toBeDefined();
     expect(statsTerr.porComuna['Yungay'].colegiosCount).toBe(1);
+  });
+
+  it('debe deduplicar docentes, asistentes y asignaciones idénticas, cuadrar fuentes con contrato y evitar decimales .3/.7/.8 en PIE', () => {
+    const col: Establecimiento = {
+      id: 'est-campanario',
+      rbd: '3941',
+      nombre: 'Liceo Campanario',
+      comuna: 'Yungay',
+      regimen: 'JEC',
+      porcentajePrioritarios: 85 // 60/40
+    };
+
+    const cursosCol: CursoSae[] = [
+      {
+        id: 'cur-1',
+        rbd: '3941',
+        nivel: '1° Básico',
+        letra: 'A',
+        regimen: 'JEC',
+        cupoSae: 35,
+        matriculaProyectada: 28,
+        regimenProporcion: '60_40'
+      }
+    ];
+
+    // Docente duplicado con ID distinto + Educadora Diferencial importada como DOCENTE_AULA con fuente PIE+Subv duplicada (88h en contrato de 44h)
+    const docentesConDups: Docente[] = [
+      {
+        id: 'doc-3941-11111111',
+        rbd: '3941',
+        run: '16.218.098-3',
+        nombres: 'Andrea',
+        apellidos: 'Polanco',
+        calidadJuridica: 'TITULAR',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 20,
+        horasSubvencionGeneralTitular: 20
+      },
+      {
+        id: 'doc-1793895363164', // Mismo RUN en el mismo RBD, sin asignaciones
+        rbd: '3941',
+        run: '16.218.098-3',
+        nombres: 'Andrea',
+        apellidos: 'Polanco',
+        calidadJuridica: 'TITULAR',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 20,
+        horasSubvencionGeneralTitular: 20
+      },
+      {
+        id: 'doc-dif-mal-estamento',
+        rbd: '3941',
+        run: '15.222.333-4',
+        nombres: 'Fabiola',
+        apellidos: 'Gajardo',
+        calidadJuridica: 'CONTRATA',
+        estamento: 'DOCENTE_AULA',
+        asignaturaPrincipal: 'Educadora Diferencial',
+        horasContrato: 44,
+        horasSubvencionGeneralContrata: 44, // Fuente inflada heredada (44 + 44 = 88h)
+        horasPieContrata: 44
+      }
+    ];
+
+    expect(esDocenteEducacionEspecialPie(docentesConDups[2])).toBe(true);
+
+    // Asignaciones con duplicado exacto + Aula de Recursos transversal (antes convertida a 2.3h decimales)
+    const asigsConDups: AsignacionHoraria[] = [
+      {
+        id: 'asig-1',
+        rbd: '3941',
+        cursoId: 'cur-1',
+        docenteId: 'doc-3941-11111111',
+        asignatura: 'Lenguaje y Comunicación',
+        horasPedagogicasAula: 8
+      },
+      {
+        id: 'asig-1-dup',
+        rbd: '3941',
+        cursoId: 'cur-1',
+        docenteId: 'doc-3941-11111111',
+        asignatura: 'Lenguaje y Comunicación',
+        horasPedagogicasAula: 8
+      },
+      {
+        id: 'asig-recurso-3ha',
+        rbd: '3941',
+        cursoId: 'TRANSVERSAL',
+        docenteId: 'doc-dif-mal-estamento',
+        asignatura: 'Apoyo PIE - Aula de Recursos',
+        tipoApoyo: 'Aula de Recursos / Refuerzo Especializado',
+        horasPedagogicasAula: 3,
+        horasCronologicasPie: 2.3, // Antiguo redondeo artificial
+        esCoDocencia: true,
+        esProporcionDocente: false
+      }
+    ];
+
+    // Confirmar conversión exacta en cuartos de hora cuando aplica (3 HA * 0.75 = 2.25, jamás 2.3)
+    expect(obtenerHorasCronologicasExactasAsig(asigsConDups[2])).toBe(2.25);
+
+    const asistentesConDups: AsistenteEducacion[] = [
+      {
+        id: 'asist_3941_12318364_17',
+        rbd: '3941',
+        periodo: 2027,
+        run: '12318364-K',
+        nombres: 'Marcela',
+        apellidos: 'Silva',
+        cargoFuncion: 'Auxiliar',
+        estamento: 'AUXILIAR',
+        horasContrato: 44,
+        horasSubvencionGeneralIndefinido: 44,
+        horasPieIndefinido: 44, // Fuente inflada 44 + 44 = 88h
+        activo: true
+      },
+      {
+        id: 'asist_3941_12318364_35',
+        rbd: '3941',
+        periodo: 2027,
+        run: '12318364-K',
+        nombres: 'Marcela',
+        apellidos: 'Silva',
+        cargoFuncion: 'Auxiliar',
+        estamento: 'AUXILIAR',
+        horasContrato: 44,
+        horasSubvencionGeneralIndefinido: 44,
+        activo: true
+      }
+    ];
+
+    const stats = calcularEstadisticasColegio(col, cursosCol, docentesConDups, asigsConDups, asistentesConDups);
+
+    // 1. Deduplicación exacta: 2 docentes (no 3), 1 asistente (no 2)
+    expect(stats.totalDocentes).toBe(2);
+    expect(stats.horasContratoTotal).toBe(64); // 20 + 44
+    expect(stats.asistentes.totalAsistentes).toBe(1);
+    expect(stats.asistentes.totalHorasContrato).toBe(44);
+
+    // 2. Cuadre exacto de fuentes: Subv Gen + SEP + PIE === horasContratoTotal (tanto docentes como asistentes)
+    expect(stats.financiamiento.total).toBe(64);
+    expect(stats.financiamiento.pieTotal).toBe(44);
+    expect(stats.financiamiento.subvencionGeneralTotal).toBe(20);
+    expect(stats.asistentes.subvencionGeneralHoras + stats.asistentes.sepHoras + stats.asistentes.pieHoras).toBe(44);
+
+    // 3. Asignación duplicada eliminada (8 HA, no 16 HA) + Educadora Diferencial evalúa 3 HA Aula de Recursos por tabla 60/40 (4h contrato req -> 40h libres exactos, jamás .3/.7/.8)
+    const fabiola = stats.desgloseDocentes.find(d => d.id === 'doc-dif-mal-estamento')!;
+    const andrea = stats.desgloseDocentes.find(d => d.id === 'doc-3941-11111111')!;
+    expect(andrea.horasAulaPedagogicas).toBe(8);
+    expect(fabiola.horasAulaPedagogicas).toBe(3);
+    expect(fabiola.horasComprometidasDocente).toBe(4);
+    expect(fabiola.horasLibresDocente).toBe(40);
+    expect(Number.isInteger(stats.horasVacantesLibresTotal)).toBe(true);
+
+    // 4. Estadísticas territoriales coherentes con porColegio deduplicado
+    const statsTerr = calcularEstadisticasTerritoriales([col], cursosCol, docentesConDups, asigsConDups, asistentesConDups);
+    expect(statsTerr.totalDocentesPlanta).toBe(2);
+    expect(statsTerr.asistentesTerritorio.totalAsistentes).toBe(1);
+    expect(statsTerr.totalHorasPersonalSlep).toBe(108); // 64 + 44
+    expect(statsTerr.totalHorasSubvencionGeneralPersonal + statsTerr.totalHorasSepPersonal + statsTerr.totalHorasPiePersonal).toBe(108);
+
+    // 5. Verificar helpers de normalización de fuentes directamente
+    const fDoc = normalizarFuentesFinanciamientoDocente(44, 'TITULAR', 44, 0, 0, 0, 3, 0);
+    expect(fDoc.pieTitular).toBe(3);
+    expect(fDoc.subvGenTitular).toBe(41);
+
+    const fAst = normalizarFuentesFinanciamientoAsistente(44, 44, 0, 0, 0, 44, 0, 0);
+    expect(fAst.pieIndefinido).toBe(44);
+    expect(fAst.subvGenIndefinido).toBe(0);
   });
 });

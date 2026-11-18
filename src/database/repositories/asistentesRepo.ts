@@ -2,9 +2,21 @@ import { Database } from 'sql.js';
 import { AsistenteEducacion, EstamentoAsistente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
+import { claveDedupFuncionario, esRunValidoParaDedup, limpiarRutParaId } from '../../utils/rutUtils';
+import { normalizarFuentesFinanciamientoAsistente } from '../../services/auditoriaDocenteService';
 
 export function mapRowToAsistente(row: any[]): AsistenteEducacion {
   const horasContrato = Number(row[8]) || 0;
+  const fuentes = normalizarFuentesFinanciamientoAsistente(
+    horasContrato,
+    Number(row[9]) || 0,
+    Number(row[10]) || 0,
+    Number(row[11]) || 0,
+    Number(row[12]) || 0,
+    Number(row[13]) || 0,
+    Number(row[14]) || 0,
+    Number(row[35]) || 0
+  );
   return {
     id: String(row[0]),
     rbd: String(row[1]),
@@ -15,12 +27,12 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
     cargoFuncion: String(row[6] || ''),
     estamento: row[7] as EstamentoAsistente,
     horasContrato,
-    horasSubvencionGeneralIndefinido: Number(row[9]) || 0,
-    horasSubvencionGeneralPlazoFijo: Number(row[10]) || 0,
-    horasSepIndefinido: Number(row[11]) || 0,
-    horasSepPlazoFijo: Number(row[12]) || 0,
-    horasPieIndefinido: Number(row[13]) || 0,
-    horasPiePlazoFijo: Number(row[14]) || 0,
+    horasSubvencionGeneralIndefinido: fuentes.subvGenIndefinido,
+    horasSubvencionGeneralPlazoFijo: fuentes.subvGenPlazoFijo,
+    horasSepIndefinido: fuentes.sepIndefinido,
+    horasSepPlazoFijo: fuentes.sepPlazoFijo,
+    horasPieIndefinido: fuentes.pieIndefinido,
+    horasPiePlazoFijo: fuentes.piePlazoFijo,
     esDuplaPsicosocial: Boolean(row[15]),
     esEquipoPie: Boolean(row[16]),
     esTecnicoParvulo: Boolean(row[17]),
@@ -41,7 +53,7 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
     situacionFinalGdp: row[32] ? String(row[32]) : 'Vigente',
     observacionesDirector: row[33] ? String(row[33]) : undefined,
     observacionesSlep: row[34] ? String(row[34]) : undefined,
-    horasHonorarios: Number(row[35]) || 0,
+    horasHonorarios: fuentes.honorarios,
     esVtf: Boolean(row[36]),
     funcionVtf: row[37] ? (String(row[37]) as AsistenteEducacion['funcionVtf']) : undefined,
     grupoJiscId: row[38] ? String(row[38]) : undefined,
@@ -67,14 +79,23 @@ export function listarAsistentesSync(db: Database, rbd: string, periodo: number 
     SELECT ${ASISTENTE_SELECT_COLS}
     FROM asistentes_educacion
     WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))
-    ORDER BY apellidos ASC, nombres ASC
+    ORDER BY (horas_subvencion_general_indefinido + horas_subvencion_general_plazo_fijo + horas_sep_indefinido + horas_sep_plazo_fijo + horas_pie_indefinido + horas_pie_plazo_fijo) DESC, apellidos ASC, nombres ASC
   `);
   stmt.bind([rbd, periodo, periodo]);
   const results: AsistenteEducacion[] = [];
+  const seenRbdRun = new Set<string>();
   while (stmt.step()) {
-    results.push(mapRowToAsistente(stmt.get()));
+    const ast = mapRowToAsistente(stmt.get());
+    const key = claveDedupFuncionario(ast.rbd, ast.run, ast.id);
+    if (!seenRbdRun.has(key)) {
+      seenRbdRun.add(key);
+      results.push(ast);
+    }
   }
   stmt.free();
+  results.sort((a, b) =>
+    `${a.apellidos} ${a.nombres}`.localeCompare(`${b.apellidos} ${b.nombres}`, 'es')
+  );
   return results;
 }
 
@@ -99,7 +120,7 @@ export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: nu
     SELECT ${ASISTENTE_SELECT_COLS}
     FROM asistentes_educacion
     WHERE (periodo = ? OR (periodo IS NULL AND ? = 2027))
-    ORDER BY rbd ASC, apellidos ASC, nombres ASC
+    ORDER BY (horas_subvencion_general_indefinido + horas_subvencion_general_plazo_fijo + horas_sep_indefinido + horas_sep_plazo_fijo + horas_pie_indefinido + horas_pie_plazo_fijo) DESC, rbd ASC, apellidos ASC, nombres ASC
   `);
   stmt.bind([periodo, periodo]);
   const results: AsistenteEducacion[] = [];
@@ -107,14 +128,18 @@ export function listarTodosLosAsistentesTerritorioSync(db: Database, periodo: nu
 
   while (stmt.step()) {
     const ast = mapRowToAsistente(stmt.get());
-    const cleanRun = (ast.run || '').replace(/[.\s-]/g, '').toUpperCase();
-    const key = `${ast.rbd}_${cleanRun || ast.id}`;
+    const key = claveDedupFuncionario(ast.rbd, ast.run, ast.id);
     if (!seenRbdRun.has(key)) {
       seenRbdRun.add(key);
       results.push(ast);
     }
   }
   stmt.free();
+  results.sort((a, b) => {
+    const rbdCmp = a.rbd.localeCompare(b.rbd);
+    if (rbdCmp !== 0) return rbdCmp;
+    return `${a.apellidos} ${a.nombres}`.localeCompare(`${b.apellidos} ${b.nombres}`, 'es');
+  });
   return results;
 }
 
@@ -158,6 +183,29 @@ export async function obtenerAsistentePorId(
 }
 
 export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void {
+  const fuentes = normalizarFuentesFinanciamientoAsistente(
+    a.horasContrato || 0,
+    a.horasSubvencionGeneralIndefinido || 0,
+    a.horasSubvencionGeneralPlazoFijo || 0,
+    a.horasSepIndefinido || 0,
+    a.horasSepPlazoFijo || 0,
+    a.horasPieIndefinido || 0,
+    a.horasPiePlazoFijo || 0,
+    a.horasHonorarios || 0
+  );
+  const astPeriodo = a.periodo || 2027;
+  if (esRunValidoParaDedup(a.run)) {
+    const cleanRun = limpiarRutParaId(a.run);
+    const delDup = db.prepare(`
+      DELETE FROM asistentes_educacion 
+      WHERE rbd = ? AND periodo = ? 
+        AND (run = ? OR REPLACE(REPLACE(run, '.', ''), '-', '') = ?)
+        AND id != ?
+    `);
+    delDup.run([a.rbd, astPeriodo, a.run.trim(), cleanRun, a.id]);
+    delDup.free();
+  }
+
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO asistentes_educacion (
       id, rbd, periodo, run, nombres, apellidos, cargo_funcion, estamento,
@@ -174,19 +222,19 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
   stmt.run([
     a.id,
     a.rbd,
-    a.periodo || 2027,
+    astPeriodo,
     a.run.trim(),
     a.nombres.trim(),
     a.apellidos.trim(),
     a.cargoFuncion.trim(),
     a.estamento,
     a.horasContrato || 0,
-    a.horasSubvencionGeneralIndefinido || 0,
-    a.horasSubvencionGeneralPlazoFijo || 0,
-    a.horasSepIndefinido || 0,
-    a.horasSepPlazoFijo || 0,
-    a.horasPieIndefinido || 0,
-    a.horasPiePlazoFijo || 0,
+    fuentes.subvGenIndefinido,
+    fuentes.subvGenPlazoFijo,
+    fuentes.sepIndefinido,
+    fuentes.sepPlazoFijo,
+    fuentes.pieIndefinido,
+    fuentes.piePlazoFijo,
     a.esDuplaPsicosocial ? 1 : 0,
     a.esEquipoPie ? 1 : 0,
     a.esTecnicoParvulo ? 1 : 0,
@@ -207,7 +255,7 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
     a.situacionFinalGdp || 'Vigente',
     a.observacionesDirector || null,
     a.observacionesSlep || null,
-    a.horasHonorarios || 0,
+    fuentes.honorarios,
     a.esVtf ? 1 : 0,
     a.funcionVtf || null,
     a.grupoJiscId || null,
@@ -288,10 +336,22 @@ export function guardarAsistentesBatchSync(
 
     for (const a of asistentes) {
       const astPeriodo = a.periodo || periodo;
-      const cleanRun = (a.run || '').replace(/[.\s-]/g, '');
+      const cleanRun = limpiarRutParaId(a.run);
+      const fuentes = normalizarFuentesFinanciamientoAsistente(
+        a.horasContrato || 0,
+        a.horasSubvencionGeneralIndefinido || 0,
+        a.horasSubvencionGeneralPlazoFijo || 0,
+        a.horasSepIndefinido || 0,
+        a.horasSepPlazoFijo || 0,
+        a.horasPieIndefinido || 0,
+        a.horasPiePlazoFijo || 0,
+        a.horasHonorarios || 0
+      );
 
-      // Eliminar registros duplicados previos del mismo RUN en el mismo colegio con otro id
-      delDupStmt.run([a.rbd, astPeriodo, a.run.trim(), cleanRun, a.id]);
+      // Eliminar registros duplicados previos solo si es un RUN chileno válido en el mismo colegio con otro id
+      if (esRunValidoParaDedup(a.run)) {
+        delDupStmt.run([a.rbd, astPeriodo, a.run.trim(), cleanRun, a.id]);
+      }
 
       stmt.run([
         a.id,
@@ -303,12 +363,12 @@ export function guardarAsistentesBatchSync(
         a.cargoFuncion.trim(),
         a.estamento,
         a.horasContrato || 0,
-        a.horasSubvencionGeneralIndefinido || 0,
-        a.horasSubvencionGeneralPlazoFijo || 0,
-        a.horasSepIndefinido || 0,
-        a.horasSepPlazoFijo || 0,
-        a.horasPieIndefinido || 0,
-        a.horasPiePlazoFijo || 0,
+        fuentes.subvGenIndefinido,
+        fuentes.subvGenPlazoFijo,
+        fuentes.sepIndefinido,
+        fuentes.sepPlazoFijo,
+        fuentes.pieIndefinido,
+        fuentes.piePlazoFijo,
         a.esDuplaPsicosocial ? 1 : 0,
         a.esEquipoPie ? 1 : 0,
         a.esTecnicoParvulo ? 1 : 0,
@@ -329,7 +389,7 @@ export function guardarAsistentesBatchSync(
         a.situacionFinalGdp || 'Vigente',
         a.observacionesDirector || null,
         a.observacionesSlep || null,
-        a.horasHonorarios || 0,
+        fuentes.honorarios,
         a.esVtf ? 1 : 0,
         a.funcionVtf || null,
         a.grupoJiscId || null,

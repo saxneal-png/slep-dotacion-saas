@@ -61,6 +61,251 @@ export function esDocenteEducadoraParvulos(doc: Docente): boolean {
 }
 
 /**
+ * Identifica a una Educadora Diferencial / Docente PIE (incluso si fue importada históricamente como DOCENTE_AULA).
+ */
+export function esDocenteEducacionEspecialPie(doc: Docente): boolean {
+  const subTotalDoc =
+    (Number(doc.horasSubvencionGeneralTitular) || 0) +
+    (Number(doc.horasSubvencionGeneralContrata) || 0);
+  const sepTotalDoc =
+    (Number(doc.horasSepTitular) || 0) + (Number(doc.horasSepContrata) || 0);
+  const pieTotalDoc =
+    (Number(doc.horasPieTitular) || 0) + (Number(doc.horasPieContrata) || 0);
+
+  if (doc.estamento === 'DOCENTE_DIFERENCIAL') return true;
+  if (pieTotalDoc > 0 && subTotalDoc === 0 && sepTotalDoc === 0) return true;
+
+  const rxDif = /diferencial|educaci[oó]n\s+especial|\bdocente\s+(?:de\s+)?pie\b/i;
+  if (
+    (doc.titulo && rxDif.test(doc.titulo)) ||
+    (doc.funcionPrincipal && rxDif.test(doc.funcionPrincipal)) ||
+    (doc.asignaturaPrincipal && rxDif.test(doc.asignaturaPrincipal))
+  ) {
+    return true;
+  }
+
+  if (
+    doc.cargoInstitucional &&
+    /diferencial|educaci[oó]n\s+especial|\bpie\b/i.test(doc.cargoInstitucional) &&
+    pieTotalDoc > subTotalDoc
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Normaliza las horas por fuente de financiamiento de un docente para garantizar
+ * que la suma Subv. General + SEP + PIE equivalga exactamente a horasContrato
+ * (prioriza PIE y SEP sin duplicar horas contra Subvención General).
+ */
+export function normalizarFuentesFinanciamientoDocente(
+  horasContrato: number,
+  calidadJuridica: string | undefined,
+  sTit: number,
+  sCon: number,
+  spTit: number,
+  spCon: number,
+  pTit: number,
+  pCon: number
+): {
+  subvGenTitular: number;
+  subvGenContrata: number;
+  sepTitular: number;
+  sepContrata: number;
+  pieTitular: number;
+  pieContrata: number;
+} {
+  const contrato = Math.max(0, Number(horasContrato) || 0);
+  if (contrato <= 0) {
+    return {
+      subvGenTitular: 0,
+      subvGenContrata: 0,
+      sepTitular: 0,
+      sepContrata: 0,
+      pieTitular: 0,
+      pieContrata: 0
+    };
+  }
+
+  let outSTit = Math.max(0, Number(sTit) || 0);
+  let outSCon = Math.max(0, Number(sCon) || 0);
+  let outSpTit = Math.max(0, Number(spTit) || 0);
+  let outSpCon = Math.max(0, Number(spCon) || 0);
+  let outPTit = Math.max(0, Number(pTit) || 0);
+  let outPCon = Math.max(0, Number(pCon) || 0);
+
+  const calJur = String(calidadJuridica || '').toUpperCase();
+  const isTitular = calJur === 'TITULAR';
+  const suma = outSTit + outSCon + outSpTit + outSpCon + outPTit + outPCon;
+
+  if (suma === 0) {
+    return {
+      subvGenTitular: isTitular ? contrato : 0,
+      subvGenContrata: isTitular ? 0 : contrato,
+      sepTitular: 0,
+      sepContrata: 0,
+      pieTitular: 0,
+      pieContrata: 0
+    };
+  }
+
+  if (Math.abs(suma - contrato) < 0.001) {
+    return {
+      subvGenTitular: outSTit,
+      subvGenContrata: outSCon,
+      sepTitular: outSpTit,
+      sepContrata: outSpCon,
+      pieTitular: outPTit,
+      pieContrata: outPCon
+    };
+  }
+
+  if (isTitular) {
+    outPTit = Math.min(contrato, outPTit);
+    outPCon = Math.min(Math.max(0, contrato - outPTit), outPCon);
+  } else {
+    outPCon = Math.min(contrato, outPCon);
+    outPTit = Math.min(Math.max(0, contrato - outPCon), outPTit);
+  }
+
+  const remAfterPie = Math.max(0, contrato - (outPTit + outPCon));
+  if (isTitular) {
+    outSpTit = Math.min(remAfterPie, outSpTit);
+    outSpCon = Math.min(Math.max(0, remAfterPie - outSpTit), outSpCon);
+  } else {
+    outSpCon = Math.min(remAfterPie, outSpCon);
+    outSpTit = Math.min(Math.max(0, remAfterPie - outSpCon), outSpTit);
+  }
+
+  const remSg = Math.max(0, Number((remAfterPie - (outSpTit + outSpCon)).toFixed(2)));
+  if (outSTit > 0 && outSCon > 0) {
+    outSTit = Math.min(remSg, outSTit);
+    outSCon = Math.max(0, Number((remSg - outSTit).toFixed(2)));
+  } else if ((isTitular && outSCon === 0) || (outSTit > 0 && outSCon === 0)) {
+    outSTit = remSg;
+    outSCon = 0;
+  } else if (!isTitular || outSCon > outSTit) {
+    outSTit = 0;
+    outSCon = remSg;
+  } else {
+    outSTit = remSg;
+    outSCon = 0;
+  }
+
+  return {
+    subvGenTitular: outSTit,
+    subvGenContrata: outSCon,
+    sepTitular: outSpTit,
+    sepContrata: outSpCon,
+    pieTitular: outPTit,
+    pieContrata: outPCon
+  };
+}
+
+/**
+ * Normaliza las horas por fuente de financiamiento de un Asistente de la Educación
+ * para asegurar Subv. General + SEP + PIE + Honorarios === horasContrato.
+ */
+export function normalizarFuentesFinanciamientoAsistente(
+  horasContrato: number,
+  sInd: number,
+  sPla: number,
+  spInd: number,
+  spPla: number,
+  pInd: number,
+  pPla: number,
+  hon: number = 0
+): {
+  subvGenIndefinido: number;
+  subvGenPlazoFijo: number;
+  sepIndefinido: number;
+  sepPlazoFijo: number;
+  pieIndefinido: number;
+  piePlazoFijo: number;
+  honorarios: number;
+} {
+  const contrato = Math.max(0, Number(horasContrato) || 0);
+  if (contrato <= 0) {
+    return {
+      subvGenIndefinido: 0,
+      subvGenPlazoFijo: 0,
+      sepIndefinido: 0,
+      sepPlazoFijo: 0,
+      pieIndefinido: 0,
+      piePlazoFijo: 0,
+      honorarios: 0
+    };
+  }
+
+  let outSInd = Math.max(0, Number(sInd) || 0);
+  let outSPla = Math.max(0, Number(sPla) || 0);
+  let outSpInd = Math.max(0, Number(spInd) || 0);
+  let outSpPla = Math.max(0, Number(spPla) || 0);
+  let outPInd = Math.max(0, Number(pInd) || 0);
+  let outPPla = Math.max(0, Number(pPla) || 0);
+  let outHon = Math.max(0, Number(hon) || 0);
+
+  const suma = outSInd + outSPla + outSpInd + outSpPla + outPInd + outPPla + outHon;
+  if (suma === 0) {
+    return {
+      subvGenIndefinido: 0,
+      subvGenPlazoFijo: contrato,
+      sepIndefinido: 0,
+      sepPlazoFijo: 0,
+      pieIndefinido: 0,
+      piePlazoFijo: 0,
+      honorarios: 0
+    };
+  }
+
+  if (Math.abs(suma - contrato) < 0.001) {
+    return {
+      subvGenIndefinido: outSInd,
+      subvGenPlazoFijo: outSPla,
+      sepIndefinido: outSpInd,
+      sepPlazoFijo: outSpPla,
+      pieIndefinido: outPInd,
+      piePlazoFijo: outPPla,
+      honorarios: outHon
+    };
+  }
+
+  outPInd = Math.min(contrato, outPInd);
+  outPPla = Math.min(Math.max(0, contrato - outPInd), outPPla);
+  const remAfterPie = Math.max(0, contrato - (outPInd + outPPla));
+
+  outSpInd = Math.min(remAfterPie, outSpInd);
+  outSpPla = Math.min(Math.max(0, remAfterPie - outSpInd), outSpPla);
+  const remAfterSep = Math.max(0, remAfterPie - (outSpInd + outSpPla));
+
+  outHon = Math.min(remAfterSep, outHon);
+  const remSg = Math.max(0, Number((remAfterSep - outHon).toFixed(2)));
+
+  if (outSInd > 0 && outSPla > 0) {
+    outSInd = Math.min(remSg, outSInd);
+    outSPla = Math.max(0, Number((remSg - outSInd).toFixed(2)));
+  } else if (outSInd > 0 && outSPla === 0) {
+    outSInd = remSg;
+    outSPla = 0;
+  } else {
+    outSInd = 0;
+    outSPla = remSg;
+  }
+
+  return {
+    subvGenIndefinido: outSInd,
+    subvGenPlazoFijo: outSPla,
+    sepIndefinido: outSpInd,
+    sepPlazoFijo: outSpPla,
+    pieIndefinido: outPInd,
+    piePlazoFijo: outPPla,
+    honorarios: outHon
+  };
+}
+
+/**
  * Obtiene las horas pedagógicas de aula lectiva (45 min) de una asignación frente a curso,
  * corrigiendo conversiones duplicadas en asignaciones PIE.
  */
@@ -81,6 +326,28 @@ export function getHorasAulaLectivaAsig(a: AsignacionHoraria): number {
   return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
 }
 
+/**
+ * Convierte bloques de 45m a horas cronológicas exactas en cuartos de hora (sin redondeos .3/.8),
+ * preservando valores explícitos enteros (ej: 11h PIE pactadas en contrato).
+ */
+export function obtenerHorasCronologicasExactasAsig(a: AsignacionHoraria): number {
+  const ha = Number(a.horasPedagogicasAula) || 0;
+  const cron = Number(a.horasCronologicasPie) || 0;
+  if (cron > 0) {
+    const exactFromHa = (ha * 45) / 60;
+    const esRedondeoArtificialDecimal =
+      !Number.isInteger(cron) &&
+      ha > 0 &&
+      Math.abs(exactFromHa - cron) < 0.06 &&
+      Math.abs(cron * 60 - Math.round(cron * 4) * 15) > 0.01;
+    if (esRedondeoArtificialDecimal) {
+      return exactFromHa;
+    }
+    return cron;
+  }
+  return (ha * 45) / 60;
+}
+
 export function esAsignacionTrabajoColaborativo(a: AsignacionHoraria): boolean {
   return Boolean(
     a.esTrabajoColaborativo ||
@@ -92,7 +359,7 @@ export function esAsignacionTrabajoColaborativo(a: AsignacionHoraria): boolean {
 
 /**
  * Para Docente de Aula Regular (!isPieDoc), el Trabajo Colaborativo PIE Art. 86 es 1:1 en horas cronológicas.
- * Para Educadora Diferencial (isPieDoc), sus horas en curso se consideran pedagógicas (45 min) o su equivalente 0.75 cronológico.
+ * Para Educadora Diferencial (isPieDoc), sus horas en curso se consideran pedagógicas (45 min) o su equivalente exacto en minutos.
  */
 export function obtenerHorasCronologicasTrabajoColab(a: AsignacionHoraria, isPieDoc: boolean): number {
   const ha = Number(a.horasPedagogicasAula) || 0;
@@ -101,12 +368,12 @@ export function obtenerHorasCronologicasTrabajoColab(a: AsignacionHoraria, isPie
     if (Number(a.horasColaborativas) > 0) {
       return Number(a.horasColaborativas);
     }
-    if (ha > 0 && (cron === undefined || cron === null || Math.abs(ha * 0.75 - cron) < 0.15)) {
+    if (ha > 0 && (cron === undefined || cron === null || cron <= 0 || Math.abs(ha * 0.75 - cron) < 0.15)) {
       return ha;
     }
     return cron ?? ha;
   }
-  return cron ?? Math.round(ha * 0.75 * 10) / 10;
+  return obtenerHorasCronologicasExactasAsig(a);
 }
 
 export interface DesgloseHorasFueraAulaDocente {
@@ -140,10 +407,7 @@ export function calcularHorasFueraAulaDocente(
   const hTallerSepDoc = Number(doc.horasTallerSep) || 0;
   const hColabDoc = Number(doc.horasTrabajoColaborativo) || 0;
 
-  const isDiferencialDoc = doc.estamento === 'DOCENTE_DIFERENCIAL';
-  const isPieDoc =
-    isDiferencialDoc ||
-    (doc.horasPieTitular || 0) + (doc.horasPieContrata || 0) > 0;
+  const isPieDoc = esDocenteEducacionEspecialPie(doc);
   const isSepDoc =
     (doc.horasSepTitular || 0) + (doc.horasSepContrata || 0) > 0 ||
     hTallerSepDoc > 0;
@@ -229,18 +493,18 @@ export function calcularHorasFueraAulaDocente(
   );
 
   const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
-    const tieneCurso = Boolean(
-      a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO'
-    );
     const esTrabajoNoAula = Boolean(
       a.esTrabajoColaborativo ||
         a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
         (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
         (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
     );
-    if (!tieneCurso || esTrabajoNoAula) return false;
+    if (esTrabajoNoAula || (Number(a.horasPedagogicasAula) || 0) <= 0) return false;
     if (isPieDoc) return true;
-    return Boolean(a.esProporcionDocente);
+    const tieneCurso = Boolean(
+      a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO'
+    );
+    return tieneCurso && Boolean(a.esProporcionDocente);
   });
 
   const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(
@@ -252,19 +516,19 @@ export function calcularHorasFueraAulaDocente(
     0
   );
   const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasExactasAsig(a),
     0
   );
   const cronCoDocenciaSep = asigsCoDocenciaSep.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasExactasAsig(a),
     0
   );
   const cronTallerSep = asigsTallerSep.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasExactasAsig(a),
     0
   );
-  const cronApoyoPie = Math.round((cronTrabajoColab + cronCoDocenciaPie) * 10) / 10;
-  const cronSepTotal = Math.round((cronCoDocenciaSep + cronTallerSep) * 10) / 10;
+  const cronApoyoPie = Number((cronTrabajoColab + cronCoDocenciaPie).toFixed(2));
+  const cronSepTotal = Number((cronCoDocenciaSep + cronTallerSep).toFixed(2));
 
   const regimenTabla: '60_40' | '65_35' = porcentajePrioritariosColegio >= 80 ? '60_40' : '65_35';
 
@@ -288,7 +552,7 @@ export function calcularHorasFueraAulaDocente(
 
   const colabPieEfectivo = Math.max(cronTrabajoColab, hColabDoc);
   const hNoAulaPieEfectivas = Math.max(colabPieEfectivo + hCoordPie, sumFuncionesNoAulaPie);
-  const pieCronologicas = isDiferencialDoc
+  const pieCronologicas = isPieDoc
     ? asigsCoDocenciaPieProporcional.length > 0
       ? cronCoDocenciaPie + hNoAulaPieEfectivas
       : cronApoyoPie > 0
@@ -317,13 +581,13 @@ export function calcularHorasFueraAulaDocente(
   ]);
   const asigsResidualesExentas = asigsDocente.filter(a => !asigsClasificadas.has(a));
   const cronResiduales = asigsResidualesExentas.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasExactasAsig(a),
     0
   );
 
   const horasInstitucionalesSubvGen = sumFuncionesNoAulaSubvGen;
-  const horasExentasTotales = Math.round((horasInstitucionalesSubvGen + sepExentasCronologicas + pieCronologicas + cronResiduales) * 10) / 10;
-  const horasParaDocenciaAula = Math.max(0, Math.round((hContrato - horasExentasTotales) * 10) / 10);
+  const horasExentasTotales = Number((horasInstitucionalesSubvGen + sepExentasCronologicas + pieCronologicas + cronResiduales).toFixed(2));
+  const horasParaDocenciaAula = Math.max(0, Number((hContrato - horasExentasTotales).toFixed(2)));
 
   return {
     horasInstitucionalesSubvGen,
@@ -348,29 +612,37 @@ export function auditarCargaDocenteIntegral(
   const hContrato = Number(doc.horasContrato) || 0;
   const calJur = (doc.calidadJuridica || '').toUpperCase();
 
-  let sTit = Number(doc.horasSubvencionGeneralTitular) || 0;
-  let sCon = Number(doc.horasSubvencionGeneralContrata) || 0;
-  const spTit = Number(doc.horasSepTitular) || 0;
-  const spCon = Number(doc.horasSepContrata) || 0;
-  const pTit = Number(doc.horasPieTitular) || 0;
-  const pCon = Number(doc.horasPieContrata) || 0;
-
-  const sumaFuentesDoc = sTit + sCon + spTit + spCon + pTit + pCon;
-  if (sumaFuentesDoc === 0 && hContrato > 0) {
-    if (calJur === 'TITULAR') {
-      sTit = hContrato;
-    } else {
-      sCon = hContrato;
-    }
-  }
+  const {
+    subvGenTitular: sTit,
+    subvGenContrata: sCon,
+    sepTitular: spTit,
+    sepContrata: spCon,
+    pieTitular: pTit,
+    pieContrata: pCon
+  } = normalizarFuentesFinanciamientoDocente(
+    hContrato,
+    calJur,
+    Number(doc.horasSubvencionGeneralTitular) || 0,
+    Number(doc.horasSubvencionGeneralContrata) || 0,
+    Number(doc.horasSepTitular) || 0,
+    Number(doc.horasSepContrata) || 0,
+    Number(doc.horasPieTitular) || 0,
+    Number(doc.horasPieContrata) || 0
+  );
 
   const subTotalDoc = sTit + sCon;
   const contratoSepDoc = spTit + spCon;
   const contratoPieDoc = pTit + pCon;
 
-  const isPieDoc =
-    doc.estamento === 'DOCENTE_DIFERENCIAL' ||
-    (contratoPieDoc > 0 && subTotalDoc === 0 && contratoSepDoc === 0);
+  const isPieDoc = esDocenteEducacionEspecialPie({
+    ...doc,
+    horasSubvencionGeneralTitular: sTit,
+    horasSubvencionGeneralContrata: sCon,
+    horasSepTitular: spTit,
+    horasSepContrata: spCon,
+    horasPieTitular: pTit,
+    horasPieContrata: pCon
+  });
   const isSepDoc = contratoSepDoc > 0 && contratoPieDoc === 0 && subTotalDoc === 0;
 
   const isSepFin = (f: any) => {
@@ -405,8 +677,7 @@ export function auditarCargaDocenteIntegral(
       (a.tipoApoyo &&
         /pie|decreto 170|aula de recurso|apoyo especializado|cl[ií]nico/i.test(a.tipoApoyo)) ||
         (a.asignatura && /pie|decreto 170|aula de recurso/i.test(a.asignatura)) ||
-        doc.estamento === 'DOCENTE_DIFERENCIAL' ||
-        (contratoPieDoc > 0 && subTotalDoc === 0 && contratoSepDoc === 0)
+        isPieDoc
     );
 
   // Clasificar asignaciones
@@ -422,7 +693,9 @@ export function auditarCargaDocenteIntegral(
           a.tipoApoyo === 'CO_DOCENCIA' ||
           a.tipoApoyo === 'AGRUPACION_FLEXIBLE' ||
           a.tipoApoyo === 'REFUERZO_AULA' ||
-          a.tipoApoyo === 'APOYO_DOCENTE')
+          a.tipoApoyo === 'APOYO_DOCENTE' ||
+          (a.tipoApoyo && /co-?docencia|aula\s+de\s+recurso|apoyo\s+pie|decreto\s*170/i.test(a.tipoApoyo)) ||
+          (a.asignatura && /apoyo\s+pie\s*-?\s*co-?docencia|aula\s+de\s+recursos/i.test(a.asignatura)))
     ),
     ...coDocenteAsigs
   ];
@@ -494,20 +767,20 @@ export function auditarCargaDocenteIntegral(
           .reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : hDir + hInsp + hTec + hCoord + hConv + hExtra;
 
-  // Asignaciones de co-docencia PIE frente a curso con proporción docente Ley 20.903
+  // Asignaciones de co-docencia PIE frente a alumnos (incluye Aula de Recursos) con proporción docente Ley 20.903
   const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
-    const tieneCurso = Boolean(
-      a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO'
-    );
     const esTrabajoNoAula = Boolean(
       a.esTrabajoColaborativo ||
         a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
         (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
         (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
     );
-    if (!tieneCurso || esTrabajoNoAula) return false;
-    if (isPieDoc) return true; // Docente diferencial frente a curso = hora lectiva aula (45 min)
-    return Boolean(a.esProporcionDocente);
+    if (esTrabajoNoAula || (Number(a.horasPedagogicasAula) || 0) <= 0) return false;
+    if (isPieDoc) return true; // Docente diferencial / PIE frente a alumnos (curso o Aula de Recursos) = hora lectiva aula (45 min)
+    const tieneCurso = Boolean(
+      a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO'
+    );
+    return tieneCurso && Boolean(a.esProporcionDocente);
   });
 
   const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(
@@ -519,19 +792,19 @@ export function auditarCargaDocenteIntegral(
     0
   );
   const cronCoDocenciaPie = asigsCoDocenciaPieCronologicas.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasExactasAsig(a),
     0
   );
   const cronCoDocenciaSep = asigsCoDocenciaSep.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasExactasAsig(a),
     0
   );
   const cronTallerSep = asigsTallerSep.reduce(
-    (s, a) => s + (a.horasCronologicasPie ?? Math.round((a.horasPedagogicasAula || 0) * 0.75 * 10) / 10),
+    (s, a) => s + obtenerHorasCronologicasExactasAsig(a),
     0
   );
-  const cronApoyoPie = Math.round((cronTrabajoColab + cronCoDocenciaPie) * 10) / 10;
-  const cronSepTotal = Math.round((cronCoDocenciaSep + cronTallerSep) * 10) / 10;
+  const cronApoyoPie = Number((cronTrabajoColab + cronCoDocenciaPie).toFixed(2));
+  const cronSepTotal = Number((cronCoDocenciaSep + cronTallerSep).toFixed(2));
 
   const regimenTabla: '60_40' | '65_35' = porcentajePrioritariosColegio >= 80 ? '60_40' : '65_35';
 
@@ -641,7 +914,7 @@ export function auditarCargaDocenteIntegral(
       const match60 = buscarContratoMinimoParvulariaPorMinutos(Math.round(ha60_40 * 60), '60_40');
       const reqAulaParv = match65.horasContrato + match60.horasContrato;
       const contratoCalcParv = reqAulaParv + pieCronologicas + sepExentasCronologicas + horasInstitucionalesSubvGen;
-      const saldoParv = Math.round((hContrato - contratoCalcParv) * 10) / 10;
+      const saldoParv = Number((hContrato - contratoCalcParv).toFixed(2));
       const minHnlParv = match65.minutosHnl + match60.minutosHnl;
       const minRecParv = match65.minutosRecreo + match60.minutosRecreo;
       const minAulaTablaParv = match65.minutosAula + match60.minutosAula;
@@ -680,8 +953,8 @@ export function auditarCargaDocenteIntegral(
   const maxHAPermitidas = isEducadoraParvuloDoc
     ? Math.round((auditDoc.minutosLimitePermitido / 60) * 100) / 100
     : Math.floor(auditDoc.minutosLimitePermitido / 45);
-  const horasNoLectivasCronologicas = Math.round((auditDoc.minutosHnlTotal / 60) * 10) / 10;
-  const horasRecreoCronologicas = Math.round((auditDoc.minutosRecreoTotal / 60) * 10) / 10;
+  const horasNoLectivasCronologicas = Number((auditDoc.minutosHnlTotal / 60).toFixed(4));
+  const horasRecreoCronologicas = Number((auditDoc.minutosRecreoTotal / 60).toFixed(4));
 
   // Requerimientos por fuente de financiamiento
   const asigsCurricularesTitulares = docenteAsigs.filter(
