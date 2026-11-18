@@ -129,10 +129,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   onSincronizarMalla,
   onGestionarPlanes
 }) => {
-  const { can } = usePermisos();
+  const { can, rol, esSuperUsuario } = usePermisos();
   const puedeCrearCursos = can('curriculum.crear');
   const puedeEliminarCursos = can('curriculum.eliminar');
   const puedePersonalizarPlan = can('curriculum.editar') || can('planes_estudio.editar');
+  const puedeEditarProporcion = esSuperUsuario || rol === 'asesor_uatp';
 
   // Modal de Curso Avanzado
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
@@ -1260,7 +1261,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                     </div>
                   )}
 
-                  {/* Parámetros Informativos del Curso (solo lectura desde Cursos y Planes MINEDUC) */}
+                  {/* Parámetros del Curso (Jornada y Proporción Docente) */}
                   <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-slate-100">
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
                       <span className="font-bold text-slate-600">Jornada:</span>
@@ -1269,12 +1270,42 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
-                      <span className="font-bold text-slate-600">Régimen Docente:</span>
-                      <span className={`font-extrabold ${cursoActivo.regimenProporcion === '60_40' ? 'text-purple-700' : 'text-blue-700'}`}>
-                        {cursoActivo.regimenProporcion === '60_40' ? '60/40 (Vulnerabilidad)' : '65/35 (Estándar)'}
-                      </span>
-                    </div>
+                    {puedeEditarProporcion ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-600">Régimen Docente:</span>
+                        <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                          <button
+                            type="button"
+                            onClick={() => onGuardarCurso({ ...cursoActivo, regimenProporcion: '65_35' })}
+                            className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                              (cursoActivo.regimenProporcion || '65_35') === '65_35'
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            65/35 (Estándar)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onGuardarCurso({ ...cursoActivo, regimenProporcion: '60_40' })}
+                            className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                              cursoActivo.regimenProporcion === '60_40'
+                                ? 'bg-purple-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            60/40 (Vulnerabilidad)
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                        <span className="font-bold text-slate-600">Régimen Docente:</span>
+                        <span className={`font-extrabold ${cursoActivo.regimenProporcion === '60_40' ? 'text-purple-700' : 'text-blue-700'}`}>
+                          {cursoActivo.regimenProporcion === '60_40' ? '60/40 (Vulnerabilidad)' : '65/35 (Estándar)'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
