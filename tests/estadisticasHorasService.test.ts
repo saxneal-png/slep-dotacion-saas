@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   calcularEstadisticasColegio,
   calcularEstadisticasTerritoriales,
-  calcularEstadisticasAsistentesColegio
+  calcularEstadisticasAsistentesColegio,
+  clasificarCategoriaEstablecimiento,
+  esPropuestaNoContinuidad,
+  filtrarCarteraPorTipoYContinuidad,
+  CATEGORIAS_ESCOLARES_SIN_VTF,
 } from '../src/services/estadisticasHorasService';
 import {
   esDocenteEducacionEspecialPie,
@@ -432,5 +436,130 @@ describe('Servicio de Estadísticas y Auditoría de Dotación de Personal SLEP',
     const fAst = normalizarFuentesFinanciamientoAsistente(44, 44, 0, 0, 0, 44, 0, 0);
     expect(fAst.pieIndefinido).toBe(44);
     expect(fAst.subvGenIndefinido).toBe(0);
+  });
+
+  it('Filtra cartera territorial por tipo de establecimiento (aislando Jardines VTF) y excluye No Continuidad', () => {
+    const estEscuela: Establecimiento = {
+      rbd: '4001',
+      nombre: 'Escuela Básica Norte',
+      comuna: 'Chillán',
+      tipo: 'ESCUELA',
+      perfilEstablecimiento: 'ESCUELA_BASICA',
+      matricula: 300,
+    };
+    const estLiceo: Establecimiento = {
+      rbd: '4002',
+      nombre: 'Liceo Bicentenario',
+      comuna: 'Bulnes',
+      tipo: 'LICEO',
+      perfilEstablecimiento: 'LICEO_HC',
+      matricula: 600,
+    };
+    const estJardin: Establecimiento = {
+      rbd: '9001',
+      nombre: 'Jardín Infantil Los Peumos VTF',
+      comuna: 'Chillán',
+      tipo: 'JARDIN',
+      perfilEstablecimiento: 'JARDIN_SALA_CUNA',
+      matricula: 80,
+    };
+
+    expect(clasificarCategoriaEstablecimiento(estEscuela)).toBe('ESCUELA');
+    expect(clasificarCategoriaEstablecimiento(estLiceo)).toBe('LICEO');
+    expect(clasificarCategoriaEstablecimiento(estJardin)).toBe('JARDIN_VTF');
+
+    expect(esPropuestaNoContinuidad('No Continuidad')).toBe(true);
+    expect(esPropuestaNoContinuidad('no continuidad')).toBe(true);
+    expect(esPropuestaNoContinuidad('Continuidad')).toBe(false);
+    expect(esPropuestaNoContinuidad(undefined)).toBe(false);
+
+    const docentesMix: Docente[] = [
+      {
+        id: 'd-esc-cont',
+        rbd: '4001',
+        nombre: 'Docente Escuela Cont',
+        rut: '11.111.111-1',
+        horasContrato: 44,
+        propuestaGdp: 'Continuidad',
+      },
+      {
+        id: 'd-esc-nocont',
+        rbd: '4001',
+        nombre: 'Docente Escuela NoCont',
+        rut: '22.222.222-2',
+        horasContrato: 30,
+        propuestaGdp: 'No Continuidad',
+      },
+      {
+        id: 'd-lic-cont',
+        rbd: '4002',
+        nombre: 'Docente Liceo Cont',
+        rut: '33.333.333-3',
+        horasContrato: 44,
+        propuestaGdp: 'Continuidad',
+      },
+      {
+        id: 'd-jar-cont',
+        rbd: '9001',
+        nombre: 'Educadora Párvulos VTF',
+        rut: '44.444.444-4',
+        horasContrato: 44,
+        propuestaGdp: 'Continuidad',
+      },
+    ];
+
+    const asistentesMix: AsistenteEducacion[] = [
+      {
+        id: 'a-esc-nocont',
+        rbd: '4001',
+        nombre: 'Asistente NoCont',
+        rut: '55.555.555-5',
+        estamento: 'PARADOCENTE',
+        calidadJuridica: 'PLAZO_FIJO',
+        horasContrato: 44,
+        propuestaGdp: 'No Continuidad',
+      },
+      {
+        id: 'a-jar-cont',
+        rbd: '9001',
+        nombre: 'Técnico VTF',
+        rut: '66.666.666-6',
+        estamento: 'TECNICO',
+        calidadJuridica: 'INDEFINIDO',
+        horasContrato: 44,
+        propuestaGdp: 'Continuidad',
+      },
+    ];
+
+    const asigsMix: AsignacionHoraria[] = [
+      { id: 'as-1', rbd: '4001', docenteId: 'd-esc-cont', cursoId: 'c1', asignatura: 'Matemática', horasAula: 24, esSep: false, esPie: false },
+      { id: 'as-2', rbd: '4001', docenteId: 'd-esc-nocont', cursoId: 'c1', asignatura: 'Lenguaje', horasAula: 20, esSep: false, esPie: false },
+      { id: 'as-3', rbd: '9001', docenteId: 'd-jar-cont', cursoId: 'c2', asignatura: 'Párvulos', horasAula: 30, esSep: false, esPie: false },
+    ];
+
+    const cursosMix: CursoSae[] = [
+      { id: 'c1', rbd: '4001', nivel: '1° Básico', letra: 'A', anio: 2026, matriculaActual: 30, cuposSae: 35, tipoJornada: 'JEC' },
+      { id: 'c2', rbd: '9001', nivel: 'NT1', letra: 'A', anio: 2026, matriculaActual: 20, cuposSae: 24, tipoJornada: 'SIN_JEC' },
+    ];
+
+    const resSinVtfNiNoCont = filtrarCarteraPorTipoYContinuidad({
+      colegios: [estEscuela, estLiceo, estJardin],
+      cursos: cursosMix,
+      docentes: docentesMix,
+      asignaciones: asigsMix,
+      asistentes: asistentesMix,
+      categoriasSeleccionadas: CATEGORIAS_ESCOLARES_SIN_VTF,
+      incluirNoContinuidad: false,
+    });
+
+    expect(resSinVtfNiNoCont.colegiosFiltrados.map(c => c.rbd)).toEqual(['4001', '4002']);
+    expect(resSinVtfNiNoCont.conteosPorCategoria).toEqual({ ESCUELA: 1, LICEO: 1, JARDIN_VTF: 1 });
+    expect(resSinVtfNiNoCont.docentesFiltrados.map(d => d.id)).toEqual(['d-esc-cont', 'd-lic-cont']);
+    expect(resSinVtfNiNoCont.asignacionesFiltradas.map(a => a.id)).toEqual(['as-1']);
+    expect(resSinVtfNiNoCont.asistentesFiltrados).toHaveLength(0);
+    expect(resSinVtfNiNoCont.conteoNoContinuidadDocentes).toBe(1);
+    expect(resSinVtfNiNoCont.horasNoContinuidadDocentes).toBe(30);
+    expect(resSinVtfNiNoCont.conteoNoContinuidadAsistentes).toBe(1);
+    expect(resSinVtfNiNoCont.horasNoContinuidadAsistentes).toBe(44);
   });
 });

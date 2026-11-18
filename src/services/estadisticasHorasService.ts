@@ -21,6 +21,159 @@ import {
   normalizarFuentesFinanciamientoAsistente
 } from './auditoriaDocenteService';
 
+export type CategoriaTipoEstablecimiento = 'ESCUELA' | 'LICEO' | 'JARDIN_VTF';
+
+export const TODAS_LAS_CATEGORIAS_ESTABLECIMIENTO: CategoriaTipoEstablecimiento[] = [
+  'ESCUELA',
+  'LICEO',
+  'JARDIN_VTF'
+];
+
+export const CATEGORIAS_ESCOLARES_SIN_VTF: CategoriaTipoEstablecimiento[] = [
+  'ESCUELA',
+  'LICEO'
+];
+
+/**
+ * Clasifica un establecimiento en una categoría homogénea para filtros territoriales
+ * (Escuelas, Liceos, o Jardines y Salas Cuna VTF).
+ */
+export function clasificarCategoriaEstablecimiento(est: Establecimiento): CategoriaTipoEstablecimiento {
+  const tipo = String(est.tipo || '').toUpperCase();
+  const perfil = String(est.tipoPerfil || '').toUpperCase();
+  const nombre = String(est.nombre || '');
+  if (
+    tipo === 'JARDIN' ||
+    tipo === 'SALA_CUNA' ||
+    perfil === 'JARDIN_SALA_CUNA' ||
+    /jard[ií]n|sala\s*cuna|\bvtf\b/i.test(nombre)
+  ) {
+    return 'JARDIN_VTF';
+  }
+  if (tipo === 'LICEO' || perfil.startsWith('LICEO') || /\bliceo\b/i.test(nombre)) {
+    return 'LICEO';
+  }
+  return 'ESCUELA';
+}
+
+/**
+ * Detecta si un funcionario (docente o asistente) tiene propuesta GDP de "No Continuidad".
+ */
+export function esPropuestaNoContinuidad(propuestaGdp?: string): boolean {
+  if (!propuestaGdp) return false;
+  const norm = propuestaGdp
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return /\bno\s+continuidad\b/.test(norm);
+}
+
+export interface ResultadoFiltroCartera {
+  colegiosFiltrados: Establecimiento[];
+  rbdsPermitidos: Set<string>;
+  cursosFiltrados: CursoSae[];
+  docentesFiltrados: Docente[];
+  asignacionesFiltradas: AsignacionHoraria[];
+  asistentesFiltrados: AsistenteEducacion[];
+  conteosPorCategoria: Record<CategoriaTipoEstablecimiento, number>;
+  conteoNoContinuidadDocentes: number;
+  horasNoContinuidadDocentes: number;
+  conteoNoContinuidadAsistentes: number;
+  horasNoContinuidadAsistentes: number;
+}
+
+/**
+ * Filtra establecimientos, cursos, docentes, asignaciones y asistentes según los tipos
+ * de establecimiento seleccionados y la inclusión/exclusión de funcionarios con "No Continuidad".
+ */
+export function filtrarCarteraPorTipoYContinuidad(params: {
+  colegios: Establecimiento[];
+  cursos: CursoSae[];
+  docentes: Docente[];
+  asignaciones: AsignacionHoraria[];
+  asistentes: AsistenteEducacion[];
+  categoriasSeleccionadas: CategoriaTipoEstablecimiento[];
+  incluirNoContinuidad: boolean;
+}): ResultadoFiltroCartera {
+  const {
+    colegios,
+    cursos,
+    docentes,
+    asignaciones,
+    asistentes,
+    categoriasSeleccionadas,
+    incluirNoContinuidad
+  } = params;
+
+  const conteosPorCategoria: Record<CategoriaTipoEstablecimiento, number> = {
+    ESCUELA: 0,
+    LICEO: 0,
+    JARDIN_VTF: 0
+  };
+  const setCategorias = new Set<CategoriaTipoEstablecimiento>(categoriasSeleccionadas);
+  const colegiosFiltrados: Establecimiento[] = [];
+  const rbdsPermitidos = new Set<string>();
+
+  for (const col of colegios) {
+    const cat = clasificarCategoriaEstablecimiento(col);
+    conteosPorCategoria[cat]++;
+    if (setCategorias.has(cat)) {
+      colegiosFiltrados.push(col);
+      rbdsPermitidos.add(col.rbd);
+    }
+  }
+
+  let conteoNoContinuidadDocentes = 0;
+  let horasNoContinuidadDocentes = 0;
+  const docentesFiltrados: Docente[] = [];
+  const docentesPermitidosIds = new Set<string>();
+
+  for (const d of docentes) {
+    if (!rbdsPermitidos.has(d.rbd)) continue;
+    if (esPropuestaNoContinuidad(d.propuestaGdp)) {
+      conteoNoContinuidadDocentes++;
+      horasNoContinuidadDocentes += Number(d.horasContrato) || 0;
+      if (!incluirNoContinuidad) continue;
+    }
+    docentesFiltrados.push(d);
+    docentesPermitidosIds.add(d.id);
+  }
+
+  let conteoNoContinuidadAsistentes = 0;
+  let horasNoContinuidadAsistentes = 0;
+  const asistentesFiltrados: AsistenteEducacion[] = [];
+
+  for (const a of asistentes) {
+    if (!rbdsPermitidos.has(a.rbd)) continue;
+    if (esPropuestaNoContinuidad(a.propuestaGdp)) {
+      conteoNoContinuidadAsistentes++;
+      horasNoContinuidadAsistentes += Number(a.horasContrato) || 0;
+      if (!incluirNoContinuidad) continue;
+    }
+    asistentesFiltrados.push(a);
+  }
+
+  const cursosFiltrados = cursos.filter(c => rbdsPermitidos.has(c.rbd));
+  const asignacionesFiltradas = asignaciones.filter(
+    a => rbdsPermitidos.has(a.rbd) && (incluirNoContinuidad || docentesPermitidosIds.has(a.docenteId))
+  );
+
+  return {
+    colegiosFiltrados,
+    rbdsPermitidos,
+    cursosFiltrados,
+    docentesFiltrados,
+    asignacionesFiltradas,
+    asistentesFiltrados,
+    conteosPorCategoria,
+    conteoNoContinuidadDocentes,
+    horasNoContinuidadDocentes,
+    conteoNoContinuidadAsistentes,
+    horasNoContinuidadAsistentes
+  };
+}
+
 export interface EstadisticasAsistentesColegio {
   totalAsistentes: number;
   totalHorasContrato: number;

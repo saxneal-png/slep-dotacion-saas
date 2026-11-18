@@ -36,9 +36,13 @@ import {
 import {
   calcularEstadisticasTerritoriales,
   calcularEstadisticasColegio,
+  filtrarCarteraPorTipoYContinuidad,
+  CategoriaTipoEstablecimiento,
+  TODAS_LAS_CATEGORIAS_ESTABLECIMIENTO,
   EstadisticasTerritorialesHoras,
   EstadisticasColegioHoras
 } from '../services/estadisticasHorasService';
+import { FiltroCarteraTerritorialBar } from '../components/FiltroCarteraTerritorialBar';
 
 interface EstadisticasViewProps {
   colegios: Establecimiento[];
@@ -116,17 +120,41 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   const [comunaFiltro, setComunaFiltro] = useState<string>('TODAS');
   const [busquedaColegioTabla, setBusquedaColegioTabla] = useState<string>('');
   const [recargandoDatos, setRecargandoDatos] = useState(false);
+  const [categoriasSeleccionadas, setCategoriasSeleccionadas] = useState<CategoriaTipoEstablecimiento[]>(
+    TODAS_LAS_CATEGORIAS_ESTABLECIMIENTO
+  );
+  const [incluirNoContinuidad, setIncluirNoContinuidad] = useState<boolean>(true);
 
-  // Estadísticas Territoriales Calculadas
+  const carteraFiltrada = useMemo(() => {
+    return filtrarCarteraPorTipoYContinuidad({
+      colegios,
+      cursos: todosLosCursos,
+      docentes: todosLosDocentes,
+      asignaciones: todasLasAsignaciones,
+      asistentes: todosLosAsistentes,
+      categoriasSeleccionadas,
+      incluirNoContinuidad,
+    });
+  }, [
+    colegios,
+    todosLosCursos,
+    todosLosDocentes,
+    todasLasAsignaciones,
+    todosLosAsistentes,
+    categoriasSeleccionadas,
+    incluirNoContinuidad,
+  ]);
+
+  // Estadísticas Territoriales Calculadas (según filtro de tipo de establecimiento y No Continuidad)
   const statsTerritoriales = useMemo(() => {
     return calcularEstadisticasTerritoriales(
-      colegios,
-      todosLosCursos,
-      todosLosDocentes,
-      todasLasAsignaciones,
-      todosLosAsistentes
+      carteraFiltrada.colegiosFiltrados,
+      carteraFiltrada.cursosFiltrados,
+      carteraFiltrada.docentesFiltrados,
+      carteraFiltrada.asignacionesFiltradas,
+      carteraFiltrada.asistentesFiltrados
     );
-  }, [colegios, todosLosCursos, todosLosDocentes, todasLasAsignaciones, todosLosAsistentes]);
+  }, [carteraFiltrada]);
 
   // Estadísticas Intra-Escuela del Colegio Activo
   const statsColegioActivo = useMemo(() => {
@@ -295,7 +323,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
           </div>
 
           <div className="text-[11px] text-slate-400 font-mono">
-            {colegios.length} establecimientos • {statsTerritoriales.totalDocentesPlanta} docentes • {statsTerritoriales.asistentesTerritorio.totalAsistentes} asistentes
+            {vistaModo === 'territorial' ? carteraFiltrada.colegiosFiltrados.length : colegios.length} establecimientos • {statsTerritoriales.totalDocentesPlanta} docentes • {statsTerritoriales.asistentesTerritorio.totalAsistentes} asistentes
           </div>
         </div>
       </div>
@@ -305,6 +333,17 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
       {/* ========================================================================= */}
       {vistaModo === 'territorial' && (
         <div className="space-y-6 animate-in fade-in duration-200">
+          <FiltroCarteraTerritorialBar
+            categoriasSeleccionadas={categoriasSeleccionadas}
+            onChangeCategorias={setCategoriasSeleccionadas}
+            incluirNoContinuidad={incluirNoContinuidad}
+            onChangeIncluirNoContinuidad={setIncluirNoContinuidad}
+            conteosPorCategoria={carteraFiltrada.conteosPorCategoria}
+            conteoNoContinuidadDocentes={carteraFiltrada.conteoNoContinuidadDocentes}
+            horasNoContinuidadDocentes={carteraFiltrada.horasNoContinuidadDocentes}
+            conteoNoContinuidadAsistentes={carteraFiltrada.conteoNoContinuidadAsistentes}
+            horasNoContinuidadAsistentes={carteraFiltrada.horasNoContinuidadAsistentes}
+          />
           {/* ENFOQUE 1: CONSOLIDADO PERSONAL SLEP */}
           {enfoqueEstamento === 'consolidado' && (
             <div className="space-y-6">
@@ -768,7 +807,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-slate-600" />
-                  Matriz Territorial de Establecimientos ({colegiosTablaFiltrados.length} de {colegios.length})
+                  Matriz Territorial de Establecimientos ({colegiosTablaFiltrados.length} de {carteraFiltrada.colegiosFiltrados.length})
                 </h3>
                 <p className="text-xs text-slate-500">
                   Desglose oficial de dotación docente, calidad jurídica, asistentes y horas disponibles escuela por escuela.

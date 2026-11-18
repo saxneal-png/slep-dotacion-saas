@@ -47,7 +47,13 @@ import {
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { AsistenteFichaDetalleModal } from '../components/AsistenteFichaDetalleModal';
 import { ConsolidadorBuscadorFuncionarios } from '../components/ConsolidadorBuscadorFuncionarios';
+import { FiltroCarteraTerritorialBar } from '../components/FiltroCarteraTerritorialBar';
 import { GdpParametrosModal } from '../components/GdpParametrosModal';
+import {
+  filtrarCarteraPorTipoYContinuidad,
+  CategoriaTipoEstablecimiento,
+  TODAS_LAS_CATEGORIAS_ESTABLECIMIENTO,
+} from '../services/estadisticasHorasService';
 import { coincideBusquedaFuncionario } from '../utils/searchUtils';
 import { importarPlanillaPalDEP, generarExcelConsolidadoPalDEP } from '../services/depPalExportService';
 import { generarExcelGdpColegio } from '../services/depGdpExportService';
@@ -228,18 +234,43 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
 
   const [filtroTipoDocente, setFiltroTipoDocente] = useState<'todos' | 'multicontrato' | 'exceso'>('todos');
 
+  const [categoriasSeleccionadas, setCategoriasSeleccionadas] = useState<CategoriaTipoEstablecimiento[]>(
+    TODAS_LAS_CATEGORIAS_ESTABLECIMIENTO
+  );
+  const [incluirNoContinuidad, setIncluirNoContinuidad] = useState<boolean>(true);
+
+  const carteraFiltrada = useMemo(() => {
+    return filtrarCarteraPorTipoYContinuidad({
+      colegios: establecimientos,
+      cursos,
+      docentes,
+      asignaciones,
+      asistentes,
+      categoriasSeleccionadas,
+      incluirNoContinuidad,
+    });
+  }, [establecimientos, cursos, docentes, asignaciones, asistentes, categoriasSeleccionadas, incluirNoContinuidad]);
+
+  const diagnosticosFiltrados = useMemo(() => {
+    return diagnosticos.filter((d) => carteraFiltrada.rbdsPermitidos.has(d.establecimiento.rbd));
+  }, [diagnosticos, carteraFiltrada.rbdsPermitidos]);
+
   const consolidacion = useMemo(() => {
-    return consolidarCarteraTerritorial(establecimientos, docentes, diagnosticos);
-  }, [establecimientos, docentes, diagnosticos]);
+    return consolidarCarteraTerritorial(
+      carteraFiltrada.colegiosFiltrados,
+      carteraFiltrada.docentesFiltrados,
+      diagnosticosFiltrados
+    );
+  }, [carteraFiltrada.colegiosFiltrados, carteraFiltrada.docentesFiltrados, diagnosticosFiltrados]);
   const { inconsistencias, docentesCompartidos, resumenPorComuna, vacantesCruzadas } = consolidacion;
 
-  const totalColegios = establecimientos.length;
+  const totalColegios = carteraFiltrada.colegiosFiltrados.length;
   const { totalMatriculaTerritorial, totalCuposSaeTerritorial, totalHorasDemandadas, totalHorasDisponibles } = useMemo(() => {
     let mat = 0;
     let cupos = 0;
     let dem = 0;
     let disp = 0;
-    for (const d of diagnosticos) {
+    for (const d of diagnosticosFiltrados) {
       mat += d.balanzaGeneral.totalMatriculaProyectada;
       cupos += d.balanzaGeneral.totalCuposSae;
       dem += d.balanzaGeneral.horasAulaDemandadasCurriculo;
@@ -251,13 +282,23 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
       totalHorasDemandadas: dem,
       totalHorasDisponibles: disp
     };
-  }, [diagnosticos]);
+  }, [diagnosticosFiltrados]);
   const balanceGlobal = totalHorasDisponibles - totalHorasDemandadas;
 
   // Nómina Territorial Consolidada de Docentes por RUN
   const docentesConsolidados = useMemo(() => {
-    return obtenerDocentesConsolidadosTerritorio(establecimientos, docentes, asignaciones, cursos);
-  }, [establecimientos, docentes, asignaciones, cursos]);
+    return obtenerDocentesConsolidadosTerritorio(
+      carteraFiltrada.colegiosFiltrados,
+      carteraFiltrada.docentesFiltrados,
+      carteraFiltrada.asignacionesFiltradas,
+      carteraFiltrada.cursosFiltrados
+    );
+  }, [
+    carteraFiltrada.colegiosFiltrados,
+    carteraFiltrada.docentesFiltrados,
+    carteraFiltrada.asignacionesFiltradas,
+    carteraFiltrada.cursosFiltrados,
+  ]);
 
   const {
     docentesMultiEscuelaCount,
@@ -340,8 +381,11 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
 
   // Nómina Territorial Consolidada de Asistentes de la Educación por RUN
   const asistentesConsolidados = useMemo(() => {
-    return obtenerAsistentesConsolidadosTerritorio(establecimientos, asistentes);
-  }, [establecimientos, asistentes]);
+    return obtenerAsistentesConsolidadosTerritorio(
+      carteraFiltrada.colegiosFiltrados,
+      carteraFiltrada.asistentesFiltrados
+    );
+  }, [carteraFiltrada.colegiosFiltrados, carteraFiltrada.asistentesFiltrados]);
 
   const {
     asistentesMultiEscuelaCount,
@@ -595,6 +639,19 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Filtro Ejecutivo por Tipo de Establecimiento y No Continuidad */}
+      <FiltroCarteraTerritorialBar
+        categoriasSeleccionadas={categoriasSeleccionadas}
+        onChangeCategorias={setCategoriasSeleccionadas}
+        incluirNoContinuidad={incluirNoContinuidad}
+        onChangeIncluirNoContinuidad={setIncluirNoContinuidad}
+        conteosPorCategoria={carteraFiltrada.conteosPorCategoria}
+        conteoNoContinuidadDocentes={carteraFiltrada.conteoNoContinuidadDocentes}
+        horasNoContinuidadDocentes={carteraFiltrada.horasNoContinuidadDocentes}
+        conteoNoContinuidadAsistentes={carteraFiltrada.conteoNoContinuidadAsistentes}
+        horasNoContinuidadAsistentes={carteraFiltrada.horasNoContinuidadAsistentes}
+      />
 
       {/* Buscador Global Unificado de Docentes y Asistentes de la Educación */}
       <ConsolidadorBuscadorFuncionarios
