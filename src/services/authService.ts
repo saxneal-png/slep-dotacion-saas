@@ -414,9 +414,30 @@ export class AuthService {
           } else {
             // Vista filtrada por RLS (usuario no-admin recibe únicamente su propio perfil): fusionar sin borrar directorio local
             for (const ru of remoteUsers) {
-              const idx = usuarios.findIndex(u => u.id === ru.id);
-              if (idx >= 0) usuarios[idx] = ru;
-              else usuarios.push(ru);
+              const ruEmail = (ru.email || '').trim().toLowerCase();
+              const ruUser = (ru.username || '').trim().toLowerCase();
+              if (ru.role === 'director_establecimiento' && !ru.rbdAsignado && ruEmail) {
+                const matchDir = DIRECTORES_TERRITORIO.find(d => d.email.trim().toLowerCase() === ruEmail);
+                if (matchDir?.rbd) {
+                  ru.rbdAsignado = matchDir.rbd.trim();
+                }
+              }
+              const idx = usuarios.findIndex(
+                u =>
+                  u.id === ru.id ||
+                  (ruEmail && (u.email || '').trim().toLowerCase() === ruEmail) ||
+                  (ruUser && u.username.trim().toLowerCase() === ruUser)
+              );
+              if (idx >= 0) {
+                usuarios[idx] = {
+                  ...usuarios[idx],
+                  ...ru,
+                  passwordHash: ru.passwordHash || usuarios[idx].passwordHash,
+                  salt: ru.salt || usuarios[idx].salt
+                };
+              } else {
+                usuarios.push(ru);
+              }
             }
           }
 
@@ -689,8 +710,22 @@ export class AuthService {
       const s = JSON.parse(raw) as AuthSession;
       if (s?.usuario) {
         const rol = (s.usuario.email || '').toLowerCase() === SUPER_USUARIO_EMAIL ? 'super_usuario' : normalizarRol(s.usuario.role);
+        let changed = false;
+        let updatedUser = s.usuario;
         if (rol !== s.usuario.role) {
-          s.usuario = { ...s.usuario, role: rol };
+          updatedUser = { ...updatedUser, role: rol };
+          changed = true;
+        }
+        if (rol === 'director_establecimiento' && !updatedUser.rbdAsignado && updatedUser.email) {
+          const cleanEmail = updatedUser.email.trim().toLowerCase();
+          const matchDir = DIRECTORES_TERRITORIO.find(d => d.email.trim().toLowerCase() === cleanEmail);
+          if (matchDir?.rbd) {
+            updatedUser = { ...updatedUser, rbdAsignado: matchDir.rbd.trim() };
+            changed = true;
+          }
+        }
+        if (changed) {
+          s.usuario = updatedUser;
           localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(s));
         }
       }

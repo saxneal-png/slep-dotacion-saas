@@ -36,6 +36,8 @@ vi.mock('../src/services/supabaseClient', () => ({
 }));
 
 import { AuthService, hashPassword, generateSalt } from '../src/services/authService';
+import { colegiosVisibles, puedeAccederRbd } from '../src/services/scopeService';
+import { Establecimiento } from '../src/types';
 import { UsuarioSistema } from '../src/types/authTypes';
 
 describe('Sincronización de Credenciales con Supabase Auth y RLS', () => {
@@ -266,5 +268,53 @@ describe('Sincronización de Credenciales con Supabase Auth y RLS', () => {
     );
     expect(upsertUsuariosCalls.length).toBe(0);
     expect(AuthService.getSessionActual()?.usuario.debeCambiarPassword).toBe(false);
+  });
+
+  it('aísla estrictamente el RBD de cada director (no cruza con RBD 3888 Víctor Jara) y fusiona perfil único RLS sin duplicar', async () => {
+    const colegios = [
+      { id: 'est-3888', rbd: '3888', nombre: 'COLEGIO BICENTENARIO DE EXCELENCIA POLITECNICO VICTOR JARA', comuna: 'San Ignacio', regimen: 'JEC', porcentajePrioritarios: 80 },
+      { id: 'est-3669', rbd: '3669', nombre: 'ESCUELA BÁSICA ROSITA O´HIGGINS RIQUELME', comuna: 'Chillán', regimen: 'JEC', porcentajePrioritarios: 80 },
+      { id: 'est-3849', rbd: '3849', nombre: 'ESCUELA CAMILO HENRIQUEZ', comuna: 'El Carmen', regimen: 'JEC', porcentajePrioritarios: 80 }
+    ] as Establecimiento[];
+
+    const directora3669: UsuarioSistema = {
+      id: 'user-cloud-uuid-3669',
+      username: 'marcelapaz.munoz@eduvallediguillin.gob.cl',
+      email: 'marcelapaz.munoz@eduvallediguillin.gob.cl',
+      nombreCompleto: 'Marcela Muñoz Sepúlveda',
+      role: 'director_establecimiento',
+      cargo: 'Directora',
+      rbdAsignado: ' 3669 ',
+      activo: true
+    };
+
+    const visibles = colegiosVisibles(directora3669, colegios);
+    expect(visibles.map(c => c.rbd)).toEqual(['3669']);
+    expect(puedeAccederRbd(directora3669, '3669', colegios)).toBe(true);
+    expect(puedeAccederRbd(directora3669, '3888', colegios)).toBe(false);
+
+    // Simular respuesta RLS de 1 sola fila con ID diferente al de la semilla local y sin rbd_asignado
+    remoteRows = [
+      {
+        id: 'user-cloud-alt-3849',
+        username: 'marcia.llanos@eduvallediguillin.gob.cl',
+        email: 'marcia.llanos@eduvallediguillin.gob.cl',
+        nombre_completo: 'Marcia Llanos Orozco',
+        role: 'director_establecimiento',
+        cargo: 'Directora',
+        rbd_asignado: null,
+        cartera_rbds_json: [],
+        asesores_supervisados_json: [],
+        comunas_permitidas_json: [],
+        activo: true,
+        debe_cambiar_password: false
+      }
+    ];
+
+    const usuarios = await AuthService.getUsuarios();
+    const coincidenciasMarcia = usuarios.filter(u => u.email?.toLowerCase() === 'marcia.llanos@eduvallediguillin.gob.cl');
+    expect(coincidenciasMarcia.length).toBe(1);
+    expect(coincidenciasMarcia[0].id).toBe('user-cloud-alt-3849');
+    expect(coincidenciasMarcia[0].rbdAsignado).toBe('3849');
   });
 });

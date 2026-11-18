@@ -39,7 +39,8 @@ export function colegiosVisibles(
   if (alcance === 'global') return colegios;
 
   if (alcance === 'establecimiento') {
-    return usuario.rbdAsignado ? colegios.filter(c => c.rbd === usuario.rbdAsignado) : [];
+    const targetRbd = (usuario.rbdAsignado || '').trim();
+    return targetRbd ? colegios.filter(c => c.rbd.trim() === targetRbd) : [];
   }
 
   const rbds = rbdsDeAsesor(usuario, colegios);
@@ -69,5 +70,6 @@ export function puedeAccederRbd(
   colegios: Establecimiento[],
   usuarios: UsuarioScope[] = []
 ): boolean {
-  return colegiosVisibles(usuario, colegios, usuarios).some(c => c.rbd === rbd);
+  const target = (rbd || '').trim();
+  return colegiosVisibles(usuario, colegios, usuarios).some(c => c.rbd.trim() === target);
 }

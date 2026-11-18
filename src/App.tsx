@@ -449,13 +449,19 @@ export const App: React.FC = () => {
   }, [permisos]);
 
   // 1. Cargar Base de Datos y Colecciones Globales (Optimizado para Nivel Gratuito de Vercel/Supabase)
-  const cargarDatos = async (p: number = 2027, forceCloudSync: boolean = false) => {
+  const cargarDatos = async (p: number = 2027, forceCloudSync: boolean = false, sessionOverride?: AuthSession | null) => {
     try {
+      const activeSession = sessionOverride !== undefined ? sessionOverride : (session || AuthService.getSessionActual());
       await getDb();
       await checkAndSeedInitialData();
 
-      const listEst = await listarEstablecimientos();
+      let listEst = await listarEstablecimientos();
       setColegios(listEst);
+
+      if (!activeSession) {
+        setColegioActivo(null);
+        return;
+      }
 
       let allSalas = await listarTodasLasSalas();
       setTodasLasSalas(allSalas);
@@ -472,16 +478,18 @@ export const App: React.FC = () => {
       let allAsist = await listarTodosLosAsistentesTerritorio(p);
       setTodosLosAsistentes(allAsist);
 
+      const rolNormal = normalizarRol(activeSession.usuario.role);
+      const defRol = getDefinicionRol(rolNormal);
+      const userRbd = activeSession.usuario.rbdAsignado?.trim();
+
       if (isSupabaseEnabled()) {
         try {
-          const rolNormal = session?.usuario?.role ? normalizarRol(session.usuario.role) : undefined;
-          const userRbd = session?.usuario?.rbdAsignado;
-          const esDirector = rolNormal === 'director_establecimiento';
-
           // Aislamiento Estricto de Descarga Nube y Optimización de Cuota:
-          // 1. Si es Director de Establecimiento, hidratar única y exclusivamente su escuela asignada
-          if (esDirector && userRbd) {
+          // 1. Si es Director o Jefe UTP (alcance establecimiento), hidratar única y exclusivamente su escuela asignada
+          if (defRol.alcance === 'establecimiento' && userRbd) {
             await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(userRbd, p);
+            listEst = await listarEstablecimientos();
+            setColegios(listEst);
             allSalas = await listarTodasLasSalas();
             allCursos = await listarTodosLosCursos(p);
             allDocs = await listarTodosLosDocentesTerritorio(p);
@@ -494,7 +502,7 @@ export const App: React.FC = () => {
             setTodosLosAsistentes(allAsist);
           } else if (rolNormal === 'asesor_uatp') {
             // 2. Si es Asesor UATP, hidratar únicamente las escuelas de su cartera
-            const permitidos = session ? colegiosVisibles(session.usuario, listEst, usuariosSistema) : [];
+            const permitidos = colegiosVisibles(activeSession.usuario, listEst, usuariosSistema);
             for (const est of permitidos) {
               await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(est.rbd, p);
             }
@@ -508,7 +516,7 @@ export const App: React.FC = () => {
             setTodosLosDocentes(allDocs);
             setTodasLasAsignaciones(allAsigs);
             setTodosLosAsistentes(allAsist);
-          } else {
+          } else if (defRol.alcance !== 'establecimiento') {
             // 3. Para Super Usuario / Admin: verificar si ya hay datos en SQLite local (IndexedDB)
             // y controlar el intervalo para no saturar la transferencia de la base de datos en cada recarga
             const syncKey = `slep_last_cartera_sync_${p}`;
@@ -544,23 +552,25 @@ export const App: React.FC = () => {
 
       // Determinación estricta del colegio objetivo según el alcance del usuario en sesión
       let defaultEst: Establecimiento | null = null;
-      if (session) {
-        const defRol = getDefinicionRol(normalizarRol(session.usuario.role));
-        if (defRol.alcance === 'establecimiento' && session.usuario.rbdAsignado) {
-          defaultEst = listEst.find(c => c.rbd === session.usuario.rbdAsignado) || null;
-        } else {
-          const permitidos = colegiosVisibles(session.usuario, listEst, usuariosSistema);
-          if (permitidos.length > 0) {
-            defaultEst = (colegioActivo && permitidos.some(c => c.rbd === colegioActivo.rbd)) ? colegioActivo : permitidos[0];
-          }
+      if (defRol.alcance === 'establecimiento') {
+        defaultEst = userRbd ? (listEst.find(c => c.rbd.trim() === userRbd) || null) : null;
+      } else {
+        const permitidos = colegiosVisibles(activeSession.usuario, listEst, usuariosSistema);
+        if (permitidos.length > 0) {
+          defaultEst = (colegioActivo && permitidos.some(c => c.rbd === colegioActivo.rbd)) ? colegioActivo : permitidos[0];
         }
-      } else if (listEst.length > 0) {
-        defaultEst = colegioActivo || listEst[0];
       }
 
       if (defaultEst) {
         setColegioActivo(defaultEst);
-        await cargarDatosColegio(defaultEst.rbd, p, !forceCloudSync);
+        await cargarDatosColegio(defaultEst.rbd, p, !forceCloudSync, activeSession);
+      } else {
+        setColegioActivo(null);
+        setSalas([]);
+        setCursos([]);
+        setDocentes([]);
+        setAsignaciones([]);
+        setAsistentes([]);
       }
     } catch (err: any) {
       console.error('Error al inicializar datos:', err);
@@ -570,9 +580,21 @@ export const App: React.FC = () => {
     }
   };
 
-  const cargarDatosColegio = async (rbd: string, p: number = periodoActivo, autoSyncCloud: boolean = true) => {
+  const cargarDatosColegio = async (
+    rbd: string,
+    p: number = periodoActivo,
+    autoSyncCloud: boolean = true,
+    sessionOverride?: AuthSession | null
+  ) => {
     const currentReqId = ++loadRequestIdRef.current;
-    const cleanRbd = rbd.trim();
+    const activeSession = sessionOverride !== undefined ? sessionOverride : (session || AuthService.getSessionActual());
+    let cleanRbd = rbd.trim();
+    if (activeSession) {
+      const defRol = getDefinicionRol(normalizarRol(activeSession.usuario.role));
+      if (defRol.alcance === 'establecimiento' && activeSession.usuario.rbdAsignado) {
+        cleanRbd = activeSession.usuario.rbdAsignado.trim();
+      }
+    }
 
     // 1. Carga inmediata desde SQLite local (Renderizado instantáneo <15ms)
     let s = await listarSalas(cleanRbd);
@@ -686,20 +708,25 @@ export const App: React.FC = () => {
   // Asegurar que el colegio activo pertenezca al alcance autorizado del usuario (Establecimiento, Cartera o Equipo)
   useEffect(() => {
     if (!session || colegios.length === 0) return;
-    if (alcanceReal === 'establecimiento' && session.usuario.rbdAsignado) {
-      const asignado = colegios.find(c => c.rbd === session.usuario.rbdAsignado);
-      if (asignado && (!colegioActivo || colegioActivo.rbd !== asignado.rbd)) {
-        setColegioActivo(asignado);
-        cargarDatosColegio(asignado.rbd, periodoActivo);
+    if (alcanceReal === 'establecimiento') {
+      const targetRbd = session.usuario.rbdAsignado?.trim();
+      const asignado = targetRbd ? colegios.find(c => c.rbd.trim() === targetRbd) || null : null;
+      if (asignado) {
+        if (!colegioActivo || colegioActivo.rbd.trim() !== asignado.rbd.trim()) {
+          setColegioActivo(asignado);
+          cargarDatosColegio(asignado.rbd, periodoActivo, true, session);
+        }
+      } else if (colegioActivo) {
+        setColegioActivo(null);
       }
       return;
     }
     const permitidos = colegiosVisibles(session.usuario, colegios, usuariosSistema);
     if (permitidos.length > 0 && (!colegioActivo || !permitidos.some(c => c.rbd === colegioActivo.rbd))) {
       setColegioActivo(permitidos[0]);
-      cargarDatosColegio(permitidos[0].rbd, periodoActivo);
+      cargarDatosColegio(permitidos[0].rbd, periodoActivo, true, session);
     }
-  }, [session, colegios, alcanceReal, usuariosSistema]);
+  }, [session, colegios, alcanceReal, usuariosSistema, colegioActivo]);
 
   // Guard de navegación: redirige a la primera vista permitida si la actual no está autorizada
   useEffect(() => {
@@ -1278,22 +1305,29 @@ export const App: React.FC = () => {
             onLimpiarAvisoExterno={() => setAvisoSesionPausada(null)}
             onLoginSuccess={(newSession) => {
               setAvisoSesionPausada(null);
+              setColegioActivo(null);
+              setSalas([]);
+              setCursos([]);
+              setDocentes([]);
+              setAsignaciones([]);
+              setAsistentes([]);
               setSession(newSession);
               mostrarMensaje(`¡Bienvenido, ${newSession.usuario.nombreCompleto}!`);
-              cargarDatos(periodoActivo);
+              cargarDatos(periodoActivo, false, newSession);
               const defRol = getDefinicionRol(normalizarRol(newSession.usuario.role));
-              if (defRol.alcance === 'establecimiento' && newSession.usuario.rbdAsignado) {
-                const esc = colegios.find(c => c.rbd === newSession.usuario.rbdAsignado);
+              if (defRol.alcance === 'establecimiento') {
+                const targetRbd = newSession.usuario.rbdAsignado?.trim();
+                const esc = targetRbd ? colegios.find(c => c.rbd.trim() === targetRbd) : undefined;
                 if (esc) {
                   setColegioActivo(esc);
-                  cargarDatosColegio(esc.rbd, periodoActivo);
+                  cargarDatosColegio(esc.rbd, periodoActivo, true, newSession);
                 }
                 setVistaActiva('workflow');
               } else {
                 const permitidos = colegiosVisibles(newSession.usuario, colegios, usuariosSistema);
                 if (permitidos.length > 0) {
                   setColegioActivo(permitidos[0]);
-                  cargarDatosColegio(permitidos[0].rbd, periodoActivo);
+                  cargarDatosColegio(permitidos[0].rbd, periodoActivo, true, newSession);
                 }
                 setVistaActiva('colegios_asesorados');
               }
