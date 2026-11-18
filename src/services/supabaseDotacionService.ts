@@ -1143,7 +1143,7 @@ export class SupabaseDotacionService {
     try {
       await supabase.from('establecimientos').update({ updated_at: nowIso }).eq('rbd', cleanRbd);
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`slep_last_sync_${cleanRbd}_${periodo}`, nowIso);
+        localStorage.setItem(`slep_last_sync_v2_${cleanRbd}_${periodo}`, nowIso);
       }
     } catch (_) {}
 
@@ -1224,7 +1224,7 @@ export class SupabaseDotacionService {
     try {
       await supabase.from('establecimientos').update({ updated_at: nowIso }).eq('rbd', cleanRbd);
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`slep_last_sync_${cleanRbd}_${periodo}`, nowIso);
+        localStorage.setItem(`slep_last_sync_v2_${cleanRbd}_${periodo}`, nowIso);
       }
     } catch (_) {}
 
@@ -1303,7 +1303,7 @@ export class SupabaseDotacionService {
           .eq('rbd', cleanRbd)
           .maybeSingle();
 
-        const localSyncKey = `slep_last_sync_${cleanRbd}_${periodo}`;
+        const localSyncKey = `slep_last_sync_v2_${cleanRbd}_${periodo}`;
         const lastLocalSync = typeof window !== 'undefined' ? localStorage.getItem(localSyncKey) : null;
 
         if (checkRow?.updated_at && lastLocalSync) {
@@ -1469,13 +1469,13 @@ export class SupabaseDotacionService {
       }
 
       // 9. Saneamiento de integridad referencial: purgar asignaciones huérfanas en SQLite
-      // que apunten a cursos o docentes inexistentes tras la sincronización
+      // que apunten a cursos o docentes inexistentes tras la sincronización (preservando talleres transversales / sin curso)
       db.run(
         `DELETE FROM asignaciones_horarias 
          WHERE rbd = ? AND periodo = ? 
            AND (
-             curso_id NOT IN (SELECT id FROM cursos_sae WHERE rbd = ? AND periodo = ?)
-             OR docente_id NOT IN (SELECT id FROM docentes WHERE rbd = ? AND periodo = ?)
+             (curso_id IS NOT NULL AND curso_id NOT IN ('TRANSVERSAL', 'SIN_CURSO', '') AND curso_id NOT IN (SELECT id FROM cursos_sae WHERE rbd = ? AND periodo = ?))
+             OR (docente_id IS NOT NULL AND docente_id NOT IN ('SIN_DOCENTE', '') AND docente_id NOT IN (SELECT id FROM docentes WHERE rbd = ? AND periodo = ?))
            )`,
         [cleanRbd, periodo, cleanRbd, periodo, cleanRbd, periodo]
       );
@@ -1489,7 +1489,7 @@ export class SupabaseDotacionService {
 
     if (typeof window !== 'undefined') {
       const remoteIso = estRes.data?.updated_at || new Date().toISOString();
-      localStorage.setItem(`slep_last_sync_${cleanRbd}_${periodo}`, remoteIso);
+      localStorage.setItem(`slep_last_sync_v2_${cleanRbd}_${periodo}`, remoteIso);
     }
 
     return {
@@ -1716,13 +1716,13 @@ export class SupabaseDotacionService {
         }
       }
 
-      // Saneamiento de asignaciones huérfanas en toda la base tras la hidratación
+      // Saneamiento de asignaciones huérfanas en toda la base tras la hidratación (preservando talleres transversales / sin curso)
       db.run(
         `DELETE FROM asignaciones_horarias 
          WHERE periodo = ? 
            AND (
-             curso_id NOT IN (SELECT id FROM cursos_sae WHERE periodo = ?)
-             OR docente_id NOT IN (SELECT id FROM docentes WHERE periodo = ?)
+             (curso_id IS NOT NULL AND curso_id NOT IN ('TRANSVERSAL', 'SIN_CURSO', '') AND curso_id NOT IN (SELECT id FROM cursos_sae WHERE periodo = ?))
+             OR (docente_id IS NOT NULL AND docente_id NOT IN ('SIN_DOCENTE', '') AND docente_id NOT IN (SELECT id FROM docentes WHERE periodo = ?))
            )`,
         [periodo, periodo, periodo]
       );
@@ -1819,13 +1819,13 @@ export class SupabaseDotacionService {
       await this.guardarDocentesBatch(docentesValidos);
     }
 
-    // 5. Asignaciones Horarias (Filtradas con integridad referencial completa RBD + Curso + Docente)
+    // 5. Asignaciones Horarias (Filtradas con integridad referencial completa RBD + Curso/Transversal + Docente)
     const cursoIdsValidos = new Set(cursosValidos.map(c => c.id));
     const docenteIdsValidos = new Set(docentesValidos.map(d => d.id));
     const asigsValidas = todasAsigs.filter(a =>
       estRbdsValidos.has(a.rbd.trim()) &&
-      cursoIdsValidos.has(a.cursoId) &&
-      docenteIdsValidos.has(a.docenteId)
+      (!a.cursoId || a.cursoId === 'TRANSVERSAL' || a.cursoId === 'SIN_CURSO' || cursoIdsValidos.has(a.cursoId)) &&
+      (!a.docenteId || a.docenteId === 'SIN_DOCENTE' || docenteIdsValidos.has(a.docenteId))
     );
     if (asigsValidas.length) {
       await this.guardarAsignacionesBatch(asigsValidas);

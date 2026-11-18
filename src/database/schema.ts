@@ -139,9 +139,7 @@ CREATE TABLE IF NOT EXISTS asignaciones_horarias (
   es_diferenciado_compartido INTEGER DEFAULT 0,
   codigo_asignatura TEXT,
   ambito_curricular TEXT,
-  FOREIGN KEY (rbd) REFERENCES establecimientos(rbd),
-  FOREIGN KEY (curso_id) REFERENCES cursos_sae(id),
-  FOREIGN KEY (docente_id) REFERENCES docentes(id)
+  FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
 
 CREATE TABLE IF NOT EXISTS planes_estudio_mineduc (
@@ -591,5 +589,76 @@ export function runMigrations(db: Database): void {
     `);
   } catch (e) {
     console.warn('Aviso en migración automática de período 2026 -> 2027:', e);
+  }
+
+  if (!hasAppliedMigration(db, 'fix_asignaciones_transversal_fk_v1')) {
+    try {
+      const fkInfo = db.exec('PRAGMA foreign_key_list(asignaciones_horarias);');
+      const fkTables = new Set<string>((fkInfo[0]?.values || []).map(row => String(row[2]).toLowerCase()));
+      if (fkTables.has('cursos_sae') || fkTables.has('docentes')) {
+        db.run('PRAGMA foreign_keys = OFF;');
+        db.run('BEGIN TRANSACTION;');
+        try {
+          db.run(`
+            CREATE TABLE asignaciones_horarias_new (
+              id TEXT PRIMARY KEY,
+              rbd TEXT NOT NULL,
+              curso_id TEXT NOT NULL,
+              docente_id TEXT NOT NULL,
+              co_docente_id TEXT,
+              tiene_co_docente INTEGER DEFAULT 0,
+              es_taller_jec INTEGER DEFAULT 0,
+              asignatura TEXT NOT NULL,
+              horas_pedagogicas_aula REAL NOT NULL,
+              horas_cronologicas_pie REAL DEFAULT 0,
+              horas_colaborativas REAL DEFAULT 0,
+              tipo_apoyo TEXT,
+              periodo INTEGER NOT NULL DEFAULT 2027,
+              es_taller_sep INTEGER DEFAULT 0,
+              es_trabajo_colaborativo INTEGER DEFAULT 0,
+              es_proporcion_docente INTEGER DEFAULT 0,
+              es_co_docencia INTEGER DEFAULT 0,
+              es_agrupacion_flexible INTEGER DEFAULT 0,
+              cursos_compartidos_json TEXT,
+              es_diferenciado_compartido INTEGER DEFAULT 0,
+              codigo_asignatura TEXT,
+              ambito_curricular TEXT,
+              FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
+            );
+          `);
+          db.run(`
+            INSERT INTO asignaciones_horarias_new (
+              id, rbd, curso_id, docente_id, co_docente_id, tiene_co_docente, es_taller_jec,
+              asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo,
+              periodo, es_taller_sep, es_trabajo_colaborativo, es_proporcion_docente, es_co_docencia,
+              es_agrupacion_flexible, cursos_compartidos_json, es_diferenciado_compartido,
+              codigo_asignatura, ambito_curricular
+            )
+            SELECT
+              id, rbd, COALESCE(curso_id, 'TRANSVERSAL'), COALESCE(docente_id, 'SIN_DOCENTE'),
+              co_docente_id, tiene_co_docente, es_taller_jec,
+              asignatura, horas_pedagogicas_aula, horas_cronologicas_pie, horas_colaborativas, tipo_apoyo,
+              COALESCE(periodo, 2027), es_taller_sep, es_trabajo_colaborativo, es_proporcion_docente, es_co_docencia,
+              es_agrupacion_flexible, cursos_compartidos_json, es_diferenciado_compartido,
+              codigo_asignatura, ambito_curricular
+            FROM asignaciones_horarias;
+          `);
+          db.run('DROP TABLE asignaciones_horarias;');
+          db.run('ALTER TABLE asignaciones_horarias_new RENAME TO asignaciones_horarias;');
+          db.run('CREATE INDEX IF NOT EXISTS idx_asignaciones_rbd_periodo ON asignaciones_horarias(rbd, periodo);');
+          db.run('CREATE INDEX IF NOT EXISTS idx_asignaciones_curso ON asignaciones_horarias(curso_id);');
+          db.run('CREATE INDEX IF NOT EXISTS idx_asignaciones_docente ON asignaciones_horarias(docente_id);');
+          db.run('COMMIT;');
+        } catch (innerErr) {
+          db.run('ROLLBACK;');
+          throw innerErr;
+        } finally {
+          db.run('PRAGMA foreign_keys = ON;');
+        }
+      }
+      markAppliedMigration(db, 'fix_asignaciones_transversal_fk_v1');
+    } catch (e) {
+      console.warn('[schema] Aviso en migración fix_asignaciones_transversal_fk_v1:', e);
+    }
   }
 }

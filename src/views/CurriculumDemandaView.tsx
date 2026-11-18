@@ -1043,7 +1043,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       <tr>
                         <td colSpan={5} className="p-8 text-center text-slate-400">
                           <p className="font-semibold text-sm">No hay talleres transversales registrados.</p>
-                          <p className="text-xs mt-1">Haz clic en "Crear Taller Transversal" para agregar academias o talleres institucionales.</p>
+                          <p className="text-xs mt-1">Agrega talleres transversales o academias institucionales desde el módulo <strong>Docentes Ley 20.903</strong> (botón <strong>"+ Taller Transversal"</strong>).</p>
                         </td>
                       </tr>
                     ) : (

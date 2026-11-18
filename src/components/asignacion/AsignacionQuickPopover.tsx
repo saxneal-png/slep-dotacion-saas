@@ -45,6 +45,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
   onConfirmar,
   onCerrar
 }) => {
+  const [cursoSeleccionadoId, setCursoSeleccionadoId] = useState<string>('TRANSVERSAL');
   const [asignatura, setAsignatura] = useState('');
   const [horas, setHoras] = useState(2);
   const [modalidad, setModalidad] = useState<'REGULAR' | 'PARV_CODOCENCIA' | 'TALLER_JEC' | 'TALLER_SEP' | 'CO_DOCENCIA' | 'PIE_COLAB'>('REGULAR');
@@ -54,6 +55,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
 
   useEffect(() => {
     if (!seed) return;
+    setCursoSeleccionadoId(seed.curso ? seed.curso.id : 'TRANSVERSAL');
     setAsignatura(seed.asignatura);
     setHoras(seed.horasSugeridas > 0 ? seed.horasSugeridas : 2);
     if (seed.esTrabajoColaborativo) setModalidad('PIE_COLAB');
@@ -68,16 +70,19 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
 
   if (!seed) return null;
 
-  const esParvulariaCurso = Boolean(seed.curso && esNivelParvulario(seed.curso.nivel));
+  const cursoEfectivo = cursoSeleccionadoId === 'TRANSVERSAL'
+    ? null
+    : (cursos.find(c => c.id === cursoSeleccionadoId) || null);
+  const esParvulariaCurso = Boolean(cursoEfectivo && esNivelParvulario(cursoEfectivo.nivel));
   const esEducadora = esDocenteEducadoraParvulos(docente);
-  const esFlujoParvularia = esParvulariaCurso || (esEducadora && !seed.curso);
+  const esFlujoParvularia = esParvulariaCurso;
   const esTallerSep = modalidad === 'TALLER_SEP';
   const esTrabajoColaborativo = modalidad === 'PIE_COLAB';
   const esTallerJec = modalidad === 'TALLER_JEC';
   const esCoDocenciaParvularia = modalidad === 'PARV_CODOCENCIA';
   const esCoDocencia = modalidad === 'CO_DOCENCIA' || esCoDocenciaParvularia;
 
-  const impacto = simular(seed.curso, horas, {
+  const impacto = simular(cursoEfectivo, horas, {
     esTallerSep,
     esTrabajoColaborativo,
     esCoDocencia,
@@ -91,7 +96,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
     setGuardando(true);
     try {
       await onConfirmar({
-        curso: seed.curso,
+        curso: cursoEfectivo,
         asignatura: asignatura.trim(),
         horas,
         esTallerJec,
@@ -114,7 +119,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
     }
   };
 
-  const otrosCursos = seed.curso ? cursos.filter(c => c.id !== seed.curso?.id) : [];
+  const otrosCursos = cursoEfectivo ? cursos.filter(c => c.id !== cursoEfectivo.id) : [];
 
   return (
     <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -127,7 +132,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
             <h4 className="text-sm font-bold leading-tight">Configurar Bloque Horario</h4>
             <p className="text-[11px] text-blue-100">
               {docente.nombres} {docente.apellidos} ·{' '}
-              {seed.curso ? `${seed.curso.nivel} ${seed.curso.letra}` : 'Taller Transversal'}
+              {cursoEfectivo ? `${cursoEfectivo.nivel} ${cursoEfectivo.letra}` : '🌟 Taller Transversal (Sin Curso)'}
             </p>
           </div>
           <button
@@ -140,6 +145,35 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
         </div>
 
         <div className="p-4 space-y-3.5 text-xs">
+          {/* Curso / Destino del bloque */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+              Curso / Destino del Bloque
+            </label>
+            <select
+              value={cursoSeleccionadoId}
+              onChange={e => {
+                const val = e.target.value;
+                setCursoSeleccionadoId(val);
+                if (val === 'TRANSVERSAL') {
+                  setCompartirCursos(false);
+                  setCursosCompartidos([]);
+                  if (!asignatura.trim() || asignatura === 'Taller Institucional') {
+                    setAsignatura('Taller Institucional Transversal');
+                  }
+                }
+              }}
+              className="w-full px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold focus:ring-2 focus:ring-blue-600 focus:outline-none"
+            >
+              <option value="TRANSVERSAL">🌟 Taller Institucional / Transversal (Sin Curso)</option>
+              {cursos.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.nivel} {c.letra} ({c.regimen})
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Nombre de la asignatura / taller */}
           <div>
             <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
@@ -204,7 +238,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
               <span className="font-bold text-slate-700 dark:text-slate-200 block">
                 {esFlujoParvularia ? 'Horas Cronológicas (60m)' : 'Horas a Asignar'}
               </span>
-              {seed.maxHorasPlan ? (
+              {seed.maxHorasPlan && cursoEfectivo?.id === seed.curso?.id ? (
                 <span className="text-[10px] text-slate-500">
                   {esFlujoParvularia
                     ? `Déficit permanencia: ${seed.maxHorasPlan}h cron.`
@@ -272,7 +306,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
           </div>
 
           {/* Cursos compartidos opcional */}
-          {seed.curso && otrosCursos.length > 0 && modalidad === 'REGULAR' && (
+          {cursoEfectivo && otrosCursos.length > 0 && modalidad === 'REGULAR' && (
             <div className="pt-1">
               <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input

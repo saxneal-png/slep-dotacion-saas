@@ -262,21 +262,39 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              setPopoverSeed({
-                curso: cursos[0] || null,
-                asignatura: docente.asignaturaPrincipal || 'Taller Institucional',
-                horasSugeridas: 2,
-                esTallerSep: saldoPorFuente.esDocenteSepPuro
-              })
-            }
-            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white inline-flex items-center gap-1"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Bloque Personalizado</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() =>
+                setPopoverSeed({
+                  curso: null,
+                  asignatura: 'Taller Institucional Transversal',
+                  horasSugeridas: 2,
+                  esTallerSep: saldoPorFuente.esDocenteSepPuro
+                })
+              }
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white inline-flex items-center gap-1 shadow-xs"
+              title="Agregar un Taller Transversal o Academia Institucional sin curso fijo"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>+ Taller Transversal</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setPopoverSeed({
+                  curso: cursos[0] || null,
+                  asignatura: docente.asignaturaPrincipal || 'Taller Institucional',
+                  horasSugeridas: 2,
+                  esTallerSep: saldoPorFuente.esDocenteSepPuro
+                })
+              }
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white inline-flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Bloque Personalizado</span>
+            </button>
+          </div>
         </div>
 
         {/* Cuerpo Scrollable */}

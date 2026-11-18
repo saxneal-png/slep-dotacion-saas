@@ -599,6 +599,15 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                         esProporcionDocente: true
                       });
                     }
+                  } else if (!esPie) {
+                    if (h !== a.horasPedagogicasAula || a.esProporcionDocente !== false) {
+                      await onGuardarAsignacion({
+                        ...a,
+                        horasPedagogicasAula: h,
+                        horasCronologicasPie: undefined,
+                        esProporcionDocente: false
+                      });
+                    }
                   } else {
                     if (h !== a.horasCronologicasPie || a.esProporcionDocente !== false) {
                       await onGuardarAsignacion({ 
@@ -623,10 +632,18 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
               >
                 h (60m)
               </span>
-            ) : esApoyoAulaCurso ? (
+            ) : (esApoyoAulaCurso || !esPie) ? (
               <span 
-                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300"
-                title="Horas Pedagógicas (45 min) lectivas frente a curso, sujetas a Proporción Docente Ley 20.903."
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                  esApoyoAulaCurso
+                    ? 'bg-purple-100 text-purple-800 border-purple-300'
+                    : 'bg-amber-100 text-amber-800 border-amber-300'
+                }`}
+                title={
+                  esApoyoAulaCurso
+                    ? 'Horas Pedagógicas (45 min) lectivas frente a curso, sujetas a Proporción Docente Ley 20.903.'
+                    : 'Horas Pedagógicas (45 min) de taller transversal / institucional.'
+                }
               >
                 HA (45m)
               </span>
@@ -2443,6 +2460,28 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
           >
             <Plus className="w-3 h-3" />
             <span>Asignar Asignatura / Taller</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (formActivo === 'REGULAR' && formRegularCursoId === 'TRANSVERSAL') {
+                setFormActivo(null);
+              } else {
+                setFormRegularCursoId('TRANSVERSAL');
+                setFormRegularAmbito('OTRO');
+                setFormActivo('REGULAR');
+              }
+            }}
+            className={`px-2.5 py-1 text-[11px] font-bold rounded-md flex items-center gap-1 shadow-xs transition-colors ${
+              formActivo === 'REGULAR' && formRegularCursoId === 'TRANSVERSAL'
+                ? 'bg-amber-700 text-white'
+                : 'bg-amber-500 hover:bg-amber-600 text-white'
+            }`}
+            title="Crear Taller Institucional / Transversal sin curso asociado"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>🌟 Taller Transversal</span>
           </button>
 
           <button

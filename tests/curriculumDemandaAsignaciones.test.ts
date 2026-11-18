@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { calcularDemandaNormativaPieCurso, autoAsignarHorasPieCursos } from '@slep/mineduc-engine';
-import { AsignacionHoraria, CursoSae, Docente } from '../src/types';
+import { AsignacionHoraria, CursoSae, Docente, Establecimiento } from '../src/types';
+import {
+  getDb,
+  guardarEstablecimiento,
+  guardarDocente,
+  guardarCurso,
+  guardarAsignacion,
+  listarAsignaciones
+} from '../src/database/db';
 
 describe('Asignación de Docencia y Apoyo PIE por Curso (Decreto 170 / Ord. 2398)', () => {
   // Helper que replica la discriminación de asignaciones implementada en CurriculumDemandaView
@@ -341,6 +349,106 @@ describe('Asignación de Docencia y Apoyo PIE por Curso (Decreto 170 / Ord. 2398
     expect(asigsCoDoc).toHaveLength(2);
     const totalHorasCoDoc = asigsCoDoc.reduce((s, a) => s + a.horasPedagogicasAula, 0);
     expect(totalHorasCoDoc).toBe(10); // 6 (SEP) + 4 (Subv General)
+  });
+
+  it('persiste y conserva talleres TRANSVERSAL en SQLite con PRAGMA foreign_keys = ON y tras saneamiento post-descarga', async () => {
+    const db = await getDb();
+    db.run('PRAGMA foreign_keys = ON;');
+
+    const rbdTest = '99881';
+    const periodoTest = 2027;
+
+    const est: Establecimiento = {
+      id: `est-${rbdTest}`,
+      rbd: rbdTest,
+      nombre: 'Escuela Integración Transversal',
+      comuna: 'Bulnes',
+      regimen: 'JEC',
+      porcentajePrioritarios: 65
+    };
+    await guardarEstablecimiento(est, true);
+
+    const doc: Docente = {
+      id: 'doc-transv-99881',
+      rbd: rbdTest,
+      periodo: periodoTest,
+      run: '14.222.333-4',
+      nombres: 'Camila',
+      apellidos: 'Rojas',
+      estamento: 'DOCENTE_AULA',
+      calidadJuridica: 'TITULAR',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30
+    };
+    await guardarDocente(doc, true);
+
+    const curso: CursoSae = {
+      id: 'curso-transv-99881-1b',
+      rbd: rbdTest,
+      periodo: periodoTest,
+      nivel: '1° Básico',
+      letra: 'A',
+      regimen: 'JEC',
+      cupoSae: 30,
+      matriculaProyectada: 25,
+      alumnosNeet: 0,
+      alumnosNeep: 0
+    };
+    await guardarCurso(curso, true);
+
+    // 1. Verificar que PRAGMA foreign_keys = ON permite guardar cursoId = 'TRANSVERSAL'
+    const tallerTransversal: AsignacionHoraria = {
+      id: 'asig-transv-test-1',
+      rbd: rbdTest,
+      periodo: periodoTest,
+      cursoId: 'TRANSVERSAL',
+      docenteId: doc.id,
+      asignatura: 'Taller de Robótica Transversal',
+      horasPedagogicasAula: 4,
+      esTallerSep: false
+    };
+    await guardarAsignacion(tallerTransversal, true);
+
+    // 2. Insertar también una asignación regular válida y otra huérfana (curso eliminado) con FK desactivada temporalmente (como en descarga remota)
+    const regularValida: AsignacionHoraria = {
+      id: 'asig-reg-test-1',
+      rbd: rbdTest,
+      periodo: periodoTest,
+      cursoId: curso.id,
+      docenteId: doc.id,
+      asignatura: 'Lenguaje y Comunicación',
+      horasPedagogicasAula: 8
+    };
+    await guardarAsignacion(regularValida, true);
+
+    const huerfanaCursoInexistente: AsignacionHoraria = {
+      id: 'asig-huerfana-test-1',
+      rbd: rbdTest,
+      periodo: periodoTest,
+      cursoId: 'curso-eliminado-inexistente',
+      docenteId: doc.id,
+      asignatura: 'Asignatura Huérfana',
+      horasPedagogicasAula: 2
+    };
+    await guardarAsignacion(huerfanaCursoInexistente, true);
+
+    // 3. Ejecutar la misma consulta de saneamiento post-descarga de supabaseDotacionService.ts
+    db.run(
+      `DELETE FROM asignaciones_horarias 
+       WHERE rbd = ? AND periodo = ? 
+         AND (
+           (curso_id IS NOT NULL AND curso_id NOT IN ('TRANSVERSAL', 'SIN_CURSO', '') AND curso_id NOT IN (SELECT id FROM cursos_sae WHERE rbd = ? AND periodo = ?))
+           OR (docente_id IS NOT NULL AND docente_id NOT IN ('SIN_DOCENTE', '') AND docente_id NOT IN (SELECT id FROM docentes WHERE rbd = ? AND periodo = ?))
+         )`,
+      [rbdTest, periodoTest, rbdTest, periodoTest, rbdTest, periodoTest]
+    );
+
+    const asignacionesFinales = await listarAsignaciones(rbdTest, periodoTest);
+    const ids = asignacionesFinales.map(a => a.id);
+
+    expect(ids).toContain(tallerTransversal.id);
+    expect(ids).toContain(regularValida.id);
+    expect(ids).not.toContain(huerfanaCursoInexistente.id);
   });
 });
 

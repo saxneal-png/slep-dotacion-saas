@@ -465,15 +465,33 @@ export const SplitViewCuadraturaDocente: React.FC<SplitViewCuadraturaDocenteProp
                 </span>
               </div>
             </div>
-            {onAbrirDrawerDocente && (
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => onAbrirDrawerDocente(docenteActivo)}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/15 hover:bg-white/25 transition-colors"
+                onClick={() =>
+                  setPopoverSeed({
+                    curso: null,
+                    asignatura: 'Taller Institucional Transversal',
+                    horasSugeridas: 2,
+                    esTallerSep: saldoPorFuente.esDocenteSepPuro
+                  })
+                }
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white inline-flex items-center gap-1 shadow-xs transition-colors"
+                title="Asignar un Taller Transversal o Academia Institucional (sin curso)"
               >
-                Abrir Ficha Drawer completa
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>+ Taller Transversal</span>
               </button>
-            )}
+              {onAbrirDrawerDocente && (
+                <button
+                  type="button"
+                  onClick={() => onAbrirDrawerDocente(docenteActivo)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/15 hover:bg-white/25 transition-colors"
+                >
+                  Abrir Ficha Drawer completa
+                </button>
+              )}
+            </div>
           </div>
         )}
 
