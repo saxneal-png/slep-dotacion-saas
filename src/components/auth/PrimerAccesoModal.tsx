@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldCheck, KeyRound, Lock, Eye, EyeOff, AlertCircle, Building2, CheckCircle2 } from 'lucide-react';
-import { AuthService, hashPassword } from '../../services/authService';
+import { AuthService } from '../../services/authService';
 import { AuthSession } from '../../types/authTypes';
 
 interface PrimerAccesoModalProps {
@@ -42,13 +42,13 @@ export const PrimerAccesoModal: React.FC<PrimerAccesoModalProps> = ({ session, o
 
     try {
       setCargando(true);
-      // Validar contraseña actual con salt
+      // Validar contraseña actual (soporta PBKDF2, SHA-256 legado y Supabase Auth)
       const usuarios = await AuthService.getUsuarios();
       const me = usuarios.find(u => u.id === session.usuario.id);
       if (!me) throw new Error('Usuario no encontrado en el sistema.');
 
-      const hashActual = await hashPassword(actualPassword, me.salt);
-      if (hashActual !== me.passwordHash) {
+      const passwordValida = await AuthService.verificarPasswordActual(me, actualPassword);
+      if (!passwordValida) {
         throw new Error('La contraseña actual es incorrecta.');
       }
 

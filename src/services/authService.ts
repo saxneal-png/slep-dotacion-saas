@@ -463,12 +463,33 @@ export class AuthService {
     // 2. Autenticación primaria contra Supabase Auth cuando está habilitado (habilita JWT + RLS estricto)
     if (isSupabaseEnabled()) {
       let resolvedEmail = encontrado?.email?.toLowerCase() || (cleanInput.includes('@') ? cleanInput : '');
+      let challengeSalt = encontrado?.salt || '';
+      let challengeKdfPrefix = '';
       try {
-        const { data: rpcRows, error: rpcErr } = await supabase.rpc('resolve_login_profile', { p_login: cleanInput });
-        if (!rpcErr && Array.isArray(rpcRows) && rpcRows.length > 0 && rpcRows[0]?.email) {
-          resolvedEmail = String(rpcRows[0].email).trim().toLowerCase();
-          if (rpcRows[0].activo === false) {
+        const { data: challengeRows, error: challengeErr } = await supabase.rpc('get_login_challenge', {
+          p_login: cleanInput
+        });
+        if (!challengeErr && Array.isArray(challengeRows) && challengeRows.length > 0) {
+          const row = challengeRows[0];
+          if (row?.email) {
+            resolvedEmail = String(row.email).trim().toLowerCase();
+          }
+          if (row?.activo === false) {
             throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
+          }
+          if (row?.salt) {
+            challengeSalt = String(row.salt);
+          }
+          if (row?.kdf_prefix) {
+            challengeKdfPrefix = String(row.kdf_prefix);
+          }
+        } else {
+          const { data: rpcRows, error: rpcErr } = await supabase.rpc('resolve_login_profile', { p_login: cleanInput });
+          if (!rpcErr && Array.isArray(rpcRows) && rpcRows.length > 0 && rpcRows[0]?.email) {
+            resolvedEmail = String(rpcRows[0].email).trim().toLowerCase();
+            if (rpcRows[0].activo === false) {
+              throw new Error('Esta cuenta ha sido deshabilitada por el administrador.');
+            }
           }
         }
       } catch (rpcException: any) {
@@ -490,28 +511,73 @@ export class AuthService {
             usuarios = await this.getUsuarios();
             encontrado = buscarUsuarioEnLista(usuarios, resolvedEmail);
           } else if (authError && !isNetworkAuthError(authError)) {
-            // Verificar si corresponde a cuenta heredada aún no migrada a auth.users
-            const localMatch =
-              encontrado &&
-              encontrado.salt &&
-              encontrado.passwordHash &&
-              (await verifyPassword(passwordPlain, encontrado.salt, encontrado.passwordHash));
+            const saltToUse = challengeSalt || encontrado?.salt || '';
+            let candidateHash: string | null = null;
+            if (saltToUse) {
+              if (challengeKdfPrefix.startsWith(`${PBKDF2_PREFIX}$`)) {
+                const iters = Number(challengeKdfPrefix.split('$')[1]);
+                candidateHash = await hashPassword(
+                  passwordPlain,
+                  saltToUse,
+                  Number.isFinite(iters) && iters >= 10000 ? iters : PBKDF2_ITERATIONS
+                );
+              } else if (challengeKdfPrefix === 'sha256') {
+                candidateHash = await legacySha256Hash(passwordPlain, saltToUse);
+              } else if (encontrado?.passwordHash?.startsWith(`${PBKDF2_PREFIX}$`)) {
+                const iters = Number(encontrado.passwordHash.split('$')[1]);
+                candidateHash = await hashPassword(
+                  passwordPlain,
+                  saltToUse,
+                  Number.isFinite(iters) && iters >= 10000 ? iters : PBKDF2_ITERATIONS
+                );
+              } else {
+                candidateHash = await legacySha256Hash(passwordPlain, saltToUse);
+              }
+            }
 
-            if (localMatch) {
-              const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+            const { data: syncOk, error: syncErr } = await supabase.rpc('verify_and_sync_auth_user', {
+              p_login: cleanInput,
+              p_password_plain: passwordPlain,
+              p_candidate_hash: candidateHash
+            });
+
+            if (!syncErr && syncOk === true) {
+              const { data: retryData, error: retryErr } = await supabase.auth.signInWithPassword({
                 email: resolvedEmail,
                 password: passwordPlain
               });
-              if (signUpData?.session) {
+              if (!retryErr && retryData?.user) {
                 authenticatedViaSupabase = true;
                 await supabase.rpc('link_my_auth_uid').then(() => {}, () => {});
-              } else if (signUpData?.user && !signUpErr) {
-                throw new Error(
-                  'Se envió un enlace de confirmación a tu correo electrónico para activar el acceso seguro en la nube. Confírmalo e inicia sesión nuevamente.'
-                );
+                usuarios = await this.getUsuarios();
+                encontrado = buscarUsuarioEnLista(usuarios, resolvedEmail);
+              } else {
+                throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
               }
             } else {
-              throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
+              // Verificar si corresponde a cuenta heredada aún no migrada a auth.users
+              const localMatch =
+                encontrado &&
+                encontrado.salt &&
+                encontrado.passwordHash &&
+                (await verifyPassword(passwordPlain, encontrado.salt, encontrado.passwordHash));
+
+              if (localMatch) {
+                const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+                  email: resolvedEmail,
+                  password: passwordPlain
+                });
+                if (signUpData?.session) {
+                  authenticatedViaSupabase = true;
+                  await supabase.rpc('link_my_auth_uid').then(() => {}, () => {});
+                } else if (signUpData?.user && !signUpErr) {
+                  throw new Error(
+                    'Se envió un enlace de confirmación a tu correo electrónico para activar el acceso seguro en la nube. Confírmalo e inicia sesión nuevamente.'
+                  );
+                }
+              } else {
+                throw new Error('Contraseña incorrecta. Verifique sus credenciales.');
+              }
             }
           }
         } catch (authFlowErr: any) {
@@ -579,8 +645,8 @@ export class AuthService {
         encontrado.salt = nuevoSalt;
         encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
       }
-    } else if (!encontrado.passwordHash || !encontrado.passwordHash.startsWith(`${PBKDF2_PREFIX}$`)) {
-      // Actualizar verificador local PBKDF2 para resiliencia offline tras autenticar con Supabase Auth
+    } else {
+      // Actualizar siempre verificador local PBKDF2 con la clave vigente tras autenticar con Supabase Auth
       const nuevoSalt = generateSalt();
       encontrado.salt = nuevoSalt;
       encontrado.passwordHash = await hashPassword(passwordPlain, nuevoSalt);
@@ -598,7 +664,7 @@ export class AuthService {
       STORAGE_USERS_KEY,
       JSON.stringify(sanitizarUsuariosParaLocalStorage(usuarios, encontrado.id))
     );
-    guardarUsuarioDb(encontrado).catch(() => {});
+    guardarUsuarioDb(encontrado, authenticatedViaSupabase).catch(() => {});
 
     // Si el usuario tiene una ApiKey personal configurada, activarla solo durante su sesión
     if (encontrado.geminiApiKey) {
@@ -761,10 +827,24 @@ export class AuthService {
 
     if (esUsuarioActual && isSupabaseEnabled()) {
       await supabase.auth.updateUser({ password: nuevaPasswordPlain }).catch(() => {});
-      await supabase.rpc('update_my_profile_secrets', { p_debe_cambiar_password: false }).then(() => {}, () => {});
+      const { error: rpcErr } = await supabase.rpc('update_my_profile_secrets', {
+        p_debe_cambiar_password: false,
+        p_password_hash: passwordHash,
+        p_salt: salt,
+        p_password_plain: nuevaPasswordPlain
+      });
+      if (rpcErr) {
+        console.warn('[AuthService] Aviso actualizando credenciales de perfil en Supabase:', rpcErr.message);
+      }
+      await guardarUsuarioDb(usuarios[idx], true);
+      if (sesionActual) {
+        sesionActual.usuario.debeCambiarPassword = false;
+        localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(sesionActual));
+      }
+      return;
     }
 
-    await guardarUsuarioDb(usuarios[idx]);
+    await guardarUsuarioDb(usuarios[idx], false, nuevaPasswordPlain);
 
     // Refrescar sesión activa si corresponde al usuario autenticado
     if (sesionActual && esUsuarioActual) {
@@ -798,6 +878,9 @@ export class AuthService {
       const salt = generateSalt();
       usuario.salt = salt;
       usuario.passwordHash = await hashPassword(passwordPlain, salt);
+      if (usuario.debeCambiarPassword !== true) {
+        usuario.debeCambiarPassword = false;
+      }
     }
 
     // 2. Buscar primero por id exacto; si no existe, por email o username
@@ -875,7 +958,7 @@ export class AuthService {
     }
 
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
-    await guardarUsuarioDb(usuario);
+    await guardarUsuarioDb(usuario, false, passwordPlain);
     for (const otroMod of otrosAsesoresModificados) {
       await guardarUsuarioDb(otroMod);
     }

@@ -117,4 +117,33 @@ describe('Autenticación y Super Usuario Oficial SLEP', () => {
     const superUser = usuarios.find(u => u.email === 'saxneal@gmail.com')!;
     await expect(AuthService.toggleEstadoUsuario(superUser.id, false)).rejects.toThrow(/No es posible deshabilitar la cuenta del Super Usuario/);
   });
+
+  it('reinicia contraseña desde Super Usuario limpiando debeCambiarPassword y valida hashes SHA-256 legados en verificarPasswordActual', async () => {
+    const usuarios = await AuthService.getUsuarios();
+    const director = usuarios.find(u => u.role === 'director_establecimiento')!;
+    expect(director).toBeDefined();
+
+    // Simular cuenta heredada con SHA-256 legado y verificarPasswordActual (usado por PrimerAccesoModal)
+    const legacySalt = 'salt-legado-2026';
+    const enc = new TextEncoder();
+    const digest = await crypto.subtle.digest('SHA-256', enc.encode('123456' + legacySalt));
+    const legacyHash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const legacyOk = await AuthService.verificarPasswordActual(
+      { ...director, salt: legacySalt, passwordHash: legacyHash },
+      '123456'
+    );
+    expect(legacyOk).toBe(true);
+
+    // Super Usuario reinicia contraseña del director
+    const claveTemporal = 'Slep-Reset2027';
+    const actualizado = await AuthService.guardarUsuario(
+      { ...director, activo: true, debeCambiarPassword: false },
+      claveTemporal
+    );
+    expect(actualizado.debeCambiarPassword).toBe(false);
+
+    await expect(AuthService.login(director.email!, '123456')).rejects.toThrow(/incorrecta/i);
+    const sesion = await AuthService.login(director.email!, claveTemporal);
+    expect(sesion.usuario.debeCambiarPassword).toBe(false);
+  });
 });

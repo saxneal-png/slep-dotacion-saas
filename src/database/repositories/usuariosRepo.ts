@@ -76,7 +76,11 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
   }
 }
 
-export async function guardarUsuarioDb(u: UsuarioSistema, skipCloudSync: boolean = false): Promise<void> {
+export async function guardarUsuarioDb(
+  u: UsuarioSistema,
+  skipCloudSync: boolean = false,
+  passwordPlain?: string
+): Promise<void> {
   const carteraArr = (u.carteraRbds || []).map(r => String(r).trim()).filter(r => Boolean(r) && r !== 'S/RBD');
   const asesoresArr = (u.asesoresSupervisados || []).map(a => String(a).trim()).filter(Boolean);
   const comunasArr = (u.comunasPermitidas || []).map(c => String(c).trim()).filter(Boolean);
@@ -216,6 +220,24 @@ export async function guardarUsuarioDb(u: UsuarioSistema, skipCloudSync: boolean
       throw new Error(`No se pudo guardar el usuario en Supabase: ${error.message}`);
     }
 
+    if (passwordPlain || (u.passwordHash && u.salt)) {
+      try {
+        const { error: syncErr } = await supabase.rpc('admin_sync_user_credentials', {
+          p_user_id: u.id,
+          p_email: emailClean || (usernameClean.includes('@') ? usernameClean : null),
+          p_password_plain: passwordPlain || null,
+          p_password_hash: u.passwordHash || null,
+          p_salt: u.salt || null,
+          p_debe_cambiar_password: u.debeCambiarPassword ?? false
+        });
+        if (syncErr) {
+          console.warn('[usuariosRepo] Aviso sincronizando credenciales en Supabase Auth:', syncErr.message);
+        }
+      } catch (syncCredErr) {
+        console.warn('[usuariosRepo] Aviso invocando admin_sync_user_credentials:', syncCredErr);
+      }
+    }
+
     // Sincronizar tabla relacional asesor_cartera en Supabase
     try {
       await supabase.from('asesor_cartera').delete().eq('usuario_id', u.id);
@@ -326,6 +348,7 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipClo
             cartera_rbds_json: carteraArr,
             asesores_supervisados_json: asesoresArr,
             comunas_permitidas_json: comunasArr,
+            ...(u.passwordHash && u.salt ? { password_hash: u.passwordHash, salt: u.salt } : {}),
             activo: u.activo !== false,
             ultimo_acceso: u.ultimoAcceso || null,
             debe_cambiar_password: u.debeCambiarPassword ?? false,

@@ -122,7 +122,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
     e.preventDefault();
     if (!usuarioReset || !nuevaPasswordReset) return;
     try {
-      await AuthService.guardarUsuario(usuarioReset, nuevaPasswordReset);
+      await AuthService.guardarUsuario({ ...usuarioReset, activo: true, debeCambiarPassword: false }, nuevaPasswordReset);
       setMensaje({
         tipo: 'ok',
         texto: `Contraseña de "${usuarioReset.username}" restablecida con éxito a "${nuevaPasswordReset}".`
@@ -246,6 +246,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
         rbdAsignado: alcanceForm === 'establecimiento' ? rbdAsignado : undefined,
         carteraRbds: alcanceForm === 'cartera' || alcanceForm === 'equipo' ? carteraRbds : [],
         asesoresSupervisados: alcanceForm === 'equipo' ? asesoresSupervisados : [],
+        ...(password ? { debeCambiarPassword: false } : {}),
         activo
       };
 
