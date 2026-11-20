@@ -236,6 +236,50 @@ function etiquetaCategoriaEscuela(cat: CategoriaTipoEstablecimiento): string {
   return 'Escuela';
 }
 
+function etiquetaEstamentoDocente(estamento?: string): { label: string; badgeClass: string } {
+  switch (estamento) {
+    case 'DOCENTE_DIFERENCIAL':
+      return { label: 'Ed. Diferencial (PIE)', badgeClass: 'bg-violet-50 text-violet-800 border-violet-200' };
+    case 'EDUCADORA_PARVULO':
+      return { label: 'Ed. Párvulos', badgeClass: 'bg-pink-50 text-pink-800 border-pink-200' };
+    case 'PROFESIONAL_PAE':
+      return { label: 'Profesional PAE', badgeClass: 'bg-cyan-50 text-cyan-800 border-cyan-200' };
+    case 'DIRECTIVO':
+      return { label: 'Directivo', badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' };
+    case 'TECNICO_PEDAGOGICO':
+      return { label: 'Técnico-Pedagógico (UTP)', badgeClass: 'bg-sky-50 text-sky-800 border-sky-200' };
+    case 'COORDINADOR_CRA':
+      return { label: 'Coordinador CRA', badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
+    case 'TECNICO_ESPECIAL':
+      return { label: 'Técnico Especial', badgeClass: 'bg-teal-50 text-teal-800 border-teal-200' };
+    case 'ASISTENTE_AULA':
+      return { label: 'Asistente de Aula', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' };
+    case 'DOCENTE_AULA':
+      return { label: 'Docente de Aula', badgeClass: 'bg-indigo-50 text-indigo-800 border-indigo-200' };
+    default:
+      return { label: estamento || 'Otro Estamento', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' };
+  }
+}
+
+function cumpleFiltroEstamento(estamento: string | undefined, filtro: string): boolean {
+  if (filtro === 'TODOS') return true;
+  if (filtro === 'DIRECTIVO_UTP') {
+    return estamento === 'DIRECTIVO' || estamento === 'TECNICO_PEDAGOGICO' || estamento === 'COORDINADOR_CRA';
+  }
+  if (filtro === 'OTRO') {
+    return (
+      estamento !== 'DOCENTE_AULA' &&
+      estamento !== 'DOCENTE_DIFERENCIAL' &&
+      estamento !== 'EDUCADORA_PARVULO' &&
+      estamento !== 'PROFESIONAL_PAE' &&
+      estamento !== 'DIRECTIVO' &&
+      estamento !== 'TECNICO_PEDAGOGICO' &&
+      estamento !== 'COORDINADOR_CRA'
+    );
+  }
+  return estamento === filtro;
+}
+
 /**
  * Vista ejecutiva territorial de la Mesa de Movilidad, Saneamiento NN,
  * Egresos Proyectados GDP y Simulador What-If.
@@ -297,6 +341,12 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
     for (const c of colegios) map.set(c.rbd, c);
     return map;
   }, [colegios]);
+
+  const docentesById = useMemo(() => {
+    const map = new Map<string, Docente>();
+    for (const d of docentesTerritorio) map.set(d.id, d);
+    return map;
+  }, [docentesTerritorio]);
 
   const docentesNoVacantes = useMemo(
     () => docentesTerritorio.filter(d => !d.esVacanteNn),
@@ -567,22 +617,85 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
 
   // ── Formularios Columna 1: No Continuidad, Traslados, Egresos GDP ──
   const [busquedaTitularNc, setBusquedaTitularNc] = useState('');
+  const [incluirTitularesSinMarcaGdp, setIncluirTitularesSinMarcaGdp] = useState(false);
   const [docenteNcId, setDocenteNcId] = useState('');
   const [comunaDestNc, setComunaDestNc] = useState('');
   const [fundamentoNc, setFundamentoNc] = useState('');
 
+  const idsYaEnColaNc = useMemo(
+    () => new Set(solicitudes.filter(s => s.carril === 'NO_CONTINUIDAD_TITULAR').map(s => s.docenteId)),
+    [solicitudes]
+  );
+
   const titularesDisponiblesNc = useMemo(() => {
     const q = busquedaTitularNc.toLowerCase().trim();
     return docentesNoVacantes
-      .filter(d => d.calidadJuridica === 'TITULAR')
+      .filter(d => !idsYaEnColaNc.has(d.id))
+      .filter(d => {
+        const tieneMarcaNc = esPropuestaNoContinuidad(d.propuestaGdp) || esPropuestaNoContinuidad(d.situacionFinalGdp);
+        if (incluirTitularesSinMarcaGdp) {
+          return tieneMarcaNc || d.calidadJuridica === 'TITULAR';
+        }
+        return tieneMarcaNc;
+      })
       .filter(d =>
         !q ||
         `${d.nombres} ${d.apellidos}`.toLowerCase().includes(q) ||
         d.run.toLowerCase().includes(q) ||
         (colegiosByRbd.get(d.rbd)?.nombre || '').toLowerCase().includes(q)
       )
-      .slice(0, 60);
-  }, [docentesNoVacantes, busquedaTitularNc, colegiosByRbd]);
+      .slice(0, 80);
+  }, [docentesNoVacantes, idsYaEnColaNc, incluirTitularesSinMarcaGdp, busquedaTitularNc, colegiosByRbd]);
+
+  const handleFormalizarNoContinuidadDesdeGdp = async (doc: Docente) => {
+    const est = colegiosByRbd.get(doc.rbd);
+    const horasTit =
+      (doc.horasSubvencionGeneralTitular || 0) + (doc.horasSepTitular || 0) + (doc.horasPieTitular || 0) ||
+      doc.horasContrato;
+    const razon =
+      [doc.observacionesDirector, doc.observacionesSlep, doc.observacionesPal]
+        .map(x => (x || '').trim())
+        .filter(Boolean)
+        .join(' | ') || 'No Continuidad informada en Propuesta GDP';
+    setOperacionEnCurso('Formalizando No Continuidad en Cola Art. 42...');
+    try {
+      await guardarSolicitudMovilidad(
+        {
+          periodo: periodoActivo,
+          carril: 'NO_CONTINUIDAD_TITULAR',
+          docenteId: doc.id,
+          runDocente: doc.run,
+          nombreDocente: `${doc.nombres} ${doc.apellidos}`.trim(),
+          rbdOrigen: doc.rbd,
+          comunaOrigen: est?.comuna,
+          calidadJuridica: doc.calidadJuridica,
+          horasContratoActual: doc.horasContrato,
+          horasTitularesActuales: horasTit,
+          horasDisponiblesMover: doc.horasContrato,
+          horasRemanentes: 0,
+          asignaturaPrincipal: doc.asignaturaPrincipal,
+          tituloMencion: doc.titulo,
+          aplicaArticulo69: doc.aplicaArticulo69,
+          fuenteActual: inferirFuenteDocente(doc),
+          estadoFlujo: 'POSTULADO',
+          puntajeSalud: 0,
+          puntajeLeyKarin: 0,
+          puntajeCuidadoDependientes: 0,
+          puntajeDistanciaRural: 0,
+          puntajeAntiguedad: 50,
+          fundamento: razon,
+          creadoPor: usuarioActual.email || usuarioActual.nombreCompleto
+        },
+        rol
+      );
+      await recargarModuloMovilidad();
+      mostrarFeedback(`Formalizado ${doc.nombres} ${doc.apellidos} en cola de No Continuidad.`);
+    } catch (err: any) {
+      mostrarFeedback(`Error formalizando no continuidad: ${err.message || err}`, 'error');
+    } finally {
+      setOperacionEnCurso(null);
+    }
+  };
 
   const handleCrearNoContinuidad = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -993,18 +1106,53 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
     });
   }, [vacantesNn, filtroTipoVacante, filtroComunaVacante, filtroFuenteVacante, busquedaVacante, colegiosByRbd]);
 
-  // ── Vista interna del módulo + Filtro Tipo Escuela en Remanentes ──
+  // ── Vista interna del módulo + Filtros Columna 1 (Estamento & Tipo Escuela) ──
   const [vistaInternaMesa, setVistaInternaMesa] = useState<'tablero' | 'analisis_no_continuidad'>('tablero');
+  const [filtroEstamentoCol1, setFiltroEstamentoCol1] = useState<string>('TODOS');
   const [filtroTipoEscuelaRemanente, setFiltroTipoEscuelaRemanente] = useState<string>('TODOS');
   const [vacanteAsignaturasModal, setVacanteAsignaturasModal] = useState<Docente | null>(null);
 
   const remanentesFiltrados = useMemo(() => {
-    if (filtroTipoEscuelaRemanente === 'TODOS') return remanentes;
     return remanentes.filter(item => {
-      const est = item.establecimiento || colegiosByRbd.get(item.docente.rbd);
-      return cumpleFiltroTipoEscuela(est, filtroTipoEscuelaRemanente);
+      if (!cumpleFiltroEstamento(item.docente.estamento, filtroEstamentoCol1)) return false;
+      if (filtroTipoEscuelaRemanente !== 'TODOS') {
+        const est = item.establecimiento || colegiosByRbd.get(item.docente.rbd);
+        if (!cumpleFiltroTipoEscuela(est, filtroTipoEscuelaRemanente)) return false;
+      }
+      return true;
     });
-  }, [remanentes, filtroTipoEscuelaRemanente, colegiosByRbd]);
+  }, [remanentes, filtroEstamentoCol1, filtroTipoEscuelaRemanente, colegiosByRbd]);
+
+  const docentesNoContinuidadPendientes = useMemo(() => {
+    return docentesNoVacantes.filter(
+      d =>
+        !idsYaEnColaNc.has(d.id) &&
+        (esPropuestaNoContinuidad(d.propuestaGdp) || esPropuestaNoContinuidad(d.situacionFinalGdp))
+    );
+  }, [docentesNoVacantes, idsYaEnColaNc]);
+
+  const docentesNoContinuidadPendientesFiltrados = useMemo(
+    () => docentesNoContinuidadPendientes.filter(d => cumpleFiltroEstamento(d.estamento, filtroEstamentoCol1)),
+    [docentesNoContinuidadPendientes, filtroEstamentoCol1]
+  );
+
+  const solicitudesNoContinuidadFiltradas = useMemo(() => {
+    return solicitudes
+      .filter(s => s.carril === 'NO_CONTINUIDAD_TITULAR')
+      .filter(s => cumpleFiltroEstamento(docentesById.get(s.docenteId)?.estamento, filtroEstamentoCol1))
+      .sort((a, b) => b.puntajePrioridadTotal - a.puntajePrioridadTotal);
+  }, [solicitudes, docentesById, filtroEstamentoCol1]);
+
+  const solicitudesTrasladosFiltradas = useMemo(() => {
+    return solicitudes
+      .filter(s => s.carril === 'TRASLADO_VOLUNTARIO')
+      .filter(s => cumpleFiltroEstamento(docentesById.get(s.docenteId)?.estamento, filtroEstamentoCol1))
+      .sort((a, b) => b.puntajePrioridadTotal - a.puntajePrioridadTotal);
+  }, [solicitudes, docentesById, filtroEstamentoCol1]);
+
+  const egresosFiltrados = useMemo(() => {
+    return egresos.filter(eg => cumpleFiltroEstamento(docentesById.get(eg.docenteId)?.estamento, filtroEstamentoCol1));
+  }, [egresos, docentesById, filtroEstamentoCol1]);
 
   // ── Análisis y Exportación de No Continuidad (Docentes + Asistentes) ──
   const [busquedaNcAnalisis, setBusquedaNcAnalisis] = useState<string>('');
@@ -1846,6 +1994,33 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
             {cargando && <RefreshCw className="w-3.5 h-3.5 text-slate-400 animate-spin" />}
           </div>
 
+          {/* Filtro Transversal por Estamento */}
+          <div className="flex items-center gap-2">
+            <select
+              value={filtroEstamentoCol1}
+              onChange={e => setFiltroEstamentoCol1(e.target.value)}
+              className="flex-1 px-2.5 py-1.5 text-[11px] font-semibold bg-slate-50 border border-slate-300 rounded-xl"
+              title="Filtrar cola por estamento (Docente Aula, Diferencial, Educadora de Párvulos, etc.)"
+            >
+              <option value="TODOS">Estamento: Todos</option>
+              <option value="DOCENTE_AULA">Docente de Aula</option>
+              <option value="DOCENTE_DIFERENCIAL">Docente Diferencial (PIE)</option>
+              <option value="EDUCADORA_PARVULO">Educadora de Párvulos</option>
+              <option value="PROFESIONAL_PAE">Profesional PAE</option>
+              <option value="DIRECTIVO_UTP">Directivo / Técnico-Pedagógico (UTP)</option>
+              <option value="OTRO">Otros Estamentos</option>
+            </select>
+            {filtroEstamentoCol1 !== 'TODOS' && (
+              <button
+                type="button"
+                onClick={() => setFiltroEstamentoCol1('TODOS')}
+                className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 rounded-lg"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+
           {/* Sub-pestañas condicionales según Feature Flags */}
           <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             {flags.flag_no_continuidad_titulares && (
@@ -1858,7 +2033,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                No Continuidad ({solicitudesNoContinuidad.length})
+                No Continuidad ({solicitudesNoContinuidadFiltradas.length + docentesNoContinuidadPendientesFiltrados.length})
               </button>
             )}
 
@@ -1872,7 +2047,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Traslados ({solicitudesTraslados.length})
+                Traslados ({solicitudesTrasladosFiltradas.length})
               </button>
             )}
 
@@ -1885,7 +2060,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Remanentes ({remanentes.length})
+              Remanentes ({remanentesFiltrados.length})
             </button>
 
             {flags.flag_egresos_contingencia && (
@@ -1898,7 +2073,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Egresos GDP ({egresos.length})
+                Egresos GDP ({egresosFiltrados.length})
               </button>
             )}
           </div>
@@ -1925,7 +2100,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                     type="text"
                     value={busquedaTitularNc}
                     onChange={e => setBusquedaTitularNc(e.target.value)}
-                    placeholder="Buscar titular por nombre, RUN o escuela..."
+                    placeholder="Buscar docente sin continuidad por nombre, RUN o escuela..."
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
                   />
                   <select
@@ -1934,13 +2109,29 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                     required
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
                   >
-                    <option value="">Selecciona docente titular...</option>
+                    <option value="">
+                      {titularesDisponiblesNc.length > 0
+                        ? `Selecciona docente (${titularesDisponiblesNc.length} disponibles)...`
+                        : 'Sin docentes con marca GDP de No Continuidad'}
+                    </option>
                     {titularesDisponiblesNc.map(d => (
                       <option key={d.id} value={d.id}>
-                        {d.nombres} {d.apellidos} ({d.run}) — {d.horasContrato}h · {colegiosByRbd.get(d.rbd)?.nombre || d.rbd}
+                        {d.nombres} {d.apellidos} ({d.run}) — {etiquetaEstamentoDocente(d.estamento).label} · {d.calidadJuridica} · {d.horasContrato}h · {colegiosByRbd.get(d.rbd)?.nombre || d.rbd}
                       </option>
                     ))}
                   </select>
+                  <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={incluirTitularesSinMarcaGdp}
+                      onChange={e => {
+                        setIncluirTitularesSinMarcaGdp(e.target.checked);
+                        setDocenteNcId('');
+                      }}
+                      className="w-3.5 h-3.5 accent-rose-600"
+                    />
+                    <span>Incluir titulares sin marca GDP de No Continuidad (excepción)</span>
+                  </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <select
                       value={comunaDestNc}
@@ -1971,50 +2162,59 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
               )}
 
               <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
-                {solicitudesNoContinuidad.length === 0 ? (
+                {solicitudesNoContinuidadFiltradas.length === 0 && docentesNoContinuidadPendientesFiltrados.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-6">
-                    No hay titulares en cola de no continuidad para el periodo {periodoActivo}.
+                    No hay docentes en cola ni con propuesta GDP de No Continuidad para los filtros actuales ({periodoActivo}).
                   </p>
                 ) : (
-                  solicitudesNoContinuidad.map(sol => {
-                    const seleccionado = origenSeleccionado?.solicitudMovilidadId === sol.id;
-                    const badgeFlujo = ETIQUETAS_FLUJO[sol.estadoFlujo];
-                    const idxFlujo = FLUJO_MOVILIDAD_SECUENCIA.indexOf(sol.estadoFlujo);
-                    const puedeAvanzar = idxFlujo >= 0 && idxFlujo < FLUJO_MOVILIDAD_SECUENCIA.length - 1;
-                    return (
-                      <div
-                        key={sol.id}
-                        className={`p-3 rounded-xl border transition-all space-y-2 ${
-                          seleccionado
-                            ? 'bg-indigo-50/70 border-indigo-500 ring-1 ring-indigo-300'
-                            : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-xs font-black text-slate-900">{sol.nombreDocente}</div>
-                            <div className="text-[11px] font-mono text-slate-500">
-                              {sol.runDocente} · {colegiosByRbd.get(sol.rbdOrigen)?.nombre || sol.rbdOrigen}
+                  <>
+                    {solicitudesNoContinuidadFiltradas.map(sol => {
+                      const seleccionado = origenSeleccionado?.solicitudMovilidadId === sol.id;
+                      const badgeFlujo = ETIQUETAS_FLUJO[sol.estadoFlujo];
+                      const idxFlujo = FLUJO_MOVILIDAD_SECUENCIA.indexOf(sol.estadoFlujo);
+                      const puedeAvanzar = idxFlujo >= 0 && idxFlujo < FLUJO_MOVILIDAD_SECUENCIA.length - 1;
+                      const estamentoMeta = etiquetaEstamentoDocente(docentesById.get(sol.docenteId)?.estamento);
+                      return (
+                        <div
+                          key={sol.id}
+                          className={`p-3 rounded-xl border transition-all space-y-2 ${
+                            seleccionado
+                              ? 'bg-indigo-50/70 border-indigo-500 ring-1 ring-indigo-300'
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-black text-slate-900">{sol.nombreDocente}</div>
+                              <div className="text-[11px] font-mono text-slate-500">
+                                {sol.runDocente} · {colegiosByRbd.get(sol.rbdOrigen)?.nombre || sol.rbdOrigen}
+                              </div>
                             </div>
-                          </div>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200 tabular-nums shrink-0">
-                            Pts {sol.puntajePrioridadTotal}
-                          </span>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                          <span className={`px-2 py-0.5 rounded font-bold border ${badgeFlujo.badgeClass}`}>
-                            {badgeFlujo.label}
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold tabular-nums">
-                            {sol.horasTitularesActuales}h Titulares / {sol.horasContratoActual}h Total
-                          </span>
-                          {sol.asignaturaPrincipal && (
-                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold">
-                              {sol.asignaturaPrincipal}
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200 tabular-nums shrink-0">
+                              Pts {sol.puntajePrioridadTotal}
                             </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                            <span className={`px-2 py-0.5 rounded font-bold border ${badgeFlujo.badgeClass}`}>
+                              {badgeFlujo.label}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded font-bold border ${estamentoMeta.badgeClass}`}>
+                              {estamentoMeta.label}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold tabular-nums">
+                              {sol.horasTitularesActuales}h Titulares / {sol.horasContratoActual}h Total
+                            </span>
+                            {sol.asignaturaPrincipal && (
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold">
+                                {sol.asignaturaPrincipal}
+                              </span>
+                            )}
+                          </div>
+
+                          {sol.fundamento && (
+                            <p className="text-[10px] text-slate-600 line-clamp-2">{sol.fundamento}</p>
                           )}
-                        </div>
 
                         <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
                           <button
@@ -2068,7 +2268,93 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                         </div>
                       </div>
                     );
-                  })
+                  })}
+                  {docentesNoContinuidadPendientesFiltrados.map(doc => {
+                    const seleccionado = !origenSeleccionado?.solicitudMovilidadId && origenSeleccionado?.docenteId === doc.id;
+                    const estamentoMeta = etiquetaEstamentoDocente(doc.estamento);
+                    const razonGdp = [doc.observacionesDirector, doc.observacionesSlep, doc.observacionesPal]
+                      .map(x => (x || '').trim())
+                      .filter(Boolean)
+                      .join(' | ');
+                    return (
+                      <div
+                        key={`gdp-nc-${doc.id}`}
+                        className={`p-3 rounded-xl border transition-all space-y-2 ${
+                          seleccionado
+                            ? 'bg-indigo-50/70 border-indigo-500 ring-1 ring-indigo-300'
+                            : 'bg-rose-50/30 border-rose-200 hover:border-rose-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-black text-slate-900">
+                              {doc.nombres} {doc.apellidos}
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-500">
+                              {doc.run} · {colegiosByRbd.get(doc.rbd)?.nombre || doc.rbd}
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
+                            Propuesta GDP
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className={`px-1.5 py-0.5 rounded font-bold border ${estamentoMeta.badgeClass}`}>
+                            {estamentoMeta.label}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold tabular-nums">
+                            {doc.horasContrato}h · {doc.calidadJuridica}
+                          </span>
+                          {doc.asignaturaPrincipal && (
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold">
+                              {doc.asignaturaPrincipal}
+                            </span>
+                          )}
+                        </div>
+
+                        {razonGdp && <p className="text-[10px] text-slate-600 line-clamp-2">{razonGdp}</p>}
+
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-rose-100">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOrigenSeleccionado({
+                                docenteId: doc.id,
+                                nombreDocente: `${doc.nombres} ${doc.apellidos}`.trim(),
+                                runDocente: doc.run,
+                                rbdOrigen: doc.rbd,
+                                carrilLabel: 'No Continuidad (Propuesta GDP)',
+                                horas: doc.horasContrato,
+                                calidadJuridica: doc.calidadJuridica,
+                                asignatura: doc.asignaturaPrincipal,
+                                aplicaArticulo69: doc.aplicaArticulo69
+                              })
+                            }
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                              seleccionado
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                            }`}
+                          >
+                            {seleccionado ? '✓ Origen Activo' : 'Seleccionar Origen'}
+                          </button>
+
+                          {puedeEditarMovilidad && (
+                            <button
+                              type="button"
+                              onClick={() => handleFormalizarNoContinuidadDesdeGdp(doc)}
+                              disabled={Boolean(operacionEnCurso)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold disabled:opacity-50"
+                            >
+                              Formalizar en Cola Art. 42
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  </>
                 )}
               </div>
             </div>
@@ -2089,16 +2375,17 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
               )}
 
               <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
-                {solicitudesTraslados.length === 0 ? (
+                {solicitudesTrasladosFiltradas.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-6">
-                    No existen solicitudes de traslado voluntario registradas.
+                    No existen solicitudes de traslado voluntario para el filtro actual.
                   </p>
                 ) : (
-                  solicitudesTraslados.map(sol => {
+                  solicitudesTrasladosFiltradas.map(sol => {
                     const seleccionado = origenSeleccionado?.solicitudMovilidadId === sol.id;
                     const badgeFlujo = ETIQUETAS_FLUJO[sol.estadoFlujo];
                     const idxFlujo = FLUJO_MOVILIDAD_SECUENCIA.indexOf(sol.estadoFlujo);
                     const puedeAvanzar = idxFlujo >= 0 && idxFlujo < FLUJO_MOVILIDAD_SECUENCIA.length - 1;
+                    const estamentoMeta = etiquetaEstamentoDocente(docentesById.get(sol.docenteId)?.estamento);
 
                     return (
                       <div
@@ -2124,6 +2411,9 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                         <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
                           <span className={`px-2 py-0.5 rounded font-bold border ${badgeFlujo.badgeClass}`}>
                             {badgeFlujo.label}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded font-bold border ${estamentoMeta.badgeClass}`}>
+                            {estamentoMeta.label}
                           </span>
                           <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold tabular-nums">
                             {sol.horasContratoActual}h · {sol.calidadJuridica}
@@ -2266,6 +2556,9 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-1.5 text-[10px] text-slate-600 tabular-nums">
+                        <span className={`px-1.5 py-0.5 rounded font-bold border ${etiquetaEstamentoDocente(item.docente.estamento).badgeClass}`}>
+                          {etiquetaEstamentoDocente(item.docente.estamento).label}
+                        </span>
                         <span className="px-1.5 py-0.5 rounded bg-slate-100 font-semibold">
                           Contrato: {item.horasContrato}h
                         </span>
@@ -2329,14 +2622,15 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
               )}
 
               <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
-                {egresos.length === 0 ? (
+                {egresosFiltrados.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-6">
-                    Sin egresos proyectados registrados para {periodoActivo}.
+                    Sin egresos proyectados registrados para {periodoActivo} con el filtro actual.
                   </p>
                 ) : (
-                  egresos.map(eg => {
+                  egresosFiltrados.map(eg => {
                     const causalLabel = CAUSALES_EGRESO_OPCIONES.find(c => c.id === eg.causal)?.label || eg.causal;
                     const esConfirmado = eg.certeza === 'confirmado';
+                    const estamentoMeta = etiquetaEstamentoDocente(docentesById.get(eg.docenteId)?.estamento);
                     return (
                       <div key={eg.id} className="p-3 rounded-xl bg-white border border-slate-200 space-y-2">
                         <div className="flex items-start justify-between gap-2">
@@ -2354,6 +2648,9 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                         <div className="text-[11px] font-semibold text-slate-700">{causalLabel}</div>
 
                         <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className={`px-1.5 py-0.5 rounded font-bold border ${estamentoMeta.badgeClass}`}>
+                            {estamentoMeta.label}
+                          </span>
                           {esConfirmado ? (
                             <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
                               Confirmado {eg.numeroDecreto ? `· Dec. ${eg.numeroDecreto}` : ''} {eg.fechaCese ? `· ${eg.fechaCese}` : ''}
