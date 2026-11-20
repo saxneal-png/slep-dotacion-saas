@@ -24,6 +24,7 @@ export interface EgresoProyectadoInput {
   causal: CausalEgresoEngine;
   certeza: CertezaEgresoEngine;
   excepcionJubilacion3Anios?: boolean;
+  cpeipNotificacionFirme?: boolean;
   fechaCese?: string;
   numeroDecreto?: string;
   horasLiberadas: number;
@@ -102,6 +103,29 @@ export function evaluarEgresoProyectado(
   const tieneNumeroDecreto = Boolean(
     input.numeroDecreto && input.numeroDecreto.trim().length > 0
   );
+
+  if (
+    input.causal === 'art_19s_no_avance' &&
+    input.cpeipNotificacionFirme !== true
+  ) {
+    const motivoCpeip =
+      'Egreso Art. 19 S Ley 20.903 condicional: falta Notificación CPEIP firme / plazo de reposición vencido antes de liberar titularidad definitiva (solo se habilita cobertura transitoria mientras concluye reposición).';
+    alertasNormativas.push(motivoCpeip);
+    if (!tieneFechaCese || !tieneNumeroDecreto) {
+      alertasNormativas.push(
+        'Adicionalmente falta fecha de cese y/o N° de decreto/resolución registrado.'
+      );
+    }
+    return {
+      liberaVacante: true,
+      esVacanteCondicional: true,
+      permiteCoberturaTransitoria: true,
+      permiteConsolidacionDefinitiva: false,
+      motivoBloqueoDefinitivo: motivoCpeip,
+      impactoPresupuestarioSugerido: 'costo_doble_pendiente',
+      alertasNormativas,
+    };
+  }
 
   if (tieneFechaCese && tieneNumeroDecreto) {
     if (input.horasLiberadas <= 0) {

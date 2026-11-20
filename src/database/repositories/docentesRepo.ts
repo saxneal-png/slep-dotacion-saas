@@ -1,4 +1,4 @@
-import { Docente } from '../../types';
+import { Docente, TramoCarreraDocente } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 import { normalizarRut, limpiarRutParaId, esRunValidoParaDedup, claveDedupFuncionario } from '../../utils/rutUtils';
@@ -16,7 +16,8 @@ const DOCENTE_SELECT_COLS = `
   accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
   situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
   es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
-  es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional
+  es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional,
+  tramo_carrera_docente, habilitacion_seremi_rbd, habilitacion_seremi_asignatura
 `;
 
 function mapRowToDocente(row: any[]): Docente {
@@ -102,7 +103,10 @@ function mapRowToDocente(row: any[]): Docente {
     tipoVacante: row[55] ? (String(row[55]) as Docente['tipoVacante']) : undefined,
     justificacionVacante: row[56] ? String(row[56]) : undefined,
     origenEgresoId: row[57] ? String(row[57]) : undefined,
-    vacanteCondicional: Boolean(row[58])
+    vacanteCondicional: Boolean(row[58]),
+    tramoCarreraDocente: row[59] ? (String(row[59]) as TramoCarreraDocente) : undefined,
+    habilitacionSeremiRbd: row[60] ? String(row[60]) : undefined,
+    habilitacionSeremiAsignatura: row[61] ? String(row[61]) : undefined
   };
 }
 
@@ -167,6 +171,145 @@ export async function listarTodosLosDocentesTerritorio(periodo: number = 2027): 
     return `${a.apellidos} ${a.nombres}`.localeCompare(`${b.apellidos} ${b.nombres}`, 'es');
   });
   return docentes;
+}
+
+const DOCENTE_UPSERT_SQL = `
+  INSERT INTO docentes (
+    id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
+    horas_subvencion_general_titular, horas_subvencion_general_contrata,
+    horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
+    horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
+    horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
+    horas_taller_sep, horas_trabajo_colaborativo,
+    horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
+    funciones_no_aula_json, periodo,
+    horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
+    accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
+    situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
+    es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
+    es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional,
+    tramo_carrera_docente, habilitacion_seremi_rbd, habilitacion_seremi_asignatura
+  )
+  VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    ?, ?
+  )
+  ON CONFLICT(id) DO UPDATE SET
+    rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
+    titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
+    estamento=excluded.estamento, horas_contrato=excluded.horas_contrato,
+    horas_subvencion_general_titular=excluded.horas_subvencion_general_titular,
+    horas_subvencion_general_contrata=excluded.horas_subvencion_general_contrata,
+    horas_sep_titular=excluded.horas_sep_titular,
+    horas_sep_contrata=excluded.horas_sep_contrata,
+    horas_pie_titular=excluded.horas_pie_titular,
+    horas_pie_contrata=excluded.horas_pie_contrata,
+    horas_directivas=excluded.horas_directivas,
+    horas_inspector_general=excluded.horas_inspector_general,
+    horas_tecnico_pedagogica=excluded.horas_tecnico_pedagogica,
+    horas_coordinacion=excluded.horas_coordinacion, tipo_coordinacion=excluded.tipo_coordinacion,
+    horas_coordinacion_pie=excluded.horas_coordinacion_pie,
+    horas_convivencia_escolar=excluded.horas_convivencia_escolar,
+    horas_extraescolar=excluded.horas_extraescolar,
+    cargo_institucional=excluded.cargo_institucional,
+    horas_taller_sep=excluded.horas_taller_sep,
+    horas_trabajo_colaborativo=excluded.horas_trabajo_colaborativo,
+    horas_aula=excluded.horas_aula, horas_ingles=excluded.horas_ingles,
+    funcion_principal=excluded.funcion_principal, funcion_secundaria=excluded.funcion_secundaria,
+    asignatura_principal=excluded.asignatura_principal, aplica_articulo_69=excluded.aplica_articulo_69,
+    funciones_no_aula_json=excluded.funciones_no_aula_json,
+    periodo=excluded.periodo,
+    horas_vigentes_anterior=excluded.horas_vigentes_anterior,
+    propuesta_gdp=excluded.propuesta_gdp,
+    remuneracion_mensual_app=excluded.remuneracion_mensual_app,
+    fecha_inicio_contrato=excluded.fecha_inicio_contrato,
+    fecha_termino_contrato=excluded.fecha_termino_contrato,
+    accion_pme_sep=excluded.accion_pme_sep,
+    horas_pro_retencion=excluded.horas_pro_retencion,
+    descripcion_funcion_gdp=excluded.descripcion_funcion_gdp,
+    estado_sancion_gdp=excluded.estado_sancion_gdp,
+    horas_aprobadas_gdp=excluded.horas_aprobadas_gdp,
+    situacion_final_gdp=excluded.situacion_final_gdp,
+    observaciones_director=excluded.observaciones_director,
+    observaciones_slep=excluded.observaciones_slep,
+    requiere_autorizacion_docente=excluded.requiere_autorizacion_docente,
+    es_vtf=excluded.es_vtf,
+    funcion_vtf=excluded.funcion_vtf,
+    grupo_jisc_id=excluded.grupo_jisc_id,
+    hora_ingreso_turno=excluded.hora_ingreso_turno,
+    hora_salida_turno=excluded.hora_salida_turno,
+    reemplazo_de_run=excluded.reemplazo_de_run,
+    es_vacante_nn=excluded.es_vacante_nn,
+    tipo_vacante=excluded.tipo_vacante,
+    justificacion_vacante=excluded.justificacion_vacante,
+    origen_egreso_id=excluded.origen_egreso_id,
+    vacante_condicional=excluded.vacante_condicional,
+    tramo_carrera_docente=excluded.tramo_carrera_docente,
+    habilitacion_seremi_rbd=excluded.habilitacion_seremi_rbd,
+    habilitacion_seremi_asignatura=excluded.habilitacion_seremi_asignatura;
+`;
+
+function buildDocenteUpsertParams(
+  d: Docente,
+  docId: string,
+  docPeriodo: number,
+  fuentes: {
+    subvGenTitular: number;
+    subvGenContrata: number;
+    sepTitular: number;
+    sepContrata: number;
+    pieTitular: number;
+    pieContrata: number;
+  }
+): any[] {
+  const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
+  const remMensual = d.remuneracionMensualApp ?? (d as any).remuneracionMensual ?? 0;
+  const pmeSep = d.accionPmeSep ?? (d as any).accionPme ?? null;
+  const obsDirector = d.observacionesDirector ?? (d as any).observacionesPal ?? null;
+
+  return [
+    docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
+    fuentes.subvGenTitular, fuentes.subvGenContrata, fuentes.sepTitular, fuentes.sepContrata, fuentes.pieTitular, fuentes.pieContrata,
+    d.horasDirectivas || 0, d.horasInspectorGeneral || 0, d.horasTecnicoPedagogicas || 0, d.horasCoordinacion || 0, d.tipoCoordinacion || null,
+    d.horasCoordinacionPie || 0, d.horasConvivenciaEscolar || 0, d.horasExtraescolar || 0, d.cargoInstitucional || null,
+    d.horasTallerSep || 0, d.horasTrabajoColaborativo || 0,
+    d.horasAula || 0, d.horasIngles || 0,
+    d.funcionPrincipal || null, d.funcionSecundaria || null, d.asignaturaPrincipal || null, d.aplicaArticulo69 ? 1 : 0,
+    funcionesJson, docPeriodo,
+    d.horasVigentesAnterior !== undefined && d.horasVigentesAnterior !== null ? d.horasVigentesAnterior : d.horasContrato,
+    d.propuestaGdp || 'Continuidad',
+    remMensual,
+    d.fechaInicioContrato || '01-03-2026',
+    d.fechaTerminoContrato || (d.calidadJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
+    pmeSep,
+    d.horasProRetencion || 0,
+    d.descripcionFuncionGdp || null,
+    d.estadoSancionGdp || 'Pendiente',
+    d.horasAprobadasGdp || 0,
+    d.situacionFinalGdp || 'Vigente',
+    obsDirector,
+    d.observacionesSlep || null,
+    d.requiereAutorizacionDocente ? 1 : 0,
+    d.esVtf ? 1 : 0,
+    d.funcionVtf || null,
+    d.grupoJiscId || null,
+    d.horaIngresoTurno || null,
+    d.horaSalidaTurno || null,
+    d.reemplazoDeRun || null,
+    d.esVacanteNn ? 1 : 0,
+    d.tipoVacante || null,
+    d.justificacionVacante || null,
+    d.origenEgresoId || null,
+    d.vacanteCondicional ? 1 : 0,
+    d.tramoCarreraDocente || null,
+    d.habilitacionSeremiRbd || null,
+    d.habilitacionSeremiAsignatura || null
+  ];
 }
 
 export async function guardarDocente(d: Docente, skipCloudSync: boolean = false): Promise<void> {
@@ -238,115 +381,17 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
     Number(d.horasPieContrata || 0)
   );
 
-  const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
-
-  // Soportar compatibilidad de nombres entre vistas/modales y modelo DB
-  const remMensual = d.remuneracionMensualApp ?? (d as any).remuneracionMensual ?? 0;
-  const pmeSep = d.accionPmeSep ?? (d as any).accionPme ?? null;
-  const obsDirector = d.observacionesDirector ?? (d as any).observacionesPal ?? null;
-
-  db.run(`
-    INSERT INTO docentes (
-      id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
-      horas_subvencion_general_titular, horas_subvencion_general_contrata,
-      horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
-      horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
-      horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
-      horas_taller_sep, horas_trabajo_colaborativo,
-      horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-      funciones_no_aula_json, periodo,
-      horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
-      accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-      situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
-      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
-      es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
-      titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
-      estamento=excluded.estamento, horas_contrato=excluded.horas_contrato,
-      horas_subvencion_general_titular=excluded.horas_subvencion_general_titular,
-      horas_subvencion_general_contrata=excluded.horas_subvencion_general_contrata,
-      horas_sep_titular=excluded.horas_sep_titular,
-      horas_sep_contrata=excluded.horas_sep_contrata,
-      horas_pie_titular=excluded.horas_pie_titular,
-      horas_pie_contrata=excluded.horas_pie_contrata,
-      horas_directivas=excluded.horas_directivas,
-      horas_inspector_general=excluded.horas_inspector_general,
-      horas_tecnico_pedagogica=excluded.horas_tecnico_pedagogica,
-      horas_coordinacion=excluded.horas_coordinacion, tipo_coordinacion=excluded.tipo_coordinacion,
-      horas_coordinacion_pie=excluded.horas_coordinacion_pie,
-      horas_convivencia_escolar=excluded.horas_convivencia_escolar,
-      horas_extraescolar=excluded.horas_extraescolar,
-      cargo_institucional=excluded.cargo_institucional,
-      horas_taller_sep=excluded.horas_taller_sep,
-      horas_trabajo_colaborativo=excluded.horas_trabajo_colaborativo,
-      horas_aula=excluded.horas_aula, horas_ingles=excluded.horas_ingles,
-      funcion_principal=excluded.funcion_principal, funcion_secundaria=excluded.funcion_secundaria,
-      asignatura_principal=excluded.asignatura_principal, aplica_articulo_69=excluded.aplica_articulo_69,
-      funciones_no_aula_json=excluded.funciones_no_aula_json,
-      periodo=excluded.periodo,
-      horas_vigentes_anterior=excluded.horas_vigentes_anterior,
-      propuesta_gdp=excluded.propuesta_gdp,
-      remuneracion_mensual_app=excluded.remuneracion_mensual_app,
-      fecha_inicio_contrato=excluded.fecha_inicio_contrato,
-      fecha_termino_contrato=excluded.fecha_termino_contrato,
-      accion_pme_sep=excluded.accion_pme_sep,
-      horas_pro_retencion=excluded.horas_pro_retencion,
-      descripcion_funcion_gdp=excluded.descripcion_funcion_gdp,
-      estado_sancion_gdp=excluded.estado_sancion_gdp,
-      horas_aprobadas_gdp=excluded.horas_aprobadas_gdp,
-      situacion_final_gdp=excluded.situacion_final_gdp,
-      observaciones_director=excluded.observaciones_director,
-      observaciones_slep=excluded.observaciones_slep,
-      requiere_autorizacion_docente=excluded.requiere_autorizacion_docente,
-      es_vtf=excluded.es_vtf,
-      funcion_vtf=excluded.funcion_vtf,
-      grupo_jisc_id=excluded.grupo_jisc_id,
-      hora_ingreso_turno=excluded.hora_ingreso_turno,
-      hora_salida_turno=excluded.hora_salida_turno,
-      reemplazo_de_run=excluded.reemplazo_de_run,
-      es_vacante_nn=excluded.es_vacante_nn,
-      tipo_vacante=excluded.tipo_vacante,
-      justificacion_vacante=excluded.justificacion_vacante,
-      origen_egreso_id=excluded.origen_egreso_id,
-      vacante_condicional=excluded.vacante_condicional;
-  `, [
-    docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
-    subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
-    d.horasDirectivas || 0, d.horasInspectorGeneral || 0, d.horasTecnicoPedagogicas || 0, d.horasCoordinacion || 0, d.tipoCoordinacion || null,
-    d.horasCoordinacionPie || 0, d.horasConvivenciaEscolar || 0, d.horasExtraescolar || 0, d.cargoInstitucional || null,
-    d.horasTallerSep || 0, d.horasTrabajoColaborativo || 0,
-    d.horasAula || 0, d.horasIngles || 0,
-    d.funcionPrincipal || null, d.funcionSecundaria || null, d.asignaturaPrincipal || null, d.aplicaArticulo69 ? 1 : 0,
-    funcionesJson, docPeriodo,
-    d.horasVigentesAnterior !== undefined && d.horasVigentesAnterior !== null ? d.horasVigentesAnterior : d.horasContrato,
-    d.propuestaGdp || 'Continuidad',
-    remMensual,
-    d.fechaInicioContrato || '01-03-2026',
-    d.fechaTerminoContrato || (d.calidadJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
-    pmeSep,
-    d.horasProRetencion || 0,
-    d.descripcionFuncionGdp || null,
-    d.estadoSancionGdp || 'Pendiente',
-    d.horasAprobadasGdp || 0,
-    d.situacionFinalGdp || 'Vigente',
-    obsDirector,
-    d.observacionesSlep || null,
-    d.requiereAutorizacionDocente ? 1 : 0,
-    d.esVtf ? 1 : 0,
-    d.funcionVtf || null,
-    d.grupoJiscId || null,
-    d.horaIngresoTurno || null,
-    d.horaSalidaTurno || null,
-    d.reemplazoDeRun || null,
-    d.esVacanteNn ? 1 : 0,
-    d.tipoVacante || null,
-    d.justificacionVacante || null,
-    d.origenEgresoId || null,
-    d.vacanteCondicional ? 1 : 0
-  ]);
+  db.run(
+    DOCENTE_UPSERT_SQL,
+    buildDocenteUpsertParams(d, docId, docPeriodo, {
+      subvGenTitular,
+      subvGenContrata,
+      sepTitular,
+      sepContrata,
+      pieTitular,
+      pieContrata
+    })
+  );
   await persistDb(true);
   if (!skipCloudSync) {
     for (const oldId of deletedOldIds) {
@@ -449,115 +494,17 @@ export async function guardarDocentesBatch(
         Number(d.horasPieContrata || 0)
       );
 
-      const funcionesJson = d.funcionesNoAula && d.funcionesNoAula.length > 0 ? JSON.stringify(d.funcionesNoAula) : null;
-
-      // Soportar compatibilidad de nombres entre vistas/modales y modelo DB
-      const remMensual = d.remuneracionMensualApp ?? (d as any).remuneracionMensual ?? 0;
-      const pmeSep = d.accionPmeSep ?? (d as any).accionPme ?? null;
-      const obsDirector = d.observacionesDirector ?? (d as any).observacionesPal ?? null;
-
-      db.run(`
-        INSERT INTO docentes (
-          id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
-          horas_subvencion_general_titular, horas_subvencion_general_contrata,
-          horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
-          horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
-          horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
-          horas_taller_sep, horas_trabajo_colaborativo,
-          horas_aula, horas_ingles, funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-          funciones_no_aula_json, periodo,
-          horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
-          accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
-          situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
-      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
-      es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
-          titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
-          estamento=excluded.estamento, horas_contrato=excluded.horas_contrato,
-          horas_subvencion_general_titular=excluded.horas_subvencion_general_titular,
-          horas_subvencion_general_contrata=excluded.horas_subvencion_general_contrata,
-          horas_sep_titular=excluded.horas_sep_titular,
-          horas_sep_contrata=excluded.horas_sep_contrata,
-          horas_pie_titular=excluded.horas_pie_titular,
-          horas_pie_contrata=excluded.horas_pie_contrata,
-          horas_directivas=excluded.horas_directivas,
-          horas_inspector_general=excluded.horas_inspector_general,
-          horas_tecnico_pedagogica=excluded.horas_tecnico_pedagogica,
-          horas_coordinacion=excluded.horas_coordinacion, tipo_coordinacion=excluded.tipo_coordinacion,
-          horas_coordinacion_pie=excluded.horas_coordinacion_pie,
-          horas_convivencia_escolar=excluded.horas_convivencia_escolar,
-          horas_extraescolar=excluded.horas_extraescolar,
-          cargo_institucional=excluded.cargo_institucional,
-          horas_taller_sep=excluded.horas_taller_sep,
-          horas_trabajo_colaborativo=excluded.horas_trabajo_colaborativo,
-          horas_aula=excluded.horas_aula, horas_ingles=excluded.horas_ingles,
-          funcion_principal=excluded.funcion_principal, funcion_secundaria=excluded.funcion_secundaria,
-          asignatura_principal=excluded.asignatura_principal, aplica_articulo_69=excluded.aplica_articulo_69,
-          funciones_no_aula_json=excluded.funciones_no_aula_json,
-          periodo=excluded.periodo,
-          horas_vigentes_anterior=excluded.horas_vigentes_anterior,
-          propuesta_gdp=excluded.propuesta_gdp,
-          remuneracion_mensual_app=excluded.remuneracion_mensual_app,
-          fecha_inicio_contrato=excluded.fecha_inicio_contrato,
-          fecha_termino_contrato=excluded.fecha_termino_contrato,
-          accion_pme_sep=excluded.accion_pme_sep,
-          horas_pro_retencion=excluded.horas_pro_retencion,
-          descripcion_funcion_gdp=excluded.descripcion_funcion_gdp,
-          estado_sancion_gdp=excluded.estado_sancion_gdp,
-          horas_aprobadas_gdp=excluded.horas_aprobadas_gdp,
-          situacion_final_gdp=excluded.situacion_final_gdp,
-          observaciones_director=excluded.observaciones_director,
-          observaciones_slep=excluded.observaciones_slep,
-          requiere_autorizacion_docente=excluded.requiere_autorizacion_docente,
-          es_vtf=excluded.es_vtf,
-          funcion_vtf=excluded.funcion_vtf,
-          grupo_jisc_id=excluded.grupo_jisc_id,
-          hora_ingreso_turno=excluded.hora_ingreso_turno,
-          hora_salida_turno=excluded.hora_salida_turno,
-          reemplazo_de_run=excluded.reemplazo_de_run,
-          es_vacante_nn=excluded.es_vacante_nn,
-          tipo_vacante=excluded.tipo_vacante,
-          justificacion_vacante=excluded.justificacion_vacante,
-          origen_egreso_id=excluded.origen_egreso_id,
-          vacante_condicional=excluded.vacante_condicional;
-      `, [
-        docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
-        subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
-        d.horasDirectivas || 0, d.horasInspectorGeneral || 0, d.horasTecnicoPedagogicas || 0, d.horasCoordinacion || 0, d.tipoCoordinacion || null,
-        d.horasCoordinacionPie || 0, d.horasConvivenciaEscolar || 0, d.horasExtraescolar || 0, d.cargoInstitucional || null,
-        d.horasTallerSep || 0, d.horasTrabajoColaborativo || 0,
-        d.horasAula || 0, d.horasIngles || 0,
-        d.funcionPrincipal || null, d.funcionSecundaria || null, d.asignaturaPrincipal || null, d.aplicaArticulo69 ? 1 : 0,
-        funcionesJson, docPeriodo,
-        d.horasVigentesAnterior !== undefined && d.horasVigentesAnterior !== null ? d.horasVigentesAnterior : d.horasContrato,
-        d.propuestaGdp || 'Continuidad',
-        remMensual,
-        d.fechaInicioContrato || '01-03-2026',
-        d.fechaTerminoContrato || (d.calidadJuridica === 'TITULAR' ? 'Indefinido' : '28-02-2027'),
-        pmeSep,
-        d.horasProRetencion || 0,
-        d.descripcionFuncionGdp || null,
-        d.estadoSancionGdp || 'Pendiente',
-        d.horasAprobadasGdp || 0,
-        d.situacionFinalGdp || 'Vigente',
-        obsDirector,
-        d.observacionesSlep || null,
-        d.requiereAutorizacionDocente ? 1 : 0,
-        d.esVtf ? 1 : 0,
-        d.funcionVtf || null,
-        d.grupoJiscId || null,
-        d.horaIngresoTurno || null,
-        d.horaSalidaTurno || null,
-        d.reemplazoDeRun || null,
-        d.esVacanteNn ? 1 : 0,
-        d.tipoVacante || null,
-        d.justificacionVacante || null,
-        d.origenEgresoId || null,
-        d.vacanteCondicional ? 1 : 0
-      ]);
+      db.run(
+        DOCENTE_UPSERT_SQL,
+        buildDocenteUpsertParams(d, docId, docPeriodo, {
+          subvGenTitular,
+          subvGenContrata,
+          sepTitular,
+          sepContrata,
+          pieTitular,
+          pieContrata
+        })
+      );
 
       docentesPersistidos.push({
         ...d,

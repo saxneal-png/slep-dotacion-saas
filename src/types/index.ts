@@ -1,3 +1,5 @@
+import type { EstamentoAsistente } from './asistentesTypes';
+
 export type ComunaValleDiguillin = 
   | 'Bulnes'
   | 'Chillán'
@@ -20,6 +22,8 @@ export type TipoPerfilEstablecimiento =
   | 'EPJA'
   | 'JARDIN_SALA_CUNA';
 
+export type AccesibilidadEstablecimiento = 'urbano' | 'rural_conectado' | 'rural_aislado';
+
 export interface Establecimiento {
   id: string;
   rbd: string;
@@ -39,6 +43,8 @@ export interface Establecimiento {
   regimen: RegimenJornada;
   porcentajePrioritarios: number; // >= 80% aplica 60/40
   regimenProporcion?: '65_35' | '60_40';
+  accesibilidad?: AccesibilidadEstablecimiento;
+  condicionesDificilesPct?: number;
   director?: string;
   asesorUatp?: string;
   telefono?: string;
@@ -203,6 +209,8 @@ export interface FeatureFlagsMovilidad {
   usuarios_autorizados_movilidad?: string[];
 }
 
+export type TramoCarreraDocente = 'INICIAL' | 'TEMPRANO' | 'AVANZADO' | 'EXPERTO_I' | 'EXPERTO_II' | 'ACCESO' | 'SIN_TRAMO';
+
 export type TipoVacanteDocente =
   | 'NN_DETECTADO'
   | 'NECESIDAD_ESCUELA'
@@ -220,6 +228,9 @@ export interface Docente {
   calidadJuridica: CalidadJuridicaDocente;
   estamento: EstamentoDocente;
   horasContrato: number; // 1 a 44 hrs
+  tramoCarreraDocente?: TramoCarreraDocente;
+  habilitacionSeremiRbd?: string;
+  habilitacionSeremiAsignatura?: string;
   // Desglose por fuente de financiamiento y calidad jurídica
   horasSubvencionGeneralTitular?: number;
   horasSubvencionGeneralContrata?: number;
@@ -764,17 +775,27 @@ export interface EgresoProyectado {
   vacanteDocenteId?: string;
   validadoPor?: string;
   observaciones?: string;
+  cpeipNotificacionFirme?: boolean;
+  estadoReversion?: 'ACTIVO' | 'REVERTIDO_REINCORPORADO';
+  motivoReversion?: string;
+  fechaReversion?: string;
+  revertidoPor?: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
-export type CarrilMovilidad = 'NO_CONTINUIDAD_TITULAR' | 'TRASLADO_VOLUNTARIO' | 'HORAS_REMANENTES';
+export type CarrilMovilidad =
+  | 'NO_CONTINUIDAD_TITULAR'
+  | 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO'
+  | 'TRASLADO_VOLUNTARIO'
+  | 'HORAS_REMANENTES';
 export type EstadoFlujoMovilidad =
   | 'POSTULADO'
   | 'PRE_ASIGNADO'
   | 'NOTIFICADO_DIRECCION_ORIGEN'
   | 'ACEPTADO_CON_FIRMA'
   | 'CONSOLIDADO'
+  | 'RESOLUCION_EMITIDA'
   | 'RECHAZADO';
 
 export interface SolicitudMovilidad {
@@ -806,6 +827,12 @@ export interface SolicitudMovilidad {
   puntajePrioridadTotal: number;
   fundamento?: string;
   creadoPor?: string;
+  estamentoPersonal?: 'DOCENTE' | 'ASISTENTE';
+  categoriaAsistente?: EstamentoAsistente;
+  horasContrataActuales?: number;
+  numeroResolucion?: string;
+  fechaResolucion?: string;
+  fechaVigencia?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -825,10 +852,23 @@ export interface VacanteRebotePlan {
     horasPedagogicasAula: number;
   }>;
   funcionesNoLectivasHeredadas: FuncionNoAulaDocente[];
+  funcionesIntransferiblesDetectadas?: string[];
   deltaMinutosCadena: number;
 }
 
-export type EstadoEscenarioCalce = 'BORRADOR' | 'EN_REVISION' | 'APROBADO' | 'CONSOLIDADO' | 'DESCARTADO';
+export type EstadoEscenarioCalce =
+  | 'BORRADOR'
+  | 'EN_REVISION'
+  | 'APROBADO'
+  | 'CONSOLIDADO'
+  | 'RESOLUCION_EMITIDA'
+  | 'DESCARTADO';
+
+export type EstadoResolucionRebote =
+  | 'NO_APLICA'
+  | 'PENDIENTE'
+  | 'CUBIERTA_EN_CADENA'
+  | 'DERIVADA_A_CONCURSO_GDP';
 
 export interface EscenarioCalce {
   id: string;
@@ -836,10 +876,14 @@ export interface EscenarioCalce {
   nombre: string;
   descripcion?: string;
   estado: EstadoEscenarioCalce;
+  version?: number;
   creadoPor?: string;
   aprobadoPor?: string;
   consolidadoPor?: string;
   fechaConsolidacion?: string;
+  numeroResolucion?: string;
+  fechaResolucion?: string;
+  fechaVigencia?: string;
   resumenMetricas?: {
     totalPropuestas: number;
     propuestasValidas: number;
@@ -847,6 +891,9 @@ export interface EscenarioCalce {
     vacantesNnCubiertas: number;
     rebotesGenerados: number;
     deltaMinutosTerritorial: number;
+    rebotesPendientes?: number;
+    rebotesCubiertosCadena?: number;
+    rebotesDerivadosConcurso?: number;
   };
   createdAt?: string;
   updatedAt?: string;
@@ -876,6 +923,18 @@ export interface PropuestaCalce {
   bloqueaConsolidacion: boolean;
   motivoBloqueo?: string;
   estado: 'PROPUESTA' | 'VALIDADA' | 'BLOQUEADA' | 'CONSOLIDADA';
+  estamentoPersonal?: 'DOCENTE' | 'ASISTENTE';
+  estadoResolucionRebote?: EstadoResolucionRebote;
+  reboteCubiertoPorPropuestaId?: string;
+  minutosTitularesOrigen?: number;
+  minutosContrataOrigen?: number;
+  alertaMenoscaboEconomicoArt50?: boolean;
+  alertaCondicionesDificiles?: boolean;
+  alertaHabilitacionSeremiDto352?: boolean;
+  alertaItineranciaRural?: boolean;
+  numeroResolucion?: string;
+  fechaResolucion?: string;
+  fechaVigencia?: string;
   createdAt?: string;
   updatedAt?: string;
 }

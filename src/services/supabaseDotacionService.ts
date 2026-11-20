@@ -47,8 +47,8 @@ export function sanitizeDbDate(d: string | null | undefined): string | null {
  * Mapeo de tipos y entidades entre TypeScript y Supabase PostgreSQL
  */
 
-export function mapEstablecimientoToDb(est: Establecimiento) {
-  return {
+export function mapEstablecimientoToDb(est: Establecimiento, incluirColumnasMovilidad: boolean = true) {
+  const base: Record<string, any> = {
     rbd: est.rbd.trim(),
     id: est.id || `est-${est.rbd.trim()}`,
     nombre: est.nombre,
@@ -76,6 +76,13 @@ export function mapEstablecimientoToDb(est: Establecimiento) {
     cupo_horas_pie_asistentes: est.cupoHorasPieAsistentes || 0,
     estado_planificacion: (est as any).estadoPlanificacion || 'BORRADOR'
   };
+
+  if (incluirColumnasMovilidad) {
+    base.accesibilidad = est.accesibilidad || 'urbano';
+    base.condiciones_dificiles_pct = Number(est.condicionesDificilesPct || 0);
+  }
+
+  return base;
 }
 
 export function mapEstablecimientoFromDb(row: any): Establecimiento {
@@ -107,6 +114,8 @@ export function mapEstablecimientoFromDb(row: any): Establecimiento {
     horarioExtensionCierre: row.horario_extension_cierre || undefined,
     regimen: row.regimen,
     porcentajePrioritarios: Number(row.porcentaje_prioritarios ?? 75),
+    accesibilidad: row.accesibilidad ? (String(row.accesibilidad) as Establecimiento['accesibilidad']) : 'urbano',
+    condicionesDificilesPct: Number(row.condiciones_dificiles_pct || 0),
     director: row.director || undefined,
     asesorUatp: row.asesor_uatp || undefined,
     telefono: row.telefono || undefined,
@@ -240,7 +249,8 @@ export function deduplicarPorId<T extends { id: string }>(items: T[]): T[] {
 export function mapDocenteToDb(
   docente: Docente,
   incluirColumnaRequiere: boolean = false,
-  incluirColumnasVacanteNn: boolean = true
+  incluirColumnasVacanteNn: boolean = true,
+  incluirColumnasMovilidad: boolean = true
 ) {
   let funcionesArr: any[] = [];
   if (docente.funcionesNoAula && Array.isArray(docente.funcionesNoAula)) {
@@ -328,6 +338,12 @@ export function mapDocenteToDb(
     base.justificacion_vacante = docente.justificacionVacante || null;
     base.origen_egreso_id = docente.origenEgresoId || null;
     base.vacante_condicional = Boolean(docente.vacanteCondicional);
+  }
+
+  if (incluirColumnasMovilidad) {
+    base.tramo_carrera_docente = docente.tramoCarreraDocente || null;
+    base.habilitacion_seremi_rbd = docente.habilitacionSeremiRbd || null;
+    base.habilitacion_seremi_asignatura = docente.habilitacionSeremiAsignatura || null;
   }
 
   return base;
@@ -422,7 +438,10 @@ export function mapDocenteFromDb(row: any): Docente {
     tipoVacante: row.tipo_vacante ? (String(row.tipo_vacante) as Docente['tipoVacante']) : undefined,
     justificacionVacante: row.justificacion_vacante ? String(row.justificacion_vacante) : undefined,
     origenEgresoId: row.origen_egreso_id ? String(row.origen_egreso_id) : undefined,
-    vacanteCondicional: Boolean(row.vacante_condicional)
+    vacanteCondicional: Boolean(row.vacante_condicional),
+    tramoCarreraDocente: row.tramo_carrera_docente ? (String(row.tramo_carrera_docente) as Docente['tramoCarreraDocente']) : undefined,
+    habilitacionSeremiRbd: row.habilitacion_seremi_rbd ? String(row.habilitacion_seremi_rbd) : undefined,
+    habilitacionSeremiAsignatura: row.habilitacion_seremi_asignatura ? String(row.habilitacion_seremi_asignatura) : undefined
   };
 }
 
@@ -595,12 +614,17 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
  * Servicio Central de Sincronización y Persistencia con Supabase PostgreSQL
  */
 export class SupabaseDotacionService {
-  // Bandera para rastrear si la columna `requiere_autorizacion_docente` existe en PostgreSQL
+  // Banderas para rastrear soporte de columnas opcionales/nuevas en PostgreSQL
+  private static soportaColumnasEstablecimientoVtf: boolean = true;
+  private static soportaColumnasEstablecimientoMovilidad: boolean = true;
   private static soportaColumnaRequiereAutorizacion: boolean = false;
-  // Bandera para rastrear si las columnas de vacante NN / contingencia existen en PostgreSQL
   private static soportaColumnasVacanteNn: boolean = true;
-  // Bandera para rastrear si la columna `horas_honorarios` existe en PostgreSQL (migración 20261102182500)
+  private static soportaColumnasDocenteMovilidad: boolean = true;
   private static soportaColumnaHonorarios: boolean = true;
+
+  private static esErrorColumnaFaltante(error: any): boolean {
+    return Boolean(error) && (error.code === 'PGRST204' || error.code === '42703');
+  }
 
   private static stripDocenteVacanteNnColumns(row: Record<string, any>): Record<string, any> {
     const {
@@ -614,8 +638,18 @@ export class SupabaseDotacionService {
     return rest;
   }
 
+  private static stripDocenteMovilidadColumns(row: Record<string, any>): Record<string, any> {
+    const {
+      tramo_carrera_docente: _tcd,
+      habilitacion_seremi_rbd: _hsr,
+      habilitacion_seremi_asignatura: _hsa,
+      ...rest
+    } = row;
+    return rest;
+  }
+
   private static esErrorColumnaVacanteNn(error: any): boolean {
-    if (!error || error.code !== 'PGRST204') return false;
+    if (!this.esErrorColumnaFaltante(error)) return false;
     const msg = String(error.message || '');
     return (
       msg.includes('es_vacante_nn') ||
@@ -624,6 +658,36 @@ export class SupabaseDotacionService {
       msg.includes('origen_egreso_id') ||
       msg.includes('vacante_condicional')
     );
+  }
+
+  private static esErrorColumnaDocenteMovilidad(error: any): boolean {
+    if (!this.esErrorColumnaFaltante(error)) return false;
+    const msg = String(error.message || '');
+    return (
+      msg.includes('tramo_carrera_docente') ||
+      msg.includes('habilitacion_seremi_rbd') ||
+      msg.includes('habilitacion_seremi_asignatura')
+    );
+  }
+
+  private static handleDocenteMissingColumnError(
+    error: any
+  ): ((row: Record<string, any>) => Record<string, any>) | null {
+    if (!this.esErrorColumnaFaltante(error)) return null;
+    const msg = String(error.message || '');
+    if (msg.includes('requiere_autorizacion_docente') && this.soportaColumnaRequiereAutorizacion) {
+      this.soportaColumnaRequiereAutorizacion = false;
+      return ({ requiere_autorizacion_docente: _req, ...rest }) => rest;
+    }
+    if (this.esErrorColumnaVacanteNn(error) && this.soportaColumnasVacanteNn) {
+      this.soportaColumnasVacanteNn = false;
+      return row => this.stripDocenteVacanteNnColumns(row);
+    }
+    if (this.esErrorColumnaDocenteMovilidad(error) && this.soportaColumnasDocenteMovilidad) {
+      this.soportaColumnasDocenteMovilidad = false;
+      return row => this.stripDocenteMovilidadColumns(row);
+    }
+    return null;
   }
 
   private static payloadAsistente(ast: AsistenteEducacion): any {
@@ -740,6 +804,47 @@ export class SupabaseDotacionService {
     return rest;
   }
 
+  private static stripEstablecimientoMovilidadColumns(row: Record<string, any>): Record<string, any> {
+    const {
+      accesibilidad: _acc,
+      condiciones_dificiles_pct: _cdp,
+      ...rest
+    } = row;
+    return rest;
+  }
+
+  private static esErrorColumnaEstablecimientoMovilidad(error: any): boolean {
+    if (!this.esErrorColumnaFaltante(error)) return false;
+    const msg = String(error.message || '');
+    return msg.includes('accesibilidad') || msg.includes('condiciones_dificiles_pct');
+  }
+
+  private static buildEstablecimientoPayload(est: Establecimiento): Record<string, any> {
+    const payload = mapEstablecimientoToDb(est, this.soportaColumnasEstablecimientoMovilidad);
+    return this.soportaColumnasEstablecimientoVtf ? payload : this.stripEstablecimientoVtfColumns(payload);
+  }
+
+  private static handleEstablecimientoMissingColumnError(
+    error: any,
+    strippedMovilidad: boolean,
+    strippedVtf: boolean
+  ): { strip: (row: Record<string, any>) => Record<string, any>; kind: 'movilidad' | 'vtf' } | null {
+    if (!this.esErrorColumnaFaltante(error)) return null;
+    if (this.esErrorColumnaEstablecimientoMovilidad(error) && !strippedMovilidad) {
+      this.soportaColumnasEstablecimientoMovilidad = false;
+      return { strip: r => this.stripEstablecimientoMovilidadColumns(r), kind: 'movilidad' };
+    }
+    if (!strippedVtf && this.soportaColumnasEstablecimientoVtf) {
+      this.soportaColumnasEstablecimientoVtf = false;
+      return { strip: r => this.stripEstablecimientoVtfColumns(r), kind: 'vtf' };
+    }
+    if (!strippedMovilidad && this.soportaColumnasEstablecimientoMovilidad) {
+      this.soportaColumnasEstablecimientoMovilidad = false;
+      return { strip: r => this.stripEstablecimientoMovilidadColumns(r), kind: 'movilidad' };
+    }
+    return null;
+  }
+
   private static stripCursoVtfColumns(row: Record<string, any>): Record<string, any> {
     const {
       edad_meses_minima: _emin,
@@ -757,16 +862,24 @@ export class SupabaseDotacionService {
   // Establecimientos
   static async guardarEstablecimiento(est: Establecimiento): Promise<void> {
     if (!isSupabaseEnabled()) return;
-    const payload = mapEstablecimientoToDb(est);
-    let { error } = await supabase
-      .from('establecimientos')
-      .upsert(payload, { onConflict: 'rbd' });
-    if (error?.code === 'PGRST204') {
-      ({ error } = await supabase
+    let payload = this.buildEstablecimientoPayload(est);
+    let strippedMovilidad = !this.soportaColumnasEstablecimientoMovilidad;
+    let strippedVtf = !this.soportaColumnasEstablecimientoVtf;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = await supabase
         .from('establecimientos')
-        .upsert(this.stripEstablecimientoVtfColumns(payload), { onConflict: 'rbd' }));
-    }
-    if (error) {
+        .upsert(payload, { onConflict: 'rbd' });
+      if (!error) return;
+
+      const handler = this.handleEstablecimientoMissingColumnError(error, strippedMovilidad, strippedVtf);
+      if (handler) {
+        payload = handler.strip(payload);
+        if (handler.kind === 'movilidad') strippedMovilidad = true;
+        if (handler.kind === 'vtf') strippedVtf = true;
+        continue;
+      }
+
       console.error('Error Supabase guardarEstablecimiento:', error);
       throw new Error(`Error Supabase guardarEstablecimiento: ${error.message}`);
     }
@@ -776,16 +889,24 @@ export class SupabaseDotacionService {
     if (!isSupabaseEnabled() || !establecimientos.length) return;
     const chunkSize = 250;
     for (let i = 0; i < establecimientos.length; i += chunkSize) {
-      const chunk = establecimientos.slice(i, i + chunkSize).map(mapEstablecimientoToDb);
-      let { error } = await supabase
-        .from('establecimientos')
-        .upsert(chunk, { onConflict: 'rbd' });
-      if (error?.code === 'PGRST204') {
-        ({ error } = await supabase
+      let chunk = establecimientos.slice(i, i + chunkSize).map(e => this.buildEstablecimientoPayload(e));
+      let strippedMovilidad = !this.soportaColumnasEstablecimientoMovilidad;
+      let strippedVtf = !this.soportaColumnasEstablecimientoVtf;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await supabase
           .from('establecimientos')
-          .upsert(chunk.map(r => this.stripEstablecimientoVtfColumns(r)), { onConflict: 'rbd' }));
-      }
-      if (error) {
+          .upsert(chunk, { onConflict: 'rbd' });
+        if (!error) break;
+
+        const handler = this.handleEstablecimientoMissingColumnError(error, strippedMovilidad, strippedVtf);
+        if (handler) {
+          chunk = chunk.map(handler.strip);
+          if (handler.kind === 'movilidad') strippedMovilidad = true;
+          if (handler.kind === 'vtf') strippedVtf = true;
+          continue;
+        }
+
         console.error('Error Supabase guardarEstablecimientosBatch:', error);
         throw new Error(`Error Supabase guardarEstablecimientosBatch: ${error.message}`);
       }
@@ -902,24 +1023,19 @@ export class SupabaseDotacionService {
     let payload = mapDocenteToDb(
       docente,
       this.soportaColumnaRequiereAutorizacion,
-      this.soportaColumnasVacanteNn
+      this.soportaColumnasVacanteNn,
+      this.soportaColumnasDocenteMovilidad
     );
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const { error } = await supabase.from('docentes').upsert(payload, { onConflict: 'id' });
       if (!error) return;
 
-      if (error.code === 'PGRST204') {
-        const msg = String(error.message || '');
-        if (msg.includes('requiere_autorizacion_docente') && this.soportaColumnaRequiereAutorizacion) {
-          this.soportaColumnaRequiereAutorizacion = false;
-          const { requiere_autorizacion_docente: _req, ...rest } = payload;
-          payload = rest;
-          continue;
-        }
-        if (this.esErrorColumnaVacanteNn(error) && this.soportaColumnasVacanteNn) {
-          this.soportaColumnasVacanteNn = false;
-          payload = this.stripDocenteVacanteNnColumns(payload);
+      if (attempt < maxAttempts - 1) {
+        const stripper = this.handleDocenteMissingColumnError(error);
+        if (stripper) {
+          payload = stripper(payload);
           continue;
         }
       }
@@ -934,26 +1050,26 @@ export class SupabaseDotacionService {
     await this.asegurarEstablecimientosExisten(docentes.map(d => d.rbd));
 
     const chunkSize = 250;
+    const maxAttempts = 4;
     for (let i = 0; i < docentes.length; i += chunkSize) {
       const slice = docentes.slice(i, i + chunkSize);
       let chunk: Record<string, any>[] = slice.map(d =>
-        mapDocenteToDb(d, this.soportaColumnaRequiereAutorizacion, this.soportaColumnasVacanteNn)
+        mapDocenteToDb(
+          d,
+          this.soportaColumnaRequiereAutorizacion,
+          this.soportaColumnasVacanteNn,
+          this.soportaColumnasDocenteMovilidad
+        )
       );
 
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const { error } = await supabase.from('docentes').upsert(chunk, { onConflict: 'id' });
         if (!error) break;
 
-        if (error.code === 'PGRST204') {
-          const msg = String(error.message || '');
-          if (msg.includes('requiere_autorizacion_docente') && this.soportaColumnaRequiereAutorizacion) {
-            this.soportaColumnaRequiereAutorizacion = false;
-            chunk = chunk.map(({ requiere_autorizacion_docente: _req, ...rest }) => rest);
-            continue;
-          }
-          if (this.esErrorColumnaVacanteNn(error) && this.soportaColumnasVacanteNn) {
-            this.soportaColumnasVacanteNn = false;
-            chunk = chunk.map(row => this.stripDocenteVacanteNnColumns(row));
+        if (attempt < maxAttempts - 1) {
+          const stripper = this.handleDocenteMissingColumnError(error);
+          if (stripper) {
+            chunk = chunk.map(stripper);
             continue;
           }
         }

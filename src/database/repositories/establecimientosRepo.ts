@@ -1,4 +1,4 @@
-import { Establecimiento } from '../../types';
+import { AccesibilidadEstablecimiento, Establecimiento } from '../../types';
 import { getDb, persistDb } from '../dbCore';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 import { findSchoolByRbd, inferTipoPerfilCatalog } from '../../data/slepSchoolsCatalog';
@@ -8,7 +8,8 @@ const EST_SELECT_COLS = `
   director, asesor_uatp, telefono, email,
   subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes,
   tipo, tipo_perfil, modalidades_autorizadas_json, codigo_junji, nombre_fantasia,
-  localidad, direccion, horario_apertura, horario_cierre, horario_extension_inicio, horario_extension_cierre
+  localidad, direccion, horario_apertura, horario_cierre, horario_extension_inicio, horario_extension_cierre,
+  accesibilidad, condiciones_dificiles_pct
 `;
 
 function mapEstablecimientoRow(row: any[]): Establecimiento {
@@ -57,6 +58,8 @@ function mapEstablecimientoRow(row: any[]): Establecimiento {
     horarioCierre: row[22] ? String(row[22]) : undefined,
     horarioExtensionInicio: row[23] ? String(row[23]) : undefined,
     horarioExtensionCierre: row[24] ? String(row[24]) : undefined,
+    accesibilidad: (row[25] ? String(row[25]) : 'urbano') as AccesibilidadEstablecimiento,
+    condicionesDificilesPct: Number(row[26] || 0),
   };
 }
 
@@ -92,7 +95,8 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
         director=?, asesor_uatp=?, telefono=?, email=?,
         subvencion_sep_mensual=?, subvencion_pro_retencion=?, cupo_horas_pie_diferencial=?, cupo_horas_pie_asistentes=?,
         tipo=?, tipo_perfil=?, modalidades_autorizadas_json=?, codigo_junji=?, nombre_fantasia=?,
-        localidad=?, direccion=?, horario_apertura=?, horario_cierre=?, horario_extension_inicio=?, horario_extension_cierre=?
+        localidad=?, direccion=?, horario_apertura=?, horario_cierre=?, horario_extension_inicio=?, horario_extension_cierre=?,
+        accesibilidad=?, condiciones_dificiles_pct=?
       WHERE id=?
     `, [
       rbdNorm, e.nombre.trim(), e.comuna, e.regimen, e.porcentajePrioritarios,
@@ -101,6 +105,7 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
       tipo, tipoPerfil, modalidadesJson, e.codigoJunji || null, e.nombreFantasia || null,
       e.localidad || null, e.direccion || null, e.horarioApertura || null, e.horarioCierre || null,
       e.horarioExtensionInicio || null, e.horarioExtensionCierre || null,
+      e.accesibilidad || 'urbano', e.condicionesDificilesPct || 0,
       existingId
     ]);
   } else {
@@ -109,16 +114,18 @@ export async function guardarEstablecimiento(e: Establecimiento, skipCloudSync: 
         id, rbd, nombre, comuna, regimen, porcentaje_prioritarios, director, asesor_uatp, telefono, email,
         subvencion_sep_mensual, subvencion_pro_retencion, cupo_horas_pie_diferencial, cupo_horas_pie_asistentes,
         tipo, tipo_perfil, modalidades_autorizadas_json, codigo_junji, nombre_fantasia,
-        localidad, direccion, horario_apertura, horario_cierre, horario_extension_inicio, horario_extension_cierre
+        localidad, direccion, horario_apertura, horario_cierre, horario_extension_inicio, horario_extension_cierre,
+        accesibilidad, condiciones_dificiles_pct
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       e.id, rbdNorm, e.nombre.trim(), e.comuna, e.regimen, e.porcentajePrioritarios,
       e.director || null, e.asesorUatp || null, e.telefono || null, e.email || null,
       e.subvencionSepMensual || 0, e.subvencionProRetencion || 0, e.cupoHorasPieDiferencial || 0, e.cupoHorasPieAsistentes || 0,
       tipo, tipoPerfil, modalidadesJson, e.codigoJunji || null, e.nombreFantasia || null,
       e.localidad || null, e.direccion || null, e.horarioApertura || null, e.horarioCierre || null,
-      e.horarioExtensionInicio || null, e.horarioExtensionCierre || null
+      e.horarioExtensionInicio || null, e.horarioExtensionCierre || null,
+      e.accesibilidad || 'urbano', e.condicionesDificilesPct || 0
     ]);
   }
   persistDb();

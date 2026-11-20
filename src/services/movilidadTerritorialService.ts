@@ -1,13 +1,16 @@
 /**
- * Servicio de Orquestación de Mesa de Movilidad Territorial, Egresos de Contingencia
- * y Saneamiento de Vacantes NN (SLEP Valle Diguillín).
+ * Servicio de Orquestación de Mesa de Movilidad Territorial, Egresos de Contingencia,
+ * Saneamiento de Vacantes NN, Control Optimista, Reverso Controlado y Actos GDP
+ * (SLEP Valle Diguillín).
  *
  * Aislado estrictamente para roles de Nivel Central UATP / GDP / Super Usuario.
  * Toda aritmética horaria delega al motor normativo en minutos enteros (@slep/mineduc-engine).
  */
 
+import ExcelJS from 'exceljs';
 import {
   AsignacionHoraria,
+  AsistenteEducacion,
   CalidadJuridicaDocente,
   CarrilMovilidad,
   CausalEgresoDocente,
@@ -18,11 +21,14 @@ import {
   Establecimiento,
   EstadoEscenarioCalce,
   EstadoFlujoMovilidad,
+  EstadoResolucionRebote,
+  EstamentoAsistente,
   EstamentoDocente,
   FuncionNoAulaDocente,
   ImpactoPresupuestarioEgreso,
   PropuestaCalce,
   SolicitudMovilidad,
+  TramoCarreraDocente,
   VacanteRebotePlan
 } from '../types';
 import { RolId } from '../types/authTypes';
@@ -30,42 +36,57 @@ import { esRolNivelCentral, normalizarRol } from '../security/rolesDefinitions';
 import {
   calcularJornadaMinutos,
   calcularPuntajePrioridadMovilidad,
+  CarrilMovilidad as CarrilMovilidadEngine,
   detectarDocenteVacanteNn,
   determinarRegimenNormativo,
+  DocenteCandidatoCalce,
   EgresoProyectadoInput,
+  EstamentoAsistenteMotor,
+  evaluarCalceAsistenteLey21109,
   evaluarCalceDocenteVacante,
   evaluarEgresoProyectado,
   EvaluacionJuridicaEgreso,
   FuenteFinanciamientoCalce,
   generarVacanteDeRebote,
+  resolverCalceOptimoConCadenasRebote,
   ResultadoDeteccionNn,
   ResultadoEvaluacionCalce,
-  sugerirCalcesAutomaticos,
+  ResultadoEvaluacionCalceAsistente,
   VacanteObjetivoCalce,
-  VacanteReboteOutput,
-  DocenteCandidatoCalce
+  VacanteReboteOutput
 } from '@slep/mineduc-engine';
 import {
+  eliminarAsistente,
   getDb,
-  persistDb,
+  guardarAsistente,
   guardarDocente,
   listarAsignaciones,
   listarDocentes,
   listarEstablecimientos,
   listarTodasLasAsignaciones,
+  listarTodosLosAsistentesTerritorio,
   listarTodosLosDocentesTerritorio,
+  obtenerAsistentePorId,
+  persistDb,
   registrarEventoAuditoria
 } from '../database/db';
 import { obtenerFeatureFlagsMovilidad } from './configuracionGeneralService';
 import { isSupabaseEnabled, supabase } from './supabaseClient';
 import { SupabaseDotacionService } from './supabaseDotacionService';
-import { normalizarFuentesFinanciamientoDocente } from './auditoriaDocenteService';
+import {
+  normalizarFuentesFinanciamientoAsistente,
+  normalizarFuentesFinanciamientoDocente
+} from './auditoriaDocenteService';
+import { esPropuestaNoContinuidad } from './estadisticasHorasService';
+import { sanitizeExcelText } from './depHomologationEngine';
 import { limpiarRutParaId, normalizarRut } from '../utils/rutUtils';
 
 export type {
   Docente,
+  AsistenteEducacion,
   Establecimiento,
   EstamentoDocente,
+  EstamentoAsistente,
   FuncionNoAulaDocente,
   EgresoProyectado,
   SolicitudMovilidad,
@@ -78,11 +99,33 @@ export type {
   ImpactoPresupuestarioEgreso,
   CarrilMovilidad,
   EstadoEscenarioCalce,
+  EstadoResolucionRebote,
   RolId,
   EvaluacionJuridicaEgreso,
   ResultadoEvaluacionCalce,
+  ResultadoEvaluacionCalceAsistente,
   ResultadoDeteccionNn
 };
+
+export interface DetalleTechoPisoPorRbd {
+  rbd: string;
+  nombreEstablecimiento: string;
+  horasContratadasActivas: number;
+  horasVacantesConfirmadasSinTitular: number;
+  horasVacantesCondicionales: number;
+  horasTechoAntes1Marzo: number;
+  horasPisoSiEgresanCondicionales: number;
+}
+
+export interface ProyeccionTechoPisoHoras {
+  periodo: number;
+  horasContratadasActivas: number;
+  horasVacantesConfirmadasSinTitular: number;
+  horasVacantesCondicionales: number;
+  horasTechoAntes1Marzo: number;
+  horasPisoSiEgresanCondicionales: number;
+  detallePorRbd: DetalleTechoPisoPorRbd[];
+}
 
 // =============================================================================
 // 1. Guards y Control de Acceso por Rol (RBAC)
@@ -127,7 +170,7 @@ function assertRolConsolidador(rol: unknown, accion: string): void {
 }
 
 // =============================================================================
-// 2. Filtro Anti-Doble-Conteo de Vacantes Condicionales (PAL / GDP / Territorio)
+// 2. Helpers de Normalización, Filtro Anti-Doble-Conteo y Resiliencia Supabase
 // =============================================================================
 
 function claveRunNormalizado(run?: string): string {
@@ -139,6 +182,51 @@ function claveRunNormalizado(run?: string): string {
 function esSituacionFinalActiva(situacionFinalGdp?: string): boolean {
   const sit = (situacionFinalGdp || 'Vigente').trim().toLowerCase();
   return sit !== 'cese' && sit !== 'renuncia';
+}
+
+function mapCarrilAEngine(carril: CarrilMovilidad): CarrilMovilidadEngine {
+  return carril === 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO'
+    ? 'NO_CONTINUIDAD_TITULAR'
+    : carril;
+}
+
+function mapCarrilAsistenteMotor(
+  carril?: CarrilMovilidad
+): 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO' | 'TRASLADO_VOLUNTARIO' | 'HORAS_REMANENTES' | undefined {
+  if (!carril) return undefined;
+  if (carril === 'NO_CONTINUIDAD_TITULAR') return 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO';
+  return carril;
+}
+
+function esErrorColumnaFaltanteSupabase(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || err.details || '');
+  return (
+    code === 'PGRST204' ||
+    code === '42703' ||
+    /column .* does not exist|Could not find the .* column/i.test(msg)
+  );
+}
+
+function esErrorFuncionNoEncontradaSupabase(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || err.details || '');
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    /Could not find the function/i.test(msg)
+  );
+}
+
+function construirErrorConflictoVersion(
+  esperada: number | undefined,
+  actual: number
+): Error {
+  return new Error(
+    `CONFLICTO_VERSION: El escenario fue modificado por otro usuario (versión esperada ${esperada}, actual ${actual}).`
+  );
 }
 
 /**
@@ -153,10 +241,12 @@ export function filtrarDocentesSinDobleConteoCondicional(docentes: Docente[]): {
     return { docentesEfectivos: [], excluidosCondicionales: [] };
   }
 
-  // Índice de docentes reales/activos por (rbd, periodo)
   const activosPorEscuelaPeriodo = new Map<string, Docente[]>();
   for (const d of docentes) {
-    const esVacante = Boolean(d.esVacanteNn) || Boolean(d.vacanteCondicional) || d.tipoVacante === 'CONDICIONAL_EGRESO';
+    const esVacante =
+      Boolean(d.esVacanteNn) ||
+      Boolean(d.vacanteCondicional) ||
+      d.tipoVacante === 'CONDICIONAL_EGRESO';
     if (esVacante) continue;
     if (!esSituacionFinalActiva(d.situacionFinalGdp)) continue;
 
@@ -170,7 +260,8 @@ export function filtrarDocentesSinDobleConteoCondicional(docentes: Docente[]): {
   const excluidosCondicionales: Docente[] = [];
 
   for (const d of docentes) {
-    const esCandidataCondicional = d.vacanteCondicional === true || d.tipoVacante === 'CONDICIONAL_EGRESO';
+    const esCandidataCondicional =
+      d.vacanteCondicional === true || d.tipoVacante === 'CONDICIONAL_EGRESO';
     if (!esCandidataCondicional) {
       docentesEfectivos.push(d);
       continue;
@@ -193,8 +284,6 @@ export function filtrarDocentesSinDobleConteoCondicional(docentes: Docente[]): {
         );
       });
     } else if (d.vacanteCondicional !== false) {
-      // Sin RUN de reemplazo explícito, mientras siga marcada como condicional (sin cese confirmado)
-      // y exista al menos un docente activo en el mismo (rbd, periodo), evita doble conteo.
       tieneTitularActivo = activos.some(t => t.id !== d.id);
     }
 
@@ -215,7 +304,14 @@ export function filtrarDocentesSinDobleConteoCondicional(docentes: Docente[]): {
 export async function previsualizarEscaneoVacantesNn(
   periodo: number = 2027,
   rbd?: string
-): Promise<Array<{ docente: Docente; motivos: string[]; confianza: 'ALTA' | 'MEDIA' | 'BAJA'; asignacionesCount: number }>> {
+): Promise<
+  Array<{
+    docente: Docente;
+    motivos: string[];
+    confianza: 'ALTA' | 'MEDIA' | 'BAJA';
+    asignacionesCount: number;
+  }>
+> {
   const docentes = rbd
     ? await listarDocentes(rbd, periodo, true)
     : await listarTodosLosDocentesTerritorio(periodo);
@@ -241,6 +337,7 @@ export async function previsualizarEscaneoVacantesNn(
   }> = [];
 
   for (const docente of docentes) {
+    if (!esSituacionFinalActiva(docente.situacionFinalGdp)) continue;
     const deteccion = detectarDocenteVacanteNn(docente);
     if (deteccion.esVacanteNn) {
       resultados.push({
@@ -252,7 +349,11 @@ export async function previsualizarEscaneoVacantesNn(
     }
   }
 
-  const pesoConfianza: Record<'ALTA' | 'MEDIA' | 'BAJA', number> = { ALTA: 3, MEDIA: 2, BAJA: 1 };
+  const pesoConfianza: Record<'ALTA' | 'MEDIA' | 'BAJA', number> = {
+    ALTA: 3,
+    MEDIA: 2,
+    BAJA: 1
+  };
   resultados.sort((a, b) => pesoConfianza[b.confianza] - pesoConfianza[a.confianza]);
 
   return resultados;
@@ -263,7 +364,12 @@ export async function escanearYSanearVacantesNnTerritorio(params: {
   rbd?: string;
   rolActor: RolId;
   usuarioActor?: string;
-}): Promise<{ escaneados: number; marcadosNn: number; asignacionesPreservadas: number; idsMarcados: string[] }> {
+}): Promise<{
+  escaneados: number;
+  marcadosNn: number;
+  asignacionesPreservadas: number;
+  idsMarcados: string[];
+}> {
   assertRolNivelCentral(params.rolActor, 'escanear y sanear vacantes NN en el territorio');
   const periodo = params.periodo ?? 2027;
 
@@ -280,6 +386,7 @@ export async function escanearYSanearVacantesNnTerritorio(params: {
   }> = [];
 
   for (const d of docentes) {
+    if (!esSituacionFinalActiva(d.situacionFinalGdp)) continue;
     const deteccion = detectarDocenteVacanteNn(d);
     if (deteccion.esVacanteNn && (!d.esVacanteNn || !d.tipoVacante)) {
       candidatosActualizar.push({
@@ -325,7 +432,9 @@ export async function escanearYSanearVacantesNnTerritorio(params: {
 
   const idsMarcadosSet = new Set(idsMarcados);
   const asignacionesPreservadas = asignaciones.filter(
-    a => idsMarcadosSet.has(a.docenteId) || (a.tieneCoDocente && a.coDocenteId && idsMarcadosSet.has(a.coDocenteId))
+    a =>
+      idsMarcadosSet.has(a.docenteId) ||
+      (a.tieneCoDocente && a.coDocenteId && idsMarcadosSet.has(a.coDocenteId))
   ).length;
 
   for (const [rbdAfectado, docIds] of rbdsAfectados.entries()) {
@@ -406,7 +515,8 @@ export async function crearNecesidadVacanteEscuela(params: {
     estamento: params.estamento,
     horasContrato: horasNum,
     horasSubvencionGeneralTitular: 0,
-    horasSubvencionGeneralContrata: params.fuenteFinanciamiento === 'SUBVENCION_GENERAL' ? horasNum : 0,
+    horasSubvencionGeneralContrata:
+      params.fuenteFinanciamiento === 'SUBVENCION_GENERAL' ? horasNum : 0,
     horasSepTitular: 0,
     horasSepContrata: params.fuenteFinanciamiento === 'SEP' ? horasNum : 0,
     horasPieTitular: 0,
@@ -442,7 +552,7 @@ export async function crearNecesidadVacanteEscuela(params: {
 }
 
 // =============================================================================
-// 4. CRUD de Egresos Proyectados y Contingencia Jurídica
+// 4. CRUD de Egresos Proyectados, Contingencia Jurídica y Reverso Controlado
 // =============================================================================
 
 const EGRESO_SELECT_COLS = `
@@ -450,6 +560,7 @@ const EGRESO_SELECT_COLS = `
   horas_liberadas, horas_aula_liberadas, fuente_financiamiento, calidad_juridica,
   causal, certeza, excepcion_jubilacion_3_anios, fecha_cese, numero_decreto,
   impacto_presupuestario, vacante_docente_id, validado_por, observaciones,
+  cpeip_notificacion_firme, estado_reversion, motivo_reversion, fecha_reversion, revertido_por,
   created_at, updated_at
 `;
 
@@ -464,19 +575,30 @@ function mapRowToEgreso(row: any[]): EgresoProyectado {
     asignaturaPrincipal: row[6] ? String(row[6]) : undefined,
     horasLiberadas: Number(row[7] || 0),
     horasAulaLiberadas: Number(row[8] || 0),
-    fuenteFinanciamiento: (row[9] ? String(row[9]) : 'SUBVENCION_GENERAL') as EgresoProyectado['fuenteFinanciamiento'],
+    fuenteFinanciamiento: (row[9]
+      ? String(row[9])
+      : 'SUBVENCION_GENERAL') as EgresoProyectado['fuenteFinanciamiento'],
     calidadJuridica: (row[10] ? String(row[10]) : 'TITULAR') as CalidadJuridicaDocente,
     causal: String(row[11]) as CausalEgresoDocente,
     certeza: (row[12] ? String(row[12]) : 'en_tramite') as CertezaJuridicaEgreso,
     excepcionJubilacion3Anios: Boolean(row[13]),
     fechaCese: row[14] ? String(row[14]) : undefined,
     numeroDecreto: row[15] ? String(row[15]) : undefined,
-    impactoPresupuestario: (row[16] ? String(row[16]) : 'costo_doble_pendiente') as ImpactoPresupuestarioEgreso,
+    impactoPresupuestario: (row[16]
+      ? String(row[16])
+      : 'costo_doble_pendiente') as ImpactoPresupuestarioEgreso,
     vacanteDocenteId: row[17] ? String(row[17]) : undefined,
     validadoPor: row[18] ? String(row[18]) : undefined,
     observaciones: row[19] ? String(row[19]) : undefined,
-    createdAt: row[20] ? String(row[20]) : undefined,
-    updatedAt: row[21] ? String(row[21]) : undefined
+    cpeipNotificacionFirme: Boolean(row[20]),
+    estadoReversion: (row[21]
+      ? String(row[21])
+      : 'ACTIVO') as EgresoProyectado['estadoReversion'],
+    motivoReversion: row[22] ? String(row[22]) : undefined,
+    fechaReversion: row[23] ? String(row[23]) : undefined,
+    revertidoPor: row[24] ? String(row[24]) : undefined,
+    createdAt: row[25] ? String(row[25]) : undefined,
+    updatedAt: row[26] ? String(row[26]) : undefined
   };
 }
 
@@ -501,7 +623,25 @@ function mapEgresoToSupabase(e: EgresoProyectado) {
     impacto_presupuestario: e.impactoPresupuestario,
     vacante_docente_id: e.vacanteDocenteId || null,
     validado_por: e.validadoPor || null,
-    observaciones: e.observaciones || null
+    observaciones: e.observaciones || null,
+    cpeip_notificacion_firme: Boolean(e.cpeipNotificacionFirme),
+    estado_reversion: e.estadoReversion || 'ACTIVO',
+    motivo_reversion: e.motivoReversion || null,
+    fecha_reversion: e.fechaReversion || null,
+    revertido_por: e.revertidoPor || null
+  };
+}
+
+function toEgresoInput(e: EgresoProyectado): EgresoProyectadoInput {
+  return {
+    causal: e.causal,
+    certeza: e.certeza,
+    excepcionJubilacion3Anios: Boolean(e.excepcionJubilacion3Anios),
+    cpeipNotificacionFirme: Boolean(e.cpeipNotificacionFirme),
+    fechaCese: e.fechaCese,
+    numeroDecreto: e.numeroDecreto,
+    horasLiberadas: e.horasLiberadas,
+    impactoPresupuestario: e.impactoPresupuestario
   };
 }
 
@@ -523,17 +663,23 @@ export async function guardarEgresoProyectado(
   egreso: Omit<EgresoProyectado, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
   rolActor: RolId,
   generarVacanteVinculada: boolean = false
-): Promise<{ egreso: EgresoProyectado; evaluacion: EvaluacionJuridicaEgreso; vacanteGenerada?: Docente }> {
+): Promise<{
+  egreso: EgresoProyectado;
+  evaluacion: EvaluacionJuridicaEgreso;
+  vacanteGenerada?: Docente;
+}> {
   assertRolValidadorGdp(rolActor, 'registrar o validar egresos proyectados');
 
   const periodo = egreso.periodo || 2027;
   const horasLiberadasInt = Math.max(0, Math.round(Number(egreso.horasLiberadas || 0)));
   const horasAulaLiberadasInt = Math.max(0, Math.round(Number(egreso.horasAulaLiberadas || 0)));
+  const cpeipNotificacionFirme = Boolean(egreso.cpeipNotificacionFirme);
 
   const evaluacion = evaluarEgresoProyectado({
     causal: egreso.causal,
     certeza: egreso.certeza,
     excepcionJubilacion3Anios: Boolean(egreso.excepcionJubilacion3Anios),
+    cpeipNotificacionFirme,
     fechaCese: egreso.fechaCese,
     numeroDecreto: egreso.numeroDecreto,
     horasLiberadas: horasLiberadasInt,
@@ -542,7 +688,9 @@ export async function guardarEgresoProyectado(
 
   const db = await getDb();
   const nowIso = new Date().toISOString();
-  const egresoId = egreso.id?.trim() || `egr_${egreso.rbd}_${periodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const egresoId =
+    egreso.id?.trim() ||
+    `egr_${egreso.rbd}_${periodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
   let prevVacanteId: string | undefined;
   let prevCreatedAt: string | undefined;
@@ -559,7 +707,6 @@ export async function guardarEgresoProyectado(
   let vacanteGenerada: Docente | undefined;
   const idsVacantesEliminar: string[] = [];
 
-  // Regla Art. 19 S: excepción de jubilación <= 3 años NO libera vacante y elimina cualquier vacante previa ligada
   if (!evaluacion.liberaVacante) {
     if (vacanteDocenteId) {
       idsVacantesEliminar.push(vacanteDocenteId);
@@ -575,7 +722,6 @@ export async function guardarEgresoProyectado(
     }
     vacanteDocenteId = undefined;
   } else if (generarVacanteVinculada || vacanteDocenteId) {
-    // Crear o actualizar la vacante vinculada si se solicitó o si ya existía una vinculada
     if (generarVacanteVinculada) {
       vacanteDocenteId = vacanteDocenteId || `vac_egr_${egresoId}`;
     }
@@ -585,7 +731,9 @@ export async function guardarEgresoProyectado(
       const esSep = egreso.fuenteFinanciamiento === 'SEP';
       const esSubv = !esPie && !esSep;
 
-      const vacanteExistenteRes = db.exec('SELECT run, estamento FROM docentes WHERE id = ? LIMIT 1;', [vacanteDocenteId]);
+      const vacanteExistenteRes = db.exec('SELECT run, estamento FROM docentes WHERE id = ? LIMIT 1;', [
+        vacanteDocenteId
+      ]);
       const runExistente = vacanteExistenteRes[0]?.values[0]?.[0]
         ? String(vacanteExistenteRes[0].values[0][0])
         : undefined;
@@ -624,6 +772,9 @@ export async function guardarEgresoProyectado(
   }
 
   const impactoFinal = evaluacion.impactoPresupuestarioSugerido;
+  const estadoReversionFinal: NonNullable<EgresoProyectado['estadoReversion']> =
+    egreso.estadoReversion || 'ACTIVO';
+
   const egresoFinal: EgresoProyectado = {
     ...egreso,
     id: egresoId,
@@ -631,6 +782,11 @@ export async function guardarEgresoProyectado(
     horasLiberadas: horasLiberadasInt,
     horasAulaLiberadas: horasAulaLiberadasInt,
     excepcionJubilacion3Anios: Boolean(egreso.excepcionJubilacion3Anios),
+    cpeipNotificacionFirme,
+    estadoReversion: estadoReversionFinal,
+    motivoReversion: egreso.motivoReversion,
+    fechaReversion: egreso.fechaReversion,
+    revertidoPor: egreso.revertidoPor,
     impactoPresupuestario: impactoFinal,
     vacanteDocenteId,
     createdAt: prevCreatedAt || nowIso,
@@ -640,7 +796,10 @@ export async function guardarEgresoProyectado(
   db.run('BEGIN TRANSACTION;');
   try {
     for (const delVacId of idsVacantesEliminar) {
-      db.run('DELETE FROM asignaciones_horarias WHERE docente_id = ? OR co_docente_id = ?;', [delVacId, delVacId]);
+      db.run('DELETE FROM asignaciones_horarias WHERE docente_id = ? OR co_docente_id = ?;', [
+        delVacId,
+        delVacId
+      ]);
       db.run('DELETE FROM docentes WHERE id = ?;', [delVacId]);
     }
 
@@ -650,9 +809,10 @@ export async function guardarEgresoProyectado(
         horas_liberadas, horas_aula_liberadas, fuente_financiamiento, calidad_juridica,
         causal, certeza, excepcion_jubilacion_3_anios, fecha_cese, numero_decreto,
         impacto_presupuestario, vacante_docente_id, validado_por, observaciones,
+        cpeip_notificacion_firme, estado_reversion, motivo_reversion, fecha_reversion, revertido_por,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         rbd=excluded.rbd, periodo=excluded.periodo, docente_id=excluded.docente_id,
         run_docente=excluded.run_docente, nombre_docente=excluded.nombre_docente,
@@ -663,6 +823,11 @@ export async function guardarEgresoProyectado(
         fecha_cese=excluded.fecha_cese, numero_decreto=excluded.numero_decreto,
         impacto_presupuestario=excluded.impacto_presupuestario, vacante_docente_id=excluded.vacante_docente_id,
         validado_por=excluded.validado_por, observaciones=excluded.observaciones,
+        cpeip_notificacion_firme=excluded.cpeip_notificacion_firme,
+        estado_reversion=excluded.estado_reversion,
+        motivo_reversion=excluded.motivo_reversion,
+        fecha_reversion=excluded.fecha_reversion,
+        revertido_por=excluded.revertido_por,
         updated_at=excluded.updated_at;`,
       [
         egresoFinal.id,
@@ -685,6 +850,11 @@ export async function guardarEgresoProyectado(
         egresoFinal.vacanteDocenteId || null,
         egresoFinal.validadoPor || null,
         egresoFinal.observaciones || null,
+        egresoFinal.cpeipNotificacionFirme ? 1 : 0,
+        egresoFinal.estadoReversion || 'ACTIVO',
+        egresoFinal.motivoReversion || null,
+        egresoFinal.fechaReversion || null,
+        egresoFinal.revertidoPor || null,
         egresoFinal.createdAt ?? null,
         egresoFinal.updatedAt ?? null
       ]
@@ -710,13 +880,16 @@ export async function guardarEgresoProyectado(
     supabase
       .from('egresos_proyectados')
       .upsert(mapEgresoToSupabase(egresoFinal), { onConflict: 'id' })
-      .then(() => {}, (err: any) => console.warn('[movilidadTerritorialService] Aviso sync egreso Supabase:', err));
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso sync egreso Supabase:', err)
+      );
   }
 
   return {
     egreso: egresoFinal,
     evaluacion,
-    vacanteGenerada: generarVacanteVinculada && evaluacion.liberaVacante ? vacanteGenerada : undefined
+    vacanteGenerada:
+      generarVacanteVinculada && evaluacion.liberaVacante ? vacanteGenerada : undefined
   };
 }
 
@@ -730,7 +903,10 @@ export async function eliminarEgresoProyectado(id: string, rolActor: RolId): Pro
   db.run('BEGIN TRANSACTION;');
   try {
     if (vacId) {
-      db.run('DELETE FROM asignaciones_horarias WHERE docente_id = ? OR co_docente_id = ?;', [vacId, vacId]);
+      db.run('DELETE FROM asignaciones_horarias WHERE docente_id = ? OR co_docente_id = ?;', [
+        vacId,
+        vacId
+      ]);
       db.run('DELETE FROM docentes WHERE id = ? AND origen_egreso_id = ?;', [vacId, id]);
     }
     db.run('DELETE FROM egresos_proyectados WHERE id = ?;', [id]);
@@ -750,12 +926,233 @@ export async function eliminarEgresoProyectado(id: string, rolActor: RolId): Pro
       .from('egresos_proyectados')
       .delete()
       .eq('id', id)
-      .then(() => {}, (err: any) => console.warn('[movilidadTerritorialService] Aviso delete egreso Supabase:', err));
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso delete egreso Supabase:', err)
+      );
   }
 }
 
+/**
+ * Reverso Controlado: restituye al docente titular en contingencia, re-apunta las asignaciones
+ * horarias desde la vacante condicional de vuelta al titular, archiva la vacante transitoria
+ * y marca el egreso proyectado como 'REVERTIDO_REINCORPORADO'.
+ */
+export async function reincorporarTitularContingencia(params: {
+  egresoId: string;
+  motivo: string;
+  rolActor: RolId;
+  usuarioActor?: string;
+}): Promise<{
+  egreso: EgresoProyectado;
+  docenteTitularRestituido: Docente | null;
+  vacanteArchivadaId?: string;
+  asignacionesReapuntadas: number;
+}> {
+  assertRolValidadorGdp(params.rolActor, 'revertir un egreso y reincorporar al docente titular');
+
+  const motivoClean = String(params.motivo || '').trim();
+  if (!motivoClean) {
+    throw new Error('Debe ingresar un motivo fundamentado para reincorporar al docente titular.');
+  }
+
+  const db = await getDb();
+  const resEgr = db.exec(`SELECT ${EGRESO_SELECT_COLS} FROM egresos_proyectados WHERE id = ? LIMIT 1;`, [
+    params.egresoId
+  ]);
+  if (!resEgr.length || !resEgr[0].values.length) {
+    throw new Error(`Egreso proyectado '${params.egresoId}' no encontrado.`);
+  }
+  const egresoActual = mapRowToEgreso(resEgr[0].values[0]);
+  if (egresoActual.estadoReversion === 'REVERTIDO_REINCORPORADO') {
+    throw new Error(`El egreso '${params.egresoId}' ya fue revertido previamente.`);
+  }
+
+  const periodo = egresoActual.periodo || 2027;
+  const docsRbd = await listarDocentes(egresoActual.rbd, periodo, true);
+
+  let titular = docsRbd.find(d => d.id === egresoActual.docenteId) || null;
+  if (!titular && egresoActual.runDocente) {
+    const runNorm = claveRunNormalizado(egresoActual.runDocente);
+    titular =
+      docsRbd.find(
+        d =>
+          !d.esVacanteNn &&
+          !d.vacanteCondicional &&
+          Boolean(runNorm) &&
+          claveRunNormalizado(d.run) === runNorm
+      ) || null;
+  }
+
+  const vacantesLigadasIds = new Set<string>();
+  if (egresoActual.vacanteDocenteId) {
+    vacantesLigadasIds.add(egresoActual.vacanteDocenteId);
+  }
+  const ligadasRes = db.exec('SELECT id FROM docentes WHERE origen_egreso_id = ?;', [egresoActual.id]);
+  if (ligadasRes.length && ligadasRes[0].values.length) {
+    for (const row of ligadasRes[0].values) {
+      if (row[0]) vacantesLigadasIds.add(String(row[0]));
+    }
+  }
+
+  const vacanteIdPrincipal = egresoActual.vacanteDocenteId || Array.from(vacantesLigadasIds)[0];
+  const nowIso = new Date().toISOString();
+  const actor = String(params.usuarioActor || 'Validador GDP').trim();
+  let asignacionesReapuntadas = 0;
+  const targetTitularId = titular?.id || egresoActual.docenteId;
+
+  db.run('BEGIN TRANSACTION;');
+  try {
+    if (titular) {
+      db.run(
+        `UPDATE docentes
+         SET situacion_final_gdp = 'Vigente',
+             propuesta_gdp = 'Continuidad'
+         WHERE id = ?;`,
+        [titular.id]
+      );
+    }
+
+    for (const vacId of vacantesLigadasIds) {
+      if (targetTitularId) {
+        const countRes = db.exec(
+          `SELECT COUNT(*) FROM asignaciones_horarias
+           WHERE rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027))
+             AND (docente_id = ? OR co_docente_id = ?);`,
+          [egresoActual.rbd, periodo, periodo, vacId, vacId]
+        );
+        asignacionesReapuntadas += Number(countRes[0]?.values[0]?.[0] || 0);
+
+        db.run(
+          `UPDATE asignaciones_horarias
+           SET docente_id = ?
+           WHERE docente_id = ? AND rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027));`,
+          [targetTitularId, vacId, egresoActual.rbd, periodo, periodo]
+        );
+        db.run(
+          `UPDATE asignaciones_horarias
+           SET co_docente_id = ?
+           WHERE co_docente_id = ? AND rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027));`,
+          [targetTitularId, vacId, egresoActual.rbd, periodo, periodo]
+        );
+      }
+
+      db.run(
+        `UPDATE docentes
+         SET es_vacante_nn = 0,
+             vacante_condicional = 0,
+             propuesta_gdp = 'Archivado por Reincorporación Titular',
+             situacion_final_gdp = 'Cese'
+         WHERE id = ?;`,
+        [vacId]
+      );
+    }
+
+    db.run(
+      `UPDATE egresos_proyectados
+       SET estado_reversion = 'REVERTIDO_REINCORPORADO',
+           motivo_reversion = ?,
+           fecha_reversion = ?,
+           revertido_por = ?,
+           updated_at = ?
+       WHERE id = ?;`,
+      [motivoClean, nowIso, actor, nowIso, egresoActual.id]
+    );
+
+    db.run('COMMIT;');
+  } catch (err) {
+    db.run('ROLLBACK;');
+    throw err;
+  }
+
+  await persistDb(true);
+
+  const docsPost = await listarDocentes(egresoActual.rbd, periodo, true);
+  const titularRestituido =
+    docsPost.find(d => d.id === targetTitularId) ||
+    (titular
+      ? {
+          ...titular,
+          situacionFinalGdp: 'Vigente',
+          propuestaGdp: 'Continuidad'
+        }
+      : null);
+
+  const egresoActualizado: EgresoProyectado = {
+    ...egresoActual,
+    estadoReversion: 'REVERTIDO_REINCORPORADO',
+    motivoReversion: motivoClean,
+    fechaReversion: nowIso,
+    revertidoPor: actor,
+    updatedAt: nowIso
+  };
+
+  await registrarEventoAuditoria({
+    rbd: egresoActual.rbd,
+    periodo,
+    tipoEvento: 'ACTUALIZACION',
+    entidad: 'DOCENTE',
+    entidadId: targetTitularId,
+    descripcion: `Reverso controlado de egreso '${egresoActual.nombreDocente}' por ${actor}: titular restituido, ${asignacionesReapuntadas} asignación(es) reapuntada(s) y vacante transitoria archivada.`,
+    detalles: {
+      egresoId: egresoActual.id,
+      motivo: motivoClean,
+      vacantesArchivadas: Array.from(vacantesLigadasIds),
+      asignacionesReapuntadas,
+      usuarioActor: actor,
+      rolActor: params.rolActor
+    }
+  });
+
+  if (isSupabaseEnabled()) {
+    const docentesSync = docsPost.filter(
+      d => d.id === targetTitularId || vacantesLigadasIds.has(d.id)
+    );
+    if (docentesSync.length > 0) {
+      SupabaseDotacionService.guardarDocentesBatch(docentesSync).catch(err =>
+        console.warn('[movilidadTerritorialService] Aviso sync docentes reverso Supabase:', err)
+      );
+    }
+    for (const vacId of vacantesLigadasIds) {
+      supabase
+        .from('asignaciones_horarias')
+        .update({ docente_id: targetTitularId })
+        .eq('docente_id', vacId)
+        .eq('rbd', egresoActual.rbd)
+        .eq('periodo', periodo)
+        .then(() => {}, () => {});
+      supabase
+        .from('asignaciones_horarias')
+        .update({ co_docente_id: targetTitularId })
+        .eq('co_docente_id', vacId)
+        .eq('rbd', egresoActual.rbd)
+        .eq('periodo', periodo)
+        .then(() => {}, () => {});
+    }
+    supabase
+      .from('egresos_proyectados')
+      .update({
+        estado_reversion: 'REVERTIDO_REINCORPORADO',
+        motivo_reversion: motivoClean,
+        fecha_reversion: nowIso,
+        revertido_por: actor,
+        updated_at: nowIso
+      })
+      .eq('id', egresoActual.id)
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso update reverso egreso Supabase:', err)
+      );
+  }
+
+  return {
+    egreso: egresoActualizado,
+    docenteTitularRestituido: titularRestituido,
+    vacanteArchivadaId: vacanteIdPrincipal,
+    asignacionesReapuntadas
+  };
+}
+
 // =============================================================================
-// 5. CRUD de Solicitudes de Movilidad y Detección de Horas Remanentes
+// 5. CRUD de Solicitudes de Movilidad, Remanentes, Asistentes Indefinidos y Techo/Piso
 // =============================================================================
 
 const SOLICITUD_SELECT_COLS = `
@@ -764,14 +1161,24 @@ const SOLICITUD_SELECT_COLS = `
   horas_contrato_actual, horas_titulares_actuales, horas_disponibles_mover, horas_remanentes,
   asignatura_principal, titulo_mencion, aplica_articulo_69, fuente_actual, estado_flujo,
   puntaje_salud, puntaje_ley_karin, puntaje_cuidado_dependientes, puntaje_distancia_rural,
-  puntaje_antiguedad, puntaje_prioridad_total, fundamento, creado_por, created_at, updated_at
+  puntaje_antiguedad, puntaje_prioridad_total, fundamento, creado_por,
+  estamento_personal, categoria_asistente, horas_contrata_actuales,
+  numero_resolucion, fecha_resolucion, fecha_vigencia,
+  created_at, updated_at
 `;
 
 function mapRowToSolicitud(row: any[]): SolicitudMovilidad {
+  const carril = String(row[2]) as CarrilMovilidad;
+  const estamentoRaw = row[28] ? String(row[28]) : undefined;
+  const estamentoPersonal: SolicitudMovilidad['estamentoPersonal'] =
+    estamentoRaw === 'ASISTENTE' || carril === 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO'
+      ? 'ASISTENTE'
+      : 'DOCENTE';
+
   return {
     id: String(row[0]),
     periodo: Number(row[1] || 2027),
-    carril: String(row[2]) as CarrilMovilidad,
+    carril,
     docenteId: String(row[3]),
     runDocente: String(row[4]),
     nombreDocente: String(row[5]),
@@ -797,8 +1204,15 @@ function mapRowToSolicitud(row: any[]): SolicitudMovilidad {
     puntajePrioridadTotal: Number(row[25] || 0),
     fundamento: row[26] ? String(row[26]) : undefined,
     creadoPor: row[27] ? String(row[27]) : undefined,
-    createdAt: row[28] ? String(row[28]) : undefined,
-    updatedAt: row[29] ? String(row[29]) : undefined
+    estamentoPersonal,
+    categoriaAsistente: row[29] ? (String(row[29]) as EstamentoAsistente) : undefined,
+    horasContrataActuales:
+      row[30] !== null && row[30] !== undefined ? Number(row[30]) : 0,
+    numeroResolucion: row[31] ? String(row[31]) : undefined,
+    fechaResolucion: row[32] ? String(row[32]) : undefined,
+    fechaVigencia: row[33] ? String(row[33]) : undefined,
+    createdAt: row[34] ? String(row[34]) : undefined,
+    updatedAt: row[35] ? String(row[35]) : undefined
   };
 }
 
@@ -831,7 +1245,15 @@ function mapSolicitudToSupabase(s: SolicitudMovilidad) {
     puntaje_antiguedad: s.puntajeAntiguedad,
     puntaje_prioridad_total: s.puntajePrioridadTotal,
     fundamento: s.fundamento || null,
-    creado_por: s.creadoPor || null
+    creado_por: s.creadoPor || null,
+    estamento_personal:
+      s.estamentoPersonal ||
+      (s.carril === 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO' ? 'ASISTENTE' : 'DOCENTE'),
+    categoria_asistente: s.categoriaAsistente || null,
+    horas_contrata_actuales: s.horasContrataActuales ?? 0,
+    numero_resolucion: s.numeroResolucion || null,
+    fecha_resolucion: s.fechaResolucion || null,
+    fecha_vigencia: s.fechaVigencia || null
   };
 }
 
@@ -850,7 +1272,9 @@ export async function listarSolicitudesMovilidad(
 }
 
 export async function guardarSolicitudMovilidad(
-  sol: Omit<SolicitudMovilidad, 'id' | 'puntajePrioridadTotal' | 'createdAt' | 'updatedAt'> & { id?: string },
+  sol: Omit<SolicitudMovilidad, 'id' | 'puntajePrioridadTotal' | 'createdAt' | 'updatedAt'> & {
+    id?: string;
+  },
   rolActor: RolId
 ): Promise<SolicitudMovilidad> {
   assertRolNivelCentral(rolActor, 'guardar solicitudes de movilidad');
@@ -858,16 +1282,20 @@ export async function guardarSolicitudMovilidad(
   const periodo = sol.periodo || 2027;
   const db = await getDb();
   const nowIso = new Date().toISOString();
-  const solId = sol.id?.trim() || `sol_${periodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const solId =
+    sol.id?.trim() ||
+    `sol_${periodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
   let prevCreatedAt: string | undefined;
-  const prevRes = db.exec('SELECT created_at FROM solicitudes_movilidad WHERE id = ? LIMIT 1;', [solId]);
+  const prevRes = db.exec('SELECT created_at FROM solicitudes_movilidad WHERE id = ? LIMIT 1;', [
+    solId
+  ]);
   if (prevRes.length && prevRes[0].values.length && prevRes[0].values[0][0]) {
     prevCreatedAt = String(prevRes[0].values[0][0]);
   }
 
   const puntajePrioridadTotal = calcularPuntajePrioridadMovilidad({
-    carril: sol.carril,
+    carril: mapCarrilAEngine(sol.carril),
     puntajeSalud: sol.puntajeSalud,
     puntajeLeyKarin: sol.puntajeLeyKarin,
     puntajeCuidadoDependientes: sol.puntajeCuidadoDependientes,
@@ -876,12 +1304,25 @@ export async function guardarSolicitudMovilidad(
     horasRemanentes: sol.horasRemanentes
   });
 
+  const horasContratoInt = Math.max(0, Math.round(Number(sol.horasContratoActual || 0)));
+  const horasTitularesInt = Math.max(0, Math.round(Number(sol.horasTitularesActuales || 0)));
+  const horasContrataInt =
+    sol.horasContrataActuales !== undefined
+      ? Math.max(0, Math.round(Number(sol.horasContrataActuales || 0)))
+      : Math.max(0, horasContratoInt - horasTitularesInt);
+
+  const estamentoPersonal: 'DOCENTE' | 'ASISTENTE' =
+    sol.estamentoPersonal ||
+    (sol.carril === 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO' ? 'ASISTENTE' : 'DOCENTE');
+
   const solicitudFinal: SolicitudMovilidad = {
     ...sol,
     id: solId,
     periodo,
-    horasContratoActual: Math.max(0, Math.round(Number(sol.horasContratoActual || 0))),
-    horasTitularesActuales: Math.max(0, Math.round(Number(sol.horasTitularesActuales || 0))),
+    estamentoPersonal,
+    horasContratoActual: horasContratoInt,
+    horasTitularesActuales: horasTitularesInt,
+    horasContrataActuales: horasContrataInt,
     horasDisponiblesMover: Math.max(0, Math.round(Number(sol.horasDisponiblesMover || 0))),
     horasRemanentes: Math.max(0, Math.round(Number(sol.horasRemanentes || 0))),
     puntajePrioridadTotal,
@@ -896,9 +1337,12 @@ export async function guardarSolicitudMovilidad(
       horas_contrato_actual, horas_titulares_actuales, horas_disponibles_mover, horas_remanentes,
       asignatura_principal, titulo_mencion, aplica_articulo_69, fuente_actual, estado_flujo,
       puntaje_salud, puntaje_ley_karin, puntaje_cuidado_dependientes, puntaje_distancia_rural,
-      puntaje_antiguedad, puntaje_prioridad_total, fundamento, creado_por, created_at, updated_at
+      puntaje_antiguedad, puntaje_prioridad_total, fundamento, creado_por,
+      estamento_personal, categoria_asistente, horas_contrata_actuales,
+      numero_resolucion, fecha_resolucion, fecha_vigencia,
+      created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       periodo=excluded.periodo, carril=excluded.carril, docente_id=excluded.docente_id,
       run_docente=excluded.run_docente, nombre_docente=excluded.nombre_docente, rbd_origen=excluded.rbd_origen,
@@ -912,7 +1356,14 @@ export async function guardarSolicitudMovilidad(
       puntaje_ley_karin=excluded.puntaje_ley_karin, puntaje_cuidado_dependientes=excluded.puntaje_cuidado_dependientes,
       puntaje_distancia_rural=excluded.puntaje_distancia_rural, puntaje_antiguedad=excluded.puntaje_antiguedad,
       puntaje_prioridad_total=excluded.puntaje_prioridad_total, fundamento=excluded.fundamento,
-      creado_por=excluded.creado_por, updated_at=excluded.updated_at;`,
+      creado_por=excluded.creado_por,
+      estamento_personal=excluded.estamento_personal,
+      categoria_asistente=excluded.categoria_asistente,
+      horas_contrata_actuales=excluded.horas_contrata_actuales,
+      numero_resolucion=excluded.numero_resolucion,
+      fecha_resolucion=excluded.fecha_resolucion,
+      fecha_vigencia=excluded.fecha_vigencia,
+      updated_at=excluded.updated_at;`,
     [
       solicitudFinal.id,
       solicitudFinal.periodo,
@@ -942,6 +1393,12 @@ export async function guardarSolicitudMovilidad(
       solicitudFinal.puntajePrioridadTotal,
       solicitudFinal.fundamento || null,
       solicitudFinal.creadoPor || null,
+      solicitudFinal.estamentoPersonal || 'DOCENTE',
+      solicitudFinal.categoriaAsistente || null,
+      solicitudFinal.horasContrataActuales ?? 0,
+      solicitudFinal.numeroResolucion || null,
+      solicitudFinal.fechaResolucion || null,
+      solicitudFinal.fechaVigencia || null,
       solicitudFinal.createdAt ?? null,
       solicitudFinal.updatedAt ?? null
     ]
@@ -953,7 +1410,9 @@ export async function guardarSolicitudMovilidad(
     supabase
       .from('solicitudes_movilidad')
       .upsert(mapSolicitudToSupabase(solicitudFinal), { onConflict: 'id' })
-      .then(() => {}, (err: any) => console.warn('[movilidadTerritorialService] Aviso sync solicitud Supabase:', err));
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso sync solicitud Supabase:', err)
+      );
   }
 
   return solicitudFinal;
@@ -964,7 +1423,8 @@ const TRANSICIONES_FLUJO_VALIDAS: Record<EstadoFlujoMovilidad, EstadoFlujoMovili
   PRE_ASIGNADO: ['NOTIFICADO_DIRECCION_ORIGEN', 'RECHAZADO'],
   NOTIFICADO_DIRECCION_ORIGEN: ['ACEPTADO_CON_FIRMA', 'RECHAZADO'],
   ACEPTADO_CON_FIRMA: ['CONSOLIDADO', 'RECHAZADO'],
-  CONSOLIDADO: [],
+  CONSOLIDADO: ['RESOLUCION_EMITIDA'],
+  RESOLUCION_EMITIDA: [],
   RECHAZADO: []
 };
 
@@ -976,7 +1436,9 @@ export async function avanzarEstadoFlujoMovilidad(
   assertRolNivelCentral(rolActor, 'avanzar estado de solicitud de movilidad');
   const db = await getDb();
 
-  const res = db.exec(`SELECT ${SOLICITUD_SELECT_COLS} FROM solicitudes_movilidad WHERE id = ? LIMIT 1;`, [id]);
+  const res = db.exec(`SELECT ${SOLICITUD_SELECT_COLS} FROM solicitudes_movilidad WHERE id = ? LIMIT 1;`, [
+    id
+  ]);
   if (!res.length || !res[0].values.length) {
     throw new Error(`Solicitud de movilidad '${id}' no encontrada.`);
   }
@@ -992,6 +1454,9 @@ export async function avanzarEstadoFlujoMovilidad(
 
   if (nuevoEstado === 'CONSOLIDADO') {
     assertRolConsolidador(rolActor, 'consolidar una solicitud de movilidad');
+  }
+  if (nuevoEstado === 'RESOLUCION_EMITIDA') {
+    assertRolValidadorGdp(rolActor, 'emitir resolución exenta de una solicitud de movilidad');
   }
 
   const nowIso = new Date().toISOString();
@@ -1014,7 +1479,9 @@ export async function avanzarEstadoFlujoMovilidad(
       .from('solicitudes_movilidad')
       .update({ estado_flujo: nuevoEstado, updated_at: nowIso })
       .eq('id', id)
-      .then(() => {}, (err: any) => console.warn('[movilidadTerritorialService] Aviso update estado solicitud Supabase:', err));
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso update estado solicitud Supabase:', err)
+      );
   }
 
   return actualizada;
@@ -1031,7 +1498,9 @@ export async function eliminarSolicitudMovilidad(id: string, rolActor: RolId): P
       .from('solicitudes_movilidad')
       .delete()
       .eq('id', id)
-      .then(() => {}, (err: any) => console.warn('[movilidadTerritorialService] Aviso delete solicitud Supabase:', err));
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso delete solicitud Supabase:', err)
+      );
   }
 }
 
@@ -1110,7 +1579,9 @@ export async function detectarDocentesHorasRemanentes(
           Number(d.horasExtraescolar || 0);
 
     const hExentasContrato =
-      hFuncionesNoAula + Number(d.horasTallerSep || 0) + Number(d.horasTrabajoColaborativo || 0);
+      hFuncionesNoAula +
+      Number(d.horasTallerSep || 0) +
+      Number(d.horasTrabajoColaborativo || 0);
     const horasBaseAula = Math.max(0, Math.round(Number(d.horasContrato || 0) - hExentasContrato));
     if (horasBaseAula <= 0) continue;
 
@@ -1143,13 +1614,222 @@ export async function detectarDocentesHorasRemanentes(
   return resultados;
 }
 
+/**
+ * Detecta Asistentes de la Educación con horas indefinidas > 0 marcados con propuesta
+ * o situación GDP de No Continuidad (Ley N° 21.109).
+ */
+export async function detectarAsistentesIndefinidosNoContinuidad(
+  periodo: number = 2027,
+  rolActor: RolId
+): Promise<
+  Array<{
+    asistente: AsistenteEducacion;
+    establecimiento?: Establecimiento;
+    horasIndefinidas: number;
+    horasPlazoFijo: number;
+    razonGdp: string;
+  }>
+> {
+  assertRolNivelCentral(rolActor, 'detectar asistentes indefinidos con no continuidad GDP');
+
+  const [establecimientos, asistentes] = await Promise.all([
+    listarEstablecimientos(),
+    listarTodosLosAsistentesTerritorio(periodo)
+  ]);
+
+  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
+  const resultados: Array<{
+    asistente: AsistenteEducacion;
+    establecimiento?: Establecimiento;
+    horasIndefinidas: number;
+    horasPlazoFijo: number;
+    razonGdp: string;
+  }> = [];
+
+  for (const a of asistentes) {
+    if (a.activo === false) continue;
+    if (!esSituacionFinalActiva(a.situacionFinalGdp)) continue;
+
+    const esNc =
+      esPropuestaNoContinuidad(a.propuestaGdp) ||
+      esPropuestaNoContinuidad(a.situacionFinalGdp);
+    if (!esNc) continue;
+
+    const horasIndefinidas =
+      Number(a.horasSubvencionGeneralIndefinido || 0) +
+      Number(a.horasSepIndefinido || 0) +
+      Number(a.horasPieIndefinido || 0);
+    if (horasIndefinidas <= 0) continue;
+
+    const horasPlazoFijo =
+      Number(a.horasSubvencionGeneralPlazoFijo || 0) +
+      Number(a.horasSepPlazoFijo || 0) +
+      Number(a.horasPiePlazoFijo || 0);
+
+    const razonGdp =
+      [a.observacionesDirector, a.observacionesSlep, a.observacionesPal, a.observaciones]
+        .map(x => String(x || '').trim())
+        .filter(Boolean)
+        .join(' | ') ||
+      a.propuestaGdp ||
+      'No Continuidad GDP';
+
+    resultados.push({
+      asistente: a,
+      establecimiento: estMap.get(a.rbd),
+      horasIndefinidas,
+      horasPlazoFijo,
+      razonGdp
+    });
+  }
+
+  resultados.sort((a, b) => b.horasIndefinidas - a.horasIndefinidas);
+  return resultados;
+}
+
+/**
+ * Calcula la proyección ejecutiva Techo vs Piso de horas antes del 1 de marzo
+ * aplicando el filtro anti-doble-conteo sobre vacantes condicionales y los egresos proyectados activos.
+ */
+export async function calcularProyeccionTechoPisoHoras(
+  periodo: number = 2027,
+  rolActor: RolId
+): Promise<ProyeccionTechoPisoHoras> {
+  assertRolNivelCentral(rolActor, 'calcular proyección techo vs piso de horas');
+
+  const [establecimientos, todosDocentes, egresos] = await Promise.all([
+    listarEstablecimientos(),
+    listarTodosLosDocentesTerritorio(periodo),
+    listarEgresosProyectados(periodo, rolActor)
+  ]);
+
+  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
+  const { docentesEfectivos, excluidosCondicionales } =
+    filtrarDocentesSinDobleConteoCondicional(todosDocentes);
+
+  const accPorRbd = new Map<
+    string,
+    {
+      horasContratadasActivas: number;
+      horasVacantesConfirmadasSinTitular: number;
+      horasVacantesCondicionales: number;
+    }
+  >();
+
+  const ensureRbd = (rbd: string) => {
+    const key = String(rbd || '').trim();
+    let item = accPorRbd.get(key);
+    if (!item) {
+      item = {
+        horasContratadasActivas: 0,
+        horasVacantesConfirmadasSinTitular: 0,
+        horasVacantesCondicionales: 0
+      };
+      accPorRbd.set(key, item);
+    }
+    return item;
+  };
+
+  for (const est of establecimientos) {
+    ensureRbd(est.rbd);
+  }
+
+  const vacantesCondContadasIds = new Set<string>();
+  const egresosCubiertosIds = new Set<string>();
+
+  for (const d of docentesEfectivos) {
+    if (!esSituacionFinalActiva(d.situacionFinalGdp)) continue;
+    const acc = ensureRbd(d.rbd);
+    const hrs = Math.max(0, Number(d.horasContrato || 0));
+    const esVac =
+      Boolean(d.esVacanteNn) ||
+      Boolean(d.vacanteCondicional) ||
+      d.tipoVacante === 'CONDICIONAL_EGRESO';
+
+    if (!esVac) {
+      acc.horasContratadasActivas += hrs;
+    } else if (d.vacanteCondicional === true || d.tipoVacante === 'CONDICIONAL_EGRESO') {
+      acc.horasVacantesCondicionales += hrs;
+      vacantesCondContadasIds.add(d.id);
+      if (d.origenEgresoId) egresosCubiertosIds.add(d.origenEgresoId);
+    } else {
+      acc.horasVacantesConfirmadasSinTitular += hrs;
+    }
+  }
+
+  for (const d of excluidosCondicionales) {
+    if (!esSituacionFinalActiva(d.situacionFinalGdp)) continue;
+    const acc = ensureRbd(d.rbd);
+    acc.horasVacantesCondicionales += Math.max(0, Number(d.horasContrato || 0));
+    vacantesCondContadasIds.add(d.id);
+    if (d.origenEgresoId) egresosCubiertosIds.add(d.origenEgresoId);
+  }
+
+  for (const e of egresos) {
+    if (e.estadoReversion === 'REVERTIDO_REINCORPORADO') continue;
+    const evalJur = evaluarEgresoProyectado(toEgresoInput(e));
+    if (!evalJur.liberaVacante || !evalJur.esVacanteCondicional) continue;
+
+    const yaContadoPorVacante =
+      (e.vacanteDocenteId && vacantesCondContadasIds.has(e.vacanteDocenteId)) ||
+      egresosCubiertosIds.has(e.id);
+    if (yaContadoPorVacante) continue;
+
+    const acc = ensureRbd(e.rbd);
+    acc.horasVacantesCondicionales += Math.max(0, Number(e.horasLiberadas || 0));
+  }
+
+  const detallePorRbd: DetalleTechoPisoPorRbd[] = [];
+  let horasContratadasActivas = 0;
+  let horasVacantesConfirmadasSinTitular = 0;
+  let horasVacantesCondicionales = 0;
+  let horasTechoAntes1Marzo = 0;
+  let horasPisoSiEgresanCondicionales = 0;
+
+  for (const [rbd, acc] of accPorRbd.entries()) {
+    const piso = acc.horasContratadasActivas + acc.horasVacantesConfirmadasSinTitular;
+    const techo = piso + acc.horasVacantesCondicionales;
+
+    horasContratadasActivas += acc.horasContratadasActivas;
+    horasVacantesConfirmadasSinTitular += acc.horasVacantesConfirmadasSinTitular;
+    horasVacantesCondicionales += acc.horasVacantesCondicionales;
+    horasPisoSiEgresanCondicionales += piso;
+    horasTechoAntes1Marzo += techo;
+
+    if (techo > 0 || piso > 0 || acc.horasVacantesCondicionales > 0) {
+      detallePorRbd.push({
+        rbd,
+        nombreEstablecimiento: estMap.get(rbd)?.nombre || `RBD ${rbd}`,
+        horasContratadasActivas: acc.horasContratadasActivas,
+        horasVacantesConfirmadasSinTitular: acc.horasVacantesConfirmadasSinTitular,
+        horasVacantesCondicionales: acc.horasVacantesCondicionales,
+        horasTechoAntes1Marzo: techo,
+        horasPisoSiEgresanCondicionales: piso
+      });
+    }
+  }
+
+  detallePorRbd.sort((a, b) => a.nombreEstablecimiento.localeCompare(b.nombreEstablecimiento, 'es'));
+
+  return {
+    periodo,
+    horasContratadasActivas,
+    horasVacantesConfirmadasSinTitular,
+    horasVacantesCondicionales,
+    horasTechoAntes1Marzo,
+    horasPisoSiEgresanCondicionales,
+    detallePorRbd
+  };
+}
+
 // =============================================================================
-// 6. Escenarios de Calce, Propuestas, Sugeridor Automático y Consolidación Atómica
+// 6. Escenarios de Calce, Propuestas, Resolución de Rebotes y Consolidación
 // =============================================================================
 
 const ESCENARIO_SELECT_COLS = `
-  id, periodo, nombre, descripcion, estado, creado_por, aprobado_por,
-  consolidado_por, fecha_consolidacion, resumen_metricas_json, created_at, updated_at
+  id, periodo, nombre, descripcion, estado, version, creado_por, aprobado_por,
+  consolidado_por, fecha_consolidacion, numero_resolucion, fecha_resolucion, fecha_vigencia,
+  resumen_metricas_json, created_at, updated_at
 `;
 
 const PROPUESTA_SELECT_COLS = `
@@ -1158,14 +1838,19 @@ const PROPUESTA_SELECT_COLS = `
   tipo_cobertura, horas_asignadas, minutos_asignados, horas_pedagogicas_aula,
   fuente_destino, indice_compatibilidad, genera_rebote, vacante_rebote_json,
   alertas_normativas_json, bloquea_consolidacion, motivo_bloqueo, estado,
+  estamento_personal, estado_resolucion_rebote, rebote_cubierto_por_propuesta_id,
+  minutos_titulares_origen, minutos_contrata_origen,
+  alerta_menoscabo_art50, alerta_condiciones_dificiles,
+  alerta_habilitacion_seremi_dto352, alerta_itinerancia_rural,
+  numero_resolucion, fecha_resolucion, fecha_vigencia,
   created_at, updated_at
 `;
 
 function mapRowToEscenario(row: any[]): EscenarioCalce {
   let resumenMetricas: EscenarioCalce['resumenMetricas'];
-  if (row[9]) {
+  if (row[13]) {
     try {
-      resumenMetricas = JSON.parse(String(row[9]));
+      resumenMetricas = JSON.parse(String(row[13]));
     } catch (_) {}
   }
   return {
@@ -1174,13 +1859,17 @@ function mapRowToEscenario(row: any[]): EscenarioCalce {
     nombre: String(row[2]),
     descripcion: row[3] ? String(row[3]) : undefined,
     estado: (row[4] ? String(row[4]) : 'BORRADOR') as EstadoEscenarioCalce,
-    creadoPor: row[5] ? String(row[5]) : undefined,
-    aprobadoPor: row[6] ? String(row[6]) : undefined,
-    consolidadoPor: row[7] ? String(row[7]) : undefined,
-    fechaConsolidacion: row[8] ? String(row[8]) : undefined,
+    version: row[5] !== null && row[5] !== undefined ? Number(row[5]) : 1,
+    creadoPor: row[6] ? String(row[6]) : undefined,
+    aprobadoPor: row[7] ? String(row[7]) : undefined,
+    consolidadoPor: row[8] ? String(row[8]) : undefined,
+    fechaConsolidacion: row[9] ? String(row[9]) : undefined,
+    numeroResolucion: row[10] ? String(row[10]) : undefined,
+    fechaResolucion: row[11] ? String(row[11]) : undefined,
+    fechaVigencia: row[12] ? String(row[12]) : undefined,
     resumenMetricas,
-    createdAt: row[10] ? String(row[10]) : undefined,
-    updatedAt: row[11] ? String(row[11]) : undefined
+    createdAt: row[14] ? String(row[14]) : undefined,
+    updatedAt: row[15] ? String(row[15]) : undefined
   };
 }
 
@@ -1191,10 +1880,14 @@ function mapEscenarioToSupabase(e: EscenarioCalce) {
     nombre: e.nombre,
     descripcion: e.descripcion || null,
     estado: e.estado,
+    version: e.version ?? 1,
     creado_por: e.creadoPor || null,
     aprobado_por: e.aprobadoPor || null,
     consolidado_por: e.consolidadoPor || null,
     fecha_consolidacion: e.fechaConsolidacion || null,
+    numero_resolucion: e.numeroResolucion || null,
+    fecha_resolucion: e.fechaResolucion || null,
+    fecha_vigencia: e.fechaVigencia || null,
     resumen_metricas_json: e.resumenMetricas || null
   };
 }
@@ -1214,6 +1907,14 @@ function mapRowToPropuesta(row: any[]): PropuestaCalce {
     } catch (_) {}
   }
 
+  const generaRebote = Boolean(row[17]);
+  const estadoReboteRaw = row[24] ? String(row[24]) : undefined;
+  const estadoResolucionRebote: EstadoResolucionRebote = estadoReboteRaw
+    ? (estadoReboteRaw as EstadoResolucionRebote)
+    : generaRebote
+      ? 'PENDIENTE'
+      : 'NO_APLICA';
+
   return {
     id: String(row[0]),
     escenarioId: String(row[1]),
@@ -1230,16 +1931,30 @@ function mapRowToPropuesta(row: any[]): PropuestaCalce {
     horasAsignadas: Number(row[12] || 0),
     minutosAsignados: Number(row[13] || 0),
     horasPedagogicasAula: Number(row[14] || 0),
-    fuenteDestino: (row[15] ? String(row[15]) : 'SUBVENCION_GENERAL') as PropuestaCalce['fuenteDestino'],
+    fuenteDestino: (row[15]
+      ? String(row[15])
+      : 'SUBVENCION_GENERAL') as PropuestaCalce['fuenteDestino'],
     indiceCompatibilidad: Number(row[16] || 0),
-    generaRebote: Boolean(row[17]),
+    generaRebote,
     vacanteRebote,
     alertasNormativas,
     bloqueaConsolidacion: Boolean(row[20]),
     motivoBloqueo: row[21] ? String(row[21]) : undefined,
     estado: (row[22] ? String(row[22]) : 'PROPUESTA') as PropuestaCalce['estado'],
-    createdAt: row[23] ? String(row[23]) : undefined,
-    updatedAt: row[24] ? String(row[24]) : undefined
+    estamentoPersonal: (row[23] === 'ASISTENTE' ? 'ASISTENTE' : 'DOCENTE') as PropuestaCalce['estamentoPersonal'],
+    estadoResolucionRebote,
+    reboteCubiertoPorPropuestaId: row[25] ? String(row[25]) : undefined,
+    minutosTitularesOrigen: Number(row[26] || 0),
+    minutosContrataOrigen: Number(row[27] || 0),
+    alertaMenoscaboEconomicoArt50: Boolean(row[28]),
+    alertaCondicionesDificiles: Boolean(row[29]),
+    alertaHabilitacionSeremiDto352: Boolean(row[30]),
+    alertaItineranciaRural: Boolean(row[31]),
+    numeroResolucion: row[32] ? String(row[32]) : undefined,
+    fechaResolucion: row[33] ? String(row[33]) : undefined,
+    fechaVigencia: row[34] ? String(row[34]) : undefined,
+    createdAt: row[35] ? String(row[35]) : undefined,
+    updatedAt: row[36] ? String(row[36]) : undefined
   };
 }
 
@@ -1267,12 +1982,27 @@ function mapPropuestaToSupabase(p: PropuestaCalce) {
     alertas_normativas_json: p.alertasNormativas || [],
     bloquea_consolidacion: Boolean(p.bloqueaConsolidacion),
     motivo_bloqueo: p.motivoBloqueo || null,
-    estado: p.estado
+    estado: p.estado,
+    estamento_personal: p.estamentoPersonal || 'DOCENTE',
+    estado_resolucion_rebote:
+      p.estadoResolucionRebote || (p.generaRebote ? 'PENDIENTE' : 'NO_APLICA'),
+    rebote_cubierto_por_propuesta_id: p.reboteCubiertoPorPropuestaId || null,
+    minutos_titulares_origen: p.minutosTitularesOrigen ?? 0,
+    minutos_contrata_origen: p.minutosContrataOrigen ?? 0,
+    alerta_menoscabo_art50: Boolean(p.alertaMenoscaboEconomicoArt50),
+    alerta_condiciones_dificiles: Boolean(p.alertaCondicionesDificiles),
+    alerta_habilitacion_seremi_dto352: Boolean(p.alertaHabilitacionSeremiDto352),
+    alerta_itinerancia_rural: Boolean(p.alertaItineranciaRural),
+    numero_resolucion: p.numeroResolucion || null,
+    fecha_resolucion: p.fechaResolucion || null,
+    fecha_vigencia: p.fechaVigencia || null
   };
 }
 
 function inferirFuenteDocenteCalce(d: Docente): FuenteFinanciamientoCalce {
-  const sub = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
+  const sub =
+    Number(d.horasSubvencionGeneralTitular || 0) +
+    Number(d.horasSubvencionGeneralContrata || 0);
   const sep = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
   const pie = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
   const activas = [sub > 0, sep > 0, pie > 0].filter(Boolean).length;
@@ -1285,16 +2015,67 @@ function inferirFuenteDocenteCalce(d: Docente): FuenteFinanciamientoCalce {
 function normalizarFuenteDestino(d: Docente): 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' {
   const pie = Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0);
   const sep = Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0);
-  const sub = Number(d.horasSubvencionGeneralTitular || 0) + Number(d.horasSubvencionGeneralContrata || 0);
+  const sub =
+    Number(d.horasSubvencionGeneralTitular || 0) +
+    Number(d.horasSubvencionGeneralContrata || 0);
   if (pie > 0 && pie >= sep && pie >= sub) return 'PIE';
   if (sep > 0 && sep >= sub) return 'SEP';
   return 'SUBVENCION_GENERAL';
 }
 
-function calcularResumenMetricasEscenario(propuestas: PropuestaCalce[]): NonNullable<EscenarioCalce['resumenMetricas']> {
+function inferirFuenteAsistenteCalce(a: AsistenteEducacion): FuenteFinanciamientoCalce {
+  const sub =
+    Number(a.horasSubvencionGeneralIndefinido || 0) +
+    Number(a.horasSubvencionGeneralPlazoFijo || 0);
+  const sep = Number(a.horasSepIndefinido || 0) + Number(a.horasSepPlazoFijo || 0);
+  const pie = Number(a.horasPieIndefinido || 0) + Number(a.horasPiePlazoFijo || 0);
+  const activas = [sub > 0, sep > 0, pie > 0].filter(Boolean).length;
+  if (activas > 1) return 'MIXTO';
+  if (pie > 0) return 'PIE';
+  if (sep > 0) return 'SEP';
+  return 'SUBVENCION_GENERAL';
+}
+
+function normalizarFuenteDestinoAsistente(a: AsistenteEducacion): 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' {
+  const pie = Number(a.horasPieIndefinido || 0) + Number(a.horasPiePlazoFijo || 0);
+  const sep = Number(a.horasSepIndefinido || 0) + Number(a.horasSepPlazoFijo || 0);
+  const sub =
+    Number(a.horasSubvencionGeneralIndefinido || 0) +
+    Number(a.horasSubvencionGeneralPlazoFijo || 0);
+  if (pie > 0 && pie >= sep && pie >= sub) return 'PIE';
+  if (sep > 0 && sep >= sub) return 'SEP';
+  return 'SUBVENCION_GENERAL';
+}
+
+function mapDocEstamentoToAsistente(est: EstamentoDocente, fallback: EstamentoAsistente): EstamentoAsistenteMotor {
+  if (est === 'PROFESIONAL_PAE') return 'PROFESIONAL';
+  if (est === 'TECNICO_ESPECIAL') return 'TECNICO';
+  if (est === 'ASISTENTE_AULA') return 'PARADOCENTE_INSPECTORIA';
+  return fallback;
+}
+
+function calcularResumenMetricasEscenario(
+  propuestas: PropuestaCalce[]
+): NonNullable<EscenarioCalce['resumenMetricas']> {
   const vacantesCubiertas = new Set(
-    propuestas.filter(p => !p.bloqueaConsolidacion && p.vacanteDestinoId).map(p => p.vacanteDestinoId!)
+    propuestas
+      .filter(p => !p.bloqueaConsolidacion && p.vacanteDestinoId)
+      .map(p => p.vacanteDestinoId!)
   );
+  const rebotesPendientes = propuestas.filter(
+    p =>
+      p.generaRebote &&
+      (!p.estadoResolucionRebote ||
+        p.estadoResolucionRebote === 'PENDIENTE' ||
+        p.estadoResolucionRebote === 'NO_APLICA')
+  ).length;
+  const rebotesCubiertosCadena = propuestas.filter(
+    p => p.generaRebote && p.estadoResolucionRebote === 'CUBIERTA_EN_CADENA'
+  ).length;
+  const rebotesDerivadosConcurso = propuestas.filter(
+    p => p.generaRebote && p.estadoResolucionRebote === 'DERIVADA_A_CONCURSO_GDP'
+  ).length;
+
   return {
     totalPropuestas: propuestas.length,
     propuestasValidas: propuestas.filter(p => !p.bloqueaConsolidacion).length,
@@ -1304,11 +2085,18 @@ function calcularResumenMetricasEscenario(propuestas: PropuestaCalce[]): NonNull
     deltaMinutosTerritorial: propuestas.reduce(
       (sum, p) => sum + (p.vacanteRebote?.deltaMinutosCadena ?? 0),
       0
-    )
+    ),
+    rebotesPendientes,
+    rebotesCubiertosCadena,
+    rebotesDerivadosConcurso
   };
 }
 
-function actualizarResumenEscenarioEnDb(db: any, escenarioId: string, nowIso: string): EscenarioCalce | null {
+function actualizarResumenEscenarioEnDb(
+  db: any,
+  escenarioId: string,
+  nowIso: string
+): EscenarioCalce | null {
   const propRes = db.exec(
     `SELECT ${PROPUESTA_SELECT_COLS} FROM propuestas_calce WHERE escenario_id = ? ORDER BY created_at ASC;`,
     [escenarioId]
@@ -1322,8 +2110,67 @@ function actualizarResumenEscenarioEnDb(db: any, escenarioId: string, nowIso: st
     escenarioId
   ]);
 
-  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [escenarioId]);
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    escenarioId
+  ]);
   return escRes.length && escRes[0].values.length ? mapRowToEscenario(escRes[0].values[0]) : null;
+}
+
+function insertarPropuestaEnDb(db: any, propuesta: PropuestaCalce): void {
+  db.run(
+    `INSERT INTO propuestas_calce (
+      id, escenario_id, periodo, solicitud_movilidad_id, docente_origen_id, run_docente,
+      nombre_docente, rbd_origen, rbd_destino, vacante_destino_id, egreso_origen_id,
+      tipo_cobertura, horas_asignadas, minutos_asignados, horas_pedagogicas_aula,
+      fuente_destino, indice_compatibilidad, genera_rebote, vacante_rebote_json,
+      alertas_normativas_json, bloquea_consolidacion, motivo_bloqueo, estado,
+      estamento_personal, estado_resolucion_rebote, rebote_cubierto_por_propuesta_id,
+      minutos_titulares_origen, minutos_contrata_origen,
+      alerta_menoscabo_art50, alerta_condiciones_dificiles,
+      alerta_habilitacion_seremi_dto352, alerta_itinerancia_rural,
+      numero_resolucion, fecha_resolucion, fecha_vigencia,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    [
+      propuesta.id,
+      propuesta.escenarioId,
+      propuesta.periodo,
+      propuesta.solicitudMovilidadId || null,
+      propuesta.docenteOrigenId,
+      propuesta.runDocente,
+      propuesta.nombreDocente,
+      propuesta.rbdOrigen,
+      propuesta.rbdDestino,
+      propuesta.vacanteDestinoId || null,
+      propuesta.egresoOrigenId || null,
+      propuesta.tipoCobertura,
+      propuesta.horasAsignadas,
+      propuesta.minutosAsignados,
+      propuesta.horasPedagogicasAula,
+      propuesta.fuenteDestino,
+      propuesta.indiceCompatibilidad,
+      propuesta.generaRebote ? 1 : 0,
+      propuesta.vacanteRebote ? JSON.stringify(propuesta.vacanteRebote) : null,
+      JSON.stringify(propuesta.alertasNormativas || []),
+      propuesta.bloqueaConsolidacion ? 1 : 0,
+      propuesta.motivoBloqueo || null,
+      propuesta.estado,
+      propuesta.estamentoPersonal || 'DOCENTE',
+      propuesta.estadoResolucionRebote || (propuesta.generaRebote ? 'PENDIENTE' : 'NO_APLICA'),
+      propuesta.reboteCubiertoPorPropuestaId || null,
+      propuesta.minutosTitularesOrigen ?? 0,
+      propuesta.minutosContrataOrigen ?? 0,
+      propuesta.alertaMenoscaboEconomicoArt50 ? 1 : 0,
+      propuesta.alertaCondicionesDificiles ? 1 : 0,
+      propuesta.alertaHabilitacionSeremiDto352 ? 1 : 0,
+      propuesta.alertaItineranciaRural ? 1 : 0,
+      propuesta.numeroResolucion || null,
+      propuesta.fechaResolucion || null,
+      propuesta.fechaVigencia || null,
+      propuesta.createdAt ?? null,
+      propuesta.updatedAt ?? null
+    ]
+  );
 }
 
 function construirVacanteRebotePlan(
@@ -1341,7 +2188,8 @@ function construirVacanteRebotePlan(
     rbdOrigen: docenteOrigen.rbd,
     nombreEstablecimientoOrigen: estOrigen?.nombre,
     horasTrasladadas: docenteOrigen.horasContrato,
-    asignaturaPrincipal: docenteOrigen.asignaturaPrincipal || docenteOrigen.funcionPrincipal || 'DOCENTE AULA',
+    asignaturaPrincipal:
+      docenteOrigen.asignaturaPrincipal || docenteOrigen.funcionPrincipal || 'DOCENTE AULA',
     fuenteFinanciamiento: fuenteRebote,
     asignacionesOrigen: asignacionesOrigen.map(a => ({
       curso: a.cursoId,
@@ -1357,15 +2205,17 @@ function construirVacanteRebotePlan(
     }))
   });
 
-  const asignacionesHeredadas: VacanteRebotePlan['asignacionesHeredadas'] = asignacionesOrigen.map((a, idx) => {
-    const outAsig = reboteOut.asignacionesHeredadas[idx];
-    return {
-      asignacionId: a.id,
-      cursoId: a.cursoId,
-      asignatura: outAsig?.asignatura || a.asignatura,
-      horasPedagogicasAula: outAsig?.horasPedagogicas ?? a.horasPedagogicasAula
-    };
-  });
+  const asignacionesHeredadas: VacanteRebotePlan['asignacionesHeredadas'] = asignacionesOrigen.map(
+    (a, idx) => {
+      const outAsig = reboteOut.asignacionesHeredadas[idx];
+      return {
+        asignacionId: a.id,
+        cursoId: a.cursoId,
+        asignatura: outAsig?.asignatura || a.asignatura,
+        horasPedagogicasAula: outAsig?.horasPedagogicas ?? a.horasPedagogicasAula
+      };
+    }
+  );
 
   const funcionesNoLectivasHeredadas: FuncionNoAulaDocente[] =
     funcionesBase.length > 0
@@ -1389,12 +2239,83 @@ function construirVacanteRebotePlan(
     minutosContratoRebote: reboteOut.minutosContratoRebote,
     horasPedagogicasAula: reboteOut.horasPedagogicasAula,
     asignaturaPrincipal:
-      reboteOut.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal || docenteOrigen.funcionPrincipal || 'DOCENTE AULA',
+      reboteOut.asignaturaPrincipal ||
+      docenteOrigen.asignaturaPrincipal ||
+      docenteOrigen.funcionPrincipal ||
+      'DOCENTE AULA',
     fuenteFinanciamiento: fuenteNormalizada,
     asignacionesHeredadas,
     funcionesNoLectivasHeredadas,
+    funcionesIntransferiblesDetectadas: reboteOut.funcionesIntransferiblesDetectadas,
     deltaMinutosCadena: reboteOut.deltaMinutosCadena
   };
+}
+
+/**
+ * Actualiza versión de escenario condicionalmente en Supabase verificando conflicto optimista real,
+ * tolerando errores offline o columnas faltantes (PGRST204 / 42703).
+ */
+async function sincronizarVersionEscenarioSupabase(params: {
+  escenario: EscenarioCalce;
+  versionAnterior: number;
+  nuevaVersion: number;
+  nowIso: string;
+  onConflictoRollback: () => Promise<void>;
+}): Promise<boolean> {
+  if (!isSupabaseEnabled()) return true;
+
+  try {
+    const { data: verData, error: verError } = await supabase
+      .from('escenarios_calce')
+      .update({
+        version: params.nuevaVersion,
+        resumen_metricas_json: params.escenario.resumenMetricas || null,
+        updated_at: params.nowIso
+      })
+      .eq('id', params.escenario.id)
+      .eq('version', params.versionAnterior)
+      .select('version');
+
+    if (verError) {
+      if (esErrorColumnaFaltanteSupabase(verError)) {
+        await supabase
+          .from('escenarios_calce')
+          .update({
+            resumen_metricas_json: params.escenario.resumenMetricas || null,
+            updated_at: params.nowIso
+          })
+          .eq('id', params.escenario.id);
+        return false;
+      }
+      console.warn('[movilidadTerritorialService] Aviso update version Supabase:', verError);
+      return false;
+    }
+
+    if (Array.isArray(verData) && verData.length === 0) {
+      const { data: actualRow, error: checkErr } = await supabase
+        .from('escenarios_calce')
+        .select('version')
+        .eq('id', params.escenario.id)
+        .maybeSingle();
+
+      if (!checkErr && actualRow && Number(actualRow.version ?? 1) !== params.versionAnterior) {
+        await params.onConflictoRollback();
+        throw construirErrorConflictoVersion(params.versionAnterior, Number(actualRow.version ?? 1));
+      }
+
+      // Escenario creado offline: sembrar en Supabase con versión actualizada
+      await supabase
+        .from('escenarios_calce')
+        .upsert(mapEscenarioToSupabase(params.escenario), { onConflict: 'id' });
+    }
+    return true;
+  } catch (err: any) {
+    if (String(err?.message || '').includes('CONFLICTO_VERSION')) {
+      throw err;
+    }
+    console.warn('[movilidadTerritorialService] Aviso sync version escenario Supabase:', err);
+    return false;
+  }
 }
 
 export async function listarEscenariosCalce(
@@ -1429,6 +2350,7 @@ export async function crearEscenarioCalce(
     nombre: nombreClean,
     descripcion: params.descripcion?.trim() || undefined,
     estado: 'BORRADOR',
+    version: 1,
     creadoPor: params.creadoPor,
     resumenMetricas: {
       totalPropuestas: 0,
@@ -1436,7 +2358,10 @@ export async function crearEscenarioCalce(
       propuestasBloqueadas: 0,
       vacantesNnCubiertas: 0,
       rebotesGenerados: 0,
-      deltaMinutosTerritorial: 0
+      deltaMinutosTerritorial: 0,
+      rebotesPendientes: 0,
+      rebotesCubiertosCadena: 0,
+      rebotesDerivadosConcurso: 0
     },
     createdAt: nowIso,
     updatedAt: nowIso
@@ -1445,19 +2370,18 @@ export async function crearEscenarioCalce(
   const db = await getDb();
   db.run(
     `INSERT INTO escenarios_calce (
-      id, periodo, nombre, descripcion, estado, creado_por, aprobado_por,
-      consolidado_por, fecha_consolidacion, resumen_metricas_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      id, periodo, nombre, descripcion, estado, version, creado_por, aprobado_por,
+      consolidado_por, fecha_consolidacion, numero_resolucion, fecha_resolucion, fecha_vigencia,
+      resumen_metricas_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?);`,
     [
       escenario.id,
       escenario.periodo,
       escenario.nombre,
       escenario.descripcion || null,
       escenario.estado,
+      escenario.version ?? 1,
       escenario.creadoPor || null,
-      null,
-      null,
-      null,
       JSON.stringify(escenario.resumenMetricas),
       escenario.createdAt ?? null,
       escenario.updatedAt ?? null
@@ -1470,7 +2394,9 @@ export async function crearEscenarioCalce(
     supabase
       .from('escenarios_calce')
       .upsert(mapEscenarioToSupabase(escenario), { onConflict: 'id' })
-      .then(() => {}, (err: any) => console.warn('[movilidadTerritorialService] Aviso sync escenario Supabase:', err));
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso sync escenario Supabase:', err)
+      );
   }
 
   return escenario;
@@ -1485,7 +2411,9 @@ export async function duplicarEscenarioCalce(
   assertRolNivelCentral(rolActor, 'duplicar escenarios de calce');
   const db = await getDb();
 
-  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [escenarioId]);
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    escenarioId
+  ]);
   if (!escRes.length || !escRes[0].values.length) {
     throw new Error(`Escenario '${escenarioId}' no encontrado.`);
   }
@@ -1495,17 +2423,29 @@ export async function duplicarEscenarioCalce(
     `SELECT ${PROPUESTA_SELECT_COLS} FROM propuestas_calce WHERE escenario_id = ? ORDER BY created_at ASC;`,
     [escenarioId]
   );
-  const origProps: PropuestaCalce[] = propRes.length ? propRes[0].values.map(mapRowToPropuesta) : [];
+  const origProps: PropuestaCalce[] = propRes.length
+    ? propRes[0].values.map(mapRowToPropuesta)
+    : [];
 
   const nowIso = new Date().toISOString();
   const nuevoEscenarioId = `esc_${orig.periodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const nombreFinal = String(nuevoNombre || '').trim() || `${orig.nombre} (Copia)`;
 
+  const idMap = new Map<string, string>();
+  const newIds = origProps.map((_, idx) => `prop_${nuevoEscenarioId}_${idx}_${Math.random().toString(36).slice(2, 6)}`);
+  origProps.forEach((p, idx) => idMap.set(p.id, newIds[idx]));
+
   const nuevasProps: PropuestaCalce[] = origProps.map((p, idx) => ({
     ...p,
-    id: `prop_${nuevoEscenarioId}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+    id: newIds[idx],
     escenarioId: nuevoEscenarioId,
     estado: p.bloqueaConsolidacion ? 'BLOQUEADA' : 'PROPUESTA',
+    reboteCubiertoPorPropuestaId: p.reboteCubiertoPorPropuestaId
+      ? idMap.get(p.reboteCubiertoPorPropuestaId)
+      : undefined,
+    numeroResolucion: undefined,
+    fechaResolucion: undefined,
+    fechaVigencia: undefined,
     createdAt: nowIso,
     updatedAt: nowIso
   }));
@@ -1517,6 +2457,7 @@ export async function duplicarEscenarioCalce(
     nombre: nombreFinal,
     descripcion: orig.descripcion,
     estado: 'BORRADOR',
+    version: 1,
     creadoPor: usuarioActor || orig.creadoPor,
     resumenMetricas,
     createdAt: nowIso,
@@ -1527,15 +2468,17 @@ export async function duplicarEscenarioCalce(
   try {
     db.run(
       `INSERT INTO escenarios_calce (
-        id, periodo, nombre, descripcion, estado, creado_por, aprobado_por,
-        consolidado_por, fecha_consolidacion, resumen_metricas_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?);`,
+        id, periodo, nombre, descripcion, estado, version, creado_por, aprobado_por,
+        consolidado_por, fecha_consolidacion, numero_resolucion, fecha_resolucion, fecha_vigencia,
+        resumen_metricas_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?);`,
       [
         nuevoEscenario.id,
         nuevoEscenario.periodo,
         nuevoEscenario.nombre,
         nuevoEscenario.descripcion || null,
         nuevoEscenario.estado,
+        1,
         nuevoEscenario.creadoPor || null,
         JSON.stringify(resumenMetricas),
         nuevoEscenario.createdAt ?? null,
@@ -1544,43 +2487,7 @@ export async function duplicarEscenarioCalce(
     );
 
     for (const p of nuevasProps) {
-      db.run(
-        `INSERT INTO propuestas_calce (
-          id, escenario_id, periodo, solicitud_movilidad_id, docente_origen_id, run_docente,
-          nombre_docente, rbd_origen, rbd_destino, vacante_destino_id, egreso_origen_id,
-          tipo_cobertura, horas_asignadas, minutos_asignados, horas_pedagogicas_aula,
-          fuente_destino, indice_compatibilidad, genera_rebote, vacante_rebote_json,
-          alertas_normativas_json, bloquea_consolidacion, motivo_bloqueo, estado,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-        [
-          p.id,
-          p.escenarioId,
-          p.periodo,
-          p.solicitudMovilidadId || null,
-          p.docenteOrigenId,
-          p.runDocente,
-          p.nombreDocente,
-          p.rbdOrigen,
-          p.rbdDestino,
-          p.vacanteDestinoId || null,
-          p.egresoOrigenId || null,
-          p.tipoCobertura,
-          p.horasAsignadas,
-          p.minutosAsignados,
-          p.horasPedagogicasAula,
-          p.fuenteDestino,
-          p.indiceCompatibilidad,
-          p.generaRebote ? 1 : 0,
-          p.vacanteRebote ? JSON.stringify(p.vacanteRebote) : null,
-          JSON.stringify(p.alertasNormativas || []),
-          p.bloqueaConsolidacion ? 1 : 0,
-          p.motivoBloqueo || null,
-          p.estado,
-          p.createdAt ?? null,
-          p.updatedAt ?? null
-        ]
-      );
+      insertarPropuestaEnDb(db, p);
     }
 
     db.run('COMMIT;');
@@ -1601,7 +2508,9 @@ export async function duplicarEscenarioCalce(
             .from('propuestas_calce')
             .upsert(nuevasProps.map(mapPropuestaToSupabase), { onConflict: 'id' });
         }
-      }, (err: any) => console.warn('[movilidadTerritorialService] Aviso duplicando escenario Supabase:', err));
+      }, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso duplicando escenario Supabase:', err)
+      );
   }
 
   return nuevoEscenario;
@@ -1626,11 +2535,16 @@ export async function agregarPropuestaCalce(
     escenarioId: string;
     periodo: number;
     docenteOrigenId: string;
-    vacanteDestinoId: string;
+    vacanteDestinoId?: string;
+    cubreRebotePropuestaId?: string;
     solicitudMovilidadId?: string;
     egresoOrigenId?: string;
     tipoCobertura?: 'DEFINITIVA' | 'TRANSITORIA_CONDICIONAL';
     esTrasladoCompleto?: boolean;
+    expectedVersion?: number;
+    estamentoPersonal?: 'DOCENTE' | 'ASISTENTE';
+    estadoResolucionRebote?: EstadoResolucionRebote;
+    reboteCubiertoPorPropuestaId?: string;
   },
   rolActor: RolId
 ): Promise<PropuestaCalce> {
@@ -1644,26 +2558,34 @@ export async function agregarPropuestaCalce(
     throw new Error(`Escenario '${params.escenarioId}' no encontrado.`);
   }
   const escenario = mapRowToEscenario(escRes[0].values[0]);
-  if (escenario.estado === 'CONSOLIDADO') {
-    throw new Error(`El escenario '${escenario.nombre}' ya se encuentra CONSOLIDADO y no admite nuevas propuestas.`);
+  if (escenario.estado === 'CONSOLIDADO' || escenario.estado === 'RESOLUCION_EMITIDA') {
+    throw new Error(
+      `El escenario '${escenario.nombre}' ya se encuentra ${escenario.estado} y no admite nuevas propuestas.`
+    );
   }
 
-  const periodo = params.periodo || escenario.periodo || 2027;
-
-  const [establecimientos, todosDocentes, todasAsignaciones] = await Promise.all([
-    listarEstablecimientos(),
-    listarTodosLosDocentesTerritorio(periodo),
-    listarTodasLasAsignaciones(periodo)
-  ]);
-
-  const docenteOrigen = todosDocentes.find(d => d.id === params.docenteOrigenId);
-  if (!docenteOrigen) {
-    throw new Error(`Docente de origen '${params.docenteOrigenId}' no encontrado en el período ${periodo}.`);
+  const versionAnterior = escenario.version ?? 1;
+  if (params.expectedVersion !== undefined && versionAnterior !== params.expectedVersion) {
+    throw construirErrorConflictoVersion(params.expectedVersion, versionAnterior);
   }
 
-  const vacanteDestino = todosDocentes.find(d => d.id === params.vacanteDestinoId);
-  if (!vacanteDestino) {
-    throw new Error(`Vacante de destino '${params.vacanteDestinoId}' no encontrada en el período ${periodo}.`);
+  const propRes = db.exec(
+    `SELECT ${PROPUESTA_SELECT_COLS} FROM propuestas_calce WHERE escenario_id = ? ORDER BY created_at ASC;`,
+    [params.escenarioId]
+  );
+  const propuestasExistentes: PropuestaCalce[] = (
+    propRes.length ? propRes[0].values.map(mapRowToPropuesta) : []
+  ).filter(p => (p.estado as string) !== 'DESCARTADA');
+
+  if (!params.vacanteDestinoId && !params.cubreRebotePropuestaId) {
+    throw new Error('Debe indicar una vacante destino válida para agregar la propuesta de calce.');
+  }
+
+  if (
+    params.vacanteDestinoId &&
+    propuestasExistentes.some(p => p.vacanteDestinoId === params.vacanteDestinoId)
+  ) {
+    throw new Error('Colisión de vacante: la vacante destino ya fue asignada en este escenario.');
   }
 
   // Cargar solicitud si se especificó
@@ -1677,175 +2599,566 @@ export async function agregarPropuestaCalce(
     }
   }
 
-  // Cargar egreso asociado si existe en params o en origenEgresoId de la vacante
-  const egresoIdRef = params.egresoOrigenId || vacanteDestino.origenEgresoId;
-  let egresoAsociado: EgresoProyectadoInput | undefined;
-  if (egresoIdRef) {
-    const egrRes = db.exec(`SELECT ${EGRESO_SELECT_COLS} FROM egresos_proyectados WHERE id = ? LIMIT 1;`, [
-      egresoIdRef
-    ]);
-    if (egrRes.length && egrRes[0].values.length) {
-      const egr = mapRowToEgreso(egrRes[0].values[0]);
-      egresoAsociado = {
-        causal: egr.causal,
-        certeza: egr.certeza,
-        excepcionJubilacion3Anios: egr.excepcionJubilacion3Anios,
-        fechaCese: egr.fechaCese,
-        numeroDecreto: egr.numeroDecreto,
-        horasLiberadas: egr.horasLiberadas,
-        impactoPresupuestario: egr.impactoPresupuestario
-      };
+  const periodo = params.periodo || escenario.periodo || 2027;
+  const [establecimientos, todosDocentes, todasAsignaciones, todosAsistentes] = await Promise.all([
+    listarEstablecimientos(),
+    listarTodosLosDocentesTerritorio(periodo),
+    listarTodasLasAsignaciones(periodo),
+    listarTodosLosAsistentesTerritorio(periodo)
+  ]);
+
+  let estamentoPersonal: 'DOCENTE' | 'ASISTENTE' =
+    params.estamentoPersonal ||
+    (solicitud?.estamentoPersonal === 'ASISTENTE' ||
+    solicitud?.carril === 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO'
+      ? 'ASISTENTE'
+      : 'DOCENTE');
+
+  if (
+    !params.estamentoPersonal &&
+    estamentoPersonal === 'DOCENTE' &&
+    !todosDocentes.some(d => d.id === params.docenteOrigenId) &&
+    todosAsistentes.some(a => a.id === params.docenteOrigenId)
+  ) {
+    estamentoPersonal = 'ASISTENTE';
+  }
+
+  const docenteOrigen =
+    estamentoPersonal === 'DOCENTE'
+      ? todosDocentes.find(d => d.id === params.docenteOrigenId)
+      : undefined;
+  const asistenteOrigen =
+    estamentoPersonal === 'ASISTENTE'
+      ? todosAsistentes.find(a => a.id === params.docenteOrigenId)
+      : undefined;
+
+  if (estamentoPersonal === 'DOCENTE' && !docenteOrigen) {
+    throw new Error(
+      `Docente de origen '${params.docenteOrigenId}' no encontrado en el período ${periodo}.`
+    );
+  }
+  if (estamentoPersonal === 'ASISTENTE' && !asistenteOrigen) {
+    throw new Error(
+      `Asistente de origen '${params.docenteOrigenId}' no encontrado en el período ${periodo}.`
+    );
+  }
+
+  const runOrigen = docenteOrigen ? docenteOrigen.run : asistenteOrigen!.run;
+  const runOrigenNorm = claveRunNormalizado(runOrigen);
+
+  const propuestasMismoOrigen = propuestasExistentes.filter(
+    p =>
+      p.docenteOrigenId === params.docenteOrigenId ||
+      (Boolean(runOrigenNorm) && claveRunNormalizado(p.runDocente) === runOrigenNorm)
+  );
+
+  const esTrasladoCompleto = params.esTrasladoCompleto !== false;
+
+  // Consultar carriles de solicitudes vinculadas a propuestas previas del mismo funcionario
+  const prevSolIds = Array.from(
+    new Set(propuestasMismoOrigen.map(p => p.solicitudMovilidadId).filter(Boolean) as string[])
+  );
+  const solCarrilMap = new Map<string, CarrilMovilidad>();
+  if (prevSolIds.length > 0) {
+    const placeholders = prevSolIds.map(() => '?').join(',');
+    const prevSolsRes = db.exec(
+      `SELECT id, carril FROM solicitudes_movilidad WHERE id IN (${placeholders});`,
+      prevSolIds
+    );
+    if (prevSolsRes.length && prevSolsRes[0].values.length) {
+      for (const r of prevSolsRes[0].values) {
+        solCarrilMap.set(String(r[0]), String(r[1]) as CarrilMovilidad);
+      }
     }
   }
 
-  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
-  const estOrigen = estMap.get(docenteOrigen.rbd);
-  const estDestino = estMap.get(vacanteDestino.rbd);
-
-  // Calcular horas en otros establecimientos del mismo RUN (para tope 44h / 2640 min)
-  const runNormOrigen = claveRunNormalizado(docenteOrigen.run);
-  const otrosContratos = todosDocentes.filter(d => {
-    if (d.id === docenteOrigen.id || d.id === vacanteDestino.id) return false;
-    if (d.esVacanteNn || d.vacanteCondicional) return false;
-    if (!esSituacionFinalActiva(d.situacionFinalGdp)) return false;
-    const rNorm = claveRunNormalizado(d.run);
-    return Boolean(runNormOrigen) && rNorm === runNormOrigen;
-  });
-  const horasOtrosEstablecimientos = otrosContratos.reduce((s, d) => s + Number(d.horasContrato || 0), 0);
-
-  const esTrasladoCompleto = params.esTrasladoCompleto !== false;
-  const horasConservadasEnOrigen = esTrasladoCompleto
-    ? 0
-    : Math.max(0, Number(docenteOrigen.horasContrato || 0) - Number(vacanteDestino.horasContrato || 0));
-
-  const asigsVacanteDestino = todasAsignaciones.filter(
-    a => a.rbd === vacanteDestino.rbd && (a.docenteId === vacanteDestino.id || (a.tieneCoDocente && a.coDocenteId === vacanteDestino.id))
-  );
-  const horasPedagogicasVacante =
-    asigsVacanteDestino.filter(a => !a.esTrabajoColaborativo).reduce((s, a) => s + Number(a.horasPedagogicasAula || 0), 0) ||
-    Number(vacanteDestino.horasAula || 0);
-
-  const fuenteOrigen = inferirFuenteDocenteCalce(docenteOrigen);
-  const fuenteDestino = normalizarFuenteDestino(vacanteDestino);
-  const tipoCobertura: 'DEFINITIVA' | 'TRANSITORIA_CONDICIONAL' =
-    params.tipoCobertura ?? (docenteOrigen.calidadJuridica === 'TITULAR' ? 'DEFINITIVA' : 'TRANSITORIA_CONDICIONAL');
-
-  const horasTitularesActuales =
-    solicitud?.horasTitularesActuales ??
-    (Number(docenteOrigen.horasSubvencionGeneralTitular || 0) +
-      Number(docenteOrigen.horasSepTitular || 0) +
-      Number(docenteOrigen.horasPieTitular || 0) ||
-      (docenteOrigen.calidadJuridica === 'TITULAR' ? docenteOrigen.horasContrato : 0));
-
-  const evaluacion = evaluarCalceDocenteVacante({
-    docenteId: docenteOrigen.id,
-    calidadJuridica: docenteOrigen.calidadJuridica,
-    asignaturaDocente: docenteOrigen.asignaturaPrincipal || docenteOrigen.funcionPrincipal,
-    tituloMencion: solicitud?.tituloMencion || docenteOrigen.titulo,
-    aplicaArticulo69: solicitud?.aplicaArticulo69 ?? Boolean(docenteOrigen.aplicaArticulo69),
-    horasContratoActual: docenteOrigen.horasContrato,
-    horasTitularesActuales,
-    horasOtrosEstablecimientos,
-    horasConservadasEnOrigen,
-    fuenteOrigen,
-    comunaOrigen: estOrigen?.comuna || solicitud?.comunaOrigen,
-    carril: solicitud?.carril,
-    esTrasladoCompleto,
-    vacanteId: vacanteDestino.id,
-    rbdDestino: vacanteDestino.rbd,
-    horasVacante: vacanteDestino.horasContrato,
-    horasPedagogicasVacante,
-    asignaturaVacante: vacanteDestino.asignaturaPrincipal || vacanteDestino.apellidos,
-    fuenteDestino,
-    porcentajePrioritariosDestino: estDestino?.porcentajePrioritarios ?? 75,
-    comunaDestino: estDestino?.comuna,
-    esVacanteCondicional:
-      vacanteDestino.vacanteCondicional === true ||
-      (vacanteDestino.tipoVacante === 'CONDICIONAL_EGRESO' && vacanteDestino.vacanteCondicional !== false),
-    egresoAsociado,
-    tipoCobertura
-  });
-
-  const generaRebote = esTrasladoCompleto && docenteOrigen.rbd !== vacanteDestino.rbd;
-  let vacanteRebote: VacanteRebotePlan | undefined;
-  if (generaRebote) {
-    const asignacionesOrigen = todasAsignaciones.filter(
-      a => a.rbd === docenteOrigen.rbd && (a.docenteId === docenteOrigen.id || (a.tieneCoDocente && a.coDocenteId === docenteOrigen.id))
+  if (propuestasMismoOrigen.length > 0) {
+    const algunaPreviaEsCompleta = propuestasMismoOrigen.some(
+      p =>
+        Boolean(p.generaRebote) ||
+        (Boolean(p.solicitudMovilidadId) &&
+          solCarrilMap.get(p.solicitudMovilidadId!) !== 'HORAS_REMANENTES')
     );
-    const fuenteRebote = normalizarFuenteDestino(docenteOrigen);
-    vacanteRebote = construirVacanteRebotePlan(docenteOrigen, estOrigen, asignacionesOrigen, fuenteRebote);
+    if (esTrasladoCompleto || algunaPreviaEsCompleta) {
+      throw new Error(
+        'Colisión de docente: este funcionario ya tiene un traslado completo asignado en el escenario.'
+      );
+    }
   }
 
-  const nowIso = new Date().toISOString();
-  const propuesta: PropuestaCalce = {
-    id: `prop_${params.escenarioId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    escenarioId: params.escenarioId,
-    periodo,
-    solicitudMovilidadId: params.solicitudMovilidadId,
-    docenteOrigenId: docenteOrigen.id,
-    runDocente: docenteOrigen.run,
-    nombreDocente: `${docenteOrigen.nombres} ${docenteOrigen.apellidos}`.trim(),
-    rbdOrigen: docenteOrigen.rbd,
-    rbdDestino: vacanteDestino.rbd,
-    vacanteDestinoId: vacanteDestino.id,
-    egresoOrigenId: egresoIdRef,
-    tipoCobertura,
-    horasAsignadas: vacanteDestino.horasContrato,
-    minutosAsignados: evaluacion.minutosVacante,
-    horasPedagogicasAula: horasPedagogicasVacante,
-    fuenteDestino,
-    indiceCompatibilidad: evaluacion.indiceCompatibilidad,
-    generaRebote,
-    vacanteRebote,
-    alertasNormativas: evaluacion.alertasNormativas,
-    bloqueaConsolidacion: evaluacion.bloqueaConsolidacion,
-    motivoBloqueo: evaluacion.motivoBloqueo,
-    estado: evaluacion.bloqueaConsolidacion ? 'BLOQUEADA' : 'PROPUESTA',
-    createdAt: nowIso,
-    updatedAt: nowIso
-  };
+  const minutosAdicionalesEscenario = propuestasMismoOrigen.reduce(
+    (s, p) => s + Number(p.minutosAsignados || 0),
+    0
+  );
 
-  let escenarioActualizado: EscenarioCalce | null = null;
-  db.run('BEGIN TRANSACTION;');
-  try {
-    db.run(
-      `INSERT INTO propuestas_calce (
-        id, escenario_id, periodo, solicitud_movilidad_id, docente_origen_id, run_docente,
-        nombre_docente, rbd_origen, rbd_destino, vacante_destino_id, egreso_origen_id,
-        tipo_cobertura, horas_asignadas, minutos_asignados, horas_pedagogicas_aula,
-        fuente_destino, indice_compatibilidad, genera_rebote, vacante_rebote_json,
-        alertas_normativas_json, bloquea_consolidacion, motivo_bloqueo, estado,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-      [
-        propuesta.id,
-        propuesta.escenarioId,
-        propuesta.periodo,
-        propuesta.solicitudMovilidadId || null,
-        propuesta.docenteOrigenId,
-        propuesta.runDocente,
-        propuesta.nombreDocente,
-        propuesta.rbdOrigen,
-        propuesta.rbdDestino,
-        propuesta.vacanteDestinoId || null,
-        propuesta.egresoOrigenId || null,
-        propuesta.tipoCobertura,
-        propuesta.horasAsignadas,
-        propuesta.minutosAsignados,
-        propuesta.horasPedagogicasAula,
-        propuesta.fuenteDestino,
-        propuesta.indiceCompatibilidad,
-        propuesta.generaRebote ? 1 : 0,
-        propuesta.vacanteRebote ? JSON.stringify(propuesta.vacanteRebote) : null,
-        JSON.stringify(propuesta.alertasNormativas || []),
-        propuesta.bloqueaConsolidacion ? 1 : 0,
-        propuesta.motivoBloqueo || null,
-        propuesta.estado,
-        propuesta.createdAt ?? null,
-        propuesta.updatedAt ?? null
-      ]
+  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
+  const nowIso = new Date().toISOString();
+
+  // Resolver vacante destino real o rebote en cadena
+  const propReboteObjetivo = params.cubreRebotePropuestaId
+    ? propuestasExistentes.find(
+        p => p.id === params.cubreRebotePropuestaId && p.generaRebote && p.vacanteRebote
+      )
+    : undefined;
+  if (params.cubreRebotePropuestaId && !propReboteObjetivo) {
+    throw new Error(
+      `La propuesta origen de rebote '${params.cubreRebotePropuestaId}' no existe o no genera rebote.`
+    );
+  }
+  if (
+    propReboteObjetivo &&
+    propReboteObjetivo.reboteCubiertoPorPropuestaId &&
+    propReboteObjetivo.estadoResolucionRebote === 'CUBIERTA_EN_CADENA'
+  ) {
+    throw new Error(
+      `Colisión de vacante: la vacante de rebote de '${propReboteObjetivo.id}' ya fue cubierta en cadena.`
+    );
+  }
+
+  let propuesta: PropuestaCalce;
+
+  if (estamentoPersonal === 'ASISTENTE' && asistenteOrigen) {
+    const vacanteAst = params.vacanteDestinoId
+      ? todosAsistentes.find(a => a.id === params.vacanteDestinoId)
+      : undefined;
+    const vacanteDoc =
+      !vacanteAst && params.vacanteDestinoId
+        ? todosDocentes.find(d => d.id === params.vacanteDestinoId)
+        : undefined;
+
+    if (!vacanteAst && !vacanteDoc) {
+      throw new Error(
+        `Vacante de destino '${params.vacanteDestinoId}' no encontrada en el período ${periodo}.`
+      );
+    }
+
+    const rbdDestino = vacanteAst ? vacanteAst.rbd : vacanteDoc!.rbd;
+    const horasVacante = vacanteAst
+      ? Number(vacanteAst.horasContrato || 0)
+      : Number(vacanteDoc!.horasContrato || 0);
+    const estamentoVacante: EstamentoAsistenteMotor = vacanteAst
+      ? vacanteAst.estamento
+      : mapDocEstamentoToAsistente(vacanteDoc!.estamento, asistenteOrigen.estamento);
+    const cargoVacante = vacanteAst
+      ? vacanteAst.cargoFuncion
+      : vacanteDoc!.asignaturaPrincipal || vacanteDoc!.cargoInstitucional || vacanteDoc!.apellidos;
+
+    const egresoIdRef = params.egresoOrigenId || vacanteDoc?.origenEgresoId;
+    let egresoAsociado: EgresoProyectadoInput | undefined;
+    if (egresoIdRef) {
+      const egrRes = db.exec(`SELECT ${EGRESO_SELECT_COLS} FROM egresos_proyectados WHERE id = ? LIMIT 1;`, [
+        egresoIdRef
+      ]);
+      if (egrRes.length && egrRes[0].values.length) {
+        egresoAsociado = toEgresoInput(mapRowToEgreso(egrRes[0].values[0]));
+      }
+    }
+
+    const estOrigen = estMap.get(asistenteOrigen.rbd);
+    const estDestino = estMap.get(rbdDestino);
+
+    const otrosContratosAst = todosAsistentes.filter(a => {
+      if (a.id === asistenteOrigen.id || (vacanteAst && a.id === vacanteAst.id)) return false;
+      if (a.activo === false || !esSituacionFinalActiva(a.situacionFinalGdp)) return false;
+      return Boolean(runOrigenNorm) && claveRunNormalizado(a.run) === runOrigenNorm;
+    });
+    const otrosContratosDoc = todosDocentes.filter(d => {
+      if (d.id === vacanteDoc?.id || d.esVacanteNn || d.vacanteCondicional) return false;
+      if (!esSituacionFinalActiva(d.situacionFinalGdp)) return false;
+      return Boolean(runOrigenNorm) && claveRunNormalizado(d.run) === runOrigenNorm;
+    });
+    const horasOtrosEstablecimientos =
+      otrosContratosAst.reduce((s, a) => s + Number(a.horasContrato || 0), 0) +
+      otrosContratosDoc.reduce((s, d) => s + Number(d.horasContrato || 0), 0);
+
+    const horasIndefOrigen =
+      Number(asistenteOrigen.horasSubvencionGeneralIndefinido || 0) +
+      Number(asistenteOrigen.horasSepIndefinido || 0) +
+      Number(asistenteOrigen.horasPieIndefinido || 0);
+    const horasPfOrigen =
+      Number(asistenteOrigen.horasSubvencionGeneralPlazoFijo || 0) +
+      Number(asistenteOrigen.horasSepPlazoFijo || 0) +
+      Number(asistenteOrigen.horasPiePlazoFijo || 0);
+    const tieneDesgloseAst = horasIndefOrigen > 0 || horasPfOrigen > 0;
+
+    let horasIndefinidasReales = horasIndefOrigen;
+    let horasPlazoFijoReales = horasPfOrigen;
+    if (!tieneDesgloseAst) {
+      if (solicitud?.horasTitularesActuales !== undefined) {
+        horasIndefinidasReales = Math.max(0, Number(solicitud.horasTitularesActuales));
+        horasPlazoFijoReales = Math.max(
+          0,
+          Number(asistenteOrigen.horasContrato || 0) - horasIndefinidasReales
+        );
+      } else {
+        horasIndefinidasReales = 0;
+        horasPlazoFijoReales = Number(asistenteOrigen.horasContrato || 0);
+      }
+    }
+
+    const minutosIndefinidosOrigen = Math.round(horasIndefinidasReales * 60);
+    const minutosPlazoFijoOrigen = Math.round(horasPlazoFijoReales * 60);
+    const horasConservadasEnOrigen = esTrasladoCompleto
+      ? 0
+      : Number(asistenteOrigen.horasContrato || 0);
+
+    const fuenteOrigen = inferirFuenteAsistenteCalce(asistenteOrigen);
+    const fuenteDestino = vacanteAst
+      ? normalizarFuenteDestinoAsistente(vacanteAst)
+      : normalizarFuenteDestino(vacanteDoc!);
+    const tipoCobertura: 'DEFINITIVA' | 'TRANSITORIA_CONDICIONAL' =
+      params.tipoCobertura ?? (horasIndefinidasReales > 0 ? 'DEFINITIVA' : 'TRANSITORIA_CONDICIONAL');
+
+    const evalAst = evaluarCalceAsistenteLey21109({
+      asistenteId: asistenteOrigen.id,
+      calidadJuridica: horasIndefinidasReales > 0 ? 'INDEFINIDO' : 'PLAZO_FIJO',
+      estamentoOrigen: asistenteOrigen.estamento,
+      cargoFuncionOrigen: asistenteOrigen.cargoFuncion,
+      horasContratoActual: asistenteOrigen.horasContrato,
+      horasIndefinidasActuales: horasIndefinidasReales,
+      minutosIndefinidosOrigen,
+      minutosPlazoFijoOrigen,
+      minutosAdicionalesEscenario,
+      horasOtrosEstablecimientos,
+      horasConservadasEnOrigen,
+      fuenteOrigen,
+      rbdOrigen: asistenteOrigen.rbd,
+      accesibilidadOrigen: estOrigen?.accesibilidad ?? 'urbano',
+      comunaOrigen: estOrigen?.comuna || solicitud?.comunaOrigen,
+      carril: mapCarrilAsistenteMotor(solicitud?.carril),
+      esTrasladoCompleto,
+      topeHorasSemanales: asistenteOrigen.horasContrato === 45 ? 45 : 44,
+      vacanteId: vacanteAst ? vacanteAst.id : vacanteDoc!.id,
+      rbdDestino,
+      estamentoVacante,
+      cargoFuncionVacante: cargoVacante,
+      horasVacante,
+      fuenteDestino,
+      accesibilidadDestino: estDestino?.accesibilidad ?? 'urbano',
+      comunaDestino: estDestino?.comuna,
+      esVacanteCondicional: vacanteDoc
+        ? vacanteDoc.vacanteCondicional === true ||
+          (vacanteDoc.tipoVacante === 'CONDICIONAL_EGRESO' &&
+            vacanteDoc.vacanteCondicional !== false)
+        : false,
+      egresoAsociado,
+      tipoCobertura
+    });
+
+    if (evalAst.excedeTopeSemanal && propuestasMismoOrigen.length > 0) {
+      throw new Error(
+        `Colisión de jornada (${evalAst.topeMinutosSemanal} min): la suma de propuestas en el escenario para este asistente excede ${evalAst.topeMinutosSemanal} min.`
+      );
+    }
+
+    const generaRebote = esTrasladoCompleto && asistenteOrigen.rbd !== rbdDestino;
+    let vacanteRebote: VacanteRebotePlan | undefined;
+    if (generaRebote) {
+      const fuenteRebote = normalizarFuenteDestinoAsistente(asistenteOrigen);
+      const horasReb = Math.max(0, Number(asistenteOrigen.horasContrato || 0));
+      vacanteRebote = {
+        rbdOrigen: asistenteOrigen.rbd,
+        nombreEstablecimientoOrigen: estOrigen?.nombre,
+        horasContratoRebote: horasReb,
+        minutosContratoRebote: Math.round(horasReb * 60),
+        horasPedagogicasAula: 0,
+        asignaturaPrincipal: asistenteOrigen.cargoFuncion || asistenteOrigen.estamento,
+        fuenteFinanciamiento: fuenteRebote,
+        asignacionesHeredadas: [],
+        funcionesNoLectivasHeredadas: [],
+        funcionesIntransferiblesDetectadas: [],
+        deltaMinutosCadena: 0
+      };
+    }
+
+    const estadoResolucionRebote: EstadoResolucionRebote = generaRebote
+      ? params.estadoResolucionRebote || 'PENDIENTE'
+      : 'NO_APLICA';
+
+    propuesta = {
+      id: `prop_${params.escenarioId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      escenarioId: params.escenarioId,
+      periodo,
+      solicitudMovilidadId: params.solicitudMovilidadId,
+      docenteOrigenId: asistenteOrigen.id,
+      runDocente: asistenteOrigen.run,
+      nombreDocente: `${asistenteOrigen.nombres} ${asistenteOrigen.apellidos}`.trim(),
+      rbdOrigen: asistenteOrigen.rbd,
+      rbdDestino,
+      vacanteDestinoId: vacanteAst ? vacanteAst.id : vacanteDoc!.id,
+      egresoOrigenId: egresoIdRef,
+      tipoCobertura,
+      horasAsignadas: horasVacante,
+      minutosAsignados: evalAst.minutosVacante,
+      horasPedagogicasAula: 0,
+      fuenteDestino,
+      indiceCompatibilidad: evalAst.indiceCompatibilidad,
+      generaRebote,
+      vacanteRebote,
+      alertasNormativas: evalAst.alertasNormativas,
+      bloqueaConsolidacion: evalAst.bloqueaConsolidacion,
+      motivoBloqueo: evalAst.motivoBloqueo,
+      estado: evalAst.bloqueaConsolidacion ? 'BLOQUEADA' : 'PROPUESTA',
+      estamentoPersonal: 'ASISTENTE',
+      estadoResolucionRebote,
+      reboteCubiertoPorPropuestaId: params.reboteCubiertoPorPropuestaId,
+      minutosTitularesOrigen: evalAst.minutosIndefinidosOrigen,
+      minutosContrataOrigen: evalAst.minutosPlazoFijoOrigen,
+      alertaMenoscaboEconomicoArt50: false,
+      alertaCondicionesDificiles: false,
+      alertaHabilitacionSeremiDto352: false,
+      alertaItineranciaRural: evalAst.alertaItineranciaRural,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+  } else {
+    // Rama DOCENTE
+    const docOrig = docenteOrigen!;
+    const vacanteDestino = params.vacanteDestinoId
+      ? todosDocentes.find(d => d.id === params.vacanteDestinoId)
+      : undefined;
+
+    if (!vacanteDestino && !propReboteObjetivo) {
+      throw new Error(
+        `Vacante de destino '${params.vacanteDestinoId}' no encontrada en el período ${periodo}.`
+      );
+    }
+
+    const rbdDestino = vacanteDestino
+      ? vacanteDestino.rbd
+      : propReboteObjetivo!.vacanteRebote!.rbdOrigen;
+    const horasVacante = vacanteDestino
+      ? Number(vacanteDestino.horasContrato || 0)
+      : Number(propReboteObjetivo!.vacanteRebote!.horasContratoRebote || 0);
+    const asignaturaVacante = vacanteDestino
+      ? vacanteDestino.asignaturaPrincipal || vacanteDestino.apellidos
+      : propReboteObjetivo!.vacanteRebote!.asignaturaPrincipal;
+
+    const egresoIdRef = params.egresoOrigenId || vacanteDestino?.origenEgresoId;
+    let egresoAsociado: EgresoProyectadoInput | undefined;
+    if (egresoIdRef) {
+      const egrRes = db.exec(`SELECT ${EGRESO_SELECT_COLS} FROM egresos_proyectados WHERE id = ? LIMIT 1;`, [
+        egresoIdRef
+      ]);
+      if (egrRes.length && egrRes[0].values.length) {
+        egresoAsociado = toEgresoInput(mapRowToEgreso(egrRes[0].values[0]));
+      }
+    }
+
+    const estOrigen = estMap.get(docOrig.rbd);
+    const estDestino = estMap.get(rbdDestino);
+
+    const otrosContratos = todosDocentes.filter(d => {
+      if (d.id === docOrig.id || (vacanteDestino && d.id === vacanteDestino.id)) return false;
+      if (d.esVacanteNn || d.vacanteCondicional) return false;
+      if (!esSituacionFinalActiva(d.situacionFinalGdp)) return false;
+      return Boolean(runOrigenNorm) && claveRunNormalizado(d.run) === runOrigenNorm;
+    });
+    const horasOtrosEstablecimientos = otrosContratos.reduce(
+      (s, d) => s + Number(d.horasContrato || 0),
+      0
     );
 
+    const horasConservadasEnOrigen = esTrasladoCompleto
+      ? 0
+      : Number(docOrig.horasContrato || 0);
+
+    const asigsVacanteDestino = vacanteDestino
+      ? todasAsignaciones.filter(
+          a =>
+            a.rbd === vacanteDestino.rbd &&
+            (a.docenteId === vacanteDestino.id ||
+              (a.tieneCoDocente && a.coDocenteId === vacanteDestino.id))
+        )
+      : [];
+    const horasPedagogicasVacante = vacanteDestino
+      ? asigsVacanteDestino
+          .filter(a => !a.esTrabajoColaborativo)
+          .reduce((s, a) => s + Number(a.horasPedagogicasAula || 0), 0) ||
+        Number(vacanteDestino.horasAula || 0)
+      : Number(propReboteObjetivo!.vacanteRebote!.horasPedagogicasAula || 0);
+
+    const fuenteOrigen = inferirFuenteDocenteCalce(docOrig);
+    const fuenteDestino = vacanteDestino
+      ? normalizarFuenteDestino(vacanteDestino)
+      : propReboteObjetivo!.vacanteRebote!.fuenteFinanciamiento;
+
+    const sumTitDoc =
+      Number(docOrig.horasSubvencionGeneralTitular || 0) +
+      Number(docOrig.horasSepTitular || 0) +
+      Number(docOrig.horasPieTitular || 0);
+    const sumConDoc =
+      Number(docOrig.horasSubvencionGeneralContrata || 0) +
+      Number(docOrig.horasSepContrata || 0) +
+      Number(docOrig.horasPieContrata || 0);
+    const tieneDesgloseExplicito = sumTitDoc > 0 || sumConDoc > 0;
+
+    let horasTitularesReales = sumTitDoc;
+    let horasContrataReales = sumConDoc;
+    if (!tieneDesgloseExplicito) {
+      if (solicitud?.horasTitularesActuales !== undefined) {
+        horasTitularesReales = Math.max(0, Number(solicitud.horasTitularesActuales));
+        horasContrataReales = Math.max(
+          0,
+          Number(docOrig.horasContrato || 0) - horasTitularesReales
+        );
+      } else if (docOrig.calidadJuridica === 'TITULAR') {
+        horasTitularesReales = Number(docOrig.horasContrato || 0);
+        horasContrataReales = 0;
+      } else {
+        horasTitularesReales = 0;
+        horasContrataReales = Number(docOrig.horasContrato || 0);
+      }
+    } else if (
+      horasContrataReales === 0 &&
+      Number(docOrig.horasContrato || 0) > horasTitularesReales
+    ) {
+      horasContrataReales = Math.max(
+        0,
+        Number(docOrig.horasContrato || 0) - horasTitularesReales
+      );
+    }
+
+    const minutosTitularesOrigen = Math.round(horasTitularesReales * 60);
+    const minutosContrataOrigen = Math.round(horasContrataReales * 60);
+
+    const tipoCobertura: 'DEFINITIVA' | 'TRANSITORIA_CONDICIONAL' =
+      params.tipoCobertura ??
+      (docOrig.calidadJuridica === 'TITULAR' || horasTitularesReales > 0
+        ? 'DEFINITIVA'
+        : 'TRANSITORIA_CONDICIONAL');
+
+    const evaluacion = evaluarCalceDocenteVacante({
+      docenteId: docOrig.id,
+      calidadJuridica: docOrig.calidadJuridica,
+      asignaturaDocente: docOrig.asignaturaPrincipal || docOrig.funcionPrincipal,
+      tituloMencion: solicitud?.tituloMencion || docOrig.titulo,
+      tituloMencionOficial: docOrig.titulo || solicitud?.tituloMencion,
+      requiereAutorizacionDocente: Boolean(docOrig.requiereAutorizacionDocente),
+      habilitacionSeremiRbd: docOrig.habilitacionSeremiRbd,
+      habilitacionSeremiAsignatura: docOrig.habilitacionSeremiAsignatura,
+      aplicaArticulo69: solicitud?.aplicaArticulo69 ?? Boolean(docOrig.aplicaArticulo69),
+      horasContratoActual: docOrig.horasContrato,
+      horasTitularesActuales: horasTitularesReales,
+      minutosTitularesOrigen,
+      minutosContrataOrigen,
+      minutosAdicionalesEscenario,
+      horasOtrosEstablecimientos,
+      horasConservadasEnOrigen,
+      fuenteOrigen,
+      rbdOrigen: docOrig.rbd,
+      porcentajePrioritariosOrigen: estOrigen?.porcentajePrioritarios,
+      tramoCarreraDocente: docOrig.tramoCarreraDocente,
+      condicionesDificilesOrigenPct: estOrigen?.condicionesDificilesPct ?? 0,
+      accesibilidadOrigen: estOrigen?.accesibilidad ?? 'urbano',
+      comunaOrigen: estOrigen?.comuna || solicitud?.comunaOrigen,
+      carril: solicitud?.carril ? mapCarrilAEngine(solicitud.carril) : undefined,
+      esTrasladoCompleto,
+      vacanteId: vacanteDestino ? vacanteDestino.id : `rebote_${propReboteObjetivo!.id}`,
+      rbdDestino,
+      horasVacante,
+      horasPedagogicasVacante,
+      asignaturaVacante,
+      fuenteDestino,
+      porcentajePrioritariosDestino: estDestino?.porcentajePrioritarios ?? 75,
+      condicionesDificilesDestinoPct: estDestino?.condicionesDificilesPct ?? 0,
+      accesibilidadDestino: estDestino?.accesibilidad ?? 'urbano',
+      comunaDestino: estDestino?.comuna,
+      esVacanteCondicional: vacanteDestino
+        ? vacanteDestino.vacanteCondicional === true ||
+          (vacanteDestino.tipoVacante === 'CONDICIONAL_EGRESO' &&
+            vacanteDestino.vacanteCondicional !== false)
+        : false,
+      egresoAsociado,
+      tipoCobertura
+    });
+
+    if (evaluacion.excedeTope44h && propuestasMismoOrigen.length > 0) {
+      throw new Error(
+        'Colisión de jornada 44h (2640 min): la suma de propuestas en el escenario para este docente excede 2640 min.'
+      );
+    }
+
+    const generaRebote = esTrasladoCompleto && docOrig.rbd !== rbdDestino;
+    let vacanteRebote: VacanteRebotePlan | undefined;
+    if (generaRebote) {
+      const asignacionesOrigen = todasAsignaciones.filter(
+        a =>
+          a.rbd === docOrig.rbd &&
+          (a.docenteId === docOrig.id || (a.tieneCoDocente && a.coDocenteId === docOrig.id))
+      );
+      const fuenteRebote = normalizarFuenteDestino(docOrig);
+      vacanteRebote = construirVacanteRebotePlan(
+        docOrig,
+        estOrigen,
+        asignacionesOrigen,
+        fuenteRebote
+      );
+    }
+
+    const estadoResolucionRebote: EstadoResolucionRebote = generaRebote
+      ? params.estadoResolucionRebote || 'PENDIENTE'
+      : 'NO_APLICA';
+
+    propuesta = {
+      id: `prop_${params.escenarioId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      escenarioId: params.escenarioId,
+      periodo,
+      solicitudMovilidadId: params.solicitudMovilidadId,
+      docenteOrigenId: docOrig.id,
+      runDocente: docOrig.run,
+      nombreDocente: `${docOrig.nombres} ${docOrig.apellidos}`.trim(),
+      rbdOrigen: docOrig.rbd,
+      rbdDestino,
+      vacanteDestinoId: vacanteDestino ? vacanteDestino.id : undefined,
+      egresoOrigenId: egresoIdRef,
+      tipoCobertura,
+      horasAsignadas: horasVacante,
+      minutosAsignados: evaluacion.minutosVacante,
+      horasPedagogicasAula: horasPedagogicasVacante,
+      fuenteDestino,
+      indiceCompatibilidad: evaluacion.indiceCompatibilidad,
+      generaRebote,
+      vacanteRebote,
+      alertasNormativas: evaluacion.alertasNormativas,
+      bloqueaConsolidacion: evaluacion.bloqueaConsolidacion,
+      motivoBloqueo: evaluacion.motivoBloqueo,
+      estado: evaluacion.bloqueaConsolidacion ? 'BLOQUEADA' : 'PROPUESTA',
+      estamentoPersonal: 'DOCENTE',
+      estadoResolucionRebote,
+      reboteCubiertoPorPropuestaId: params.reboteCubiertoPorPropuestaId,
+      minutosTitularesOrigen: evaluacion.minutosTitularesOrigen,
+      minutosContrataOrigen: evaluacion.minutosContrataOrigen,
+      alertaMenoscaboEconomicoArt50: evaluacion.alertaMenoscaboEconomicoArt50,
+      alertaCondicionesDificiles: evaluacion.alertaCondicionesDificiles,
+      alertaHabilitacionSeremiDto352: evaluacion.alertaHabilitacionSeremiDto352,
+      alertaItineranciaRural: evaluacion.alertaItineranciaRural,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+  }
+
+  const nuevaVersion = versionAnterior + 1;
+  let escenarioActualizado: EscenarioCalce | null = null;
+
+  db.run('BEGIN TRANSACTION;');
+  try {
+    insertarPropuestaEnDb(db, propuesta);
+    if (propReboteObjetivo) {
+      db.run(
+        `UPDATE propuestas_calce
+         SET estado_resolucion_rebote = 'CUBIERTA_EN_CADENA',
+             rebote_cubierto_por_propuesta_id = ?,
+             updated_at = ?
+         WHERE id = ?;`,
+        [propuesta.id, nowIso, propReboteObjetivo.id]
+      );
+    }
+    db.run('UPDATE escenarios_calce SET version = ?, updated_at = ? WHERE id = ?;', [
+      nuevaVersion,
+      nowIso,
+      params.escenarioId
+    ]);
     escenarioActualizado = actualizarResumenEscenarioEnDb(db, params.escenarioId, nowIso);
     db.run('COMMIT;');
   } catch (err) {
@@ -1855,46 +3168,289 @@ export async function agregarPropuestaCalce(
 
   await persistDb(true);
 
-  if (isSupabaseEnabled()) {
+  if (isSupabaseEnabled() && escenarioActualizado) {
+    await sincronizarVersionEscenarioSupabase({
+      escenario: escenarioActualizado,
+      versionAnterior,
+      nuevaVersion,
+      nowIso,
+      onConflictoRollback: async () => {
+        db.run('BEGIN TRANSACTION;');
+        try {
+          db.run('DELETE FROM propuestas_calce WHERE id = ?;', [propuesta.id]);
+          if (propReboteObjetivo) {
+            db.run(
+              `UPDATE propuestas_calce
+               SET estado_resolucion_rebote = ?,
+                   rebote_cubierto_por_propuesta_id = ?,
+                   updated_at = ?
+               WHERE id = ?;`,
+              [
+                propReboteObjetivo.estadoResolucionRebote || 'PENDIENTE',
+                propReboteObjetivo.reboteCubiertoPorPropuestaId || null,
+                propReboteObjetivo.updatedAt || nowIso,
+                propReboteObjetivo.id
+              ]
+            );
+          }
+          db.run(
+            'UPDATE escenarios_calce SET version = ?, resumen_metricas_json = ?, updated_at = ? WHERE id = ?;',
+            [
+              versionAnterior,
+              escenario.resumenMetricas ? JSON.stringify(escenario.resumenMetricas) : null,
+              escenario.updatedAt || nowIso,
+              params.escenarioId
+            ]
+          );
+          db.run('COMMIT;');
+        } catch {
+          db.run('ROLLBACK;');
+        }
+        await persistDb(true);
+      }
+    });
+
     supabase
       .from('propuestas_calce')
       .upsert(mapPropuestaToSupabase(propuesta), { onConflict: 'id' })
-      .then(() => {
-        if (escenarioActualizado) {
-          return supabase
-            .from('escenarios_calce')
-            .update({
-              resumen_metricas_json: escenarioActualizado.resumenMetricas || null,
-              updated_at: nowIso
-            })
-            .eq('id', params.escenarioId);
+      .then(async ({ error }: any) => {
+        if (error && esErrorColumnaFaltanteSupabase(error)) {
+          await supabase
+            .from('propuestas_calce')
+            .upsert(
+              {
+                id: propuesta.id,
+                escenario_id: propuesta.escenarioId,
+                periodo: propuesta.periodo,
+                solicitud_movilidad_id: propuesta.solicitudMovilidadId || null,
+                docente_origen_id: propuesta.docenteOrigenId,
+                run_docente: propuesta.runDocente,
+                nombre_docente: propuesta.nombreDocente,
+                rbd_origen: propuesta.rbdOrigen,
+                rbd_destino: propuesta.rbdDestino,
+                vacante_destino_id: propuesta.vacanteDestinoId || null,
+                egreso_origen_id: propuesta.egresoOrigenId || null,
+                tipo_cobertura: propuesta.tipoCobertura,
+                horas_asignadas: propuesta.horasAsignadas,
+                minutos_asignados: propuesta.minutosAsignados,
+                horas_pedagogicas_aula: propuesta.horasPedagogicasAula,
+                fuente_destino: propuesta.fuenteDestino,
+                indice_compatibilidad: propuesta.indiceCompatibilidad,
+                genera_rebote: Boolean(propuesta.generaRebote),
+                vacante_rebote_json: propuesta.vacanteRebote || null,
+                alertas_normativas_json: propuesta.alertasNormativas || [],
+                bloquea_consolidacion: Boolean(propuesta.bloqueaConsolidacion),
+                motivo_bloqueo: propuesta.motivoBloqueo || null,
+                estado: propuesta.estado
+              },
+              { onConflict: 'id' }
+            );
+        } else if (error) {
+          console.warn('[movilidadTerritorialService] Aviso sync propuesta Supabase:', error);
         }
-      }, (err: any) => console.warn('[movilidadTerritorialService] Aviso sync propuesta Supabase:', err));
+      }, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso sync propuesta Supabase:', err)
+      );
   }
 
   return propuesta;
+}
+
+/**
+ * Define explícitamente el cierre de una vacante NN-Rebote ('CUBIERTA_EN_CADENA' o 'DERIVADA_A_CONCURSO_GDP')
+ * antes de poder consolidar el escenario.
+ */
+export async function resolverRebotePropuestaCalce(params: {
+  propuestaId: string;
+  estadoResolucion: 'CUBIERTA_EN_CADENA' | 'DERIVADA_A_CONCURSO_GDP';
+  reboteCubiertoPorPropuestaId?: string;
+  rolActor: RolId;
+  expectedVersion?: number;
+}): Promise<PropuestaCalce> {
+  assertRolNivelCentral(params.rolActor, 'resolver vacante de rebote en propuesta de calce');
+
+  const db = await getDb();
+  const propRes = db.exec(`SELECT ${PROPUESTA_SELECT_COLS} FROM propuestas_calce WHERE id = ? LIMIT 1;`, [
+    params.propuestaId
+  ]);
+  if (!propRes.length || !propRes[0].values.length) {
+    throw new Error(`Propuesta de calce '${params.propuestaId}' no encontrada.`);
+  }
+  const actual = mapRowToPropuesta(propRes[0].values[0]);
+
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    actual.escenarioId
+  ]);
+  if (!escRes.length || !escRes[0].values.length) {
+    throw new Error(`Escenario '${actual.escenarioId}' no encontrado.`);
+  }
+  const escenario = mapRowToEscenario(escRes[0].values[0]);
+  if (escenario.estado === 'CONSOLIDADO' || escenario.estado === 'RESOLUCION_EMITIDA') {
+    throw new Error(
+      `El escenario '${escenario.nombre}' ya se encuentra ${escenario.estado} y no permite modificar rebotes.`
+    );
+  }
+
+  const versionAnterior = escenario.version ?? 1;
+  if (params.expectedVersion !== undefined && versionAnterior !== params.expectedVersion) {
+    throw construirErrorConflictoVersion(params.expectedVersion, versionAnterior);
+  }
+
+  if (!actual.generaRebote) {
+    throw new Error(`La propuesta '${params.propuestaId}' no genera vacante de rebote.`);
+  }
+
+  let cubiertoPorId: string | undefined;
+  if (params.estadoResolucion === 'CUBIERTA_EN_CADENA' && params.reboteCubiertoPorPropuestaId) {
+    if (params.reboteCubiertoPorPropuestaId === actual.id) {
+      throw new Error('Una propuesta no puede cubrir su propia vacante de rebote.');
+    }
+    const targetRes = db.exec(
+      'SELECT id FROM propuestas_calce WHERE id = ? AND escenario_id = ? LIMIT 1;',
+      [params.reboteCubiertoPorPropuestaId, actual.escenarioId]
+    );
+    if (!targetRes.length || !targetRes[0].values.length) {
+      throw new Error(
+        `La propuesta vinculada '${params.reboteCubiertoPorPropuestaId}' no existe en el escenario '${actual.escenarioId}'.`
+      );
+    }
+    cubiertoPorId = params.reboteCubiertoPorPropuestaId;
+  }
+
+  const nowIso = new Date().toISOString();
+  const nuevaVersion = versionAnterior + 1;
+  let escenarioActualizado: EscenarioCalce | null = null;
+
+  db.run('BEGIN TRANSACTION;');
+  try {
+    db.run(
+      `UPDATE propuestas_calce
+       SET estado_resolucion_rebote = ?,
+           rebote_cubierto_por_propuesta_id = ?,
+           updated_at = ?
+       WHERE id = ?;`,
+      [params.estadoResolucion, cubiertoPorId || null, nowIso, actual.id]
+    );
+    db.run('UPDATE escenarios_calce SET version = ?, updated_at = ? WHERE id = ?;', [
+      nuevaVersion,
+      nowIso,
+      actual.escenarioId
+    ]);
+    escenarioActualizado = actualizarResumenEscenarioEnDb(db, actual.escenarioId, nowIso);
+    db.run('COMMIT;');
+  } catch (err) {
+    db.run('ROLLBACK;');
+    throw err;
+  }
+
+  await persistDb(true);
+
+  const actualizada: PropuestaCalce = {
+    ...actual,
+    estadoResolucionRebote: params.estadoResolucion,
+    reboteCubiertoPorPropuestaId: cubiertoPorId,
+    updatedAt: nowIso
+  };
+
+  if (isSupabaseEnabled() && escenarioActualizado) {
+    await sincronizarVersionEscenarioSupabase({
+      escenario: escenarioActualizado,
+      versionAnterior,
+      nuevaVersion,
+      nowIso,
+      onConflictoRollback: async () => {
+        db.run('BEGIN TRANSACTION;');
+        try {
+          db.run(
+            `UPDATE propuestas_calce
+             SET estado_resolucion_rebote = ?,
+                 rebote_cubierto_por_propuesta_id = ?,
+                 updated_at = ?
+             WHERE id = ?;`,
+            [
+              actual.estadoResolucionRebote || 'PENDIENTE',
+              actual.reboteCubiertoPorPropuestaId || null,
+              actual.updatedAt || nowIso,
+              actual.id
+            ]
+          );
+          db.run(
+            'UPDATE escenarios_calce SET version = ?, resumen_metricas_json = ?, updated_at = ? WHERE id = ?;',
+            [
+              versionAnterior,
+              escenario.resumenMetricas ? JSON.stringify(escenario.resumenMetricas) : null,
+              escenario.updatedAt || nowIso,
+              actual.escenarioId
+            ]
+          );
+          db.run('COMMIT;');
+        } catch {
+          db.run('ROLLBACK;');
+        }
+        await persistDb(true);
+      }
+    });
+
+    supabase
+      .from('propuestas_calce')
+      .update({
+        estado_resolucion_rebote: params.estadoResolucion,
+        rebote_cubierto_por_propuesta_id: cubiertoPorId || null,
+        updated_at: nowIso
+      })
+      .eq('id', actual.id)
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso update rebote propuesta Supabase:', err)
+      );
+  }
+
+  return actualizada;
 }
 
 export async function eliminarPropuestaCalce(propuestaId: string, rolActor: RolId): Promise<void> {
   assertRolNivelCentral(rolActor, 'eliminar propuestas de calce');
   const db = await getDb();
 
-  const res = db.exec('SELECT escenario_id FROM propuestas_calce WHERE id = ? LIMIT 1;', [propuestaId]);
+  const res = db.exec('SELECT escenario_id FROM propuestas_calce WHERE id = ? LIMIT 1;', [
+    propuestaId
+  ]);
   if (!res.length || !res[0].values.length) {
     return;
   }
   const escenarioId = String(res[0].values[0][0]);
 
-  const escRes = db.exec('SELECT estado FROM escenarios_calce WHERE id = ? LIMIT 1;', [escenarioId]);
-  if (escRes.length && escRes[0].values.length && String(escRes[0].values[0][0]) === 'CONSOLIDADO') {
-    throw new Error('No se puede eliminar propuestas de un escenario que ya fue CONSOLIDADO.');
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    escenarioId
+  ]);
+  if (!escRes.length || !escRes[0].values.length) return;
+  const escenario = mapRowToEscenario(escRes[0].values[0]);
+
+  if (escenario.estado === 'CONSOLIDADO' || escenario.estado === 'RESOLUCION_EMITIDA') {
+    throw new Error(
+      `No se puede eliminar propuestas de un escenario que ya fue ${escenario.estado}.`
+    );
   }
 
   const nowIso = new Date().toISOString();
+  const nuevaVersion = (escenario.version ?? 1) + 1;
   let escenarioActualizado: EscenarioCalce | null = null;
+
   db.run('BEGIN TRANSACTION;');
   try {
+    db.run(
+      `UPDATE propuestas_calce
+       SET estado_resolucion_rebote = 'PENDIENTE',
+           rebote_cubierto_por_propuesta_id = NULL,
+           updated_at = ?
+       WHERE escenario_id = ? AND rebote_cubierto_por_propuesta_id = ?;`,
+      [nowIso, escenarioId, propuestaId]
+    );
     db.run('DELETE FROM propuestas_calce WHERE id = ?;', [propuestaId]);
+    db.run('UPDATE escenarios_calce SET version = ?, updated_at = ? WHERE id = ?;', [
+      nuevaVersion,
+      nowIso,
+      escenarioId
+    ]);
     escenarioActualizado = actualizarResumenEscenarioEnDb(db, escenarioId, nowIso);
     db.run('COMMIT;');
   } catch (err) {
@@ -1914,15 +3470,22 @@ export async function eliminarPropuestaCalce(propuestaId: string, rolActor: RolI
           return supabase
             .from('escenarios_calce')
             .update({
+              version: nuevaVersion,
               resumen_metricas_json: escenarioActualizado.resumenMetricas || null,
               updated_at: nowIso
             })
             .eq('id', escenarioId);
         }
-      }, (err: any) => console.warn('[movilidadTerritorialService] Aviso delete propuesta Supabase:', err));
+      }, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso delete propuesta Supabase:', err)
+      );
   }
 }
 
+/**
+ * Fase 3: Optimización Global Bipartita (Algoritmo Húngaro / Kuhn-Munkres) con 2ª Pasada
+ * sobre vacantes de rebote.
+ */
 export async function generarSugerenciasCalceAutomatico(
   escenarioId: string,
   periodo: number = 2027,
@@ -1932,30 +3495,37 @@ export async function generarSugerenciasCalceAutomatico(
 
   const flags = obtenerFeatureFlagsMovilidad();
   if (!flags.flag_simulador_calce_automatico) {
-    throw new Error('El simulador de calce automático está desactivado (flag_simulador_calce_automatico = false).');
+    throw new Error(
+      'El simulador de calce automático está desactivado (flag_simulador_calce_automatico = false).'
+    );
   }
 
   const db = await getDb();
-  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [escenarioId]);
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    escenarioId
+  ]);
   if (!escRes.length || !escRes[0].values.length) {
     throw new Error(`Escenario '${escenarioId}' no encontrado.`);
   }
   const escenario = mapRowToEscenario(escRes[0].values[0]);
-  if (escenario.estado === 'CONSOLIDADO') {
-    throw new Error('No se pueden generar sugerencias sobre un escenario ya CONSOLIDADO.');
+  if (escenario.estado === 'CONSOLIDADO' || escenario.estado === 'RESOLUCION_EMITIDA') {
+    throw new Error(`No se pueden generar sugerencias sobre un escenario en estado ${escenario.estado}.`);
   }
 
   const propuestasExistentes = await listarPropuestasEscenario(escenarioId, rolActor);
   const docentesUsados = new Set(propuestasExistentes.map(p => p.docenteOrigenId));
-  const vacantesUsadas = new Set(propuestasExistentes.map(p => p.vacanteDestinoId).filter(Boolean) as string[]);
+  const vacantesUsadas = new Set(
+    propuestasExistentes.map(p => p.vacanteDestinoId).filter(Boolean) as string[]
+  );
 
-  const [solicitudes, establecimientos, todosDocentes, todasAsignaciones, egresos] = await Promise.all([
-    listarSolicitudesMovilidad(periodo, rolActor),
-    listarEstablecimientos(),
-    listarTodosLosDocentesTerritorio(periodo),
-    listarTodasLasAsignaciones(periodo),
-    listarEgresosProyectados(periodo, rolActor)
-  ]);
+  const [solicitudes, establecimientos, todosDocentes, todasAsignaciones, egresos] =
+    await Promise.all([
+      listarSolicitudesMovilidad(periodo, rolActor),
+      listarEstablecimientos(),
+      listarTodosLosDocentesTerritorio(periodo),
+      listarTodasLasAsignaciones(periodo),
+      listarEgresosProyectados(periodo, rolActor)
+    ]);
 
   const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
   const docMap = new Map<string, Docente>(todosDocentes.map(d => [d.id, d]));
@@ -1964,23 +3534,30 @@ export async function generarSugerenciasCalceAutomatico(
   const solicitudesActivas = solicitudes.filter(
     s =>
       s.estadoFlujo !== 'CONSOLIDADO' &&
+      s.estadoFlujo !== 'RESOLUCION_EMITIDA' &&
       s.estadoFlujo !== 'RECHAZADO' &&
+      s.estamentoPersonal !== 'ASISTENTE' &&
+      s.carril !== 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO' &&
       !docentesUsados.has(s.docenteId) &&
       docMap.has(s.docenteId)
   );
 
   const vacantesAbiertas = todosDocentes.filter(
-    d => (Boolean(d.esVacanteNn) || detectarDocenteVacanteNn(d).esVacanteNn) && !vacantesUsadas.has(d.id)
+    d =>
+      esSituacionFinalActiva(d.situacionFinalGdp) &&
+      (Boolean(d.esVacanteNn) || detectarDocenteVacanteNn(d).esVacanteNn) &&
+      !vacantesUsadas.has(d.id)
   );
 
   if (solicitudesActivas.length === 0 || vacantesAbiertas.length === 0) {
     return [];
   }
 
-  // Mapa rápido de horas por RUN para detectar multi-escuela
   const horasPorRun = new Map<string, Array<{ id: string; horas: number }>>();
   for (const d of todosDocentes) {
-    if (d.esVacanteNn || d.vacanteCondicional || !esSituacionFinalActiva(d.situacionFinalGdp)) continue;
+    if (d.esVacanteNn || d.vacanteCondicional || !esSituacionFinalActiva(d.situacionFinalGdp)) {
+      continue;
+    }
     const kRun = claveRunNormalizado(d.run);
     if (!kRun) continue;
     const list = horasPorRun.get(kRun) || [];
@@ -1988,7 +3565,10 @@ export async function generarSugerenciasCalceAutomatico(
     horasPorRun.set(kRun, list);
   }
 
-  const candidatosPorId = new Map<string, { solicitud: SolicitudMovilidad; candidato: DocenteCandidatoCalce }>();
+  const candidatosPorId = new Map<
+    string,
+    { solicitud: SolicitudMovilidad; candidato: DocenteCandidatoCalce }
+  >();
   for (const sol of solicitudesActivas) {
     const doc = docMap.get(sol.docenteId);
     if (!doc) continue;
@@ -2000,22 +3580,55 @@ export async function generarSugerenciasCalceAutomatico(
     const estOrig = estMap.get(doc.rbd);
     const esTrasladoComp = sol.carril !== 'HORAS_REMANENTES';
 
+    const sumTitDoc =
+      Number(doc.horasSubvencionGeneralTitular || 0) +
+      Number(doc.horasSepTitular || 0) +
+      Number(doc.horasPieTitular || 0);
+    const sumConDoc =
+      Number(doc.horasSubvencionGeneralContrata || 0) +
+      Number(doc.horasSepContrata || 0) +
+      Number(doc.horasPieContrata || 0);
+    const horasTit =
+      sumTitDoc > 0 || sumConDoc > 0
+        ? sumTitDoc
+        : sol.horasTitularesActuales ??
+          (doc.calidadJuridica === 'TITULAR' ? doc.horasContrato : 0);
+    const horasCon =
+      sumTitDoc > 0 || sumConDoc > 0
+        ? sumConDoc
+        : Math.max(0, Number(doc.horasContrato || 0) - horasTit);
+
+    const carrilEngine = mapCarrilAEngine(sol.carril);
     const candidato: DocenteCandidatoCalce = {
       docenteId: doc.id,
       calidadJuridica: doc.calidadJuridica,
-      asignaturaDocente: sol.asignaturaPrincipal || doc.asignaturaPrincipal || doc.funcionPrincipal,
+      asignaturaDocente:
+        sol.asignaturaPrincipal || doc.asignaturaPrincipal || doc.funcionPrincipal,
       tituloMencion: sol.tituloMencion || doc.titulo,
+      tituloMencionOficial: doc.titulo || sol.tituloMencion,
+      requiereAutorizacionDocente: Boolean(doc.requiereAutorizacionDocente),
+      habilitacionSeremiRbd: doc.habilitacionSeremiRbd,
+      habilitacionSeremiAsignatura: doc.habilitacionSeremiAsignatura,
       aplicaArticulo69: sol.aplicaArticulo69 ?? Boolean(doc.aplicaArticulo69),
       horasContratoActual: doc.horasContrato,
-      horasTitularesActuales: sol.horasTitularesActuales,
+      horasTitularesActuales: horasTit,
+      minutosTitularesOrigen: Math.round(horasTit * 60),
+      minutosContrataOrigen: Math.round(horasCon * 60),
       horasOtrosEstablecimientos: otrosHoras,
       horasConservadasEnOrigen: esTrasladoComp ? 0 : doc.horasContrato,
       fuenteOrigen: inferirFuenteDocenteCalce(doc),
+      rbdOrigen: doc.rbd,
+      porcentajePrioritariosOrigen: estOrig?.porcentajePrioritarios,
+      tramoCarreraDocente: doc.tramoCarreraDocente,
+      condicionesDificilesOrigenPct: estOrig?.condicionesDificilesPct ?? 0,
+      accesibilidadOrigen: estOrig?.accesibilidad ?? 'urbano',
       comunaOrigen: sol.comunaOrigen || estOrig?.comuna,
-      carril: sol.carril,
+      carril: carrilEngine,
       esTrasladoCompleto: esTrasladoComp,
+      rbdDestinoPreferente: sol.rbdDestinoPreferente,
+      comunaDestinoPreferente: sol.comunaDestinoPreferente,
       prioridadMovilidad: {
-        carril: sol.carril,
+        carril: carrilEngine,
         puntajeSalud: sol.puntajeSalud,
         puntajeLeyKarin: sol.puntajeLeyKarin,
         puntajeCuidadoDependientes: sol.puntajeCuidadoDependientes,
@@ -2027,39 +3640,24 @@ export async function generarSugerenciasCalceAutomatico(
     candidatosPorId.set(doc.id, { solicitud: sol, candidato });
   }
 
-  const propuestasCreadas: PropuestaCalce[] = [];
-
-  for (const vacante of vacantesAbiertas) {
-    if (vacantesUsadas.has(vacante.id)) continue;
-
-    const candidatosDisponibles = Array.from(candidatosPorId.values())
-      .filter(c => !docentesUsados.has(c.candidato.docenteId))
-      .map(c => c.candidato);
-
-    if (candidatosDisponibles.length === 0) break;
-
+  const vacantesObjMap = new Map<string, { doc: Docente; obj: VacanteObjetivoCalce }>();
+  const vacantesObjetivos: VacanteObjetivoCalce[] = vacantesAbiertas.map(vacante => {
     const estDest = estMap.get(vacante.rbd);
     const egr = vacante.origenEgresoId ? egresoMap.get(vacante.origenEgresoId) : undefined;
-    const egresoAsociado: EgresoProyectadoInput | undefined = egr
-      ? {
-          causal: egr.causal,
-          certeza: egr.certeza,
-          excepcionJubilacion3Anios: egr.excepcionJubilacion3Anios,
-          fechaCese: egr.fechaCese,
-          numeroDecreto: egr.numeroDecreto,
-          horasLiberadas: egr.horasLiberadas,
-          impactoPresupuestario: egr.impactoPresupuestario
-        }
-      : undefined;
+    const egresoAsociado = egr ? toEgresoInput(egr) : undefined;
 
     const asigsVac = todasAsignaciones.filter(
-      a => a.rbd === vacante.rbd && (a.docenteId === vacante.id || (a.tieneCoDocente && a.coDocenteId === vacante.id))
+      a =>
+        a.rbd === vacante.rbd &&
+        (a.docenteId === vacante.id || (a.tieneCoDocente && a.coDocenteId === vacante.id))
     );
     const horasPedVac =
-      asigsVac.filter(a => !a.esTrabajoColaborativo).reduce((s, a) => s + Number(a.horasPedagogicasAula || 0), 0) ||
+      asigsVac
+        .filter(a => !a.esTrabajoColaborativo)
+        .reduce((s, a) => s + Number(a.horasPedagogicasAula || 0), 0) ||
       Number(vacante.horasAula || 0);
 
-    const vacanteObj: VacanteObjetivoCalce = {
+    const obj: VacanteObjetivoCalce = {
       vacanteId: vacante.id,
       rbdDestino: vacante.rbd,
       horasVacante: vacante.horasContrato,
@@ -2067,54 +3665,169 @@ export async function generarSugerenciasCalceAutomatico(
       asignaturaVacante: vacante.asignaturaPrincipal || vacante.apellidos,
       fuenteDestino: normalizarFuenteDestino(vacante),
       porcentajePrioritariosDestino: estDest?.porcentajePrioritarios ?? 75,
+      condicionesDificilesDestinoPct: estDest?.condicionesDificilesPct ?? 0,
+      accesibilidadDestino: estDest?.accesibilidad ?? 'urbano',
       comunaDestino: estDest?.comuna,
       esVacanteCondicional:
         vacante.vacanteCondicional === true ||
         (vacante.tipoVacante === 'CONDICIONAL_EGRESO' && vacante.vacanteCondicional !== false),
       egresoAsociado
     };
+    vacantesObjMap.set(vacante.id, { doc: vacante, obj });
+    return obj;
+  });
 
-    const sugerencias = sugerirCalcesAutomaticos(candidatosDisponibles, vacanteObj, 55, 5);
-    const mejor = sugerencias.find(s => !s.evaluacion.bloqueaConsolidacion);
-    if (!mejor) continue;
+  const candidatosDisponibles = Array.from(candidatosPorId.values()).map(c => c.candidato);
+  const optimo = resolverCalceOptimoConCadenasRebote(
+    candidatosDisponibles,
+    vacantesObjetivos,
+    55
+  );
 
-    const infoCand = candidatosPorId.get(mejor.candidato.docenteId);
-    if (!infoCand) continue;
+  const propuestasCreadas: PropuestaCalce[] = [];
+  const propuestaPasada1PorOrigenDoc = new Map<string, PropuestaCalce>();
+
+  // Pasada 1: Vacantes reales abiertas
+  for (const asig of optimo.asignacionesPasada1) {
+    if (
+      docentesUsados.has(asig.candidato.docenteId) ||
+      vacantesUsadas.has(asig.vacante.vacanteId)
+    ) {
+      continue;
+    }
+    const infoCand = candidatosPorId.get(asig.candidato.docenteId);
+    const infoVac = vacantesObjMap.get(asig.vacante.vacanteId);
+    if (!infoCand || !infoVac) continue;
 
     const prop = await agregarPropuestaCalce(
       {
         escenarioId,
         periodo,
-        docenteOrigenId: mejor.candidato.docenteId,
-        vacanteDestinoId: vacante.id,
+        docenteOrigenId: asig.candidato.docenteId,
+        vacanteDestinoId: infoVac.doc.id,
         solicitudMovilidadId: infoCand.solicitud.id,
-        egresoOrigenId: vacante.origenEgresoId,
+        egresoOrigenId: infoVac.doc.origenEgresoId,
         tipoCobertura:
-          mejor.candidato.calidadJuridica === 'TITULAR' && !vacanteObj.esVacanteCondicional
+          asig.candidato.calidadJuridica === 'TITULAR' && !infoVac.obj.esVacanteCondicional
             ? 'DEFINITIVA'
             : 'TRANSITORIA_CONDICIONAL',
-        esTrasladoCompleto: mejor.candidato.esTrasladoCompleto
+        esTrasladoCompleto: asig.candidato.esTrasladoCompleto
       },
       rolActor
     );
 
-    docentesUsados.add(mejor.candidato.docenteId);
-    vacantesUsadas.add(vacante.id);
+    docentesUsados.add(asig.candidato.docenteId);
+    vacantesUsadas.add(infoVac.doc.id);
+    propuestaPasada1PorOrigenDoc.set(asig.candidato.docenteId, prop);
     propuestasCreadas.push(prop);
   }
 
+  // Pasada 2: Cadenas sobre NN-Rebote (cubriendo en cadena o aprovechando vacante real libre en ese RBD)
+  for (const asig2 of optimo.asignacionesPasada2Rebotes) {
+    if (docentesUsados.has(asig2.candidato.docenteId)) continue;
+    const infoCand2 = candidatosPorId.get(asig2.candidato.docenteId);
+    if (!infoCand2) continue;
+
+    const origenDocId = asig2.vacante.vacanteId.replace(/^rebote_auto_/, '');
+    const propOrigen = propuestaPasada1PorOrigenDoc.get(origenDocId);
+
+    const vacRealDisponible = vacantesAbiertas.find(v => {
+      if (vacantesUsadas.has(v.id)) return false;
+      if (v.rbd !== asig2.vacante.rbdDestino) return false;
+      const vacMeta = vacantesObjMap.get(v.id);
+      if (!vacMeta) return false;
+      const ev = evaluarCalceDocenteVacante({
+        ...asig2.candidato,
+        ...vacMeta.obj
+      });
+      return !ev.bloqueaConsolidacion && ev.indiceCompatibilidad >= 55;
+    });
+
+    if (vacRealDisponible) {
+      const vacMeta = vacantesObjMap.get(vacRealDisponible.id)!;
+      const prop2 = await agregarPropuestaCalce(
+        {
+          escenarioId,
+          periodo,
+          docenteOrigenId: asig2.candidato.docenteId,
+          vacanteDestinoId: vacRealDisponible.id,
+          solicitudMovilidadId: infoCand2.solicitud.id,
+          egresoOrigenId: vacRealDisponible.origenEgresoId,
+          tipoCobertura:
+            asig2.candidato.calidadJuridica === 'TITULAR' && !vacMeta.obj.esVacanteCondicional
+              ? 'DEFINITIVA'
+              : 'TRANSITORIA_CONDICIONAL',
+          esTrasladoCompleto: asig2.candidato.esTrasladoCompleto
+        },
+        rolActor
+      );
+      docentesUsados.add(asig2.candidato.docenteId);
+      vacantesUsadas.add(vacRealDisponible.id);
+      propuestasCreadas.push(prop2);
+
+      if (propOrigen && propOrigen.generaRebote) {
+        await resolverRebotePropuestaCalce({
+          propuestaId: propOrigen.id,
+          estadoResolucion: 'CUBIERTA_EN_CADENA',
+          reboteCubiertoPorPropuestaId: prop2.id,
+          rolActor
+        });
+      }
+    } else if (propOrigen && propOrigen.generaRebote && propOrigen.vacanteRebote) {
+      const prop2 = await agregarPropuestaCalce(
+        {
+          escenarioId,
+          periodo,
+          docenteOrigenId: asig2.candidato.docenteId,
+          cubreRebotePropuestaId: propOrigen.id,
+          solicitudMovilidadId: infoCand2.solicitud.id,
+          tipoCobertura:
+            asig2.candidato.calidadJuridica === 'TITULAR'
+              ? 'DEFINITIVA'
+              : 'TRANSITORIA_CONDICIONAL',
+          esTrasladoCompleto: asig2.candidato.esTrasladoCompleto
+        },
+        rolActor
+      );
+      docentesUsados.add(asig2.candidato.docenteId);
+      propuestasCreadas.push(prop2);
+    }
+  }
+
   return propuestasCreadas;
+}
+
+function ordenarPropuestasTopologicamente(propuestas: PropuestaCalce[]): PropuestaCalce[] {
+  const cubiertasPorIds = new Set(
+    propuestas
+      .map(p => p.reboteCubiertoPorPropuestaId)
+      .filter((id): id is string => Boolean(id))
+  );
+  return [...propuestas].sort((a, b) => {
+    const aEsDependiente = cubiertasPorIds.has(a.id) ? 1 : 0;
+    const bEsDependiente = cubiertasPorIds.has(b.id) ? 1 : 0;
+    if (aEsDependiente !== bEsDependiente) return aEsDependiente - bEsDependiente;
+
+    const aCubreAlgo = a.reboteCubiertoPorPropuestaId ? 0 : 1;
+    const bCubreAlgo = b.reboteCubiertoPorPropuestaId ? 0 : 1;
+    if (aCubreAlgo !== bCubreAlgo) return aCubreAlgo - bCubreAlgo;
+
+    return (a.createdAt || '').localeCompare(b.createdAt || '') || a.id.localeCompare(b.id);
+  });
 }
 
 export async function consolidarEscenarioAprobado(params: {
   escenarioId: string;
   rolActor: RolId;
   usuarioActor: string;
+  expectedVersion?: number;
 }): Promise<{
   propuestasConsolidadas: number;
   vacantesReemplazadas: number;
   rebotesCreados: number;
   rbdsAfectados: string[];
+  nuevaVersion: number;
+  modoEjecucion: 'SUPABASE_RPC' | 'SQLITE_LOCAL';
 }> {
   assertRolConsolidador(params.rolActor, 'consolidar un escenario aprobado');
 
@@ -2126,15 +3839,22 @@ export async function consolidarEscenarioAprobado(params: {
     throw new Error(`Escenario '${params.escenarioId}' no encontrado.`);
   }
   const escenario = mapRowToEscenario(escRes[0].values[0]);
-  if (escenario.estado === 'CONSOLIDADO') {
-    throw new Error(`El escenario '${escenario.nombre}' ya fue consolidado previamente.`);
+  if (escenario.estado === 'CONSOLIDADO' || escenario.estado === 'RESOLUCION_EMITIDA') {
+    throw new Error(`El escenario '${escenario.nombre}' ya fue consolidado o emitido (${escenario.estado}).`);
+  }
+
+  const versionActual = escenario.version ?? 1;
+  if (params.expectedVersion !== undefined && versionActual !== params.expectedVersion) {
+    throw construirErrorConflictoVersion(params.expectedVersion, versionActual);
   }
 
   const propRes = db.exec(
     `SELECT ${PROPUESTA_SELECT_COLS} FROM propuestas_calce WHERE escenario_id = ? ORDER BY created_at ASC;`,
     [params.escenarioId]
   );
-  const propuestas: PropuestaCalce[] = propRes.length ? propRes[0].values.map(mapRowToPropuesta) : [];
+  const propuestas: PropuestaCalce[] = propRes.length
+    ? propRes[0].values.map(mapRowToPropuesta)
+    : [];
 
   if (propuestas.length === 0) {
     throw new Error('El escenario no contiene propuestas de calce para consolidar.');
@@ -2142,246 +3862,803 @@ export async function consolidarEscenarioAprobado(params: {
 
   const bloqueadas = propuestas.filter(p => p.bloqueaConsolidacion);
   if (bloqueadas.length > 0) {
-    const motivos = bloqueadas.map(b => b.motivoBloqueo || `${b.nombreDocente} -> ${b.rbdDestino}`).join(' | ');
+    const motivos = bloqueadas
+      .map(b => b.motivoBloqueo || `${b.nombreDocente} -> ${b.rbdDestino}`)
+      .join(' | ');
     throw new Error(`Consolidación bloqueada por incumplimientos normativos: ${motivos}`);
   }
 
+  // Validación 4: Unicidad de vacanteDestinoId, no duplicidad de docente en traslado completo
+  const vacantesVistas = new Set<string>();
+  const propuestasPorId = new Map<string, PropuestaCalce>(propuestas.map(p => [p.id, p]));
+  for (const p of propuestas) {
+    if (p.vacanteDestinoId) {
+      if (vacantesVistas.has(p.vacanteDestinoId)) {
+        throw new Error(
+          `Inconsistencia de calce: la vacante destino '${p.vacanteDestinoId}' está repetida en el escenario.`
+        );
+      }
+      vacantesVistas.add(p.vacanteDestinoId);
+    } else {
+      const cubreAlgunRebote = propuestas.some(
+        prev => prev.generaRebote && prev.reboteCubiertoPorPropuestaId === p.id
+      );
+      if (!cubreAlgunRebote) {
+        throw new Error(`La propuesta '${p.id}' no posee vacanteDestinoId.`);
+      }
+    }
+  }
+
+  // Validación 6: Cierre explícito de NN-Rebote
+  const rebotesPendientes = propuestas.filter(
+    p =>
+      p.generaRebote &&
+      p.estadoResolucionRebote !== 'CUBIERTA_EN_CADENA' &&
+      p.estadoResolucionRebote !== 'DERIVADA_A_CONCURSO_GDP'
+  );
+  if (rebotesPendientes.length > 0) {
+    throw new Error(
+      `Consolidación bloqueada: existen ${rebotesPendientes.length} vacante(s) de NN-Rebote en estado PENDIENTE de resolución.`
+    );
+  }
+  for (const p of propuestas) {
+    if (
+      p.generaRebote &&
+      p.estadoResolucionRebote === 'CUBIERTA_EN_CADENA' &&
+      p.reboteCubiertoPorPropuestaId &&
+      !propuestasPorId.has(p.reboteCubiertoPorPropuestaId)
+    ) {
+      throw new Error(
+        `La propuesta de cobertura en cadena '${p.reboteCubiertoPorPropuestaId}' no pertenece a este escenario.`
+      );
+    }
+  }
+
+  // Validación 5: Máquina de estados sobre solicitudes_movilidad referenciadas
+  const solicitudIdsUnicos = Array.from(
+    new Set(propuestas.map(p => p.solicitudMovilidadId).filter(Boolean) as string[])
+  );
+  const solicitudesMap = new Map<string, SolicitudMovilidad>();
+  for (const solId of solicitudIdsUnicos) {
+    const solRes = db.exec(`SELECT ${SOLICITUD_SELECT_COLS} FROM solicitudes_movilidad WHERE id = ? LIMIT 1;`, [
+      solId
+    ]);
+    if (!solRes.length || !solRes[0].values.length) {
+      throw new Error(`Solicitud de movilidad '${solId}' vinculada al escenario no encontrada.`);
+    }
+    const sol = mapRowToSolicitud(solRes[0].values[0]);
+    solicitudesMap.set(sol.id, sol);
+
+    if (
+      sol.estadoFlujo === 'RECHAZADO' ||
+      sol.estadoFlujo === 'CONSOLIDADO' ||
+      sol.estadoFlujo === 'RESOLUCION_EMITIDA'
+    ) {
+      throw new Error(
+        `La solicitud '${sol.id}' posee un estado incompatible para consolidar (${sol.estadoFlujo}).`
+      );
+    }
+    if (sol.carril === 'TRASLADO_VOLUNTARIO' && sol.estadoFlujo !== 'ACEPTADO_CON_FIRMA') {
+      throw new Error(
+        `La solicitud '${sol.id}' (TRASLADO_VOLUNTARIO) requiere estado ACEPTADO_CON_FIRMA para consolidar (estado actual: ${sol.estadoFlujo}).`
+      );
+    }
+    if (
+      (sol.carril === 'NO_CONTINUIDAD_TITULAR' ||
+        sol.carril === 'NO_CONTINUIDAD_ASISTENTE_INDEFINIDO') &&
+      sol.estadoFlujo !== 'NOTIFICADO_DIRECCION_ORIGEN' &&
+      sol.estadoFlujo !== 'ACEPTADO_CON_FIRMA'
+    ) {
+      throw new Error(
+        `La solicitud '${sol.id}' (${sol.carril}) requiere estado NOTIFICADO_DIRECCION_ORIGEN o ACEPTADO_CON_FIRMA para consolidar (estado actual: ${sol.estadoFlujo}).`
+      );
+    }
+  }
+
   const periodo = escenario.periodo || 2027;
-  const allDocs = await listarTodosLosDocentesTerritorio(periodo);
+  const [allDocs, allAsistentes] = await Promise.all([
+    listarTodosLosDocentesTerritorio(periodo),
+    listarTodosLosAsistentesTerritorio(periodo)
+  ]);
   const docMap = new Map<string, Docente>(allDocs.map(d => [d.id, d]));
+  const astMap = new Map<string, AsistenteEducacion>(allAsistentes.map(a => [a.id, a]));
+
+  // Validación 4B: No duplicidad de origen en traslado completo + Verificación acumulativa por RUN
+  const origenIdsEnEscenario = new Set<string>();
+  const origenIdsTrasladadosCompleto = new Set<string>();
+  const propsPorOrigenId = new Map<string, PropuestaCalce[]>();
+
+  for (const p of propuestas) {
+    origenIdsEnEscenario.add(p.docenteOrigenId);
+    const list = propsPorOrigenId.get(p.docenteOrigenId) || [];
+    list.push(p);
+    propsPorOrigenId.set(p.docenteOrigenId, list);
+
+    const sol = p.solicitudMovilidadId ? solicitudesMap.get(p.solicitudMovilidadId) : undefined;
+    if (p.generaRebote || (sol && sol.carril !== 'HORAS_REMANENTES')) {
+      origenIdsTrasladadosCompleto.add(p.docenteOrigenId);
+    }
+  }
+
+  for (const [origId, list] of propsPorOrigenId.entries()) {
+    if (list.length > 1 && origenIdsTrasladadosCompleto.has(origId)) {
+      throw new Error(
+        `Inconsistencia de calce: el funcionario origen '${origId}' figura repetido en traslado completo.`
+      );
+    }
+  }
+
+  const propsPorRunKey = new Map<string, PropuestaCalce[]>();
+  for (const p of propuestas) {
+    const kRun = claveRunNormalizado(p.runDocente) || `id:${p.docenteOrigenId}`;
+    const list = propsPorRunKey.get(kRun) || [];
+    list.push(p);
+    propsPorRunKey.set(kRun, list);
+  }
+
+  for (const [kRun, propsDelRun] of propsPorRunKey.entries()) {
+    const runNorm = kRun.startsWith('id:') ? '' : kRun;
+    const minAsignadosEscenario = propsDelRun.reduce(
+      (s, p) => s + Math.round(Number(p.horasAsignadas || 0) * 60),
+      0
+    );
+
+    const origIdsRun = Array.from(new Set(propsDelRun.map(p => p.docenteOrigenId)));
+    let minConservadosOrigen = 0;
+    let maxHorasAst = 0;
+    let todosAsistentesRun = true;
+
+    for (const origId of origIdsRun) {
+      const esAst = propsDelRun.some(
+        p => p.docenteOrigenId === origId && p.estamentoPersonal === 'ASISTENTE'
+      );
+      if (!esAst) todosAsistentesRun = false;
+      const origHoras = esAst
+        ? Number(astMap.get(origId)?.horasContrato || 0)
+        : Number(docMap.get(origId)?.horasContrato || 0);
+      if (esAst && origHoras > maxHorasAst) maxHorasAst = origHoras;
+
+      if (!origenIdsTrasladadosCompleto.has(origId)) {
+        minConservadosOrigen += Math.round(origHoras * 60);
+      }
+    }
+
+    let minOtrosContratos = 0;
+    if (runNorm) {
+      for (const d of allDocs) {
+        if (d.esVacanteNn || d.vacanteCondicional || !esSituacionFinalActiva(d.situacionFinalGdp)) {
+          continue;
+        }
+        if (vacantesVistas.has(d.id) || origenIdsEnEscenario.has(d.id)) continue;
+        if (claveRunNormalizado(d.run) === runNorm) {
+          todosAsistentesRun = false;
+          minOtrosContratos += Math.round(Number(d.horasContrato || 0) * 60);
+        }
+      }
+      for (const a of allAsistentes) {
+        if (a.activo === false || !esSituacionFinalActiva(a.situacionFinalGdp)) continue;
+        if (vacantesVistas.has(a.id) || origenIdsEnEscenario.has(a.id)) continue;
+        if (claveRunNormalizado(a.run) === runNorm) {
+          const hrs = Number(a.horasContrato || 0);
+          if (hrs > maxHorasAst) maxHorasAst = hrs;
+          minOtrosContratos += Math.round(hrs * 60);
+        }
+      }
+    }
+
+    const topeMinutos = todosAsistentesRun && maxHorasAst === 45 ? 2700 : 2640;
+    const totalMinutosRun = minAsignadosEscenario + minConservadosOrigen + minOtrosContratos;
+    if (totalMinutosRun > topeMinutos) {
+      throw new Error(
+        `Consolidación bloqueada por tope horario (${topeMinutos} min): '${propsDelRun[0].nombreDocente}' acumularía ${totalMinutosRun} min semanales.`
+      );
+    }
+  }
+
+  // Verificar existencia de origen/destino antes de RPC o SQLite
+  for (const p of propuestas) {
+    if (p.estamentoPersonal === 'ASISTENTE') {
+      if (!astMap.has(p.docenteOrigenId)) {
+        throw new Error(`Asistente de origen '${p.docenteOrigenId}' no existe en la base de datos.`);
+      }
+    } else {
+      if (!docMap.has(p.docenteOrigenId)) {
+        throw new Error(`Docente de origen '${p.docenteOrigenId}' no existe en la base de datos.`);
+      }
+      if (p.vacanteDestinoId && !docMap.has(p.vacanteDestinoId)) {
+        throw new Error(`Vacante de destino '${p.vacanteDestinoId}' no existe en la base de datos.`);
+      }
+    }
+  }
+
+  let modoEjecucion: 'SUPABASE_RPC' | 'SQLITE_LOCAL' = 'SQLITE_LOCAL';
+  let rpcNuevaVersion: number | undefined;
+
+  if (isSupabaseEnabled()) {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'consolidar_escenario_movilidad_rpc',
+      {
+        p_escenario_id: params.escenarioId,
+        p_expected_version: versionActual,
+        p_usuario_actor: params.usuarioActor
+      }
+    );
+
+    if (rpcError) {
+      if (!esErrorFuncionNoEncontradaSupabase(rpcError)) {
+        const msg = String((rpcError as any).message || 'Error ejecutando consolidación RPC.');
+        if (String((rpcError as any).code || '') === '40001' || /CONFLICTO_VERSION/i.test(msg)) {
+          throw new Error(msg.includes('CONFLICTO_VERSION') ? msg : `CONFLICTO_VERSION: ${msg}`);
+        }
+        throw new Error(msg);
+      }
+    } else {
+      modoEjecucion = 'SUPABASE_RPC';
+      if (rpcData && typeof (rpcData as any).nuevaVersion === 'number') {
+        rpcNuevaVersion = (rpcData as any).nuevaVersion;
+      }
+    }
+  }
 
   const nowIso = new Date().toISOString();
+  const nuevaVersion = rpcNuevaVersion ?? versionActual + 1;
+  const propuestasOrdenadas = ordenarPropuestasTopologicamente(propuestas);
+
   let propuestasConsolidadas = 0;
   let vacantesReemplazadas = 0;
   let rebotesCreados = 0;
   const rbdsAfectadosSet = new Set<string>();
-  const docentesActualizadosSync: Docente[] = [];
+  const docentesActualizadosSyncMap = new Map<string, Docente>();
   const docentesEliminadosIds: string[] = [];
+  const asistentesActualizadosSyncMap = new Map<string, AsistenteEducacion>();
+  const asistentesEliminadosIds: string[] = [];
   const solicitudesConsolidadasIds: string[] = [];
+  const reboteIdByPropuesta = new Map<string, string>();
 
   db.run('BEGIN TRANSACTION;');
   try {
-    for (const p of propuestas) {
-      if (!p.vacanteDestinoId) {
-        throw new Error(`La propuesta '${p.id}' no posee vacanteDestinoId.`);
-      }
+    for (const p of propuestasOrdenadas) {
+      if (p.estamentoPersonal === 'ASISTENTE') {
+        const astOrigen = astMap.get(p.docenteOrigenId)!;
 
-      const docenteOrigen = docMap.get(p.docenteOrigenId);
-      if (!docenteOrigen) {
-        throw new Error(`Docente de origen '${p.docenteOrigenId}' no existe en la base de datos.`);
-      }
+        const sumIndefAst =
+          Number(astOrigen.horasSubvencionGeneralIndefinido || 0) +
+          Number(astOrigen.horasSepIndefinido || 0) +
+          Number(astOrigen.horasPieIndefinido || 0);
+        const horasIndefOrigen =
+          (p.minutosTitularesOrigen ?? 0) > 0 || (p.minutosContrataOrigen ?? 0) > 0
+            ? Math.round((p.minutosTitularesOrigen ?? 0) / 60)
+            : sumIndefAst;
 
-      const vacanteDestino = docMap.get(p.vacanteDestinoId);
-      if (!vacanteDestino) {
-        throw new Error(`Vacante de destino '${p.vacanteDestinoId}' no existe en la base de datos.`);
-      }
+        const astDest = p.vacanteDestinoId ? astMap.get(p.vacanteDestinoId) : undefined;
+        const docDestSiEsDoc =
+          !astDest && p.vacanteDestinoId ? docMap.get(p.vacanteDestinoId) : undefined;
 
-      const calidadDestino: CalidadJuridicaDocente =
-        p.tipoCobertura === 'TRANSITORIA_CONDICIONAL' && docenteOrigen.calidadJuridica !== 'TITULAR'
-          ? docenteOrigen.calidadJuridica
-          : docenteOrigen.calidadJuridica;
+        const horasDestino = astDest
+          ? Number(astDest.horasContrato || p.horasAsignadas || astOrigen.horasContrato)
+          : docDestSiEsDoc
+            ? Number(docDestSiEsDoc.horasContrato || p.horasAsignadas || astOrigen.horasContrato)
+            : Number(p.horasAsignadas || astOrigen.horasContrato);
 
-      const horasDestino = vacanteDestino.horasContrato;
-      const esTitularDestino = calidadDestino === 'TITULAR';
-      const fuDestino = p.fuenteDestino || normalizarFuenteDestino(vacanteDestino);
+        const fuDestino = p.fuenteDestino || 'SUBVENCION_GENERAL';
+        const horasIndefDestino = Math.min(horasDestino, horasIndefOrigen);
+        const horasPfDestino = Math.max(0, horasDestino - horasIndefDestino);
 
-      const subvTit = fuDestino === 'SUBVENCION_GENERAL' && esTitularDestino ? horasDestino : 0;
-      const subvCon = fuDestino === 'SUBVENCION_GENERAL' && !esTitularDestino ? horasDestino : 0;
-      const sepTit = fuDestino === 'SEP' && esTitularDestino ? horasDestino : 0;
-      const sepCon = fuDestino === 'SEP' && !esTitularDestino ? horasDestino : 0;
-      const pieTit = fuDestino === 'PIE' && esTitularDestino ? horasDestino : 0;
-      const pieCon = fuDestino === 'PIE' && !esTitularDestino ? horasDestino : 0;
+        const subvIndef = fuDestino === 'SUBVENCION_GENERAL' ? horasIndefDestino : 0;
+        const subvPf = fuDestino === 'SUBVENCION_GENERAL' ? horasPfDestino : 0;
+        const sepIndef = fuDestino === 'SEP' ? horasIndefDestino : 0;
+        const sepPf = fuDestino === 'SEP' ? horasPfDestino : 0;
+        const pieIndef = fuDestino === 'PIE' ? horasIndefDestino : 0;
+        const piePf = fuDestino === 'PIE' ? horasPfDestino : 0;
 
-      // 1. Reemplazar los datos del registro NN destino preservando su ID y asignaciones_horarias
-      db.run(
-        `UPDATE docentes
-         SET run = ?, nombres = ?, apellidos = ?, titulo = ?,
-             calidad_juridica = ?, aplica_articulo_69 = ?,
-             horas_subvencion_general_titular = ?, horas_subvencion_general_contrata = ?,
-             horas_sep_titular = ?, horas_sep_contrata = ?,
-             horas_pie_titular = ?, horas_pie_contrata = ?,
-             es_vacante_nn = 0, tipo_vacante = NULL, justificacion_vacante = NULL,
-             vacante_condicional = 0, origen_egreso_id = NULL,
-             situacion_final_gdp = 'Vigente'
-         WHERE id = ?;`,
-        [
-          docenteOrigen.run,
-          docenteOrigen.nombres,
-          docenteOrigen.apellidos,
-          docenteOrigen.titulo || null,
-          calidadDestino,
-          docenteOrigen.aplicaArticulo69 ? 1 : 0,
-          subvTit,
-          subvCon,
-          sepTit,
-          sepCon,
-          pieTit,
-          pieCon,
-          vacanteDestino.id
-        ]
-      );
+        let targetAstId = astDest?.id || p.vacanteDestinoId;
+        if (astDest) {
+          db.run(
+            `UPDATE asistentes_educacion
+             SET run = ?, nombres = ?, apellidos = ?,
+                 cargo_funcion = ?, estamento = ?, horas_contrato = ?,
+                 horas_subvencion_general_indefinido = ?, horas_subvencion_general_plazo_fijo = ?,
+                 horas_sep_indefinido = ?, horas_sep_plazo_fijo = ?,
+                 horas_pie_indefinido = ?, horas_pie_plazo_fijo = ?,
+                 horas_honorarios = 0, activo = 1, situacion_final_gdp = 'Vigente'
+             WHERE id = ?;`,
+            [
+              astOrigen.run,
+              astOrigen.nombres,
+              astOrigen.apellidos,
+              astDest.cargoFuncion || astOrigen.cargoFuncion,
+              astDest.estamento || astOrigen.estamento,
+              horasDestino,
+              subvIndef,
+              subvPf,
+              sepIndef,
+              sepPf,
+              pieIndef,
+              piePf,
+              astDest.id
+            ]
+          );
+          asistentesActualizadosSyncMap.set(astDest.id, {
+            ...astDest,
+            run: astOrigen.run,
+            nombres: astOrigen.nombres,
+            apellidos: astOrigen.apellidos,
+            horasContrato: horasDestino,
+            horasSubvencionGeneralIndefinido: subvIndef,
+            horasSubvencionGeneralPlazoFijo: subvPf,
+            horasSepIndefinido: sepIndef,
+            horasSepPlazoFijo: sepPf,
+            horasPieIndefinido: pieIndef,
+            horasPiePlazoFijo: piePf,
+            horasHonorarios: 0,
+            activo: true,
+            situacionFinalGdp: 'Vigente'
+          });
+        } else {
+          if (docDestSiEsDoc) {
+            db.run('DELETE FROM docentes WHERE id = ?;', [docDestSiEsDoc.id]);
+            docentesEliminadosIds.push(docDestSiEsDoc.id);
+          }
+          if (!targetAstId) {
+            targetAstId = `ast_${p.rbdDestino}_${periodo}_${limpiarRutParaId(astOrigen.run)}`;
+          }
+          const nuevoAst: AsistenteEducacion = {
+            ...astOrigen,
+            id: targetAstId,
+            rbd: p.rbdDestino,
+            periodo,
+            horasContrato: horasDestino,
+            horasSubvencionGeneralIndefinido: subvIndef,
+            horasSubvencionGeneralPlazoFijo: subvPf,
+            horasSepIndefinido: sepIndef,
+            horasSepPlazoFijo: sepPf,
+            horasPieIndefinido: pieIndef,
+            horasPiePlazoFijo: piePf,
+            horasHonorarios: 0,
+            activo: true,
+            propuestaGdp: 'Continuidad',
+            estadoSancionGdp: 'Aprobado',
+            situacionFinalGdp: 'Vigente'
+          };
+          db.run(
+            `INSERT OR REPLACE INTO asistentes_educacion (
+              id, rbd, periodo, run, nombres, apellidos, cargo_funcion, estamento, horas_contrato,
+              horas_subvencion_general_indefinido, horas_subvencion_general_plazo_fijo,
+              horas_sep_indefinido, horas_sep_plazo_fijo,
+              horas_pie_indefinido, horas_pie_plazo_fijo,
+              horas_honorarios, es_dupla_psicosocial, es_equipo_pie, es_tecnico_parvulo,
+              es_auxiliar_servicio, es_inspector_patio, observaciones, activo,
+              propuesta_gdp, estado_sancion_gdp, situacion_final_gdp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 1, 'Continuidad', 'Aprobado', 'Vigente');`,
+            [
+              nuevoAst.id,
+              nuevoAst.rbd,
+              nuevoAst.periodo,
+              nuevoAst.run,
+              nuevoAst.nombres,
+              nuevoAst.apellidos,
+              nuevoAst.cargoFuncion,
+              nuevoAst.estamento,
+              nuevoAst.horasContrato,
+              subvIndef,
+              subvPf,
+              sepIndef,
+              sepPf,
+              pieIndef,
+              piePf,
+              nuevoAst.esDuplaPsicosocial ? 1 : 0,
+              nuevoAst.esEquipoPie ? 1 : 0,
+              nuevoAst.esTecnicoParvulo ? 1 : 0,
+              nuevoAst.esAuxiliarServicio ? 1 : 0,
+              nuevoAst.esInspectorPatio ? 1 : 0,
+              nuevoAst.observaciones || null
+            ]
+          );
+          asistentesActualizadosSyncMap.set(nuevoAst.id, nuevoAst);
+        }
 
-      const vacanteReemplazada: Docente = {
-        ...vacanteDestino,
-        run: docenteOrigen.run,
-        nombres: docenteOrigen.nombres,
-        apellidos: docenteOrigen.apellidos,
-        titulo: docenteOrigen.titulo,
-        calidadJuridica: calidadDestino,
-        aplicaArticulo69: docenteOrigen.aplicaArticulo69,
-        horasSubvencionGeneralTitular: subvTit,
-        horasSubvencionGeneralContrata: subvCon,
-        horasSepTitular: sepTit,
-        horasSepContrata: sepCon,
-        horasPieTitular: pieTit,
-        horasPieContrata: pieCon,
-        esVacanteNn: false,
-        tipoVacante: undefined,
-        justificacionVacante: undefined,
-        vacanteCondicional: false,
-        origenEgresoId: undefined,
-        situacionFinalGdp: 'Vigente'
-      };
-      docentesActualizadosSync.push(vacanteReemplazada);
-      vacantesReemplazadas++;
-      rbdsAfectadosSet.add(p.rbdDestino);
+        vacantesReemplazadas++;
+        rbdsAfectadosSet.add(p.rbdDestino);
 
-      // 2. Si genera rebote en otro establecimiento, crear NN-Rebote en origen, re-apuntar asignaciones y retirar fila origen
-      if (p.generaRebote && p.vacanteRebote && p.rbdOrigen !== p.rbdDestino) {
-        const reb = p.vacanteRebote;
-        const sufijo = `${p.id.slice(-4).toUpperCase()}${rebotesCreados}`;
-        const reboteId = `vac_reb_${p.rbdOrigen}_${periodo}_${p.id.slice(-6)}_${rebotesCreados}`;
-        const reboteRun = `REB-${p.rbdOrigen}-${sufijo}`;
-        const horasReb = Math.max(1, Math.min(44, Math.round(Number(reb.horasContratoRebote || docenteOrigen.horasContrato))));
-        const fReb = reb.fuenteFinanciamiento || 'SUBVENCION_GENERAL';
+        if (p.generaRebote && p.rbdOrigen !== p.rbdDestino) {
+          const reb = p.vacanteRebote;
+          const sufijo = `${p.id.slice(-4).toUpperCase()}${rebotesCreados}`;
+          const reboteId = `vac_reb_ast_${p.rbdOrigen}_${periodo}_${p.id.slice(-6)}_${rebotesCreados}`;
+          const reboteRun = `REB-${p.rbdOrigen}-${sufijo}`;
+          const horasRebAst = Math.max(
+            1,
+            Number(reb?.horasContratoRebote || astOrigen.horasContrato || 1)
+          );
+          const fReb =
+            reb?.fuenteFinanciamiento || normalizarFuenteDestinoAsistente(astOrigen);
+          const normAstReb = normalizarFuentesFinanciamientoAsistente(
+            horasRebAst,
+            0,
+            fReb === 'SUBVENCION_GENERAL' ? horasRebAst : 0,
+            0,
+            fReb === 'SEP' ? horasRebAst : 0,
+            0,
+            fReb === 'PIE' ? horasRebAst : 0,
+            0
+          );
+          const obsReb = `Vacante de rebote generada por traslado de ${astOrigen.nombres} ${astOrigen.apellidos} hacia RBD ${p.rbdDestino} (Escenario ${escenario.nombre}).`;
 
-        const normFuentesReb = normalizarFuentesFinanciamientoDocente(
-          horasReb,
-          'CONTRATA',
-          0,
-          fReb === 'SUBVENCION_GENERAL' ? horasReb : 0,
-          0,
-          fReb === 'SEP' ? horasReb : 0,
-          0,
-          fReb === 'PIE' ? horasReb : 0
-        );
+          db.run(
+            `INSERT OR REPLACE INTO asistentes_educacion (
+              id, rbd, periodo, run, nombres, apellidos, cargo_funcion, estamento, horas_contrato,
+              horas_subvencion_general_indefinido, horas_subvencion_general_plazo_fijo,
+              horas_sep_indefinido, horas_sep_plazo_fijo,
+              horas_pie_indefinido, horas_pie_plazo_fijo,
+              horas_honorarios, activo, propuesta_gdp, estado_sancion_gdp, situacion_final_gdp, observaciones
+            ) VALUES (?, ?, ?, ?, 'VACANTE REBOTE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'Vacante por proveer', 'Pendiente', 'Vigente', ?);`,
+            [
+              reboteId,
+              p.rbdOrigen,
+              periodo,
+              reboteRun,
+              (astOrigen.cargoFuncion || 'ASISTENTE').toUpperCase(),
+              astOrigen.cargoFuncion,
+              astOrigen.estamento,
+              horasRebAst,
+              normAstReb.subvGenIndefinido,
+              normAstReb.subvGenPlazoFijo,
+              normAstReb.sepIndefinido,
+              normAstReb.sepPlazoFijo,
+              normAstReb.pieIndefinido,
+              normAstReb.piePlazoFijo,
+              obsReb
+            ]
+          );
 
-        const funcionesNoAulaJson =
-          reb.funcionesNoLectivasHeredadas && reb.funcionesNoLectivasHeredadas.length > 0
-            ? JSON.stringify(reb.funcionesNoLectivasHeredadas)
-            : null;
+          const astRebObj: AsistenteEducacion = {
+            id: reboteId,
+            rbd: p.rbdOrigen,
+            periodo,
+            run: reboteRun,
+            nombres: 'VACANTE REBOTE',
+            apellidos: (astOrigen.cargoFuncion || 'ASISTENTE').toUpperCase(),
+            cargoFuncion: astOrigen.cargoFuncion,
+            estamento: astOrigen.estamento,
+            horasContrato: horasRebAst,
+            horasSubvencionGeneralIndefinido: normAstReb.subvGenIndefinido,
+            horasSubvencionGeneralPlazoFijo: normAstReb.subvGenPlazoFijo,
+            horasSepIndefinido: normAstReb.sepIndefinido,
+            horasSepPlazoFijo: normAstReb.sepPlazoFijo,
+            horasPieIndefinido: normAstReb.pieIndefinido,
+            horasPiePlazoFijo: normAstReb.piePlazoFijo,
+            horasHonorarios: 0,
+            activo: true,
+            propuestaGdp: 'Vacante por proveer',
+            estadoSancionGdp: 'Pendiente',
+            situacionFinalGdp: 'Vigente',
+            observaciones: obsReb
+          };
+          asistentesActualizadosSyncMap.set(reboteId, astRebObj);
+          astMap.set(reboteId, astRebObj);
+          reboteIdByPropuesta.set(p.id, reboteId);
+          rebotesCreados++;
+          rbdsAfectadosSet.add(p.rbdOrigen);
+        }
+
+        if (targetAstId !== astOrigen.id) {
+          if (horasDestino >= Number(astOrigen.horasContrato || 0)) {
+            db.run('DELETE FROM asistentes_educacion WHERE id = ?;', [astOrigen.id]);
+            asistentesEliminadosIds.push(astOrigen.id);
+          } else {
+            let rem = horasDestino;
+            const dSgPf = Math.min(Number(astOrigen.horasSubvencionGeneralPlazoFijo || 0), rem);
+            rem -= dSgPf;
+            const dSepPf = Math.min(Number(astOrigen.horasSepPlazoFijo || 0), rem);
+            rem -= dSepPf;
+            const dPiePf = Math.min(Number(astOrigen.horasPiePlazoFijo || 0), rem);
+            rem -= dPiePf;
+            const dSgIn = Math.min(Number(astOrigen.horasSubvencionGeneralIndefinido || 0), rem);
+            rem -= dSgIn;
+            const dSepIn = Math.min(Number(astOrigen.horasSepIndefinido || 0), rem);
+            rem -= dSepIn;
+            const dPieIn = Math.min(Number(astOrigen.horasPieIndefinido || 0), rem);
+
+            const nContrato = Math.max(0, Number(astOrigen.horasContrato || 0) - horasDestino);
+            const nSgPf = Math.max(0, Number(astOrigen.horasSubvencionGeneralPlazoFijo || 0) - dSgPf);
+            const nSepPf = Math.max(0, Number(astOrigen.horasSepPlazoFijo || 0) - dSepPf);
+            const nPiePf = Math.max(0, Number(astOrigen.horasPiePlazoFijo || 0) - dPiePf);
+            const nSgIn = Math.max(0, Number(astOrigen.horasSubvencionGeneralIndefinido || 0) - dSgIn);
+            const nSepIn = Math.max(0, Number(astOrigen.horasSepIndefinido || 0) - dSepIn);
+            const nPieIn = Math.max(0, Number(astOrigen.horasPieIndefinido || 0) - dPieIn);
+
+            db.run(
+              `UPDATE asistentes_educacion
+               SET horas_contrato = ?,
+                   horas_subvencion_general_plazo_fijo = ?,
+                   horas_sep_plazo_fijo = ?,
+                   horas_pie_plazo_fijo = ?,
+                   horas_subvencion_general_indefinido = ?,
+                   horas_sep_indefinido = ?,
+                   horas_pie_indefinido = ?
+               WHERE id = ?;`,
+              [nContrato, nSgPf, nSepPf, nPiePf, nSgIn, nSepIn, nPieIn, astOrigen.id]
+            );
+            asistentesActualizadosSyncMap.set(astOrigen.id, {
+              ...astOrigen,
+              horasContrato: nContrato,
+              horasSubvencionGeneralPlazoFijo: nSgPf,
+              horasSepPlazoFijo: nSepPf,
+              horasPiePlazoFijo: nPiePf,
+              horasSubvencionGeneralIndefinido: nSgIn,
+              horasSepIndefinido: nSepIn,
+              horasPieIndefinido: nPieIn
+            });
+          }
+          rbdsAfectadosSet.add(p.rbdOrigen);
+        }
+      } else {
+        // Rama DOCENTE
+        let targetVacanteId = p.vacanteDestinoId;
+        if (!targetVacanteId) {
+          const prevCubre = propuestasOrdenadas.find(
+            prev => prev.generaRebote && prev.reboteCubiertoPorPropuestaId === p.id
+          );
+          if (prevCubre) {
+            targetVacanteId = reboteIdByPropuesta.get(prevCubre.id);
+          }
+        }
+        if (!targetVacanteId) {
+          throw new Error(`La propuesta '${p.id}' no posee vacanteDestinoId.`);
+        }
+
+        const docenteOrigen = docMap.get(p.docenteOrigenId);
+        if (!docenteOrigen) {
+          throw new Error(`Docente de origen '${p.docenteOrigenId}' no existe en la base de datos.`);
+        }
+        const vacanteDestino = docMap.get(targetVacanteId);
+        if (!vacanteDestino) {
+          throw new Error(`Vacante de destino '${targetVacanteId}' no existe en la base de datos.`);
+        }
+
+        // Preservar desglose estricto Titular vs Contrata
+        const sumTitOrig =
+          Number(docenteOrigen.horasSubvencionGeneralTitular || 0) +
+          Number(docenteOrigen.horasSepTitular || 0) +
+          Number(docenteOrigen.horasPieTitular || 0);
+        const sumConOrig =
+          Number(docenteOrigen.horasSubvencionGeneralContrata || 0) +
+          Number(docenteOrigen.horasSepContrata || 0) +
+          Number(docenteOrigen.horasPieContrata || 0);
+        const fallbackHorasTit =
+          sumTitOrig > 0 || sumConOrig > 0
+            ? sumTitOrig
+            : docenteOrigen.calidadJuridica === 'TITULAR'
+              ? Number(docenteOrigen.horasContrato || 0)
+              : 0;
+        const horasTitOrigenProp =
+          (p.minutosTitularesOrigen ?? 0) > 0 || (p.minutosContrataOrigen ?? 0) > 0
+            ? Math.round((p.minutosTitularesOrigen ?? 0) / 60)
+            : fallbackHorasTit;
+
+        const horasDestino = Number(vacanteDestino.horasContrato || p.horasAsignadas || 0);
+        const calidadDestino: CalidadJuridicaDocente =
+          p.tipoCobertura === 'TRANSITORIA_CONDICIONAL' && docenteOrigen.calidadJuridica !== 'TITULAR'
+            ? docenteOrigen.calidadJuridica
+            : horasTitOrigenProp > 0 || docenteOrigen.calidadJuridica === 'TITULAR'
+              ? 'TITULAR'
+              : docenteOrigen.calidadJuridica;
+
+        const horasTitDestino =
+          calidadDestino === 'TITULAR'
+            ? Math.min(horasDestino, horasTitOrigenProp > 0 ? horasTitOrigenProp : horasDestino)
+            : 0;
+        const horasConDestino = Math.max(0, horasDestino - horasTitDestino);
+        const fuDestino = p.fuenteDestino || normalizarFuenteDestino(vacanteDestino);
+
+        const subvTit = fuDestino === 'SUBVENCION_GENERAL' ? horasTitDestino : 0;
+        const subvCon = fuDestino === 'SUBVENCION_GENERAL' ? horasConDestino : 0;
+        const sepTit = fuDestino === 'SEP' ? horasTitDestino : 0;
+        const sepCon = fuDestino === 'SEP' ? horasConDestino : 0;
+        const pieTit = fuDestino === 'PIE' ? horasTitDestino : 0;
+        const pieCon = fuDestino === 'PIE' ? horasConDestino : 0;
 
         db.run(
-          `INSERT INTO docentes (
-            id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
-            horas_subvencion_general_titular, horas_subvencion_general_contrata,
-            horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
-            horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
-            horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
-            horas_taller_sep, horas_trabajo_colaborativo, horas_aula, horas_ingles,
-            funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
-            funciones_no_aula_json, periodo, propuesta_gdp, estado_sancion_gdp, situacion_final_gdp,
-            es_vacante_nn, tipo_vacante, justificacion_vacante, vacante_condicional
-          ) VALUES (?, ?, ?, ?, ?, NULL, 'CONTRATA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'Vacante por proveer', 'Pendiente', 'Vigente', 1, 'REBOTE_MOVILIDAD', ?, 0);`,
+          `UPDATE docentes
+           SET run = ?, nombres = ?, apellidos = ?, titulo = ?,
+               calidad_juridica = ?, aplica_articulo_69 = ?,
+               tramo_carrera_docente = ?, habilitacion_seremi_rbd = ?, habilitacion_seremi_asignatura = ?,
+               horas_subvencion_general_titular = ?, horas_subvencion_general_contrata = ?,
+               horas_sep_titular = ?, horas_sep_contrata = ?,
+               horas_pie_titular = ?, horas_pie_contrata = ?,
+               es_vacante_nn = 0, tipo_vacante = NULL, justificacion_vacante = NULL,
+               vacante_condicional = 0, origen_egreso_id = NULL,
+               situacion_final_gdp = 'Vigente'
+           WHERE id = ?;`,
           [
-            reboteId,
-            p.rbdOrigen,
-            reboteRun,
-            'VACANTE REBOTE',
-            (reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal || 'DOCENTE AULA').toUpperCase(),
-            docenteOrigen.estamento || 'DOCENTE_AULA',
-            horasReb,
-            normFuentesReb.subvGenTitular,
-            normFuentesReb.subvGenContrata,
-            normFuentesReb.sepTitular,
-            normFuentesReb.sepContrata,
-            normFuentesReb.pieTitular,
-            normFuentesReb.pieContrata,
-            docenteOrigen.horasDirectivas || 0,
-            docenteOrigen.horasInspectorGeneral || 0,
-            docenteOrigen.horasTecnicoPedagogicas || 0,
-            docenteOrigen.horasCoordinacion || 0,
-            docenteOrigen.tipoCoordinacion || null,
-            docenteOrigen.horasCoordinacionPie || 0,
-            docenteOrigen.horasConvivenciaEscolar || 0,
-            docenteOrigen.horasExtraescolar || 0,
-            docenteOrigen.cargoInstitucional || null,
-            docenteOrigen.horasTallerSep || 0,
-            docenteOrigen.horasTrabajoColaborativo || 0,
-            reb.horasPedagogicasAula || docenteOrigen.horasAula || 0,
-            docenteOrigen.horasIngles || 0,
-            docenteOrigen.funcionPrincipal || null,
-            docenteOrigen.funcionSecundaria || null,
-            reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal || null,
-            funcionesNoAulaJson,
-            periodo,
-            `Vacante de rebote generada por traslado de ${docenteOrigen.nombres} ${docenteOrigen.apellidos} hacia RBD ${p.rbdDestino} (Escenario ${escenario.nombre}).`
+            docenteOrigen.run,
+            docenteOrigen.nombres,
+            docenteOrigen.apellidos,
+            docenteOrigen.titulo || null,
+            calidadDestino,
+            docenteOrigen.aplicaArticulo69 ? 1 : 0,
+            docenteOrigen.tramoCarreraDocente || null,
+            docenteOrigen.habilitacionSeremiRbd || null,
+            docenteOrigen.habilitacionSeremiAsignatura || null,
+            subvTit,
+            subvCon,
+            sepTit,
+            sepCon,
+            pieTit,
+            pieCon,
+            vacanteDestino.id
           ]
         );
 
-        // Re-apuntar las asignaciones_horarias del docente origen hacia la nueva NN-Rebote
-        db.run(
-          `UPDATE asignaciones_horarias
-           SET docente_id = ?
-           WHERE docente_id = ? AND rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027));`,
-          [reboteId, docenteOrigen.id, p.rbdOrigen, periodo, periodo]
-        );
-        db.run(
-          `UPDATE asignaciones_horarias
-           SET co_docente_id = ?
-           WHERE co_docente_id = ? AND rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027));`,
-          [reboteId, docenteOrigen.id, p.rbdOrigen, periodo, periodo]
-        );
+        const vacanteReemplazada: Docente = {
+          ...vacanteDestino,
+          run: docenteOrigen.run,
+          nombres: docenteOrigen.nombres,
+          apellidos: docenteOrigen.apellidos,
+          titulo: docenteOrigen.titulo,
+          calidadJuridica: calidadDestino,
+          aplicaArticulo69: docenteOrigen.aplicaArticulo69,
+          tramoCarreraDocente: docenteOrigen.tramoCarreraDocente,
+          habilitacionSeremiRbd: docenteOrigen.habilitacionSeremiRbd,
+          habilitacionSeremiAsignatura: docenteOrigen.habilitacionSeremiAsignatura,
+          horasSubvencionGeneralTitular: subvTit,
+          horasSubvencionGeneralContrata: subvCon,
+          horasSepTitular: sepTit,
+          horasSepContrata: sepCon,
+          horasPieTitular: pieTit,
+          horasPieContrata: pieCon,
+          esVacanteNn: false,
+          tipoVacante: undefined,
+          justificacionVacante: undefined,
+          vacanteCondicional: false,
+          origenEgresoId: undefined,
+          situacionFinalGdp: 'Vigente'
+        };
+        docentesActualizadosSyncMap.set(vacanteReemplazada.id, vacanteReemplazada);
+        docMap.set(vacanteReemplazada.id, vacanteReemplazada);
+        vacantesReemplazadas++;
+        rbdsAfectadosSet.add(p.rbdDestino);
 
-        // Retirar fila origen del docente trasladado (cuando el traslado desde origen fue completo)
-        if (horasReb >= docenteOrigen.horasContrato) {
-          db.run('DELETE FROM docentes WHERE id = ?;', [docenteOrigen.id]);
-          docentesEliminadosIds.push(docenteOrigen.id);
+        if (p.generaRebote && p.vacanteRebote && p.rbdOrigen !== p.rbdDestino) {
+          const reb = p.vacanteRebote;
+          const sufijo = `${p.id.slice(-4).toUpperCase()}${rebotesCreados}`;
+          const reboteId = `vac_reb_${p.rbdOrigen}_${periodo}_${p.id.slice(-6)}_${rebotesCreados}`;
+          const reboteRun = `REB-${p.rbdOrigen}-${sufijo}`;
+          const horasReb = Math.max(
+            1,
+            Math.min(44, Math.round(Number(reb.horasContratoRebote || docenteOrigen.horasContrato)))
+          );
+          const fReb = reb.fuenteFinanciamiento || 'SUBVENCION_GENERAL';
+
+          const normFuentesReb = normalizarFuentesFinanciamientoDocente(
+            horasReb,
+            'CONTRATA',
+            0,
+            fReb === 'SUBVENCION_GENERAL' ? horasReb : 0,
+            0,
+            fReb === 'SEP' ? horasReb : 0,
+            0,
+            fReb === 'PIE' ? horasReb : 0
+          );
+
+          const funcionesNoAulaJson =
+            reb.funcionesNoLectivasHeredadas && reb.funcionesNoLectivasHeredadas.length > 0
+              ? JSON.stringify(reb.funcionesNoLectivasHeredadas)
+              : null;
+
+          db.run(
+            `INSERT INTO docentes (
+              id, rbd, run, nombres, apellidos, titulo, calidad_juridica, estamento, horas_contrato,
+              horas_subvencion_general_titular, horas_subvencion_general_contrata,
+              horas_sep_titular, horas_sep_contrata, horas_pie_titular, horas_pie_contrata,
+              horas_directivas, horas_inspector_general, horas_tecnico_pedagogica, horas_coordinacion, tipo_coordinacion,
+              horas_coordinacion_pie, horas_convivencia_escolar, horas_extraescolar, cargo_institucional,
+              horas_taller_sep, horas_trabajo_colaborativo, horas_aula, horas_ingles,
+              funcion_principal, funcion_secundaria, asignatura_principal, aplica_articulo_69,
+              funciones_no_aula_json, periodo, propuesta_gdp, estado_sancion_gdp, situacion_final_gdp,
+              es_vacante_nn, tipo_vacante, justificacion_vacante, vacante_condicional
+            ) VALUES (?, ?, ?, ?, ?, NULL, 'CONTRATA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'Vacante por proveer', 'Pendiente', 'Vigente', 1, 'REBOTE_MOVILIDAD', ?, 0);`,
+            [
+              reboteId,
+              p.rbdOrigen,
+              reboteRun,
+              'VACANTE REBOTE',
+              (reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal || 'DOCENTE AULA').toUpperCase(),
+              docenteOrigen.estamento || 'DOCENTE_AULA',
+              horasReb,
+              normFuentesReb.subvGenTitular,
+              normFuentesReb.subvGenContrata,
+              normFuentesReb.sepTitular,
+              normFuentesReb.sepContrata,
+              normFuentesReb.pieTitular,
+              normFuentesReb.pieContrata,
+              docenteOrigen.horasDirectivas || 0,
+              docenteOrigen.horasInspectorGeneral || 0,
+              docenteOrigen.horasTecnicoPedagogicas || 0,
+              docenteOrigen.horasCoordinacion || 0,
+              docenteOrigen.tipoCoordinacion || null,
+              docenteOrigen.horasCoordinacionPie || 0,
+              docenteOrigen.horasConvivenciaEscolar || 0,
+              docenteOrigen.horasExtraescolar || 0,
+              docenteOrigen.cargoInstitucional || null,
+              docenteOrigen.horasTallerSep || 0,
+              docenteOrigen.horasTrabajoColaborativo || 0,
+              reb.horasPedagogicasAula || docenteOrigen.horasAula || 0,
+              docenteOrigen.horasIngles || 0,
+              docenteOrigen.funcionPrincipal || null,
+              docenteOrigen.funcionSecundaria || null,
+              reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal || null,
+              funcionesNoAulaJson,
+              periodo,
+              `Vacante de rebote generada por traslado de ${docenteOrigen.nombres} ${docenteOrigen.apellidos} hacia RBD ${p.rbdDestino} (Escenario ${escenario.nombre}).`
+            ]
+          );
+
+          db.run(
+            `UPDATE asignaciones_horarias
+             SET docente_id = ?
+             WHERE docente_id = ? AND rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027));`,
+            [reboteId, docenteOrigen.id, p.rbdOrigen, periodo, periodo]
+          );
+          db.run(
+            `UPDATE asignaciones_horarias
+             SET co_docente_id = ?
+             WHERE co_docente_id = ? AND rbd = ? AND (periodo = ? OR (periodo IS NULL AND ? = 2027));`,
+            [reboteId, docenteOrigen.id, p.rbdOrigen, periodo, periodo]
+          );
+
+          if (horasReb >= docenteOrigen.horasContrato) {
+            db.run('DELETE FROM docentes WHERE id = ?;', [docenteOrigen.id]);
+            docentesEliminadosIds.push(docenteOrigen.id);
+          }
+
+          const reboteDocObj: Docente = {
+            id: reboteId,
+            rbd: p.rbdOrigen,
+            periodo,
+            run: reboteRun,
+            nombres: 'VACANTE REBOTE',
+            apellidos: (reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal || 'DOCENTE AULA').toUpperCase(),
+            calidadJuridica: 'CONTRATA',
+            estamento: docenteOrigen.estamento || 'DOCENTE_AULA',
+            horasContrato: horasReb,
+            horasSubvencionGeneralTitular: normFuentesReb.subvGenTitular,
+            horasSubvencionGeneralContrata: normFuentesReb.subvGenContrata,
+            horasSepTitular: normFuentesReb.sepTitular,
+            horasSepContrata: normFuentesReb.sepContrata,
+            horasPieTitular: normFuentesReb.pieTitular,
+            horasPieContrata: normFuentesReb.pieContrata,
+            horasDirectivas: docenteOrigen.horasDirectivas,
+            horasInspectorGeneral: docenteOrigen.horasInspectorGeneral,
+            horasTecnicoPedagogicas: docenteOrigen.horasTecnicoPedagogicas,
+            horasCoordinacion: docenteOrigen.horasCoordinacion,
+            horasTallerSep: docenteOrigen.horasTallerSep,
+            horasTrabajoColaborativo: docenteOrigen.horasTrabajoColaborativo,
+            horasCoordinacionPie: docenteOrigen.horasCoordinacionPie,
+            horasConvivenciaEscolar: docenteOrigen.horasConvivenciaEscolar,
+            horasExtraescolar: docenteOrigen.horasExtraescolar,
+            funcionesNoAula: reb.funcionesNoLectivasHeredadas,
+            asignaturaPrincipal: reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal,
+            esVacanteNn: true,
+            tipoVacante: 'REBOTE_MOVILIDAD',
+            vacanteCondicional: false
+          };
+          docentesActualizadosSyncMap.set(reboteId, reboteDocObj);
+          docMap.set(reboteId, reboteDocObj);
+          reboteIdByPropuesta.set(p.id, reboteId);
+          rebotesCreados++;
+          rbdsAfectadosSet.add(p.rbdOrigen);
         }
-
-        docentesActualizadosSync.push({
-          id: reboteId,
-          rbd: p.rbdOrigen,
-          periodo,
-          run: reboteRun,
-          nombres: 'VACANTE REBOTE',
-          apellidos: (reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal || 'DOCENTE AULA').toUpperCase(),
-          calidadJuridica: 'CONTRATA',
-          estamento: docenteOrigen.estamento || 'DOCENTE_AULA',
-          horasContrato: horasReb,
-          horasSubvencionGeneralTitular: normFuentesReb.subvGenTitular,
-          horasSubvencionGeneralContrata: normFuentesReb.subvGenContrata,
-          horasSepTitular: normFuentesReb.sepTitular,
-          horasSepContrata: normFuentesReb.sepContrata,
-          horasPieTitular: normFuentesReb.pieTitular,
-          horasPieContrata: normFuentesReb.pieContrata,
-          horasDirectivas: docenteOrigen.horasDirectivas,
-          horasInspectorGeneral: docenteOrigen.horasInspectorGeneral,
-          horasTecnicoPedagogicas: docenteOrigen.horasTecnicoPedagogicas,
-          horasCoordinacion: docenteOrigen.horasCoordinacion,
-          horasTallerSep: docenteOrigen.horasTallerSep,
-          horasTrabajoColaborativo: docenteOrigen.horasTrabajoColaborativo,
-          horasCoordinacionPie: docenteOrigen.horasCoordinacionPie,
-          horasConvivenciaEscolar: docenteOrigen.horasConvivenciaEscolar,
-          horasExtraescolar: docenteOrigen.horasExtraescolar,
-          funcionesNoAula: reb.funcionesNoLectivasHeredadas,
-          asignaturaPrincipal: reb.asignaturaPrincipal || docenteOrigen.asignaturaPrincipal,
-          esVacanteNn: true,
-          tipoVacante: 'REBOTE_MOVILIDAD',
-          vacanteCondicional: false
-        });
-
-        rebotesCreados++;
-        rbdsAfectadosSet.add(p.rbdOrigen);
       }
 
-      // 3. Marcar propuesta y solicitud como CONSOLIDADAS
-      db.run("UPDATE propuestas_calce SET estado = 'CONSOLIDADA', updated_at = ? WHERE id = ?;", [nowIso, p.id]);
+      db.run("UPDATE propuestas_calce SET estado = 'CONSOLIDADA', updated_at = ? WHERE id = ?;", [
+        nowIso,
+        p.id
+      ]);
       if (p.solicitudMovilidadId) {
-        db.run("UPDATE solicitudes_movilidad SET estado_flujo = 'CONSOLIDADO', updated_at = ? WHERE id = ?;", [
-          nowIso,
-          p.solicitudMovilidadId
-        ]);
+        db.run(
+          "UPDATE solicitudes_movilidad SET estado_flujo = 'CONSOLIDADO', updated_at = ? WHERE id = ?;",
+          [nowIso, p.solicitudMovilidadId]
+        );
         solicitudesConsolidadasIds.push(p.solicitudMovilidadId);
       }
 
@@ -2390,10 +4667,41 @@ export async function consolidarEscenarioAprobado(params: {
 
     db.run(
       `UPDATE escenarios_calce
-       SET estado = 'CONSOLIDADO', consolidado_por = ?, fecha_consolidacion = ?, updated_at = ?
+       SET estado = 'CONSOLIDADO',
+           version = ?,
+           consolidado_por = ?,
+           fecha_consolidacion = ?,
+           updated_at = ?
        WHERE id = ?;`,
-      [params.usuarioActor, nowIso, nowIso, params.escenarioId]
+      [nuevaVersion, params.usuarioActor, nowIso, nowIso, params.escenarioId]
     );
+
+    if (modoEjecucion === 'SUPABASE_RPC') {
+      for (const rbd of rbdsAfectadosSet) {
+        const audId = `aud_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        db.run(
+          `INSERT INTO auditoria_cambios (id, rbd, periodo, tipo_evento, entidad, entidad_id, descripcion, detalles_json, fecha_hora)
+           VALUES (?, ?, ?, 'TRASPASO', 'DOTACION_COMPLETA', ?, ?, ?, ?);`,
+          [
+            audId,
+            rbd,
+            periodo,
+            params.escenarioId,
+            `Consolidación atómica RPC de escenario '${escenario.nombre}' por ${params.usuarioActor}: ${vacantesReemplazadas} vacante(s) cubiertas y ${rebotesCreados} vacante(s) de rebote.`,
+            JSON.stringify({
+              escenarioId: params.escenarioId,
+              usuarioActor: params.usuarioActor,
+              rolActor: params.rolActor,
+              propuestasConsolidadas,
+              vacantesReemplazadas,
+              rebotesCreados,
+              nuevaVersion
+            }),
+            nowIso
+          ]
+        );
+      }
+    }
 
     db.run('COMMIT;');
   } catch (err) {
@@ -2405,59 +4713,87 @@ export async function consolidarEscenarioAprobado(params: {
 
   const rbdsAfectados = Array.from(rbdsAfectadosSet);
 
-  for (const rbd of rbdsAfectados) {
-    await registrarEventoAuditoria({
-      rbd,
-      periodo,
-      tipoEvento: 'TRASPASO',
-      entidad: 'DOTACION_COMPLETA',
-      entidadId: params.escenarioId,
-      descripcion: `Consolidación atómica de escenario '${escenario.nombre}' por ${params.usuarioActor}: ${vacantesReemplazadas} vacante(s) cubiertas y ${rebotesCreados} vacante(s) de rebote.`,
-      detalles: {
-        escenarioId: params.escenarioId,
-        usuarioActor: params.usuarioActor,
-        rolActor: params.rolActor,
-        propuestasConsolidadas,
-        vacantesReemplazadas,
-        rebotesCreados
+  if (modoEjecucion === 'SQLITE_LOCAL') {
+    for (const rbd of rbdsAfectados) {
+      await registrarEventoAuditoria({
+        rbd,
+        periodo,
+        tipoEvento: 'TRASPASO',
+        entidad: 'DOTACION_COMPLETA',
+        entidadId: params.escenarioId,
+        descripcion: `Consolidación atómica de escenario '${escenario.nombre}' por ${params.usuarioActor}: ${vacantesReemplazadas} vacante(s) cubiertas y ${rebotesCreados} vacante(s) de rebote.`,
+        detalles: {
+          escenarioId: params.escenarioId,
+          usuarioActor: params.usuarioActor,
+          rolActor: params.rolActor,
+          propuestasConsolidadas,
+          vacantesReemplazadas,
+          rebotesCreados,
+          nuevaVersion
+        }
+      });
+    }
+
+    if (isSupabaseEnabled()) {
+      const docentesSync = Array.from(docentesActualizadosSyncMap.values());
+      if (docentesSync.length > 0) {
+        SupabaseDotacionService.guardarDocentesBatch(docentesSync).catch(err =>
+          console.warn(
+            '[movilidadTerritorialService] Aviso sync docentes consolidación Supabase:',
+            err
+          )
+        );
       }
-    });
-  }
-
-  if (isSupabaseEnabled()) {
-    if (docentesActualizadosSync.length > 0) {
-      SupabaseDotacionService.guardarDocentesBatch(docentesActualizadosSync).catch(err =>
-        console.warn('[movilidadTerritorialService] Aviso sync docentes consolidación Supabase:', err)
-      );
-    }
-    for (const delId of docentesEliminadosIds) {
-      SupabaseDotacionService.eliminarDocente(delId).catch(err =>
-        console.warn('[movilidadTerritorialService] Aviso delete docente origen Supabase:', err)
-      );
-    }
-    supabase
-      .from('escenarios_calce')
-      .update({
-        estado: 'CONSOLIDADO',
-        consolidado_por: params.usuarioActor,
-        fecha_consolidacion: nowIso,
-        updated_at: nowIso
-      })
-      .eq('id', params.escenarioId)
-      .then(() => {}, () => {});
-
-    supabase
-      .from('propuestas_calce')
-      .update({ estado: 'CONSOLIDADA', updated_at: nowIso })
-      .eq('escenario_id', params.escenarioId)
-      .then(() => {}, () => {});
-
-    if (solicitudesConsolidadasIds.length > 0) {
+      for (const delId of docentesEliminadosIds) {
+        SupabaseDotacionService.eliminarDocente(delId).catch(err =>
+          console.warn(
+            '[movilidadTerritorialService] Aviso delete docente origen Supabase:',
+            err
+          )
+        );
+      }
+      const asistentesSync = Array.from(asistentesActualizadosSyncMap.values());
+      if (asistentesSync.length > 0) {
+        SupabaseDotacionService.guardarAsistentesBatch(asistentesSync).catch(err =>
+          console.warn(
+            '[movilidadTerritorialService] Aviso sync asistentes consolidación Supabase:',
+            err
+          )
+        );
+      }
+      for (const delAstId of asistentesEliminadosIds) {
+        SupabaseDotacionService.eliminarAsistente(delAstId).catch(err =>
+          console.warn(
+            '[movilidadTerritorialService] Aviso delete asistente origen Supabase:',
+            err
+          )
+        );
+      }
       supabase
-        .from('solicitudes_movilidad')
-        .update({ estado_flujo: 'CONSOLIDADO', updated_at: nowIso })
-        .in('id', solicitudesConsolidadasIds)
+        .from('escenarios_calce')
+        .update({
+          estado: 'CONSOLIDADO',
+          version: nuevaVersion,
+          consolidado_por: params.usuarioActor,
+          fecha_consolidacion: nowIso,
+          updated_at: nowIso
+        })
+        .eq('id', params.escenarioId)
         .then(() => {}, () => {});
+
+      supabase
+        .from('propuestas_calce')
+        .update({ estado: 'CONSOLIDADA', updated_at: nowIso })
+        .eq('escenario_id', params.escenarioId)
+        .then(() => {}, () => {});
+
+      if (solicitudesConsolidadasIds.length > 0) {
+        supabase
+          .from('solicitudes_movilidad')
+          .update({ estado_flujo: 'CONSOLIDADO', updated_at: nowIso })
+          .in('id', solicitudesConsolidadasIds)
+          .then(() => {}, () => {});
+      }
     }
   }
 
@@ -2465,6 +4801,364 @@ export async function consolidarEscenarioAprobado(params: {
     propuestasConsolidadas,
     vacantesReemplazadas,
     rebotesCreados,
-    rbdsAfectados
+    rbdsAfectados,
+    nuevaVersion,
+    modoEjecucion
   };
+}
+
+/**
+ * Registra la Resolución Exenta formal sobre un escenario previamente CONSOLIDADO,
+ * transicionando el escenario y sus solicitudes vinculadas a 'RESOLUCION_EMITIDA',
+ * manteniendo propuestas en 'CONSOLIDADA' con trazabilidad documental e incrementando versión.
+ */
+export async function registrarResolucionExentaEscenario(params: {
+  escenarioId: string;
+  numeroResolucion: string;
+  fechaResolucion: string;
+  fechaVigencia?: string;
+  rolActor: RolId;
+  usuarioActor?: string;
+  expectedVersion?: number;
+}): Promise<{
+  escenario: EscenarioCalce;
+  propuestasActualizadas: number;
+  solicitudesActualizadas: number;
+}> {
+  assertRolValidadorGdp(
+    params.rolActor,
+    'registrar resolución exenta sobre un escenario consolidado'
+  );
+
+  const numResClean = String(params.numeroResolucion || '').trim();
+  const fechaResClean = String(params.fechaResolucion || '').trim();
+  const fechaVigClean = params.fechaVigencia ? String(params.fechaVigencia).trim() : undefined;
+
+  if (!numResClean) {
+    throw new Error('Debe ingresar un número de Resolución Exenta válido.');
+  }
+  if (!fechaResClean) {
+    throw new Error('Debe ingresar la fecha de emisión de la Resolución Exenta.');
+  }
+
+  const db = await getDb();
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    params.escenarioId
+  ]);
+  if (!escRes.length || !escRes[0].values.length) {
+    throw new Error(`Escenario '${params.escenarioId}' no encontrado.`);
+  }
+  const escenario = mapRowToEscenario(escRes[0].values[0]);
+
+  if (escenario.estado !== 'CONSOLIDADO' && escenario.estado !== 'RESOLUCION_EMITIDA') {
+    throw new Error(
+      `El escenario '${escenario.nombre}' debe estar en estado CONSOLIDADO antes de emitir Resolución Exenta (estado actual: ${escenario.estado}).`
+    );
+  }
+
+  const versionAnterior = escenario.version ?? 1;
+  if (params.expectedVersion !== undefined && versionAnterior !== params.expectedVersion) {
+    throw construirErrorConflictoVersion(params.expectedVersion, versionAnterior);
+  }
+
+  const propRes = db.exec(
+    `SELECT ${PROPUESTA_SELECT_COLS} FROM propuestas_calce WHERE escenario_id = ?;`,
+    [params.escenarioId]
+  );
+  const propuestas = propRes.length ? propRes[0].values.map(mapRowToPropuesta) : [];
+  const solicitudIds = Array.from(
+    new Set(propuestas.map(p => p.solicitudMovilidadId).filter(Boolean) as string[])
+  );
+
+  const nowIso = new Date().toISOString();
+  const nuevaVersion = versionAnterior + 1;
+
+  db.run('BEGIN TRANSACTION;');
+  try {
+    db.run(
+      `UPDATE escenarios_calce
+       SET estado = 'RESOLUCION_EMITIDA',
+           version = ?,
+           numero_resolucion = ?,
+           fecha_resolucion = ?,
+           fecha_vigencia = ?,
+           updated_at = ?
+       WHERE id = ?;`,
+      [
+        nuevaVersion,
+        numResClean,
+        fechaResClean,
+        fechaVigClean || null,
+        nowIso,
+        params.escenarioId
+      ]
+    );
+
+    db.run(
+      `UPDATE propuestas_calce
+       SET estado = 'CONSOLIDADA',
+           numero_resolucion = ?,
+           fecha_resolucion = ?,
+           fecha_vigencia = ?,
+           updated_at = ?
+       WHERE escenario_id = ?;`,
+      [numResClean, fechaResClean, fechaVigClean || null, nowIso, params.escenarioId]
+    );
+
+    for (const solId of solicitudIds) {
+      db.run(
+        `UPDATE solicitudes_movilidad
+         SET estado_flujo = 'RESOLUCION_EMITIDA',
+             numero_resolucion = ?,
+             fecha_resolucion = ?,
+             fecha_vigencia = ?,
+             updated_at = ?
+         WHERE id = ?;`,
+        [numResClean, fechaResClean, fechaVigClean || null, nowIso, solId]
+      );
+    }
+
+    db.run('COMMIT;');
+  } catch (err) {
+    db.run('ROLLBACK;');
+    throw err;
+  }
+
+  await persistDb(true);
+
+  const rbdsAfectados = Array.from(
+    new Set(propuestas.flatMap(p => [p.rbdOrigen, p.rbdDestino]).filter(Boolean))
+  );
+  const actor = String(params.usuarioActor || 'Validador GDP').trim();
+
+  for (const rbd of rbdsAfectados) {
+    await registrarEventoAuditoria({
+      rbd,
+      periodo: escenario.periodo,
+      tipoEvento: 'ACTUALIZACION',
+      entidad: 'DOTACION_COMPLETA',
+      entidadId: escenario.id,
+      descripcion: `Emisión de Resolución Exenta ${numResClean} (${fechaResClean}) para escenario '${escenario.nombre}' por ${actor}.`,
+      detalles: {
+        escenarioId: escenario.id,
+        numeroResolucion: numResClean,
+        fechaResolucion: fechaResClean,
+        fechaVigencia: fechaVigClean,
+        usuarioActor: actor,
+        rolActor: params.rolActor,
+        nuevaVersion
+      }
+    });
+  }
+
+  const escenarioActualizado: EscenarioCalce = {
+    ...escenario,
+    estado: 'RESOLUCION_EMITIDA',
+    version: nuevaVersion,
+    numeroResolucion: numResClean,
+    fechaResolucion: fechaResClean,
+    fechaVigencia: fechaVigClean,
+    updatedAt: nowIso
+  };
+
+  if (isSupabaseEnabled()) {
+    supabase
+      .from('escenarios_calce')
+      .update({
+        estado: 'RESOLUCION_EMITIDA',
+        version: nuevaVersion,
+        numero_resolucion: numResClean,
+        fecha_resolucion: fechaResClean,
+        fecha_vigencia: fechaVigClean || null,
+        updated_at: nowIso
+      })
+      .eq('id', params.escenarioId)
+      .then(() => {}, (err: any) =>
+        console.warn('[movilidadTerritorialService] Aviso update resolución escenario Supabase:', err)
+      );
+
+    supabase
+      .from('propuestas_calce')
+      .update({
+        estado: 'CONSOLIDADA',
+        numero_resolucion: numResClean,
+        fecha_resolucion: fechaResClean,
+        fecha_vigencia: fechaVigClean || null,
+        updated_at: nowIso
+      })
+      .eq('escenario_id', params.escenarioId)
+      .then(() => {}, () => {});
+
+    if (solicitudIds.length > 0) {
+      supabase
+        .from('solicitudes_movilidad')
+        .update({
+          estado_flujo: 'RESOLUCION_EMITIDA',
+          numero_resolucion: numResClean,
+          fecha_resolucion: fechaResClean,
+          fecha_vigencia: fechaVigClean || null,
+          updated_at: nowIso
+        })
+        .in('id', solicitudIds)
+        .then(() => {}, () => {});
+    }
+  }
+
+  return {
+    escenario: escenarioActualizado,
+    propuestasActualizadas: propuestas.length,
+    solicitudesActualizadas: solicitudIds.length
+  };
+}
+
+/**
+ * Genera el libro Excel oficial (.xlsx) de Nómina de Actos Administrativos GDP y Rebotes
+ * con dos hojas: 'Actos Destinación y Traslado' y 'Rebotes y Concursos GDP'.
+ */
+export async function exportarNominaActosAdministrativosGdp(params: {
+  escenarioId: string;
+  periodo?: number;
+  rolActor: RolId;
+}): Promise<Uint8Array> {
+  assertRolNivelCentral(params.rolActor, 'exportar nómina de actos administrativos GDP');
+
+  const db = await getDb();
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    params.escenarioId
+  ]);
+  if (!escRes.length || !escRes[0].values.length) {
+    throw new Error(`Escenario '${params.escenarioId}' no encontrado.`);
+  }
+  const escenario = mapRowToEscenario(escRes[0].values[0]);
+  const periodo = params.periodo || escenario.periodo || 2027;
+
+  const [propuestas, establecimientos, solicitudes] = await Promise.all([
+    listarPropuestasEscenario(params.escenarioId, params.rolActor),
+    listarEstablecimientos(),
+    listarSolicitudesMovilidad(periodo, params.rolActor)
+  ]);
+
+  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
+  const solMap = new Map<string, SolicitudMovilidad>(solicitudes.map(s => [s.id, s]));
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'SLEP Valle Diguillín - Mesa de Movilidad';
+  workbook.created = new Date();
+
+  const wsActos = workbook.addWorksheet('Actos Destinación y Traslado');
+  wsActos.columns = [
+    { header: 'N°', key: 'nro', width: 6 },
+    { header: 'Escenario', key: 'escenario', width: 28 },
+    { header: 'Estado Escenario', key: 'estadoEscenario', width: 20 },
+    { header: 'N° Resolución Exenta', key: 'numeroResolucion', width: 22 },
+    { header: 'Fecha Resolución', key: 'fechaResolucion', width: 16 },
+    { header: 'Fecha Vigencia', key: 'fechaVigencia', width: 16 },
+    { header: 'Estamento Personal', key: 'estamento', width: 18 },
+    { header: 'RUN Funcionario', key: 'run', width: 15 },
+    { header: 'Nombre Funcionario', key: 'nombre', width: 30 },
+    { header: 'RBD Origen', key: 'rbdOrigen', width: 12 },
+    { header: 'Establecimiento Origen', key: 'estOrigen', width: 32 },
+    { header: 'RBD Destino', key: 'rbdDestino', width: 12 },
+    { header: 'Establecimiento Destino', key: 'estDestino', width: 32 },
+    { header: 'Carril Movilidad', key: 'carril', width: 28 },
+    { header: 'Tipo Cobertura', key: 'tipoCobertura', width: 24 },
+    { header: 'Horas Asignadas', key: 'horas', width: 16 },
+    { header: 'Minutos Asignados', key: 'minutos', width: 18 },
+    { header: 'Horas Titular / Indef.', key: 'horasTit', width: 18 },
+    { header: 'Horas Contrata / PF', key: 'horasCon', width: 18 },
+    { header: 'Fuente Destino', key: 'fuente', width: 22 },
+    { header: 'Estado Propuesta', key: 'estadoProp', width: 16 },
+    { header: 'Alertas Normativas', key: 'alertas', width: 45 }
+  ];
+
+  const headerStyle = (ws: ExcelJS.Worksheet) => {
+    const row = ws.getRow(1);
+    row.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    row.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E293B' }
+    };
+    row.commit();
+  };
+  headerStyle(wsActos);
+
+  propuestas.forEach((p, idx) => {
+    const sol = p.solicitudMovilidadId ? solMap.get(p.solicitudMovilidadId) : undefined;
+    const estOrig = estMap.get(p.rbdOrigen);
+    const estDest = estMap.get(p.rbdDestino);
+    const horasTit = Math.round((p.minutosTitularesOrigen ?? 0) / 60);
+    const horasCon = Math.round((p.minutosContrataOrigen ?? 0) / 60);
+
+    wsActos.addRow({
+      nro: idx + 1,
+      escenario: sanitizeExcelText(escenario.nombre),
+      estadoEscenario: escenario.estado,
+      numeroResolucion: sanitizeExcelText(p.numeroResolucion || escenario.numeroResolucion || 'PENDIENTE'),
+      fechaResolucion: sanitizeExcelText(p.fechaResolucion || escenario.fechaResolucion || ''),
+      fechaVigencia: sanitizeExcelText(p.fechaVigencia || escenario.fechaVigencia || ''),
+      estamento: p.estamentoPersonal || 'DOCENTE',
+      run: sanitizeExcelText(p.runDocente),
+      nombre: sanitizeExcelText(p.nombreDocente),
+      rbdOrigen: sanitizeExcelText(p.rbdOrigen),
+      estOrigen: sanitizeExcelText(estOrig?.nombre || `RBD ${p.rbdOrigen}`),
+      rbdDestino: sanitizeExcelText(p.rbdDestino),
+      estDestino: sanitizeExcelText(estDest?.nombre || `RBD ${p.rbdDestino}`),
+      carril: sanitizeExcelText(sol?.carril || 'MOVILIDAD_DIRECTA'),
+      tipoCobertura: p.tipoCobertura,
+      horas: p.horasAsignadas,
+      minutos: p.minutosAsignados,
+      horasTit,
+      horasCon,
+      fuente: p.fuenteDestino,
+      estadoProp: p.estado,
+      alertas: sanitizeExcelText((p.alertasNormativas || []).join(' | '))
+    });
+  });
+
+  const wsRebotes = workbook.addWorksheet('Rebotes y Concursos GDP');
+  wsRebotes.columns = [
+    { header: 'N°', key: 'nro', width: 6 },
+    { header: 'Propuesta Origen ID', key: 'propId', width: 28 },
+    { header: 'RBD Origen (Vacante Rebote)', key: 'rbdOrigen', width: 22 },
+    { header: 'Establecimiento Origen', key: 'estOrigen', width: 32 },
+    { header: 'RUN Funcionario Saliente', key: 'run', width: 16 },
+    { header: 'Nombre Funcionario Saliente', key: 'nombre', width: 30 },
+    { header: 'Estamento Personal', key: 'estamento', width: 18 },
+    { header: 'Asignatura / Cargo Rebote', key: 'asignatura', width: 28 },
+    { header: 'Horas Rebote', key: 'horas', width: 14 },
+    { header: 'Minutos Rebote', key: 'minutos', width: 16 },
+    { header: 'Fuente Financiamiento', key: 'fuente', width: 22 },
+    { header: 'Estado Resolución Rebote', key: 'estadoRebote', width: 28 },
+    { header: 'Propuesta Cobertura Cadena ID', key: 'cubreId', width: 28 },
+    { header: 'N° Resolución Exenta', key: 'numeroResolucion', width: 22 },
+    { header: 'Funciones Intransferibles Detectadas', key: 'intransferibles', width: 42 }
+  ];
+  headerStyle(wsRebotes);
+
+  const propuestasConRebote = propuestas.filter(p => p.generaRebote);
+  propuestasConRebote.forEach((p, idx) => {
+    const estOrig = estMap.get(p.rbdOrigen);
+    const reb = p.vacanteRebote;
+    wsRebotes.addRow({
+      nro: idx + 1,
+      propId: p.id,
+      rbdOrigen: sanitizeExcelText(p.rbdOrigen),
+      estOrigen: sanitizeExcelText(estOrig?.nombre || `RBD ${p.rbdOrigen}`),
+      run: sanitizeExcelText(p.runDocente),
+      nombre: sanitizeExcelText(p.nombreDocente),
+      estamento: p.estamentoPersonal || 'DOCENTE',
+      asignatura: sanitizeExcelText(reb?.asignaturaPrincipal || ''),
+      horas: reb?.horasContratoRebote ?? p.horasAsignadas,
+      minutos: reb?.minutosContratoRebote ?? p.minutosAsignados,
+      fuente: reb?.fuenteFinanciamiento || p.fuenteDestino,
+      estadoRebote: p.estadoResolucionRebote || 'PENDIENTE',
+      cubreId: sanitizeExcelText(p.reboteCubiertoPorPropuestaId || ''),
+      numeroResolucion: sanitizeExcelText(p.numeroResolucion || escenario.numeroResolucion || 'PENDIENTE'),
+      intransferibles: sanitizeExcelText((reb?.funcionesIntransferiblesDetectadas || []).join(' | '))
+    });
+  });
+
+  const outBuffer = await workbook.xlsx.writeBuffer();
+  return new Uint8Array(outBuffer);
 }

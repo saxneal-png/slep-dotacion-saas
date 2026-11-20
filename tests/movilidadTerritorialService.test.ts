@@ -4,8 +4,10 @@ import {
   guardarEstablecimiento,
   guardarCurso,
   guardarDocente,
+  guardarAsistente,
   guardarAsignacion,
   listarDocentes,
+  listarAsistentes,
   listarAsignaciones,
   listarEventosAuditoria,
   reiniciarTodaLaBaseDatos
@@ -21,17 +23,23 @@ import {
   listarEgresosProyectados,
   guardarEgresoProyectado,
   eliminarEgresoProyectado,
+  reincorporarTitularContingencia,
   listarSolicitudesMovilidad,
   guardarSolicitudMovilidad,
   avanzarEstadoFlujoMovilidad,
   detectarDocentesHorasRemanentes,
+  detectarAsistentesIndefinidosNoContinuidad,
+  calcularProyeccionTechoPisoHoras,
   listarEscenariosCalce,
   crearEscenarioCalce,
   duplicarEscenarioCalce,
   listarPropuestasEscenario,
   agregarPropuestaCalce,
+  resolverRebotePropuestaCalce,
   generarSugerenciasCalceAutomatico,
-  consolidarEscenarioAprobado
+  consolidarEscenarioAprobado,
+  registrarResolucionExentaEscenario,
+  exportarNominaActosAdministrativosGdp
 } from '../src/services/movilidadTerritorialService';
 import {
   analizarSincronizacionDotacion,
@@ -49,7 +57,7 @@ import {
   actualizarFeatureFlagsMovilidad,
   FEATURE_FLAGS_MOVILIDAD_DEFAULT
 } from '../src/services/configuracionGeneralService';
-import { CursoSae, Docente, Establecimiento } from '../src/types';
+import { AsistenteEducacion, CursoSae, Docente, Establecimiento } from '../src/types';
 
 const PERIODO = 2027;
 const RBD_A = '88101';
@@ -677,6 +685,7 @@ describe('movilidadTerritorialService - Mesa de Movilidad Territorial y Continge
 
     expect(propuesta.bloqueaConsolidacion).toBe(false);
     expect(propuesta.generaRebote).toBe(true);
+    expect(propuesta.estadoResolucionRebote).toBe('PENDIENTE');
     expect(propuesta.vacanteRebote).toBeDefined();
     expect(propuesta.vacanteRebote!.horasContratoRebote).toBe(30);
     expect(propuesta.vacanteRebote!.minutosContratoRebote).toBe(1800);
@@ -704,6 +713,23 @@ describe('movilidadTerritorialService - Mesa de Movilidad Territorial y Continge
       })
     ).rejects.toThrow(/Acceso denegado/);
 
+    // Debe bloquear consolidación mientras el NN-Rebote siga en estado PENDIENTE
+    await expect(
+      consolidarEscenarioAprobado({
+        escenarioId: escenario.id,
+        rolActor: 'subdirector_uatp',
+        usuarioActor: 'Subdirector UATP'
+      })
+    ).rejects.toThrow(/PENDIENTE/);
+
+    // Cierre explícito del NN-Rebote
+    const propResuelta = await resolverRebotePropuestaCalce({
+      propuestaId: propuesta.id,
+      estadoResolucion: 'DERIVADA_A_CONCURSO_GDP',
+      rolActor: 'asesor_uatp'
+    });
+    expect(propResuelta.estadoResolucionRebote).toBe('DERIVADA_A_CONCURSO_GDP');
+
     // Ejecución atómica por subdirector_uatp
     const resCons = await consolidarEscenarioAprobado({
       escenarioId: escenario.id,
@@ -715,6 +741,8 @@ describe('movilidadTerritorialService - Mesa de Movilidad Territorial y Continge
     expect(resCons.vacantesReemplazadas).toBe(1);
     expect(resCons.rebotesCreados).toBe(1);
     expect(resCons.rbdsAfectados.sort()).toEqual([RBD_A, RBD_B]);
+    expect(resCons.modoEjecucion).toBe('SQLITE_LOCAL');
+    expect(resCons.nuevaVersion).toBeGreaterThanOrEqual(2);
 
     // En Escuela B: el registro NN destino conserva su ID y asignaciones pero ahora tiene RUN y datos reales
     const docsB = await listarDocentes(RBD_B, PERIODO);
@@ -1008,5 +1036,860 @@ describe('movilidadTerritorialService - Mesa de Movilidad Territorial y Continge
     expect(sugerencias[0].docenteOrigenId).toBe(docConRemanente.id);
     expect(sugerencias[0].vacanteDestinoId).toBe(vacDest.id);
     expect(sugerencias[0].bloqueaConsolidacion).toBe(false);
+  });
+
+  it('8. Colisión de vacanteDestinoId, colisión de docenteOrigenId en traslado completo y acumulación parcial > 2640 min en agregarPropuestaCalce()', async () => {
+    const doc1: Docente = {
+      id: 'doc_col_1',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '15.432.109-8',
+      nombres: 'ANDREA',
+      apellidos: 'PEREZ',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30,
+      asignaturaPrincipal: 'Lenguaje'
+    };
+    const doc2: Docente = {
+      id: 'doc_col_2',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '11.222.333-9',
+      nombres: 'CARLOS',
+      apellidos: 'LAGOS',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30,
+      asignaturaPrincipal: 'Lenguaje'
+    };
+    const docParcial: Docente = {
+      id: 'doc_col_parcial',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '13.444.555-6',
+      nombres: 'SOFIA',
+      apellidos: 'ARAYA',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 20,
+      horasSubvencionGeneralContrata: 20,
+      asignaturaPrincipal: 'Matemática'
+    };
+
+    const vacB1: Docente = {
+      id: 'vac_col_b1',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-1001`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'LENGUAJE',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralContrata: 30,
+      asignaturaPrincipal: 'Lenguaje',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+    const vacB2: Docente = {
+      id: 'vac_col_b2',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-1002`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'LENGUAJE 2',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralContrata: 30,
+      asignaturaPrincipal: 'Lenguaje',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+    const vacParcial1: Docente = {
+      id: 'vac_col_p1',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-1003`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'MATEMATICA 1',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 16,
+      horasSubvencionGeneralContrata: 16,
+      asignaturaPrincipal: 'Matemática',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+    const vacParcial2: Docente = {
+      id: 'vac_col_p2',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-1004`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'MATEMATICA 2',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 14,
+      horasSubvencionGeneralContrata: 14,
+      asignaturaPrincipal: 'Matemática',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+
+    await guardarDocente(doc1);
+    await guardarDocente(doc2);
+    await guardarDocente(docParcial);
+    await guardarDocente(vacB1);
+    await guardarDocente(vacB2);
+    await guardarDocente(vacParcial1);
+    await guardarDocente(vacParcial2);
+
+    const esc = await crearEscenarioCalce({ periodo: PERIODO, nombre: 'Escenario Colisiones' }, 'asesor_uatp');
+
+    // 8A: Colisión de vacanteDestinoId
+    await agregarPropuestaCalce(
+      {
+        escenarioId: esc.id,
+        periodo: PERIODO,
+        docenteOrigenId: doc1.id,
+        vacanteDestinoId: vacB1.id,
+        esTrasladoCompleto: true
+      },
+      'asesor_uatp'
+    );
+
+    await expect(
+      agregarPropuestaCalce(
+        {
+          escenarioId: esc.id,
+          periodo: PERIODO,
+          docenteOrigenId: doc2.id,
+          vacanteDestinoId: vacB1.id,
+          esTrasladoCompleto: true
+        },
+        'asesor_uatp'
+      )
+    ).rejects.toThrow(/Colisión de vacante/i);
+
+    // 8B: Colisión de docenteOrigenId en traslado completo
+    await expect(
+      agregarPropuestaCalce(
+        {
+          escenarioId: esc.id,
+          periodo: PERIODO,
+          docenteOrigenId: doc1.id,
+          vacanteDestinoId: vacB2.id,
+          esTrasladoCompleto: true
+        },
+        'asesor_uatp'
+      )
+    ).rejects.toThrow(/Colisión de docente/i);
+
+    // 8C: Acumulación parcial (20h conservadas + 16h = 2160 min OK; luego + 14h = 3000 min > 2640 min)
+    const propParcial1 = await agregarPropuestaCalce(
+      {
+        escenarioId: esc.id,
+        periodo: PERIODO,
+        docenteOrigenId: docParcial.id,
+        vacanteDestinoId: vacParcial1.id,
+        esTrasladoCompleto: false
+      },
+      'asesor_uatp'
+    );
+    expect(propParcial1.bloqueaConsolidacion).toBe(false);
+    expect(propParcial1.minutosAsignados).toBe(960);
+
+    await expect(
+      agregarPropuestaCalce(
+        {
+          escenarioId: esc.id,
+          periodo: PERIODO,
+          docenteOrigenId: docParcial.id,
+          vacanteDestinoId: vacParcial2.id,
+          esTrasladoCompleto: false
+        },
+        'asesor_uatp'
+      )
+    ).rejects.toThrow(/2640|Colisión de jornada/i);
+  });
+
+  it('9. Candado de máquina de estados en consolidarEscenarioAprobado() cuando TRASLADO_VOLUNTARIO sigue en POSTULADO', async () => {
+    const docOrigen: Docente = {
+      id: 'doc_estado_1',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '17.654.321-3',
+      nombres: 'PAULA',
+      apellidos: 'DIAZ',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30,
+      asignaturaPrincipal: 'Historia'
+    };
+    const vacDest: Docente = {
+      id: 'vac_estado_1',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-2001`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'HISTORIA',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralContrata: 30,
+      asignaturaPrincipal: 'Historia',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+
+    await guardarDocente(docOrigen);
+    await guardarDocente(vacDest);
+
+    const sol = await guardarSolicitudMovilidad(
+      {
+        periodo: PERIODO,
+        carril: 'TRASLADO_VOLUNTARIO',
+        docenteId: docOrigen.id,
+        runDocente: docOrigen.run,
+        nombreDocente: 'PAULA DIAZ',
+        rbdOrigen: RBD_A,
+        calidadJuridica: 'TITULAR',
+        horasContratoActual: 30,
+        horasTitularesActuales: 30,
+        horasDisponiblesMover: 30,
+        horasRemanentes: 0,
+        asignaturaPrincipal: 'Historia',
+        fuenteActual: 'SUBVENCION_GENERAL',
+        estadoFlujo: 'POSTULADO',
+        puntajeSalud: 20,
+        puntajeLeyKarin: 0,
+        puntajeCuidadoDependientes: 0,
+        puntajeDistanciaRural: 0,
+        puntajeAntiguedad: 40
+      },
+      'asesor_uatp'
+    );
+
+    const esc = await crearEscenarioCalce({ periodo: PERIODO, nombre: 'Candado Estados' }, 'asesor_uatp');
+    const prop = await agregarPropuestaCalce(
+      {
+        escenarioId: esc.id,
+        periodo: PERIODO,
+        docenteOrigenId: docOrigen.id,
+        vacanteDestinoId: vacDest.id,
+        solicitudMovilidadId: sol.id,
+        esTrasladoCompleto: true
+      },
+      'asesor_uatp'
+    );
+    await resolverRebotePropuestaCalce({
+      propuestaId: prop.id,
+      estadoResolucion: 'DERIVADA_A_CONCURSO_GDP',
+      rolActor: 'asesor_uatp'
+    });
+
+    await expect(
+      consolidarEscenarioAprobado({
+        escenarioId: esc.id,
+        rolActor: 'super_usuario',
+        usuarioActor: 'Super Usuario'
+      })
+    ).rejects.toThrow(/ACEPTADO_CON_FIRMA/);
+  });
+
+  it('10. Preservación de desglose mixto (30h Titular + 14h Contrata) al consolidar en vacante 44h', async () => {
+    const docMixto: Docente = {
+      id: 'doc_mixto_44',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '18.234.567-9',
+      nombres: 'JORGE',
+      apellidos: 'FUENTES',
+      titulo: 'Profesor de Matemática',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 30,
+      horasSubvencionGeneralContrata: 0,
+      horasSepTitular: 0,
+      horasSepContrata: 14,
+      asignaturaPrincipal: 'Matemática'
+    };
+    const vac44: Docente = {
+      id: 'vac_mixto_dest_44',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-3001`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'MATEMATICA 44H',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44,
+      horasSubvencionGeneralContrata: 44,
+      asignaturaPrincipal: 'Matemática',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+
+    await guardarDocente(docMixto);
+    await guardarDocente(vac44);
+
+    const sol = await guardarSolicitudMovilidad(
+      {
+        periodo: PERIODO,
+        carril: 'NO_CONTINUIDAD_TITULAR',
+        docenteId: docMixto.id,
+        runDocente: docMixto.run,
+        nombreDocente: 'JORGE FUENTES',
+        rbdOrigen: RBD_A,
+        calidadJuridica: 'TITULAR',
+        horasContratoActual: 44,
+        horasTitularesActuales: 30,
+        horasContrataActuales: 14,
+        horasDisponiblesMover: 44,
+        horasRemanentes: 0,
+        asignaturaPrincipal: 'Matemática',
+        fuenteActual: 'MIXTO',
+        estadoFlujo: 'POSTULADO',
+        puntajeSalud: 0,
+        puntajeLeyKarin: 0,
+        puntajeCuidadoDependientes: 0,
+        puntajeDistanciaRural: 0,
+        puntajeAntiguedad: 50
+      },
+      'asesor_uatp'
+    );
+    await avanzarEstadoFlujoMovilidad(sol.id, 'PRE_ASIGNADO', 'asesor_uatp');
+    await avanzarEstadoFlujoMovilidad(sol.id, 'NOTIFICADO_DIRECCION_ORIGEN', 'asesor_uatp');
+
+    const esc = await crearEscenarioCalce({ periodo: PERIODO, nombre: 'Mixto 30+14' }, 'asesor_uatp');
+    const prop = await agregarPropuestaCalce(
+      {
+        escenarioId: esc.id,
+        periodo: PERIODO,
+        docenteOrigenId: docMixto.id,
+        vacanteDestinoId: vac44.id,
+        solicitudMovilidadId: sol.id,
+        esTrasladoCompleto: true
+      },
+      'asesor_uatp'
+    );
+
+    expect(prop.minutosTitularesOrigen).toBe(1800);
+    expect(prop.minutosContrataOrigen).toBe(840);
+    expect(prop.bloqueaConsolidacion).toBe(false);
+
+    await resolverRebotePropuestaCalce({
+      propuestaId: prop.id,
+      estadoResolucion: 'DERIVADA_A_CONCURSO_GDP',
+      rolActor: 'asesor_uatp'
+    });
+
+    const cons = await consolidarEscenarioAprobado({
+      escenarioId: esc.id,
+      rolActor: 'subdirector_uatp',
+      usuarioActor: 'Subdirector UATP'
+    });
+    expect(cons.vacantesReemplazadas).toBe(1);
+
+    const docsDest = await listarDocentes(RBD_B, PERIODO);
+    const jorgeDest = docsDest.find(d => d.id === vac44.id)!;
+    expect(jorgeDest).toBeDefined();
+    expect(jorgeDest.calidadJuridica).toBe('TITULAR');
+    expect(jorgeDest.horasSubvencionGeneralTitular).toBe(30);
+    expect(jorgeDest.horasSubvencionGeneralContrata).toBe(14);
+    expect(jorgeDest.horasSepTitular).toBe(0);
+    expect(jorgeDest.horasSepContrata).toBe(0);
+  });
+
+  it('11. Conflicto optimista de versión (expectedVersion obsoleto lanza CONFLICTO_VERSION)', async () => {
+    const doc1: Docente = {
+      id: 'doc_ver_1',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '15.123.456-9',
+      nombres: 'ELENA',
+      apellidos: 'ROJAS',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30,
+      asignaturaPrincipal: 'Lenguaje'
+    };
+    const vac1: Docente = {
+      id: 'vac_ver_1',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-4001`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'LENGUAJE',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralContrata: 30,
+      asignaturaPrincipal: 'Lenguaje',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+    const vac2: Docente = {
+      ...vac1,
+      id: 'vac_ver_2',
+      run: `VAC-${RBD_B}-4002`
+    };
+    await guardarDocente(doc1);
+    await guardarDocente(vac1);
+    await guardarDocente(vac2);
+
+    const esc = await crearEscenarioCalce({ periodo: PERIODO, nombre: 'Control Optimista' }, 'asesor_uatp');
+    expect(esc.version).toBe(1);
+
+    // Agregar propuesta con expectedVersion: 1 -> sube a v2
+    const prop = await agregarPropuestaCalce(
+      {
+        escenarioId: esc.id,
+        periodo: PERIODO,
+        docenteOrigenId: doc1.id,
+        vacanteDestinoId: vac1.id,
+        expectedVersion: 1
+      },
+      'asesor_uatp'
+    );
+
+    // Intentar agregar otra propuesta con expectedVersion obsoleto (1) -> CONFLICTO_VERSION
+    await expect(
+      agregarPropuestaCalce(
+        {
+          escenarioId: esc.id,
+          periodo: PERIODO,
+          docenteOrigenId: doc1.id,
+          vacanteDestinoId: vac2.id,
+          expectedVersion: 1
+        },
+        'asesor_uatp'
+      )
+    ).rejects.toThrow(/CONFLICTO_VERSION/);
+
+    // Intentar resolver rebote con expectedVersion obsoleto (1) -> CONFLICTO_VERSION
+    await expect(
+      resolverRebotePropuestaCalce({
+        propuestaId: prop.id,
+        estadoResolucion: 'DERIVADA_A_CONCURSO_GDP',
+        rolActor: 'asesor_uatp',
+        expectedVersion: 1
+      })
+    ).rejects.toThrow(/CONFLICTO_VERSION/);
+
+    await resolverRebotePropuestaCalce({
+      propuestaId: prop.id,
+      estadoResolucion: 'DERIVADA_A_CONCURSO_GDP',
+      rolActor: 'asesor_uatp',
+      expectedVersion: 2
+    });
+
+    // Consolidar con expectedVersion obsoleto (2, ya está en 3) -> CONFLICTO_VERSION
+    await expect(
+      consolidarEscenarioAprobado({
+        escenarioId: esc.id,
+        rolActor: 'super_usuario',
+        usuarioActor: 'Super Usuario',
+        expectedVersion: 2
+      })
+    ).rejects.toThrow(/CONFLICTO_VERSION/);
+  });
+
+  it('12. Reverso Controlado (reincorporarTitularContingencia) restituye titular + asignaciones_horarias y archiva cobertura condicional', async () => {
+    const titular: Docente = {
+      id: 'doc_rev_tit',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '15.123.450-K',
+      nombres: 'MATIAS',
+      apellidos: 'GONZALEZ',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30,
+      asignaturaPrincipal: 'Matemática',
+      propuestaGdp: 'Egreso proyectado',
+      situacionFinalGdp: 'Cese'
+    };
+    await guardarDocente(titular);
+
+    const resEgr = await guardarEgresoProyectado(
+      {
+        rbd: RBD_A,
+        periodo: PERIODO,
+        docenteId: titular.id,
+        runDocente: titular.run,
+        nombreDocente: 'MATIAS GONZALEZ',
+        asignaturaPrincipal: 'Matemática',
+        horasLiberadas: 30,
+        horasAulaLiberadas: 22,
+        fuenteFinanciamiento: 'SUBVENCION_GENERAL',
+        calidadJuridica: 'TITULAR',
+        causal: 'salud_incompatible_180d',
+        certeza: 'en_tramite',
+        excepcionJubilacion3Anios: false,
+        impactoPresupuestario: 'con_recuperacion_sil'
+      },
+      'gdp_validador',
+      true
+    );
+    const vacCond = resEgr.vacanteGenerada!;
+    expect(vacCond).toBeDefined();
+
+    // Asignación temporalmente apuntada a la vacante condicional
+    await guardarAsignacion({
+      id: 'asig_rev_1',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      cursoId: cursoA1.id,
+      docenteId: vacCond.id,
+      asignatura: 'Matemática',
+      horasPedagogicasAula: 10
+    });
+
+    // Asesor UATP no puede revertir (solo validador GDP o superior)
+    await expect(
+      reincorporarTitularContingencia({
+        egresoId: resEgr.egreso.id,
+        motivo: 'Alta médica COMPIN',
+        rolActor: 'asesor_uatp'
+      })
+    ).rejects.toThrow(/Acceso denegado/);
+
+    const revRes = await reincorporarTitularContingencia({
+      egresoId: resEgr.egreso.id,
+      motivo: 'Resolución COMPIN favorable: docente se reincorpora a sus funciones titulares',
+      rolActor: 'gdp_validador',
+      usuarioActor: 'Validador GDP'
+    });
+
+    expect(revRes.egreso.estadoReversion).toBe('REVERTIDO_REINCORPORADO');
+    expect(revRes.egreso.motivoReversion).toContain('COMPIN');
+    expect(revRes.asignacionesReapuntadas).toBe(1);
+    expect(revRes.docenteTitularRestituido?.situacionFinalGdp).toBe('Vigente');
+    expect(revRes.docenteTitularRestituido?.propuestaGdp).toBe('Continuidad');
+
+    const docsPost = await listarDocentes(RBD_A, PERIODO);
+    const vacArchivada = docsPost.find(d => d.id === vacCond.id)!;
+    expect(vacArchivada.esVacanteNn).toBe(false);
+    expect(vacArchivada.vacanteCondicional).toBe(false);
+    expect(vacArchivada.propuestaGdp).toBe('Archivado por Reincorporación Titular');
+    expect(vacArchivada.situacionFinalGdp).toBe('Cese');
+
+    const asigsPost = await listarAsignaciones(RBD_A, PERIODO);
+    expect(asigsPost[0].docenteId).toBe(titular.id);
+
+    const aud = await listarEventosAuditoria(RBD_A, PERIODO);
+    expect(aud.some(e => e.descripcion.includes('Reverso controlado'))).toBe(true);
+  });
+
+  it('13. registrarResolucionExentaEscenario (RESOLUCION_EMITIDA) y exportación ExcelJS de Actos GDP', async () => {
+    const docOrig: Docente = {
+      id: 'doc_res_1',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '16.789.012-1',
+      nombres: 'MARCELA',
+      apellidos: 'SILVA',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30,
+      asignaturaPrincipal: 'Ciencias Naturales'
+    };
+    const vacDest: Docente = {
+      id: 'vac_res_1',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-5001`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'CIENCIAS NATURALES',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralContrata: 30,
+      asignaturaPrincipal: 'Ciencias Naturales',
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+    await guardarDocente(docOrig);
+    await guardarDocente(vacDest);
+
+    const sol = await guardarSolicitudMovilidad(
+      {
+        periodo: PERIODO,
+        carril: 'TRASLADO_VOLUNTARIO',
+        docenteId: docOrig.id,
+        runDocente: docOrig.run,
+        nombreDocente: 'MARCELA SILVA',
+        rbdOrigen: RBD_A,
+        calidadJuridica: 'TITULAR',
+        horasContratoActual: 30,
+        horasTitularesActuales: 30,
+        horasDisponiblesMover: 30,
+        horasRemanentes: 0,
+        asignaturaPrincipal: 'Ciencias Naturales',
+        fuenteActual: 'SUBVENCION_GENERAL',
+        estadoFlujo: 'POSTULADO',
+        puntajeSalud: 50,
+        puntajeLeyKarin: 0,
+        puntajeCuidadoDependientes: 0,
+        puntajeDistanciaRural: 0,
+        puntajeAntiguedad: 40
+      },
+      'asesor_uatp'
+    );
+    await avanzarEstadoFlujoMovilidad(sol.id, 'PRE_ASIGNADO', 'asesor_uatp');
+    await avanzarEstadoFlujoMovilidad(sol.id, 'NOTIFICADO_DIRECCION_ORIGEN', 'asesor_uatp');
+    await avanzarEstadoFlujoMovilidad(sol.id, 'ACEPTADO_CON_FIRMA', 'asesor_uatp');
+
+    const esc = await crearEscenarioCalce({ periodo: PERIODO, nombre: 'Escenario Acto GDP' }, 'asesor_uatp');
+    const prop = await agregarPropuestaCalce(
+      {
+        escenarioId: esc.id,
+        periodo: PERIODO,
+        docenteOrigenId: docOrig.id,
+        vacanteDestinoId: vacDest.id,
+        solicitudMovilidadId: sol.id,
+        esTrasladoCompleto: true
+      },
+      'asesor_uatp'
+    );
+    await resolverRebotePropuestaCalce({
+      propuestaId: prop.id,
+      estadoResolucion: 'DERIVADA_A_CONCURSO_GDP',
+      rolActor: 'asesor_uatp'
+    });
+
+    await consolidarEscenarioAprobado({
+      escenarioId: esc.id,
+      rolActor: 'subdirector_uatp',
+      usuarioActor: 'Subdirector UATP'
+    });
+
+    // Asesor UATP no puede registrar resolución exenta
+    await expect(
+      registrarResolucionExentaEscenario({
+        escenarioId: esc.id,
+        numeroResolucion: 'RES-EX-1024/2027',
+        fechaResolucion: '2027-02-15',
+        rolActor: 'asesor_uatp'
+      })
+    ).rejects.toThrow(/Acceso denegado/);
+
+    const resEx = await registrarResolucionExentaEscenario({
+      escenarioId: esc.id,
+      numeroResolucion: 'RES-EX-1024/2027',
+      fechaResolucion: '2027-02-15',
+      fechaVigencia: '2027-03-01',
+      rolActor: 'gdp_validador',
+      usuarioActor: 'Validador GDP'
+    });
+
+    expect(resEx.escenario.estado).toBe('RESOLUCION_EMITIDA');
+    expect(resEx.escenario.numeroResolucion).toBe('RES-EX-1024/2027');
+    expect(resEx.escenario.fechaVigencia).toBe('2027-03-01');
+    expect(resEx.propuestasActualizadas).toBe(1);
+    expect(resEx.solicitudesActualizadas).toBe(1);
+
+    const propsPost = await listarPropuestasEscenario(esc.id, 'asesor_uatp');
+    expect(propsPost[0].estado).toBe('CONSOLIDADA');
+    expect(propsPost[0].numeroResolucion).toBe('RES-EX-1024/2027');
+
+    const solsPost = await listarSolicitudesMovilidad(PERIODO, 'asesor_uatp');
+    expect(solsPost[0].estadoFlujo).toBe('RESOLUCION_EMITIDA');
+    expect(solsPost[0].numeroResolucion).toBe('RES-EX-1024/2027');
+
+    // Validar exportación ExcelJS
+    const xlsxBytes = await exportarNominaActosAdministrativosGdp({
+      escenarioId: esc.id,
+      periodo: PERIODO,
+      rolActor: 'asesor_uatp'
+    });
+    expect(xlsxBytes.byteLength).toBeGreaterThan(0);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(xlsxBytes as any);
+    const wsActos = wb.getWorksheet('Actos Destinación y Traslado');
+    const wsRebotes = wb.getWorksheet('Rebotes y Concursos GDP');
+    expect(wsActos).toBeDefined();
+    expect(wsRebotes).toBeDefined();
+
+    const filaActo = wsActos!.getRow(2);
+    const textoFilaActo = filaActo.values ? JSON.stringify(filaActo.values) : '';
+    expect(textoFilaActo).toContain('RES-EX-1024/2027');
+    expect(textoFilaActo).toContain('MARCELA SILVA');
+
+    const filaRebote = wsRebotes!.getRow(2);
+    const textoFilaRebote = filaRebote.values ? JSON.stringify(filaRebote.values) : '';
+    expect(textoFilaRebote).toContain('DERIVADA_A_CONCURSO_GDP');
+    expect(textoFilaRebote).toContain(RBD_A);
+  });
+
+  it('14. detectarAsistentesIndefinidosNoContinuidad (Ley 21.109) y calcularProyeccionTechoPisoHoras (techo > piso con egreso condicional)', async () => {
+    const astIndefNc: AsistenteEducacion = {
+      id: 'ast_indef_nc',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '15.432.109-8',
+      nombres: 'CARLA',
+      apellidos: 'MUÑOZ',
+      cargoFuncion: 'Técnico en Párvulos',
+      estamento: 'TECNICO',
+      horasContrato: 44,
+      horasSubvencionGeneralIndefinido: 30,
+      horasSubvencionGeneralPlazoFijo: 14,
+      horasSepIndefinido: 0,
+      horasSepPlazoFijo: 0,
+      horasPieIndefinido: 0,
+      horasPiePlazoFijo: 0,
+      activo: true,
+      propuestaGdp: 'No continuidad por ajuste dotación',
+      observacionesDirector: 'Fusión de nivel NT1'
+    };
+    const astPlazoFijoNc: AsistenteEducacion = {
+      id: 'ast_pf_nc',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '12.345.678-5',
+      nombres: 'LUIS',
+      apellidos: 'TAPIA',
+      cargoFuncion: 'Auxiliar de Servicios',
+      estamento: 'AUXILIAR',
+      horasContrato: 44,
+      horasSubvencionGeneralIndefinido: 0,
+      horasSubvencionGeneralPlazoFijo: 44,
+      horasSepIndefinido: 0,
+      horasSepPlazoFijo: 0,
+      horasPieIndefinido: 0,
+      horasPiePlazoFijo: 0,
+      activo: true,
+      propuestaGdp: 'No continuidad'
+    };
+    const astIndefCont: AsistenteEducacion = {
+      id: 'ast_indef_cont',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: '10.005.711-5',
+      nombres: 'ROSA',
+      apellidos: 'VEGA',
+      cargoFuncion: 'Psicóloga',
+      estamento: 'PROFESIONAL',
+      horasContrato: 44,
+      horasSubvencionGeneralIndefinido: 44,
+      horasSubvencionGeneralPlazoFijo: 0,
+      horasSepIndefinido: 0,
+      horasSepPlazoFijo: 0,
+      horasPieIndefinido: 0,
+      horasPiePlazoFijo: 0,
+      activo: true,
+      propuestaGdp: 'Continuidad'
+    };
+
+    await guardarAsistente(astIndefNc);
+    await guardarAsistente(astPlazoFijoNc);
+    await guardarAsistente(astIndefCont);
+
+    const asistentesNc = await detectarAsistentesIndefinidosNoContinuidad(PERIODO, 'asesor_uatp');
+    expect(asistentesNc.length).toBe(1);
+    expect(asistentesNc[0].asistente.id).toBe(astIndefNc.id);
+    expect(asistentesNc[0].horasIndefinidas).toBe(30);
+    expect(asistentesNc[0].horasPlazoFijo).toBe(14);
+    expect(asistentesNc[0].razonGdp).toContain('Fusión de nivel NT1');
+
+    // Proyección Techo vs Piso con docente titular con egreso en_tramite y vacante condicional
+    const docTitular1: Docente = {
+      id: 'doc_tp_1',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '16.789.012-1',
+      nombres: 'ROBERTO',
+      apellidos: 'SILVA',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasSubvencionGeneralTitular: 30,
+      situacionFinalGdp: 'Vigente'
+    };
+    const docTitular2: Docente = {
+      id: 'doc_tp_2',
+      rbd: RBD_A,
+      periodo: PERIODO,
+      run: '14.555.666-K',
+      nombres: 'MARTA',
+      apellidos: 'RIVAS',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 44,
+      horasSubvencionGeneralTitular: 44,
+      situacionFinalGdp: 'Vigente'
+    };
+    const vacConfirmada: Docente = {
+      id: 'vac_tp_conf',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: `VAC-${RBD_B}-8001`,
+      nombres: 'VACANTE POR PROVEER',
+      apellidos: 'INGLES',
+      calidadJuridica: 'CONTRATA',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 22,
+      horasSubvencionGeneralContrata: 22,
+      esVacanteNn: true,
+      tipoVacante: 'NECESIDAD_ESCUELA',
+      vacanteCondicional: false
+    };
+
+    await guardarDocente(docTitular1);
+    await guardarDocente(docTitular2);
+    await guardarDocente(vacConfirmada);
+
+    await guardarEgresoProyectado(
+      {
+        rbd: RBD_A,
+        periodo: PERIODO,
+        docenteId: docTitular1.id,
+        runDocente: docTitular1.run,
+        nombreDocente: 'ROBERTO SILVA',
+        asignaturaPrincipal: 'Matemática',
+        horasLiberadas: 30,
+        horasAulaLiberadas: 22,
+        fuenteFinanciamiento: 'SUBVENCION_GENERAL',
+        calidadJuridica: 'TITULAR',
+        causal: 'renuncia_voluntaria',
+        certeza: 'en_tramite',
+        excepcionJubilacion3Anios: false,
+        impactoPresupuestario: 'costo_doble_pendiente'
+      },
+      'gdp_validador',
+      true
+    );
+
+    const proy = await calcularProyeccionTechoPisoHoras(PERIODO, 'asesor_uatp');
+    expect(proy.periodo).toBe(PERIODO);
+    expect(proy.horasContratadasActivas).toBe(74);
+    expect(proy.horasVacantesConfirmadasSinTitular).toBe(22);
+    expect(proy.horasVacantesCondicionales).toBe(30);
+    expect(proy.horasPisoSiEgresanCondicionales).toBe(96);
+    expect(proy.horasTechoAntes1Marzo).toBe(126);
+    expect(proy.horasTechoAntes1Marzo).toBeGreaterThan(proy.horasPisoSiEgresanCondicionales);
+    expect(proy.detallePorRbd.length).toBe(2);
+    const detA = proy.detallePorRbd.find(d => d.rbd === RBD_A)!;
+    expect(detA.horasTechoAntes1Marzo).toBeGreaterThan(detA.horasPisoSiEgresanCondicionales);
   });
 });

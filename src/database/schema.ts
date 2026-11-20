@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS establecimientos (
   subvencion_sep_mensual REAL DEFAULT 0,
   subvencion_pro_retencion REAL DEFAULT 0,
   cupo_horas_pie_diferencial REAL DEFAULT 0,
-  cupo_horas_pie_asistentes REAL DEFAULT 0
+  cupo_horas_pie_asistentes REAL DEFAULT 0,
+  accesibilidad TEXT DEFAULT 'urbano',
+  condiciones_dificiles_pct REAL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS salas_infraestructura (
@@ -118,6 +120,9 @@ CREATE TABLE IF NOT EXISTS docentes (
   justificacion_vacante TEXT,
   origen_egreso_id TEXT,
   vacante_condicional INTEGER DEFAULT 0,
+  tramo_carrera_docente TEXT,
+  habilitacion_seremi_rbd TEXT,
+  habilitacion_seremi_asignatura TEXT,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
 
@@ -353,6 +358,11 @@ CREATE TABLE IF NOT EXISTS egresos_proyectados (
   vacante_docente_id TEXT,
   validado_por TEXT,
   observaciones TEXT,
+  cpeip_notificacion_firme INTEGER DEFAULT 0,
+  estado_reversion TEXT DEFAULT 'ACTIVO',
+  motivo_reversion TEXT,
+  fecha_reversion TEXT,
+  revertido_por TEXT,
   created_at TEXT,
   updated_at TEXT
 );
@@ -386,6 +396,12 @@ CREATE TABLE IF NOT EXISTS solicitudes_movilidad (
   puntaje_prioridad_total REAL DEFAULT 0,
   fundamento TEXT,
   creado_por TEXT,
+  estamento_personal TEXT DEFAULT 'DOCENTE',
+  categoria_asistente TEXT,
+  horas_contrata_actuales INTEGER DEFAULT 0,
+  numero_resolucion TEXT,
+  fecha_resolucion TEXT,
+  fecha_vigencia TEXT,
   created_at TEXT,
   updated_at TEXT
 );
@@ -396,10 +412,14 @@ CREATE TABLE IF NOT EXISTS escenarios_calce (
   nombre TEXT NOT NULL,
   descripcion TEXT,
   estado TEXT NOT NULL DEFAULT 'BORRADOR',
+  version INTEGER NOT NULL DEFAULT 1,
   creado_por TEXT,
   aprobado_por TEXT,
   consolidado_por TEXT,
   fecha_consolidacion TEXT,
+  numero_resolucion TEXT,
+  fecha_resolucion TEXT,
+  fecha_vigencia TEXT,
   resumen_metricas_json TEXT,
   created_at TEXT,
   updated_at TEXT
@@ -429,6 +449,18 @@ CREATE TABLE IF NOT EXISTS propuestas_calce (
   bloquea_consolidacion INTEGER DEFAULT 0,
   motivo_bloqueo TEXT,
   estado TEXT NOT NULL DEFAULT 'PROPUESTA',
+  estamento_personal TEXT DEFAULT 'DOCENTE',
+  estado_resolucion_rebote TEXT DEFAULT 'NO_APLICA',
+  rebote_cubierto_por_propuesta_id TEXT,
+  minutos_titulares_origen INTEGER DEFAULT 0,
+  minutos_contrata_origen INTEGER DEFAULT 0,
+  alerta_menoscabo_art50 INTEGER DEFAULT 0,
+  alerta_condiciones_dificiles INTEGER DEFAULT 0,
+  alerta_habilitacion_seremi_dto352 INTEGER DEFAULT 0,
+  alerta_itinerancia_rural INTEGER DEFAULT 0,
+  numero_resolucion TEXT,
+  fecha_resolucion TEXT,
+  fecha_vigencia TEXT,
   created_at TEXT,
   updated_at TEXT
 );
@@ -455,7 +487,9 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['subvencion_sep_mensual', 'REAL DEFAULT 0'],
     ['subvencion_pro_retencion', 'REAL DEFAULT 0'],
     ['cupo_horas_pie_diferencial', 'REAL DEFAULT 0'],
-    ['cupo_horas_pie_asistentes', 'REAL DEFAULT 0']
+    ['cupo_horas_pie_asistentes', 'REAL DEFAULT 0'],
+    ['accesibilidad', "TEXT DEFAULT 'urbano'"],
+    ['condiciones_dificiles_pct', 'REAL DEFAULT 0']
   ],
   cursos_sae: [
     ['talleres_jec_json', 'TEXT'],
@@ -523,7 +557,10 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['tipo_vacante', 'TEXT'],
     ['justificacion_vacante', 'TEXT'],
     ['origen_egreso_id', 'TEXT'],
-    ['vacante_condicional', 'INTEGER DEFAULT 0']
+    ['vacante_condicional', 'INTEGER DEFAULT 0'],
+    ['tramo_carrera_docente', 'TEXT'],
+    ['habilitacion_seremi_rbd', 'TEXT'],
+    ['habilitacion_seremi_asignatura', 'TEXT']
   ],
   asignaciones_horarias: [
     ['co_docente_id', 'TEXT'],
@@ -567,6 +604,41 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
   ],
   configuracion_general: [
     ['feature_flags_json', 'TEXT']
+  ],
+  egresos_proyectados: [
+    ['cpeip_notificacion_firme', 'INTEGER DEFAULT 0'],
+    ['estado_reversion', "TEXT DEFAULT 'ACTIVO'"],
+    ['motivo_reversion', 'TEXT'],
+    ['fecha_reversion', 'TEXT'],
+    ['revertido_por', 'TEXT']
+  ],
+  solicitudes_movilidad: [
+    ['estamento_personal', "TEXT DEFAULT 'DOCENTE'"],
+    ['categoria_asistente', 'TEXT'],
+    ['horas_contrata_actuales', 'INTEGER DEFAULT 0'],
+    ['numero_resolucion', 'TEXT'],
+    ['fecha_resolucion', 'TEXT'],
+    ['fecha_vigencia', 'TEXT']
+  ],
+  escenarios_calce: [
+    ['version', 'INTEGER NOT NULL DEFAULT 1'],
+    ['numero_resolucion', 'TEXT'],
+    ['fecha_resolucion', 'TEXT'],
+    ['fecha_vigencia', 'TEXT']
+  ],
+  propuestas_calce: [
+    ['estamento_personal', "TEXT DEFAULT 'DOCENTE'"],
+    ['estado_resolucion_rebote', "TEXT DEFAULT 'NO_APLICA'"],
+    ['rebote_cubierto_por_propuesta_id', 'TEXT'],
+    ['minutos_titulares_origen', 'INTEGER DEFAULT 0'],
+    ['minutos_contrata_origen', 'INTEGER DEFAULT 0'],
+    ['alerta_menoscabo_art50', 'INTEGER DEFAULT 0'],
+    ['alerta_condiciones_dificiles', 'INTEGER DEFAULT 0'],
+    ['alerta_habilitacion_seremi_dto352', 'INTEGER DEFAULT 0'],
+    ['alerta_itinerancia_rural', 'INTEGER DEFAULT 0'],
+    ['numero_resolucion', 'TEXT'],
+    ['fecha_resolucion', 'TEXT'],
+    ['fecha_vigencia', 'TEXT']
   ]
 };
 
