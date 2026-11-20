@@ -15,6 +15,7 @@ import {
   calcularDemandaNormativaPieCurso
 } from '@slep/mineduc-engine';
 import { normalizarRut, claveDedupFuncionario } from '../utils/rutUtils';
+import { resolvePerfilEstablecimiento } from '../utils/establishmentTypeHelpers';
 import {
   auditarCargaDocenteIntegral,
   normalizarFuentesFinanciamientoDocente,
@@ -37,20 +38,14 @@ export const CATEGORIAS_ESCOLARES_SIN_VTF: CategoriaTipoEstablecimiento[] = [
 /**
  * Clasifica un establecimiento en una categoría homogénea para filtros territoriales
  * (Escuelas, Liceos, o Jardines y Salas Cuna VTF).
+ * Respeta el perfil/tipo explícito y el catálogo oficial antes de usar heurísticas por nombre.
  */
 export function clasificarCategoriaEstablecimiento(est: Establecimiento): CategoriaTipoEstablecimiento {
-  const tipo = String(est.tipo || '').toUpperCase();
-  const perfil = String(est.tipoPerfil || '').toUpperCase();
-  const nombre = String(est.nombre || '');
-  if (
-    tipo === 'JARDIN' ||
-    tipo === 'SALA_CUNA' ||
-    perfil === 'JARDIN_SALA_CUNA' ||
-    /jard[ií]n|sala\s*cuna|\bvtf\b/i.test(nombre)
-  ) {
+  const perfil = resolvePerfilEstablecimiento(est);
+  if (perfil === 'JARDIN_SALA_CUNA') {
     return 'JARDIN_VTF';
   }
-  if (tipo === 'LICEO' || perfil.startsWith('LICEO') || /\bliceo\b/i.test(nombre)) {
+  if (perfil.startsWith('LICEO')) {
     return 'LICEO';
   }
   return 'ESCUELA';

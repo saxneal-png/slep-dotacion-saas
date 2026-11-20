@@ -42,7 +42,22 @@ export function resolvePerfilEstablecimiento(
   if (cat) return inferTipoPerfilCatalog(cat);
 
   const upper = (est.nombre || '').toUpperCase();
-  if (upper.includes('JARDIN') || upper.includes('JARDÍN') || upper.includes('SALA CUNA')) {
+  if (est.tipo === 'ESCUELA') {
+    if (upper.includes('ESPECIAL')) return 'ESCUELA_ESPECIAL';
+    if (upper.includes('ADULTO') || upper.includes('EPJA') || upper.includes('CEIA')) return 'EPJA';
+    return 'ESCUELA_BASICA';
+  }
+  if (est.tipo === 'LICEO' || est.tipo === 'COLEGIO') {
+    if (upper.includes('POLIVALENTE') || upper.includes('POLITECNICO') || upper.includes('POLITÉCNICO')) {
+      return 'LICEO_POLIVALENTE';
+    }
+    return 'LICEO_HC';
+  }
+
+  if (
+    !/\bESCUELA\b/.test(upper) &&
+    (upper.includes('JARDIN') || upper.includes('JARDÍN') || upper.includes('SALA CUNA') || /\bVTF\b/.test(upper))
+  ) {
     return 'JARDIN_SALA_CUNA';
   }
   if (upper.includes('ESPECIAL')) return 'ESCUELA_ESPECIAL';
@@ -50,7 +65,7 @@ export function resolvePerfilEstablecimiento(
   if (upper.includes('POLIVALENTE') || upper.includes('POLITECNICO') || upper.includes('POLITÉCNICO')) {
     return 'LICEO_POLIVALENTE';
   }
-  if (est.tipo === 'LICEO' || est.tipo === 'COLEGIO' || upper.includes('LICEO')) {
+  if (upper.includes('LICEO')) {
     return 'LICEO_HC';
   }
   return 'ESCUELA_BASICA';

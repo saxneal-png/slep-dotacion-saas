@@ -468,6 +468,36 @@ describe('Servicio de Estadísticas y Auditoría de Dotación de Personal SLEP',
     expect(clasificarCategoriaEstablecimiento(estLiceo)).toBe('LICEO');
     expect(clasificarCategoriaEstablecimiento(estJardin)).toBe('JARDIN_VTF');
 
+    // Regresión: Escuela cuyo nombre contiene "Jardines" (ej. RBD 3707 Escuela Los Jardines de Lautaro)
+    // debe clasificarse como ESCUELA y nunca como JARDIN_VTF.
+    expect(
+      clasificarCategoriaEstablecimiento({
+        rbd: '3707',
+        nombre: 'ESCUELA LOS JARDINES DE LAUTARO',
+        comuna: 'Chillán',
+        tipo: 'ESCUELA',
+        tipoPerfil: 'ESCUELA_BASICA',
+        matricula: 220,
+      })
+    ).toBe('ESCUELA');
+    expect(
+      clasificarCategoriaEstablecimiento({
+        rbd: '99999',
+        nombre: 'Escuela Los Jardines de Prueba',
+        comuna: 'Chillán',
+        tipo: 'ESCUELA',
+        matricula: 150,
+      })
+    ).toBe('ESCUELA');
+    expect(
+      clasificarCategoriaEstablecimiento({
+        rbd: '99998',
+        nombre: 'Escuela Jardines del Sur',
+        comuna: 'Chillán',
+        matricula: 100,
+      })
+    ).toBe('ESCUELA');
+
     expect(esPropuestaNoContinuidad('No Continuidad')).toBe(true);
     expect(esPropuestaNoContinuidad('no continuidad')).toBe(true);
     expect(esPropuestaNoContinuidad('Continuidad')).toBe(false);
