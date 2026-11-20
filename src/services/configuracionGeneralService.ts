@@ -11,6 +11,7 @@ import {
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/db';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
 import { SupabaseDotacionService } from './supabaseDotacionService';
+import { esRolNivelCentral, normalizarRol } from '../security/rolesDefinitions';
 
 const STORAGE_KEY_CONFIG = 'slep_configuracion_general_v1';
 
@@ -52,6 +53,48 @@ export const FEATURE_FLAGS_MOVILIDAD_DEFAULT: FeatureFlagsMovilidad = {
   flag_no_continuidad_titulares: true,
   flag_simulador_calce_automatico: true
 };
+
+/**
+ * Evalúa si un usuario específico tiene autorización para ver y acceder a la Mesa de Movilidad.
+ * - Bloquea estrictamente a cualquier rol de establecimiento (`director_establecimiento`, `jefe_utp_establecimiento`).
+ * - El `super_usuario` siempre tiene acceso.
+ * - Si el Super Usuario definió `usuarios_autorizados_movilidad`, solo los IDs incluidos pueden acceder.
+ */
+export function puedeUsuarioAccederMesaMovilidad(
+  usuario: { id: string; role: unknown } | null | undefined,
+  flags?: FeatureFlagsMovilidad
+): boolean {
+  if (!usuario) return false;
+  if (!esRolNivelCentral(usuario.role)) return false;
+  if (normalizarRol(usuario.role) === 'super_usuario') return true;
+  const f = flags || obtenerFeatureFlagsMovilidad();
+  if (Array.isArray(f.usuarios_autorizados_movilidad)) {
+    return f.usuarios_autorizados_movilidad.includes(usuario.id);
+  }
+  return true;
+}
+
+/**
+ * Actualiza la lista de usuarios de nivel central autorizados para acceder a la Mesa de Movilidad.
+ * Pasar `undefined` restablece el acceso por defecto según rol.
+ */
+export function actualizarUsuariosAutorizadosMesaMovilidad(
+  userIds: string[] | undefined
+): ConfiguracionGeneral {
+  const config = cargarConfiguracionGeneral();
+  const baseFlags = {
+    ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+    ...(config.featureFlags || {})
+  };
+  if (userIds === undefined) {
+    delete baseFlags.usuarios_autorizados_movilidad;
+  } else {
+    baseFlags.usuarios_autorizados_movilidad = Array.from(new Set(userIds));
+  }
+  config.featureFlags = baseFlags;
+  guardarConfiguracionGeneral(config);
+  return config;
+}
 
 const PREFIX_MODO_ASIGNACION_KEY = 'slep_pref_modo_asignacion_v1';
 

@@ -11,6 +11,8 @@ import { UsuariosConfigTab } from './configuraciones/UsuariosConfigTab';
 import { RolesPermisosConfigTab } from './configuraciones/RolesPermisosConfigTab';
 import { usePermisos, Can } from '../security/PermisosContext';
 import { AuthService } from '../services/authService';
+import { UsuarioSistema } from '../types/authTypes';
+import { esRolNivelCentral, getNombreRol, normalizarRol } from '../security/rolesDefinitions';
 import {
   ConfiguracionGeneral,
   PerfilAsesor,
@@ -32,7 +34,8 @@ import {
   actualizarColegiosDeAsesor,
   sincronizarEquipoAsesoresConUsuariosLocales,
   FEATURE_FLAGS_MOVILIDAD_DEFAULT,
-  actualizarFeatureFlagsMovilidad
+  actualizarFeatureFlagsMovilidad,
+  actualizarUsuariosAutorizadosMesaMovilidad
 } from '../services/configuracionGeneralService';
 import { sincronizarCatalogoEstablecimientos } from '../database/seedData';
 
@@ -125,6 +128,19 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
   const [busquedaColegioModal, setBusquedaColegioModal] = useState('');
   const [filtroComunaModal, setFiltroComunaModal] = useState<string>('ALL');
   const [guardandoAsesor, setGuardandoAsesor] = useState(false);
+  const [usuariosNivelCentral, setUsuariosNivelCentral] = useState<UsuarioSistema[]>([]);
+
+  useEffect(() => {
+    if (tabActiva === 'modulos' && esSuperUsuario) {
+      AuthService.getUsuarios()
+        .then(lista => {
+          setUsuariosNivelCentral(
+            lista.filter(u => u.activo !== false && esRolNivelCentral(u.role))
+          );
+        })
+        .catch(() => setUsuariosNivelCentral([]));
+    }
+  }, [tabActiva, esSuperUsuario]);
 
   const mostrarMensaje = (msg: string) => {
     setMensajeGuardado(msg);
@@ -1359,6 +1375,110 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
               );
             })}
           </div>
+
+          {esSuperUsuario && (
+            <div className="pt-5 border-t border-slate-200 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-indigo-600" />
+                    <span>Acceso por Usuario a Mesa de Movilidad (Solo Nivel Central)</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Selecciona qué usuarios que no pertenecen a establecimientos pueden ver y acceder a la Mesa Territorial de Movilidad. Los usuarios de escuela están bloqueados por diseño.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const todosIds = usuariosNivelCentral.map(u => u.id);
+                      const act = actualizarUsuariosAutorizadosMesaMovilidad(todosIds);
+                      setConfig(act);
+                      mostrarMensaje('✓ Todos los usuarios de nivel central autorizados.');
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                  >
+                    Autorizar todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const act = actualizarUsuariosAutorizadosMesaMovilidad([]);
+                      setConfig(act);
+                      mostrarMensaje('✓ Acceso restringido solo a Super Usuario.');
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
+                  >
+                    Solo Super Usuario
+                  </button>
+                  {Array.isArray(config.featureFlags?.usuarios_autorizados_movilidad) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const act = actualizarUsuariosAutorizadosMesaMovilidad(undefined);
+                        setConfig(act);
+                        mostrarMensaje('✓ Acceso restablecido por rol de nivel central.');
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                    >
+                      Restablecer por rol
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {usuariosNivelCentral.map(u => {
+                  const rolNorm = normalizarRol(u.role);
+                  const esSuper = rolNorm === 'super_usuario';
+                  const listaActual = config.featureFlags?.usuarios_autorizados_movilidad;
+                  const autorizado = esSuper || (Array.isArray(listaActual) ? listaActual.includes(u.id) : true);
+
+                  return (
+                    <label
+                      key={u.id}
+                      className={`flex items-center justify-between gap-2 p-3 rounded-xl border transition-all ${
+                        esSuper
+                          ? 'bg-emerald-50/60 border-emerald-200 cursor-not-allowed'
+                          : autorizado
+                          ? 'bg-indigo-50/50 border-indigo-200 cursor-pointer hover:border-indigo-300'
+                          : 'bg-slate-50 border-slate-200 cursor-pointer hover:border-slate-300 opacity-75'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 truncate">{u.nombreCompleto}</div>
+                        <div className="text-[11px] text-slate-500 truncate">{u.email}</div>
+                        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 text-slate-700">
+                          {getNombreRol(rolNorm)}
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={autorizado}
+                        disabled={esSuper}
+                        onChange={() => {
+                          if (esSuper) return;
+                          const base = Array.isArray(listaActual)
+                            ? listaActual
+                            : usuariosNivelCentral.map(x => x.id);
+                          const next = autorizado
+                            ? base.filter(id => id !== u.id)
+                            : [...base, u.id];
+                          const act = actualizarUsuariosAutorizadosMesaMovilidad(next);
+                          setConfig(act);
+                          mostrarMensaje(
+                            `Acceso a Mesa de Movilidad ${!autorizado ? 'habilitado' : 'revocado'} para ${u.nombreCompleto}.`
+                          );
+                        }}
+                        className="w-4 h-4 accent-indigo-600 shrink-0"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -42,7 +42,7 @@ import {
 } from '../types';
 import { AuthSession, RolId } from '../types/authTypes';
 import { usePermisos } from '../security/PermisosContext';
-import { obtenerFeatureFlagsMovilidad } from '../services/configuracionGeneralService';
+import { obtenerFeatureFlagsMovilidad, puedeUsuarioAccederMesaMovilidad } from '../services/configuracionGeneralService';
 import {
   esRolNivelCentralMovilidad,
   esRolValidadorGdp,
@@ -257,7 +257,8 @@ export const MesaMovilidadView: React.FC<MesaMovilidadViewProps> = (props) => {
     rol === 'jefe_utp_establecimiento' ||
     !esRolNivelCentralMovilidad(rol) ||
     !can('mesa_movilidad.ver') ||
-    !flags.modulo_movilidad_activo
+    !flags.modulo_movilidad_activo ||
+    !puedeUsuarioAccederMesaMovilidad({ id: props.usuarioActual.id, role: rol }, flags)
   ) {
     return null;
   }

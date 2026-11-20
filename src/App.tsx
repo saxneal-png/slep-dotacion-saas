@@ -82,7 +82,7 @@ import { SupabaseDotacionService } from './services/supabaseDotacionService';
 import { isSupabaseEnabled, supabase } from './services/supabaseClient';
 import { notificarMutacionLocalEmitida } from './services/colaboracionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
-import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota, obtenerFeatureFlagsMovilidad } from './services/configuracionGeneralService';
+import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota, obtenerFeatureFlagsMovilidad, puedeUsuarioAccederMesaMovilidad } from './services/configuracionGeneralService';
 import { RolesPermisosService } from './services/rolesPermisosService';
 import { AuthService } from './services/authService';
 import { obtenerGeminiApiKeyActiva } from './services/geminiKeyResolver';
@@ -116,7 +116,8 @@ export const App: React.FC = () => {
     featureFlags.modulo_movilidad_activo &&
     rolEfectivoMovilidad &&
     esRolNivelCentral(rolEfectivoMovilidad) &&
-    evaluadorPermisos.can('mesa_movilidad.ver')
+    evaluadorPermisos.can('mesa_movilidad.ver') &&
+    puedeUsuarioAccederMesaMovilidad({ id: session.usuario.id, role: rolEfectivoMovilidad }, featureFlags)
   );
 
   useEffect(() => {

@@ -199,6 +199,8 @@ export interface FeatureFlagsMovilidad {
   flag_traslados_voluntarios: boolean;
   flag_no_continuidad_titulares: boolean;
   flag_simulador_calce_automatico: boolean;
+  /** Lista opcional de IDs de usuarios de nivel central autorizados por el Super Usuario para ver Mesa de Movilidad. */
+  usuarios_autorizados_movilidad?: string[];
 }
 
 export type TipoVacanteDocente =
