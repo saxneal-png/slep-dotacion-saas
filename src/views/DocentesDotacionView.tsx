@@ -66,8 +66,10 @@ import { SplitViewCuadraturaDocente } from '../components/asignacion/SplitViewCu
 import { SabanaCurricularView } from '../components/asignacion/SabanaCurricularView';
 import {
   obtenerPreferenciaModoAsignacion,
-  guardarPreferenciaModoAsignacion
+  guardarPreferenciaModoAsignacion,
+  obtenerFeatureFlagsMovilidad
 } from '../services/configuracionGeneralService';
+import { crearNecesidadVacanteEscuela } from '../services/movilidadTerritorialService';
 import { ModoAsignacionDocente } from '../types';
 import {
   FILTRO_ESTAMENTO_FUERA_AULA,
@@ -121,6 +123,26 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   );
   const [modalPegarAbierto, setModalPegarAbierto] = useState(false);
   const [modalSigeAbierto, setModalSigeAbierto] = useState(false);
+
+  const [flagSaneamientoNnEscuelas, setFlagSaneamientoNnEscuelas] = useState<boolean>(
+    () => obtenerFeatureFlagsMovilidad().flag_saneamiento_nn_escuelas
+  );
+  const [modalVacanteOpen, setModalVacanteOpen] = useState(false);
+  const [vacEspecialidad, setVacEspecialidad] = useState('');
+  const [vacEstamento, setVacEstamento] = useState<EstamentoDocente>('DOCENTE_AULA');
+  const [vacHoras, setVacHoras] = useState<number>(22);
+  const [vacFuente, setVacFuente] = useState<'SUBVENCION_GENERAL' | 'SEP' | 'PIE'>('SUBVENCION_GENERAL');
+  const [vacJustificacion, setVacJustificacion] = useState('');
+  const [guardandoVacante, setGuardandoVacante] = useState(false);
+  const [errorVacante, setErrorVacante] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncFlags = () => {
+      setFlagSaneamientoNnEscuelas(obtenerFeatureFlagsMovilidad().flag_saneamiento_nn_escuelas);
+    };
+    window.addEventListener('slep:config_updated', syncFlags);
+    return () => window.removeEventListener('slep:config_updated', syncFlags);
+  }, []);
 
   useEffect(() => {
     setModoAsignacion(obtenerPreferenciaModoAsignacion(usuarioActualId, colegio?.rbd));
@@ -712,6 +734,26 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               <span className="hidden md:inline">Pegar Excel</span>
             </button>
 
+            {flagSaneamientoNnEscuelas && (
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorVacante(null);
+                  setVacEspecialidad('');
+                  setVacEstamento('DOCENTE_AULA');
+                  setVacHoras(22);
+                  setVacFuente('SUBVENCION_GENERAL');
+                  setVacJustificacion('');
+                  setModalVacanteOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold shadow-xs transition-colors"
+                title="Declarar una necesidad de vacante docente sin inventar un RUN ficticio"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                <span>Declarar Necesidad de Vacante</span>
+              </button>
+            )}
+
             <button
               onClick={abrirModalNuevo}
               className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
@@ -1181,6 +1223,21 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                         {d.run} {d.asignaturaPrincipal ? `• ${d.asignaturaPrincipal}` : ''}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-1">
+                        {d.esVacanteNn && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black border ${
+                              d.vacanteCondicional
+                                ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                : 'bg-amber-100 text-amber-900 border-amber-300'
+                            }`}
+                            title={d.justificacionVacante || 'Vacante pendiente de provisión territorial'}
+                          >
+                            <span>VACANTE / NN</span>
+                            {d.vacanteCondicional && (
+                              <span className="font-bold opacity-90">· Condicional (Solo Transitoria)</span>
+                            )}
+                          </span>
+                        )}
                         {esMultiEscuela && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                             <Building2 className="w-3 h-3" />
@@ -1524,6 +1581,192 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           }
         }}
       />
+
+      {/* Modal Autocontenido: Declarar Necesidad de Vacante (sin RUN ficticio) */}
+      {modalVacanteOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!vacEspecialidad.trim()) {
+                setErrorVacante('Ingresa la especialidad o asignatura requerida.');
+                return;
+              }
+              const horasNum = Number(vacHoras);
+              if (!Number.isFinite(horasNum) || horasNum < 1 || horasNum > 44) {
+                setErrorVacante('Las horas cronológicas semanales deben estar entre 1 y 44.');
+                return;
+              }
+              if (!vacJustificacion.trim()) {
+                setErrorVacante('La justificación pedagógica u operativa es obligatoria.');
+                return;
+              }
+              setErrorVacante(null);
+              setGuardandoVacante(true);
+              try {
+                const vacante = await crearNecesidadVacanteEscuela({
+                  rbd: colegio.rbd,
+                  periodo: periodoActivo,
+                  especialidad: vacEspecialidad.trim(),
+                  estamento: vacEstamento,
+                  horasContrato: Math.round(horasNum),
+                  fuenteFinanciamiento: vacFuente,
+                  justificacion: vacJustificacion.trim(),
+                  usuarioActor: usuarioActualId
+                });
+                await onGuardarDocente(vacante);
+                setModalVacanteOpen(false);
+              } catch (err: any) {
+                setErrorVacante(err?.message || 'Error al registrar la necesidad de vacante.');
+              } finally {
+                setGuardandoVacante(false);
+              }
+            }}
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-5 space-y-4 my-8"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">
+                    Declarar Necesidad de Vacante Docente
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {colegio.nombre} (RBD {colegio.rbd}) · Periodo {periodoActivo}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalVacanteOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-900">
+              No necesitas ingresar ni inventar un RUN: el sistema generará automáticamente un código identificador oficial de vacante <strong className="font-mono">VAC-...</strong>.
+            </div>
+
+            {errorVacante && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800">
+                {errorVacante}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Especialidad / Asignatura Requerida
+                </label>
+                <input
+                  type="text"
+                  required
+                  list="sugerencias-especialidad-vacante"
+                  value={vacEspecialidad}
+                  onChange={e => setVacEspecialidad(e.target.value)}
+                  placeholder="Ej: Matemática, Lenguaje y Comunicación, Educación Diferencial..."
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <datalist id="sugerencias-especialidad-vacante">
+                  <option value="Lenguaje y Comunicación" />
+                  <option value="Matemática" />
+                  <option value="Historia, Geografía y Ciencias Sociales" />
+                  <option value="Ciencias Naturales" />
+                  <option value="Inglés" />
+                  <option value="Educación Física y Salud" />
+                  <option value="Artes Visuales / Música" />
+                  <option value="Educación General Básica" />
+                  <option value="Educación Diferencial (PIE)" />
+                  <option value="Educación Parvularia" />
+                  <option value="Especialidad Técnico Profesional" />
+                </datalist>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Estamento</label>
+                  <select
+                    value={vacEstamento}
+                    onChange={e => setVacEstamento(e.target.value as EstamentoDocente)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                  >
+                    {ESTAMENTOS.map(est => (
+                      <option key={est.id} value={est.id}>
+                        {est.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Horas Cronológicas Semanales (1 - 44)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={44}
+                    required
+                    value={vacHoras}
+                    onChange={e => setVacHoras(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl tabular-nums"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Fuente de Financiamiento
+                </label>
+                <select
+                  value={vacFuente}
+                  onChange={e => setVacFuente(e.target.value as 'SUBVENCION_GENERAL' | 'SEP' | 'PIE')}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                >
+                  <option value="SUBVENCION_GENERAL">Subvención General (Plan de Estudio / JEC)</option>
+                  <option value="SEP">SEP (Subvención Escolar Preferencial)</option>
+                  <option value="PIE">PIE (Programa de Integración Escolar - Dto. 170)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Justificación Pedagógica / Operativa
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={vacJustificacion}
+                  onChange={e => setVacJustificacion(e.target.value)}
+                  placeholder="Describe la necesidad curricular, aumento de matrícula SAE, cobertura PIE o reemplazo requerido..."
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setModalVacanteOpen(false)}
+                className="px-3.5 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={guardandoVacante}
+                className="px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm disabled:opacity-50"
+              >
+                {guardandoVacante ? 'Registrando Vacante...' : 'Registrar Necesidad de Vacante'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

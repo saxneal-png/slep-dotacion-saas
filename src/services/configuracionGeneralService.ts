@@ -1,4 +1,13 @@
-import { ConfiguracionGeneral, PerfilAsesor, ParametrosMineducConfig, GeminiConfig, PreferenciasUiConfig, Establecimiento, ModoAsignacionDocente } from '../types';
+import {
+  ConfiguracionGeneral,
+  PerfilAsesor,
+  ParametrosMineducConfig,
+  GeminiConfig,
+  PreferenciasUiConfig,
+  Establecimiento,
+  ModoAsignacionDocente,
+  FeatureFlagsMovilidad
+} from '../types';
 import { guardarEstablecimiento, listarEstablecimientos } from '../database/db';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
 import { SupabaseDotacionService } from './supabaseDotacionService';
@@ -33,6 +42,15 @@ export const UI_CONFIG_DEFAULT: PreferenciasUiConfig = {
   mostrarAlertasFlotantes: true,
   animacionesHabilitadas: true,
   modoAsignacionDocente: 'drawer'
+};
+
+export const FEATURE_FLAGS_MOVILIDAD_DEFAULT: FeatureFlagsMovilidad = {
+  modulo_movilidad_activo: true,
+  flag_saneamiento_nn_escuelas: true,
+  flag_egresos_contingencia: true,
+  flag_traslados_voluntarios: true,
+  flag_no_continuidad_titulares: true,
+  flag_simulador_calce_automatico: true
 };
 
 const PREFIX_MODO_ASIGNACION_KEY = 'slep_pref_modo_asignacion_v1';
@@ -72,6 +90,7 @@ export const CONFIGURACION_DEFAULT: ConfiguracionGeneral = {
   parametrosMineduc: PARAMETROS_MINEDUC_DEFAULT,
   gemini: GEMINI_CONFIG_DEFAULT,
   ui: UI_CONFIG_DEFAULT,
+  featureFlags: FEATURE_FLAGS_MOVILIDAD_DEFAULT,
   ultimaModificacion: new Date().toISOString()
 };
 
@@ -175,20 +194,65 @@ export function cargarConfiguracionGeneral(): ConfiguracionGeneral {
     if (!config.ui) {
       config.ui = { ...UI_CONFIG_DEFAULT };
     }
+    config.featureFlags = {
+      ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+      ...(config.featureFlags || {})
+    };
 
     return config;
   } catch (e) {
     console.error('Error al cargar configuración general:', e);
-    return { ...CONFIGURACION_DEFAULT };
+    return {
+      ...CONFIGURACION_DEFAULT,
+      featureFlags: { ...FEATURE_FLAGS_MOVILIDAD_DEFAULT }
+    };
   }
 }
 
 /**
- * Guarda la configuración general en localStorage y sincroniza variables globales.
+ * Obtiene el estado vigente de los feature flags del módulo Mesa de Movilidad.
  */
-export function guardarConfiguracionGeneral(config: ConfiguracionGeneral): void {
+export function obtenerFeatureFlagsMovilidad(): FeatureFlagsMovilidad {
+  const config = cargarConfiguracionGeneral();
+  return {
+    ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+    ...(config.featureFlags || {})
+  };
+}
+
+/**
+ * Actualiza parcialmente los feature flags de Movilidad y persiste la configuración.
+ */
+export function actualizarFeatureFlagsMovilidad(
+  parcial: Partial<FeatureFlagsMovilidad>,
+  actualizadoPor?: string
+): ConfiguracionGeneral {
+  const config = cargarConfiguracionGeneral();
+  const actualizados: FeatureFlagsMovilidad = {
+    ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+    ...(config.featureFlags || {}),
+    ...parcial
+  };
+  const siguiente: ConfiguracionGeneral = {
+    ...config,
+    featureFlags: actualizados
+  };
+  guardarConfiguracionGeneral(siguiente, actualizadoPor);
+  return siguiente;
+}
+
+/**
+ * Guarda la configuración general en localStorage, SQLite (background) y Supabase.
+ */
+export function guardarConfiguracionGeneral(config: ConfiguracionGeneral, actualizadoPor?: string): void {
   try {
-    config.ultimaModificacion = new Date().toISOString();
+    const ultimaModificacion = new Date().toISOString();
+    config.ultimaModificacion = ultimaModificacion;
+    const featureFlagsNorm: FeatureFlagsMovilidad = {
+      ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+      ...(config.featureFlags || {})
+    };
+    config.featureFlags = featureFlagsNorm;
 
     // Si estamos en entorno Electron, persistir API Key de forma segura con safeStorage
     if (typeof window !== 'undefined' && window.electronAPI?.setGeminiKey) {
@@ -210,17 +274,66 @@ export function guardarConfiguracionGeneral(config: ConfiguracionGeneral): void 
     safeSetItem('gemini_model', config.gemini.model || 'gemini-2.5-flash');
     safeSetItem('gemini_export_analizar_todos', String(config.gemini.analizarTodosAlExportar));
 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('slep:config_updated', { detail: config }));
+    }
+
+    // Persistencia local en SQLite (row id = 'global') en background no bloqueante
+    import('../database/dbCore')
+      .then(async ({ getDb, persistDb }) => {
+        const db = await getDb();
+        db.run(
+          `INSERT INTO configuracion_general (
+            id, parametros_mineduc_json, ui_config_json, asesores_registrados_json,
+            feature_flags_json, actualizado_por, ultima_modificacion
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            parametros_mineduc_json = excluded.parametros_mineduc_json,
+            ui_config_json = excluded.ui_config_json,
+            asesores_registrados_json = excluded.asesores_registrados_json,
+            feature_flags_json = excluded.feature_flags_json,
+            actualizado_por = COALESCE(excluded.actualizado_por, configuracion_general.actualizado_por),
+            ultima_modificacion = excluded.ultima_modificacion;`,
+          [
+            'global',
+            JSON.stringify(config.parametrosMineduc || PARAMETROS_MINEDUC_DEFAULT),
+            JSON.stringify(config.ui || UI_CONFIG_DEFAULT),
+            JSON.stringify(config.asesoresRegistrados || []),
+            JSON.stringify(featureFlagsNorm),
+            actualizadoPor || config.asesorActivoEmail || config.asesorActivoNombre || null,
+            ultimaModificacion
+          ]
+        );
+        await persistDb(true);
+      })
+      .catch(err => console.warn('[configuracionGeneral] Aviso guardando en SQLite:', err));
+
     if (isSupabaseEnabled()) {
+      const payloadConFlags = {
+        id: 'global',
+        parametros_mineduc_json: config.parametrosMineduc,
+        ui_config_json: config.ui,
+        asesores_registrados_json: config.asesoresRegistrados,
+        feature_flags_json: featureFlagsNorm,
+        actualizado_por: actualizadoPor || config.asesorActivoEmail || null,
+        ultima_modificacion: config.ultimaModificacion
+      };
       supabase
         .from('configuracion_general')
-        .upsert({
-          id: 'global',
-          parametros_mineduc_json: config.parametrosMineduc,
-          ui_config_json: config.ui,
-          asesores_registrados_json: config.asesoresRegistrados,
-          ultima_modificacion: config.ultimaModificacion
-        }, { onConflict: 'id' })
-        .then(() => {}, (err: any) => console.warn('[configuracionGeneral] Error sincronizando con Supabase:', err));
+        .upsert(payloadConFlags, { onConflict: 'id' })
+        .then(async (res: any) => {
+          if (res?.error?.code === 'PGRST204' && String(res.error.message || '').includes('feature_flags_json')) {
+            const { feature_flags_json: _omit, ...fallbackPayload } = payloadConFlags;
+            const retry = await supabase
+              .from('configuracion_general')
+              .upsert(fallbackPayload, { onConflict: 'id' });
+            if (retry?.error) {
+              console.warn('[configuracionGeneral] Error sincronizando con Supabase (fallback):', retry.error);
+            }
+          } else if (res?.error) {
+            console.warn('[configuracionGeneral] Error sincronizando con Supabase:', res.error);
+          }
+        }, (err: any) => console.warn('[configuracionGeneral] Error sincronizando con Supabase:', err));
     }
   } catch (e) {
     console.error('Error al guardar configuración general:', e);
@@ -241,6 +354,14 @@ export async function cargarConfiguracionGeneralRemota(): Promise<ConfiguracionG
 
     if (!error && data) {
       const local = cargarConfiguracionGeneral();
+      let remoteFlags: Partial<FeatureFlagsMovilidad> = {};
+      if (data.feature_flags_json) {
+        try {
+          remoteFlags = typeof data.feature_flags_json === 'string'
+            ? JSON.parse(data.feature_flags_json)
+            : data.feature_flags_json;
+        } catch {}
+      }
       const updated: ConfiguracionGeneral = {
         ...local,
         parametrosMineduc: data.parametros_mineduc_json || local.parametrosMineduc,
@@ -248,6 +369,11 @@ export async function cargarConfiguracionGeneralRemota(): Promise<ConfiguracionG
         asesoresRegistrados: Array.isArray(data.asesores_registrados_json) && data.asesores_registrados_json.length > 0
           ? data.asesores_registrados_json
           : local.asesoresRegistrados,
+        featureFlags: {
+          ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+          ...(local.featureFlags || {}),
+          ...remoteFlags
+        },
         ultimaModificacion: data.ultima_modificacion || local.ultimaModificacion
       };
       safeSetItem(STORAGE_KEY_CONFIG, JSON.stringify(updated));
@@ -522,7 +648,11 @@ export async function actualizarColegiosDeAsesor(
  * Restablece todas las configuraciones a sus valores de fábrica.
  */
 export function restablecerConfiguracionPorDefecto(): ConfiguracionGeneral {
-  const def = { ...CONFIGURACION_DEFAULT, ultimaModificacion: new Date().toISOString() };
+  const def = {
+    ...CONFIGURACION_DEFAULT,
+    featureFlags: { ...FEATURE_FLAGS_MOVILIDAD_DEFAULT },
+    ultimaModificacion: new Date().toISOString()
+  };
   guardarConfiguracionGeneral(def);
   return def;
 }

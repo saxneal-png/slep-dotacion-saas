@@ -49,6 +49,8 @@ export const CATALOGO_PERMISOS: ModuloPermiso[] = [
   { id: 'consolidador', nombre: 'Consolidado Master', descripcion: 'Consolidado territorial de dotación e inconsistencias', grupo: 'territorial', acciones: ['ver', 'exportar'] },
   { id: 'estadisticas', nombre: 'Estadísticas', descripcion: 'Indicadores y estadísticas de horas', grupo: 'territorial', acciones: ['ver', 'exportar'] },
   { id: 'monitoreo_actividad', nombre: 'Actividad en Tiempo Real', descripcion: 'Visualización de usuarios y escuelas activas en la plataforma', grupo: 'territorial', acciones: ['ver'] },
+  { id: 'mesa_movilidad', nombre: 'Mesa de Movilidad Territorial', descripcion: 'Simulación de calces, vacantes NN y movilidad docente (solo nivel central)', grupo: 'territorial', acciones: ['ver', 'crear', 'editar', 'eliminar', 'ejecutar'], critico: true },
+  { id: 'gdp_validador', nombre: 'Validación Egresos GDP', descripcion: 'Registro y validación jurídica de egresos proyectados y vacantes condicionales', grupo: 'territorial', acciones: ['ver', 'editar', 'ejecutar'], critico: true },
 
   // ── Establecimiento ──
   { id: 'workflow', nombre: 'Espacio Escolar', descripcion: 'Espacio de trabajo del establecimiento', grupo: 'establecimiento', acciones: ['ver'] },
@@ -120,6 +122,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
 
   subdirector_uatp: [
     ...todo(...MODS_TERRITORIAL),
+    ...todo('mesa_movilidad', 'gdp_validador'),
     ...solo('ver', ...MODS_ESTABLECIMIENTO),
     k('sige', 'ver'),
     k('analizador', 'ver'), k('analizador', 'exportar'),
@@ -131,6 +134,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
 
   coordinador_uatp: [
     ...todo(...MODS_TERRITORIAL),
+    k('mesa_movilidad', 'ver'), k('mesa_movilidad', 'crear'), k('mesa_movilidad', 'editar'),
     ...todo(...MODS_ESTABLECIMIENTO),
     ...todo(...MODS_DATOS),
     ...todo('traspaso_periodos', 'vaciar_dotacion'),
@@ -140,10 +144,19 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
   asesor_uatp: [
     ...solo('ver', ...MODS_TERRITORIAL),
     k('monitoreo_actividad', 'ver'),
+    k('mesa_movilidad', 'ver'), k('mesa_movilidad', 'crear'), k('mesa_movilidad', 'editar'),
     ...todo(...MODS_ESTABLECIMIENTO),
     ...todo(...MODS_DATOS),
     ...todo('traspaso_periodos'),
     ...todo('copilot', 'gemini_export')
+  ],
+
+  gdp_validador: [
+    k('colegios_asesorados', 'ver'),
+    k('consolidador', 'ver'), k('consolidador', 'exportar'),
+    k('estadisticas', 'ver'),
+    k('mesa_movilidad', 'ver'), k('mesa_movilidad', 'crear'), k('mesa_movilidad', 'editar'),
+    ...todo('gdp_validador', 'centro_descargas', 'planillas_dep')
   ],
 
   director_establecimiento: [
@@ -174,21 +187,36 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
 /** Roles autorizados para crear/combinar cursos en establecimientos. */
 export const ROLES_PUEDEN_CREAR_CURSOS: RolId[] = ['super_usuario', 'coordinador_uatp', 'asesor_uatp'];
 
+/** Roles pertenecientes al nivel central (habilitados para módulos territoriales restringidos). */
+export const ROLES_SOLO_NIVEL_CENTRAL: RolId[] = [
+  'super_usuario',
+  'subdirector_uatp',
+  'coordinador_uatp',
+  'asesor_uatp',
+  'gdp_validador'
+];
+
+/** Módulos estrictamente invisibles y prohibidos para roles de establecimiento. */
+export const MODULOS_INVISIBLES_ESTABLECIMIENTO = new Set(['mesa_movilidad', 'gdp_validador']);
+
 /**
  * Normaliza un conjunto de permisos aplicando las reglas de dependencia:
  * - cualquier acción distinta de `ver` implica `ver` (si el módulo tiene `ver`);
  * - se descartan claves inválidas y duplicadas;
  * - las claves reservadas solo se conservan para el super usuario;
- * - `curriculum.crear` está restringido exclusivamente a asesores, coordinadores y super usuario.
+ * - `curriculum.crear` está restringido exclusivamente a asesores, coordinadores y super usuario;
+ * - módulos en `MODULOS_INVISIBLES_ESTABLECIMIENTO` se descartan para roles fuera de `ROLES_SOLO_NIVEL_CENTRAL`.
  */
 export function normalizarPermisos(rolId: RolId, permisos: string[]): PermisoKey[] {
   const set = new Set<PermisoKey>();
+  const esNivelCentral = ROLES_SOLO_NIVEL_CENTRAL.includes(rolId);
   for (const p of permisos) {
     if (!esClaveValida(p)) continue;
     if (rolId !== 'super_usuario' && esClaveReservada(p)) continue;
     if (p === 'curriculum.crear' && !ROLES_PUEDEN_CREAR_CURSOS.includes(rolId)) continue;
-    set.add(p);
     const [mod, accion] = p.split('.') as [string, AccionPermiso];
+    if (!esNivelCentral && MODULOS_INVISIBLES_ESTABLECIMIENTO.has(mod)) continue;
+    set.add(p);
     if (accion !== 'ver' && getModulo(mod)?.acciones.includes('ver')) {
       set.add(k(mod, 'ver'));
     }
@@ -202,6 +230,7 @@ export const PERMISO_POR_VISTA: Record<string, PermisoKey> = {
   cartera: 'cartera.ver',
   consolidador: 'consolidador.ver',
   estadisticas: 'estadisticas.ver',
+  mesa_movilidad: 'mesa_movilidad.ver',
   workflow: 'workflow.ver',
   salas_sae: 'salas_sae.ver',
   curriculum: 'curriculum.ver',

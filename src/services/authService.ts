@@ -25,13 +25,14 @@ export const STORAGE_PAUSA_KEY = 'slep_pausa_revision_interna_v1';
 
 /**
  * Roles estrictamente excluidos y blindados de cualquier inactivación o pausa masiva.
- * Garantiza que Super Usuarios, Asesores UATP, Coordinadores UATP y Subdirectores mantengan acceso ininterrumpido.
+ * Garantiza que Super Usuarios, Asesores UATP, Coordinadores UATP, Subdirectores y Validadores GDP mantengan acceso ininterrumpido.
  */
 export const ROLES_EXENTOS_PAUSA: readonly RolId[] = [
   'super_usuario',
   'subdirector_uatp',
   'coordinador_uatp',
-  'asesor_uatp'
+  'asesor_uatp',
+  'gdp_validador'
 ] as const;
 
 /**

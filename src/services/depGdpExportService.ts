@@ -8,6 +8,7 @@ import ExcelJS from 'exceljs';
 import { Docente, AsistenteEducacion, Establecimiento, CursoSae, AsignacionHoraria } from '../types';
 import { formatRut, inferirPropuestaGdp, sanitizeExcelText } from './depHomologationEngine';
 import { cargarPlantillaOficialBuffer } from './templateLoaderService';
+import { filtrarDocentesSinDobleConteoCondicional } from './movilidadTerritorialService';
 
 /**
  * Asegura la capacidad de una fila duplicando dinámicamente la última fila del bloque
@@ -57,13 +58,15 @@ export async function generarExcelGdpColegio(
     }
   });
 
+  const { docentesEfectivos: docentesSinDobleConteo } = filtrarDocentesSinDobleConteoCondicional(docentesColegio);
+
   // ==========================================
   // HOJA 1: PIE (Programa Integración Escolar)
   // ==========================================
   const wsPie = workbook.getWorksheet('PIE');
   if (wsPie) {
     // 1.1 Docentes Diferenciales PIE (Filas 8 a 35)
-    const docPie = docentesColegio.filter(d =>
+    const docPie = docentesSinDobleConteo.filter(d =>
       (Number(d.horasPieTitular || 0) + Number(d.horasPieContrata || 0)) > 0
     );
 
@@ -157,7 +160,7 @@ export async function generarExcelGdpColegio(
     const extraAe = limAe - (55 + extraDoc);
 
     // 1.3 Trabajo Colaborativo PIE (Filas 64 a 83)
-    const docColab = docentesColegio.filter(d => 
+    const docColab = docentesSinDobleConteo.filter(d => 
       Number(d.horasTrabajoColaborativo || 0) > 0 ||
       asignacionesColegio.some(asg => asg.docenteId === d.id && (asg.esTrabajoColaborativo || /colaborativo|decreto 170/i.test(asg.tipoApoyo || '')))
     );
@@ -190,7 +193,7 @@ export async function generarExcelGdpColegio(
     wsSep.getCell('D4').value = establecimiento.subvencionSepMensual || 0;
 
     // Filtrar todo personal financiado con SEP (Docentes + AA.EE.)
-    const sepDoc = docentesColegio
+    const sepDoc = docentesSinDobleConteo
       .filter(d => (Number(d.horasSepTitular || 0) + Number(d.horasSepContrata || 0) + Number(d.horasTallerSep || 0) > 0))
       .map(d => ({
         tipo: 'DOCENTE',
@@ -283,7 +286,7 @@ export async function generarExcelGdpColegio(
   // ==========================================
   const wsTit = workbook.getWorksheet('Subv. Normal - Docentes Tit');
   if (wsTit) {
-    const docTit = docentesColegio
+    const docTit = docentesSinDobleConteo
       .map(d => {
         // Horas exclusivas de subvención regular titular
         const hSubv = Number(d.horasSubvencionGeneralTitular || 0) ||
@@ -338,7 +341,7 @@ export async function generarExcelGdpColegio(
   // ==========================================
   const wsCtta = workbook.getWorksheet('Subv. Normal - Docentes Ctta.');
   if (wsCtta) {
-    const docCtta = docentesColegio
+    const docCtta = docentesSinDobleConteo
       .map(d => {
         // Horas exclusivas de subvención regular contrata
         const hCtta = Number(d.horasSubvencionGeneralContrata || 0) ||
@@ -467,7 +470,7 @@ export async function generarExcelGdpColegio(
     wsProRet.getCell('D4').value = establecimiento.subvencionProRetencion || 0;
 
     const proRetStaff = [
-      ...docentesColegio.filter(d => Number(d.horasProRetencion || 0) > 0),
+      ...docentesSinDobleConteo.filter(d => Number(d.horasProRetencion || 0) > 0),
       ...asistentesColegio.filter(a => Number(a.horasProRetencion || 0) > 0)
     ];
 

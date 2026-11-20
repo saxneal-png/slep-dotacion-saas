@@ -113,6 +113,11 @@ CREATE TABLE IF NOT EXISTS docentes (
   observaciones_director TEXT,
   observaciones_slep TEXT,
   periodo INTEGER NOT NULL DEFAULT 2027,
+  es_vacante_nn INTEGER DEFAULT 0,
+  tipo_vacante TEXT,
+  justificacion_vacante TEXT,
+  origen_egreso_id TEXT,
+  vacante_condicional INTEGER DEFAULT 0,
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
 
@@ -316,6 +321,117 @@ CREATE TABLE IF NOT EXISTS jisc_parvulos_b3 (
   FOREIGN KEY (rbd) REFERENCES establecimientos(rbd)
 );
 
+CREATE TABLE IF NOT EXISTS configuracion_general (
+  id TEXT PRIMARY KEY DEFAULT 'global',
+  parametros_mineduc_json TEXT,
+  ui_config_json TEXT,
+  asesores_registrados_json TEXT,
+  feature_flags_json TEXT,
+  actualizado_por TEXT,
+  ultima_modificacion TEXT
+);
+
+CREATE TABLE IF NOT EXISTS egresos_proyectados (
+  id TEXT PRIMARY KEY,
+  rbd TEXT NOT NULL,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  docente_id TEXT NOT NULL,
+  run_docente TEXT NOT NULL,
+  nombre_docente TEXT NOT NULL,
+  asignatura_principal TEXT,
+  horas_liberadas INTEGER NOT NULL DEFAULT 0,
+  horas_aula_liberadas INTEGER NOT NULL DEFAULT 0,
+  fuente_financiamiento TEXT NOT NULL DEFAULT 'SUBVENCION_GENERAL',
+  calidad_juridica TEXT NOT NULL DEFAULT 'TITULAR',
+  causal TEXT NOT NULL,
+  certeza TEXT NOT NULL DEFAULT 'en_tramite',
+  excepcion_jubilacion_3_anios INTEGER DEFAULT 0,
+  fecha_cese TEXT,
+  numero_decreto TEXT,
+  impacto_presupuestario TEXT NOT NULL DEFAULT 'costo_doble_pendiente',
+  vacante_docente_id TEXT,
+  validado_por TEXT,
+  observaciones TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS solicitudes_movilidad (
+  id TEXT PRIMARY KEY,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  carril TEXT NOT NULL,
+  docente_id TEXT NOT NULL,
+  run_docente TEXT NOT NULL,
+  nombre_docente TEXT NOT NULL,
+  rbd_origen TEXT NOT NULL,
+  comuna_origen TEXT,
+  rbd_destino_preferente TEXT,
+  comuna_destino_preferente TEXT,
+  calidad_juridica TEXT NOT NULL DEFAULT 'TITULAR',
+  horas_contrato_actual INTEGER NOT NULL DEFAULT 0,
+  horas_titulares_actuales INTEGER NOT NULL DEFAULT 0,
+  horas_disponibles_mover INTEGER NOT NULL DEFAULT 0,
+  horas_remanentes INTEGER NOT NULL DEFAULT 0,
+  asignatura_principal TEXT,
+  titulo_mencion TEXT,
+  aplica_articulo_69 INTEGER DEFAULT 0,
+  fuente_actual TEXT NOT NULL DEFAULT 'SUBVENCION_GENERAL',
+  estado_flujo TEXT NOT NULL DEFAULT 'POSTULADO',
+  puntaje_salud REAL DEFAULT 0,
+  puntaje_ley_karin REAL DEFAULT 0,
+  puntaje_cuidado_dependientes REAL DEFAULT 0,
+  puntaje_distancia_rural REAL DEFAULT 0,
+  puntaje_antiguedad REAL DEFAULT 0,
+  puntaje_prioridad_total REAL DEFAULT 0,
+  fundamento TEXT,
+  creado_por TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS escenarios_calce (
+  id TEXT PRIMARY KEY,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  estado TEXT NOT NULL DEFAULT 'BORRADOR',
+  creado_por TEXT,
+  aprobado_por TEXT,
+  consolidado_por TEXT,
+  fecha_consolidacion TEXT,
+  resumen_metricas_json TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS propuestas_calce (
+  id TEXT PRIMARY KEY,
+  escenario_id TEXT NOT NULL,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  solicitud_movilidad_id TEXT,
+  docente_origen_id TEXT NOT NULL,
+  run_docente TEXT NOT NULL,
+  nombre_docente TEXT NOT NULL,
+  rbd_origen TEXT NOT NULL,
+  rbd_destino TEXT NOT NULL,
+  vacante_destino_id TEXT,
+  egreso_origen_id TEXT,
+  tipo_cobertura TEXT NOT NULL DEFAULT 'DEFINITIVA',
+  horas_asignadas INTEGER NOT NULL DEFAULT 0,
+  minutos_asignados INTEGER NOT NULL DEFAULT 0,
+  horas_pedagogicas_aula INTEGER NOT NULL DEFAULT 0,
+  fuente_destino TEXT NOT NULL DEFAULT 'SUBVENCION_GENERAL',
+  indice_compatibilidad INTEGER NOT NULL DEFAULT 0,
+  genera_rebote INTEGER DEFAULT 0,
+  vacante_rebote_json TEXT,
+  alertas_normativas_json TEXT,
+  bloquea_consolidacion INTEGER DEFAULT 0,
+  motivo_bloqueo TEXT,
+  estado TEXT NOT NULL DEFAULT 'PROPUESTA',
+  created_at TEXT,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS __schema_migrations (
   id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL
@@ -401,7 +517,12 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['grupo_jisc_id', 'TEXT'],
     ['hora_ingreso_turno', 'TEXT'],
     ['hora_salida_turno', 'TEXT'],
-    ['reemplazo_de_run', 'TEXT']
+    ['reemplazo_de_run', 'TEXT'],
+    ['es_vacante_nn', 'INTEGER DEFAULT 0'],
+    ['tipo_vacante', 'TEXT'],
+    ['justificacion_vacante', 'TEXT'],
+    ['origen_egreso_id', 'TEXT'],
+    ['vacante_condicional', 'INTEGER DEFAULT 0']
   ],
   asignaciones_horarias: [
     ['co_docente_id', 'TEXT'],
@@ -441,6 +562,9 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
   ],
   usuarios_sistema: [
     ['debe_cambiar_password', 'INTEGER DEFAULT 0']
+  ],
+  configuracion_general: [
+    ['feature_flags_json', 'TEXT']
   ]
 };
 
@@ -506,11 +630,33 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_usuarios_role ON usuarios_sistema(role);',
     'CREATE INDEX IF NOT EXISTS idx_jisc_niveles_rbd_periodo ON jisc_niveles_parvularia(rbd, periodo);',
     'CREATE INDEX IF NOT EXISTS idx_jisc_turnos_rbd_periodo ON jisc_turnos_personal(rbd, periodo);',
-    'CREATE INDEX IF NOT EXISTS idx_jisc_b3_rbd_periodo ON jisc_parvulos_b3(rbd, periodo);'
+    'CREATE INDEX IF NOT EXISTS idx_jisc_b3_rbd_periodo ON jisc_parvulos_b3(rbd, periodo);',
+    'CREATE INDEX IF NOT EXISTS idx_docentes_vacante_nn ON docentes(es_vacante_nn, rbd, periodo);',
+    'CREATE INDEX IF NOT EXISTS idx_egresos_rbd_periodo ON egresos_proyectados(rbd, periodo);',
+    'CREATE INDEX IF NOT EXISTS idx_solicitudes_movilidad_periodo ON solicitudes_movilidad(periodo, carril, estado_flujo);',
+    'CREATE INDEX IF NOT EXISTS idx_escenarios_calce_periodo ON escenarios_calce(periodo, estado);',
+    'CREATE INDEX IF NOT EXISTS idx_propuestas_calce_escenario ON propuestas_calce(escenario_id);'
   ];
 
   for (const idxSql of indexes) {
     try { db.run(idxSql); } catch (e) { console.warn('Error idx:', e); }
+  }
+
+  try {
+    const defaultFeatureFlagsJson = JSON.stringify({
+      modulo_movilidad_activo: true,
+      flag_saneamiento_nn_escuelas: true,
+      flag_egresos_contingencia: true,
+      flag_traslados_voluntarios: true,
+      flag_no_continuidad_titulares: true,
+      flag_simulador_calce_automatico: true
+    });
+    db.run(
+      `INSERT OR IGNORE INTO configuracion_general (id, feature_flags_json, ultima_modificacion) VALUES ('global', ?, ?);`,
+      [defaultFeatureFlagsJson, new Date().toISOString()]
+    );
+  } catch (e) {
+    console.warn('[schema] Aviso sembrando configuracion_general:', e);
   }
 
   // Purga Automática Proactiva: Si existen asignaciones residuales de "Plan Común Electivo"

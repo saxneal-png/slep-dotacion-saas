@@ -11,3 +11,6 @@ export * from './calculoAsistentes';
 export * from './calculoParvularia';
 export * from './calculoCoeficienteVtf';
 export * from './catalogoCodigosAsignaturas';
+export * from './saneamientoVacantesNn';
+export * from './egresosContingencia';
+export * from './motorCalceTerritorial';

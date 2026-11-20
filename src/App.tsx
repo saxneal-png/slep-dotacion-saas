@@ -25,6 +25,7 @@ const AnalizadorDotacionView = React.lazy(() => import('./views/AnalizadorDotaci
 const EstadisticasView = React.lazy(() => import('./views/EstadisticasView').then(m => ({ default: m.EstadisticasView })));
 const PlanesEstudioView = React.lazy(() => import('./views/PlanesEstudioView').then(m => ({ default: m.PlanesEstudioView })));
 const AsistentesDotacionView = React.lazy(() => import('./views/AsistentesDotacionView').then(m => ({ default: m.AsistentesDotacionView })));
+const MesaMovilidadView = React.lazy(() => import('./views/MesaMovilidadView').then(m => ({ default: m.MesaMovilidadView })));
 
 import {
   Establecimiento,
@@ -32,7 +33,8 @@ import {
   CursoSae,
   Docente,
   AsignacionHoraria,
-  AsistenteEducacion
+  AsistenteEducacion,
+  FeatureFlagsMovilidad
 } from './types';
 
 import {
@@ -80,13 +82,14 @@ import { SupabaseDotacionService } from './services/supabaseDotacionService';
 import { isSupabaseEnabled, supabase } from './services/supabaseClient';
 import { notificarMutacionLocalEmitida } from './services/colaboracionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
-import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota } from './services/configuracionGeneralService';
+import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota, obtenerFeatureFlagsMovilidad } from './services/configuracionGeneralService';
 import { RolesPermisosService } from './services/rolesPermisosService';
 import { AuthService } from './services/authService';
 import { obtenerGeminiApiKeyActiva } from './services/geminiKeyResolver';
 import { AuthSession, UsuarioSistema } from './types/authTypes';
 import { useEvaluadorPermisos, PermisosProvider } from './security/PermisosContext';
-import { getDefinicionRol, normalizarRol } from './security/rolesDefinitions';
+import { getDefinicionRol, normalizarRol, esRolNivelCentral } from './security/rolesDefinitions';
+import { purgarTablasMovilidadParaEscuela } from './database/dbCore';
 import { colegiosVisibles, puedeAccederRbd } from './services/scopeService';
 import {
   usePresenciaGlobal,
@@ -106,6 +109,31 @@ export const App: React.FC = () => {
   const evaluadorPermisos = useEvaluadorPermisos(session);
   const permisos = evaluadorPermisos.legado;
   const alcanceReal = session ? getDefinicionRol(normalizarRol(session.usuario.role)).alcance : null;
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlagsMovilidad>(() => obtenerFeatureFlagsMovilidad());
+  const rolEfectivoMovilidad = evaluadorPermisos.rol;
+  const puedeVerMesaMovilidad = Boolean(
+    session &&
+    featureFlags.modulo_movilidad_activo &&
+    rolEfectivoMovilidad &&
+    esRolNivelCentral(rolEfectivoMovilidad) &&
+    evaluadorPermisos.can('mesa_movilidad.ver')
+  );
+
+  useEffect(() => {
+    const onConfigUpdated = () => {
+      setFeatureFlags(obtenerFeatureFlagsMovilidad());
+    };
+    window.addEventListener('slep:config_updated', onConfigUpdated);
+    return () => window.removeEventListener('slep:config_updated', onConfigUpdated);
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    const def = getDefinicionRol(normalizarRol(session.usuario.role));
+    if (def.alcance === 'establecimiento') {
+      purgarTablasMovilidadParaEscuela().catch(() => {});
+    }
+  }, [session?.usuario.id, session?.usuario.role]);
   const [usuariosSistema, setUsuariosSistema] = useState<UsuarioSistema[]>([]);
   useEffect(() => {
     if (session) AuthService.getUsuarios().then(setUsuariosSistema).catch(() => setUsuariosSistema([]));
@@ -482,6 +510,10 @@ export const App: React.FC = () => {
       const defRol = getDefinicionRol(rolNormal);
       const userRbd = activeSession.usuario.rbdAsignado?.trim();
 
+      if (defRol.alcance === 'establecimiento') {
+        await purgarTablasMovilidadParaEscuela().catch(() => {});
+      }
+
       if (isSupabaseEnabled()) {
         try {
           // Aislamiento Estricto de Descarga Nube y Optimización de Cuota:
@@ -548,7 +580,16 @@ export const App: React.FC = () => {
       }
 
       RolesPermisosService.sincronizarDesdeSupabase().catch(() => {});
-      cargarConfiguracionGeneralRemota().catch(() => {});
+      cargarConfiguracionGeneralRemota()
+        .then((remota) => {
+          if (remota) {
+            setFeatureFlags(obtenerFeatureFlagsMovilidad());
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('slep:config_updated', { detail: remota }));
+            }
+          }
+        })
+        .catch(() => {});
 
       // Determinación estricta del colegio objetivo según el alcance del usuario en sesión
       let defaultEst: Establecimiento | null = null;
@@ -731,12 +772,15 @@ export const App: React.FC = () => {
   // Guard de navegación: redirige a la primera vista permitida si la actual no está autorizada
   useEffect(() => {
     if (!session) return;
-    if (!evaluadorPermisos.puedeVerVista(vistaActiva)) {
+    if (
+      (vistaActiva === 'mesa_movilidad' && !puedeVerMesaMovilidad) ||
+      !evaluadorPermisos.puedeVerVista(vistaActiva)
+    ) {
       const candidatas = ['colegios_asesorados', 'workflow', 'cartera', 'consolidador', 'estadisticas', 'planes_estudio'];
-      const destino = candidatas.find(v => evaluadorPermisos.puedeVerVista(v));
+      const destino = candidatas.find(v => v !== 'mesa_movilidad' && evaluadorPermisos.puedeVerVista(v));
       if (destino && destino !== vistaActiva) setVistaActiva(destino);
     }
-  }, [session, vistaActiva, evaluadorPermisos]);
+  }, [session, vistaActiva, evaluadorPermisos, puedeVerMesaMovilidad]);
 
   // Handlers CRUD
   const handleGuardarColegio = async (est: Establecimiento) => {
@@ -1382,6 +1426,7 @@ export const App: React.FC = () => {
         usuariosActivosCount={sesionesPresenciaVisibles.length}
         escuelasActivasCount={presenciaPorRbd.size}
         onAbrirMonitorActividad={() => setModalMonitorActividadAbierto(true)}
+        mostrarMesaMovilidad={puedeVerMesaMovilidad}
       />
 
       {/* Toast Notificación */}
@@ -1665,6 +1710,17 @@ export const App: React.FC = () => {
                 mostrarMensaje(`Navegando a ${est.nombre}${destinoTxt} en Dotación ${pDestino}`);
               }
             }}
+          />
+        )}
+
+        {vistaActiva === 'mesa_movilidad' && puedeVerMesaMovilidad && session && (
+          <MesaMovilidadView
+            colegios={colegios}
+            docentesTerritorio={todosLosDocentes}
+            asignacionesTerritorio={todasLasAsignaciones}
+            periodoActivo={periodoActivo}
+            usuarioActual={session.usuario}
+            onDatosActualizados={() => cargarDatos(periodoActivo)}
           />
         )}
         </React.Suspense>

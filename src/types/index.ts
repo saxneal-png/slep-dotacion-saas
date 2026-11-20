@@ -192,6 +192,21 @@ export interface FuncionNoAulaDocente {
   financiamiento?: FuenteFinanciamientoFuncion;
 }
 
+export interface FeatureFlagsMovilidad {
+  modulo_movilidad_activo: boolean;
+  flag_saneamiento_nn_escuelas: boolean;
+  flag_egresos_contingencia: boolean;
+  flag_traslados_voluntarios: boolean;
+  flag_no_continuidad_titulares: boolean;
+  flag_simulador_calce_automatico: boolean;
+}
+
+export type TipoVacanteDocente =
+  | 'NN_DETECTADO'
+  | 'NECESIDAD_ESCUELA'
+  | 'CONDICIONAL_EGRESO'
+  | 'REBOTE_MOVILIDAD';
+
 export interface Docente {
   id: string;
   rbd: string;
@@ -254,6 +269,12 @@ export interface Docente {
   horaIngresoTurno?: string;
   horaSalidaTurno?: string;
   reemplazoDeRun?: string;
+  // Vacantes NN, necesidades y contingencia de egresos
+  esVacanteNn?: boolean;
+  tipoVacante?: TipoVacanteDocente;
+  justificacionVacante?: string;
+  origenEgresoId?: string;
+  vacanteCondicional?: boolean;
 }
 
 export interface AsignacionHoraria {
@@ -625,6 +646,7 @@ export interface ConfiguracionGeneral {
   parametrosMineduc: ParametrosMineducConfig;
   gemini: GeminiConfig;
   ui: PreferenciasUiConfig;
+  featureFlags?: FeatureFlagsMovilidad;
   ultimaModificacion?: string;
 }
 
@@ -708,5 +730,152 @@ export interface JiscParvuloB3 {
 }
 
 export * from './asistentesTypes';
+
+export type CausalEgresoDocente =
+  | 'renuncia_voluntaria'
+  | 'art_19s_no_avance'
+  | 'incentivo_retiro'
+  | 'salud_incompatible_180d'
+  | 'art_72_otro';
+
+export type CertezaJuridicaEgreso = 'confirmado' | 'en_tramite';
+export type ImpactoPresupuestarioEgreso = 'con_recuperacion_sil' | 'costo_doble_pendiente' | 'sin_impacto_doble';
+
+export interface EgresoProyectado {
+  id: string;
+  rbd: string;
+  periodo: number;
+  docenteId: string;
+  runDocente: string;
+  nombreDocente: string;
+  asignaturaPrincipal?: string;
+  horasLiberadas: number;
+  horasAulaLiberadas: number;
+  fuenteFinanciamiento: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' | 'MIXTO';
+  calidadJuridica: CalidadJuridicaDocente;
+  causal: CausalEgresoDocente;
+  certeza: CertezaJuridicaEgreso;
+  excepcionJubilacion3Anios: boolean;
+  fechaCese?: string;
+  numeroDecreto?: string;
+  impactoPresupuestario: ImpactoPresupuestarioEgreso;
+  vacanteDocenteId?: string;
+  validadoPor?: string;
+  observaciones?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CarrilMovilidad = 'NO_CONTINUIDAD_TITULAR' | 'TRASLADO_VOLUNTARIO' | 'HORAS_REMANENTES';
+export type EstadoFlujoMovilidad =
+  | 'POSTULADO'
+  | 'PRE_ASIGNADO'
+  | 'NOTIFICADO_DIRECCION_ORIGEN'
+  | 'ACEPTADO_CON_FIRMA'
+  | 'CONSOLIDADO'
+  | 'RECHAZADO';
+
+export interface SolicitudMovilidad {
+  id: string;
+  periodo: number;
+  carril: CarrilMovilidad;
+  docenteId: string;
+  runDocente: string;
+  nombreDocente: string;
+  rbdOrigen: string;
+  comunaOrigen?: string;
+  rbdDestinoPreferente?: string;
+  comunaDestinoPreferente?: string;
+  calidadJuridica: CalidadJuridicaDocente;
+  horasContratoActual: number;
+  horasTitularesActuales: number;
+  horasDisponiblesMover: number;
+  horasRemanentes: number;
+  asignaturaPrincipal?: string;
+  tituloMencion?: string;
+  aplicaArticulo69?: boolean;
+  fuenteActual: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' | 'MIXTO';
+  estadoFlujo: EstadoFlujoMovilidad;
+  puntajeSalud: number;
+  puntajeLeyKarin: number;
+  puntajeCuidadoDependientes: number;
+  puntajeDistanciaRural: number;
+  puntajeAntiguedad: number;
+  puntajePrioridadTotal: number;
+  fundamento?: string;
+  creadoPor?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface VacanteRebotePlan {
+  rbdOrigen: string;
+  nombreEstablecimientoOrigen?: string;
+  horasContratoRebote: number;
+  minutosContratoRebote: number;
+  horasPedagogicasAula: number;
+  asignaturaPrincipal: string;
+  fuenteFinanciamiento: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
+  asignacionesHeredadas: Array<{
+    asignacionId: string;
+    cursoId: string;
+    asignatura: string;
+    horasPedagogicasAula: number;
+  }>;
+  funcionesNoLectivasHeredadas: FuncionNoAulaDocente[];
+  deltaMinutosCadena: number;
+}
+
+export type EstadoEscenarioCalce = 'BORRADOR' | 'EN_REVISION' | 'APROBADO' | 'CONSOLIDADO' | 'DESCARTADO';
+
+export interface EscenarioCalce {
+  id: string;
+  periodo: number;
+  nombre: string;
+  descripcion?: string;
+  estado: EstadoEscenarioCalce;
+  creadoPor?: string;
+  aprobadoPor?: string;
+  consolidadoPor?: string;
+  fechaConsolidacion?: string;
+  resumenMetricas?: {
+    totalPropuestas: number;
+    propuestasValidas: number;
+    propuestasBloqueadas: number;
+    vacantesNnCubiertas: number;
+    rebotesGenerados: number;
+    deltaMinutosTerritorial: number;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PropuestaCalce {
+  id: string;
+  escenarioId: string;
+  periodo: number;
+  solicitudMovilidadId?: string;
+  docenteOrigenId: string;
+  runDocente: string;
+  nombreDocente: string;
+  rbdOrigen: string;
+  rbdDestino: string;
+  vacanteDestinoId?: string;
+  egresoOrigenId?: string;
+  tipoCobertura: 'DEFINITIVA' | 'TRANSITORIA_CONDICIONAL';
+  horasAsignadas: number;
+  minutosAsignados: number;
+  horasPedagogicasAula: number;
+  fuenteDestino: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
+  indiceCompatibilidad: number;
+  generaRebote: boolean;
+  vacanteRebote?: VacanteRebotePlan;
+  alertasNormativas: string[];
+  bloqueaConsolidacion: boolean;
+  motivoBloqueo?: string;
+  estado: 'PROPUESTA' | 'VALIDADA' | 'BLOQUEADA' | 'CONSOLIDADA';
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 

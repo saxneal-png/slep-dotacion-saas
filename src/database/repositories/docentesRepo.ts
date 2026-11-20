@@ -15,7 +15,8 @@ const DOCENTE_SELECT_COLS = `
   horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
   accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
   situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
-  es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
+  es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
+  es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional
 `;
 
 function mapRowToDocente(row: any[]): Docente {
@@ -96,7 +97,12 @@ function mapRowToDocente(row: any[]): Docente {
     grupoJiscId: row[50] ? String(row[50]) : undefined,
     horaIngresoTurno: row[51] ? String(row[51]) : undefined,
     horaSalidaTurno: row[52] ? String(row[52]) : undefined,
-    reemplazoDeRun: row[53] ? String(row[53]) : undefined
+    reemplazoDeRun: row[53] ? String(row[53]) : undefined,
+    esVacanteNn: Boolean(row[54]),
+    tipoVacante: row[55] ? (String(row[55]) as Docente['tipoVacante']) : undefined,
+    justificacionVacante: row[56] ? String(row[56]) : undefined,
+    origenEgresoId: row[57] ? String(row[57]) : undefined,
+    vacanteCondicional: Boolean(row[58])
   };
 }
 
@@ -252,9 +258,10 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
       horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
       situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
-      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
+      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
+      es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
       titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -299,7 +306,12 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
       grupo_jisc_id=excluded.grupo_jisc_id,
       hora_ingreso_turno=excluded.hora_ingreso_turno,
       hora_salida_turno=excluded.hora_salida_turno,
-      reemplazo_de_run=excluded.reemplazo_de_run;
+      reemplazo_de_run=excluded.reemplazo_de_run,
+      es_vacante_nn=excluded.es_vacante_nn,
+      tipo_vacante=excluded.tipo_vacante,
+      justificacion_vacante=excluded.justificacion_vacante,
+      origen_egreso_id=excluded.origen_egreso_id,
+      vacante_condicional=excluded.vacante_condicional;
   `, [
     docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
     subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
@@ -328,7 +340,12 @@ export async function guardarDocente(d: Docente, skipCloudSync: boolean = false)
     d.grupoJiscId || null,
     d.horaIngresoTurno || null,
     d.horaSalidaTurno || null,
-    d.reemplazoDeRun || null
+    d.reemplazoDeRun || null,
+    d.esVacanteNn ? 1 : 0,
+    d.tipoVacante || null,
+    d.justificacionVacante || null,
+    d.origenEgresoId || null,
+    d.vacanteCondicional ? 1 : 0
   ]);
   await persistDb(true);
   if (!skipCloudSync) {
@@ -452,9 +469,10 @@ export async function guardarDocentesBatch(
           horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
           accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
           situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
-      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run
+      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
+      es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
           titulo=excluded.titulo, calidad_juridica=excluded.calidad_juridica,
@@ -499,7 +517,12 @@ export async function guardarDocentesBatch(
           grupo_jisc_id=excluded.grupo_jisc_id,
           hora_ingreso_turno=excluded.hora_ingreso_turno,
           hora_salida_turno=excluded.hora_salida_turno,
-          reemplazo_de_run=excluded.reemplazo_de_run;
+          reemplazo_de_run=excluded.reemplazo_de_run,
+          es_vacante_nn=excluded.es_vacante_nn,
+          tipo_vacante=excluded.tipo_vacante,
+          justificacion_vacante=excluded.justificacion_vacante,
+          origen_egreso_id=excluded.origen_egreso_id,
+          vacante_condicional=excluded.vacante_condicional;
       `, [
         docId, d.rbd, d.run, d.nombres, d.apellidos, d.titulo || null, d.calidadJuridica, d.estamento, d.horasContrato,
         subvGenTitular, subvGenContrata, sepTitular, sepContrata, pieTitular, pieContrata,
@@ -528,7 +551,12 @@ export async function guardarDocentesBatch(
         d.grupoJiscId || null,
         d.horaIngresoTurno || null,
         d.horaSalidaTurno || null,
-        d.reemplazoDeRun || null
+        d.reemplazoDeRun || null,
+        d.esVacanteNn ? 1 : 0,
+        d.tipoVacante || null,
+        d.justificacionVacante || null,
+        d.origenEgresoId || null,
+        d.vacanteCondicional ? 1 : 0
       ]);
 
       docentesPersistidos.push({

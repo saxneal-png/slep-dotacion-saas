@@ -33,6 +33,16 @@ export const ROLES_DEFINICIONES: DefinicionRol[] = [
     color: 'indigo'
   },
   {
+    id: 'gdp_validador',
+    nombre: 'Validador GDP',
+    nombreCorto: 'GDP',
+    descripcion: 'Valida egresos proyectados, certezas jurídicas, vacantes condicionales y cuadre presupuestario GDP.',
+    alcance: 'global',
+    nivel: 2,
+    editable: true,
+    color: 'amber'
+  },
+  {
     id: 'asesor_uatp',
     nombre: 'Asesor UATP',
     nombreCorto: 'Asesor',
@@ -102,4 +112,17 @@ export function rolesAsignablesPor(rolActor: RolId): DefinicionRol[] {
   const actor = getDefinicionRol(rolActor);
   if (actor.id === 'super_usuario') return ROLES_DEFINICIONES;
   return ROLES_DEFINICIONES.filter(d => d.nivel > actor.nivel);
+}
+
+const ROLES_NIVEL_CENTRAL_SET = new Set<RolId>([
+  'super_usuario',
+  'subdirector_uatp',
+  'coordinador_uatp',
+  'asesor_uatp',
+  'gdp_validador'
+]);
+
+/** Indica si un rol (o rol heredado normalizado) pertenece al nivel central SLEP/UATP/GDP. */
+export function esRolNivelCentral(r: unknown): boolean {
+  return ROLES_NIVEL_CENTRAL_SET.has(normalizarRol(r));
 }

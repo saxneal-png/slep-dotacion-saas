@@ -237,7 +237,11 @@ export function deduplicarPorId<T extends { id: string }>(items: T[]): T[] {
   return Array.from(map.values());
 }
 
-export function mapDocenteToDb(docente: Docente, incluirColumnaRequiere: boolean = false) {
+export function mapDocenteToDb(
+  docente: Docente,
+  incluirColumnaRequiere: boolean = false,
+  incluirColumnasVacanteNn: boolean = true
+) {
   let funcionesArr: any[] = [];
   if (docente.funcionesNoAula && Array.isArray(docente.funcionesNoAula)) {
     funcionesArr = docente.funcionesNoAula.map(f => ({ ...f }));
@@ -316,6 +320,14 @@ export function mapDocenteToDb(docente: Docente, incluirColumnaRequiere: boolean
 
   if (incluirColumnaRequiere) {
     base.requiere_autorizacion_docente = Boolean(docente.requiereAutorizacionDocente);
+  }
+
+  if (incluirColumnasVacanteNn) {
+    base.es_vacante_nn = Boolean(docente.esVacanteNn);
+    base.tipo_vacante = docente.tipoVacante || null;
+    base.justificacion_vacante = docente.justificacionVacante || null;
+    base.origen_egreso_id = docente.origenEgresoId || null;
+    base.vacante_condicional = Boolean(docente.vacanteCondicional);
   }
 
   return base;
@@ -405,7 +417,12 @@ export function mapDocenteFromDb(row: any): Docente {
     horasAprobadasGdp: Number(row.horas_aprobadas_gdp || 0),
     situacionFinalGdp: row.situacion_final_gdp || undefined,
     observacionesDirector: row.observaciones_director || undefined,
-    observacionesSlep: row.observaciones_slep || undefined
+    observacionesSlep: row.observaciones_slep || undefined,
+    esVacanteNn: Boolean(row.es_vacante_nn),
+    tipoVacante: row.tipo_vacante ? (String(row.tipo_vacante) as Docente['tipoVacante']) : undefined,
+    justificacionVacante: row.justificacion_vacante ? String(row.justificacion_vacante) : undefined,
+    origenEgresoId: row.origen_egreso_id ? String(row.origen_egreso_id) : undefined,
+    vacanteCondicional: Boolean(row.vacante_condicional)
   };
 }
 
@@ -580,8 +597,34 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
 export class SupabaseDotacionService {
   // Bandera para rastrear si la columna `requiere_autorizacion_docente` existe en PostgreSQL
   private static soportaColumnaRequiereAutorizacion: boolean = false;
+  // Bandera para rastrear si las columnas de vacante NN / contingencia existen en PostgreSQL
+  private static soportaColumnasVacanteNn: boolean = true;
   // Bandera para rastrear si la columna `horas_honorarios` existe en PostgreSQL (migración 20261102182500)
   private static soportaColumnaHonorarios: boolean = true;
+
+  private static stripDocenteVacanteNnColumns(row: Record<string, any>): Record<string, any> {
+    const {
+      es_vacante_nn: _ev,
+      tipo_vacante: _tv,
+      justificacion_vacante: _jv,
+      origen_egreso_id: _oe,
+      vacante_condicional: _vc,
+      ...rest
+    } = row;
+    return rest;
+  }
+
+  private static esErrorColumnaVacanteNn(error: any): boolean {
+    if (!error || error.code !== 'PGRST204') return false;
+    const msg = String(error.message || '');
+    return (
+      msg.includes('es_vacante_nn') ||
+      msg.includes('tipo_vacante') ||
+      msg.includes('justificacion_vacante') ||
+      msg.includes('origen_egreso_id') ||
+      msg.includes('vacante_condicional')
+    );
+  }
 
   private static payloadAsistente(ast: AsistenteEducacion): any {
     const p: any = mapAsistenteToDb(ast);
@@ -856,19 +899,29 @@ export class SupabaseDotacionService {
     if (!isSupabaseEnabled()) return;
     await this.asegurarEstablecimientosExisten([docente.rbd]);
 
-    const payload = mapDocenteToDb(docente, this.soportaColumnaRequiereAutorizacion);
-    const { error } = await supabase.from('docentes').upsert(payload, { onConflict: 'id' });
+    let payload = mapDocenteToDb(
+      docente,
+      this.soportaColumnaRequiereAutorizacion,
+      this.soportaColumnasVacanteNn
+    );
 
-    if (error) {
-      if (error.code === 'PGRST204' && String(error.message || '').includes('requiere_autorizacion_docente')) {
-        this.soportaColumnaRequiereAutorizacion = false;
-        const retryPayload = mapDocenteToDb(docente, false);
-        const retry = await supabase.from('docentes').upsert(retryPayload, { onConflict: 'id' });
-        if (retry.error) {
-          console.error('[SupabaseDotacionService] Error reintentando guardarDocente:', retry.error);
-          throw new Error(`Error Supabase guardarDocente: ${retry.error.message}`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = await supabase.from('docentes').upsert(payload, { onConflict: 'id' });
+      if (!error) return;
+
+      if (error.code === 'PGRST204') {
+        const msg = String(error.message || '');
+        if (msg.includes('requiere_autorizacion_docente') && this.soportaColumnaRequiereAutorizacion) {
+          this.soportaColumnaRequiereAutorizacion = false;
+          const { requiere_autorizacion_docente: _req, ...rest } = payload;
+          payload = rest;
+          continue;
         }
-        return;
+        if (this.esErrorColumnaVacanteNn(error) && this.soportaColumnasVacanteNn) {
+          this.soportaColumnasVacanteNn = false;
+          payload = this.stripDocenteVacanteNnColumns(payload);
+          continue;
+        }
       }
       console.error('[SupabaseDotacionService] Error guardarDocente:', error);
       throw new Error(`Error Supabase guardarDocente: ${error.message}`);
@@ -883,22 +936,29 @@ export class SupabaseDotacionService {
     const chunkSize = 250;
     for (let i = 0; i < docentes.length; i += chunkSize) {
       const slice = docentes.slice(i, i + chunkSize);
-      let chunk = slice.map(d => mapDocenteToDb(d, this.soportaColumnaRequiereAutorizacion));
-      const { error } = await supabase.from('docentes').upsert(chunk, { onConflict: 'id' });
+      let chunk: Record<string, any>[] = slice.map(d =>
+        mapDocenteToDb(d, this.soportaColumnaRequiereAutorizacion, this.soportaColumnasVacanteNn)
+      );
 
-      if (error) {
-        if (error.code === 'PGRST204' && String(error.message || '').includes('requiere_autorizacion_docente')) {
-          this.soportaColumnaRequiereAutorizacion = false;
-          chunk = slice.map(d => mapDocenteToDb(d, false));
-          const retry = await supabase.from('docentes').upsert(chunk, { onConflict: 'id' });
-          if (retry.error) {
-            console.error('[SupabaseDotacionService] Error reintentando guardarDocentesBatch:', retry.error);
-            throw new Error(`Error Supabase guardarDocentesBatch: ${retry.error.message}`);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await supabase.from('docentes').upsert(chunk, { onConflict: 'id' });
+        if (!error) break;
+
+        if (error.code === 'PGRST204') {
+          const msg = String(error.message || '');
+          if (msg.includes('requiere_autorizacion_docente') && this.soportaColumnaRequiereAutorizacion) {
+            this.soportaColumnaRequiereAutorizacion = false;
+            chunk = chunk.map(({ requiere_autorizacion_docente: _req, ...rest }) => rest);
+            continue;
           }
-        } else {
-          console.error('[SupabaseDotacionService] Error guardarDocentesBatch:', error);
-          throw new Error(`Error Supabase guardarDocentesBatch: ${error.message}`);
+          if (this.esErrorColumnaVacanteNn(error) && this.soportaColumnasVacanteNn) {
+            this.soportaColumnasVacanteNn = false;
+            chunk = chunk.map(row => this.stripDocenteVacanteNnColumns(row));
+            continue;
+          }
         }
+        console.error('[SupabaseDotacionService] Error guardarDocentesBatch:', error);
+        throw new Error(`Error Supabase guardarDocentesBatch: ${error.message}`);
       }
     }
   }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { RolesPermisosService } from '../src/services/rolesPermisosService';
-import { normalizarRol, rolesAsignablesPor } from '../src/security/rolesDefinitions';
-import { TODAS_LAS_CLAVES, k } from '../src/security/permissionCatalog';
+import { normalizarRol, rolesAsignablesPor, esRolNivelCentral } from '../src/security/rolesDefinitions';
+import { TODAS_LAS_CLAVES, k, normalizarPermisos } from '../src/security/permissionCatalog';
 import { colegiosVisibles, puedeAccederRbd } from '../src/services/scopeService';
 import { Establecimiento } from '../src/types';
 
@@ -99,6 +99,47 @@ describe('Roles, Permisos y Scope Territorial RBAC', () => {
     expect(rolesDeAsesor.map(r => r.id)).toEqual(['director_establecimiento', 'jefe_utp_establecimiento']);
 
     const rolesDeSuperUsuario = rolesAsignablesPor('super_usuario');
-    expect(rolesDeSuperUsuario.length).toBe(6);
+    expect(rolesDeSuperUsuario.length).toBe(7);
+  });
+
+  it('bloquea incondicionalmente mesa_movilidad y gdp_validador para roles de establecimiento', () => {
+    const permisosProhibidos = [
+      k('mesa_movilidad', 'ver'),
+      k('mesa_movilidad', 'crear'),
+      k('mesa_movilidad', 'editar'),
+      k('mesa_movilidad', 'eliminar'),
+      k('mesa_movilidad', 'ejecutar'),
+      k('gdp_validador', 'ver'),
+      k('gdp_validador', 'editar'),
+      k('gdp_validador', 'ejecutar')
+    ];
+
+    for (const rolEscuela of ['director_establecimiento', 'jefe_utp_establecimiento'] as const) {
+      const normalizados = normalizarPermisos(rolEscuela, [
+        k('workflow', 'ver'),
+        ...permisosProhibidos
+      ]);
+      expect(normalizados.some(p => p.startsWith('mesa_movilidad.') || p.startsWith('gdp_validador.'))).toBe(false);
+
+      RolesPermisosService.guardarPermisosRol(rolEscuela, [k('workflow', 'ver'), ...permisosProhibidos], 'test-admin');
+      const persistidos = RolesPermisosService.getPermisosRol(rolEscuela);
+      expect(persistidos.some(p => p.startsWith('mesa_movilidad.') || p.startsWith('gdp_validador.'))).toBe(false);
+    }
+  });
+
+  it('identifica correctamente roles de nivel central y permisos por defecto de gdp_validador', () => {
+    expect(esRolNivelCentral('director_establecimiento')).toBe(false);
+    expect(esRolNivelCentral('jefe_utp_establecimiento')).toBe(false);
+    expect(esRolNivelCentral('director_colegio')).toBe(false);
+    expect(esRolNivelCentral('desconocido')).toBe(false);
+
+    expect(esRolNivelCentral('super_usuario')).toBe(true);
+    expect(esRolNivelCentral('subdirector_uatp')).toBe(true);
+    expect(esRolNivelCentral('coordinador_uatp')).toBe(true);
+    expect(esRolNivelCentral('asesor_uatp')).toBe(true);
+    expect(esRolNivelCentral('gdp_validador')).toBe(true);
+
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('gdp_validador', 'ejecutar'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('mesa_movilidad', 'ver'))).toBe(true);
   });
 });

@@ -43,6 +43,7 @@ import {
   esAsignacionTrabajoColaborativo,
   obtenerHorasCronologicasTrabajoColab
 } from './auditoriaDocenteService';
+import { filtrarDocentesSinDobleConteoCondicional } from './movilidadTerritorialService';
 
 export interface DiagnosticoEspecialidad {
   asignatura: string;
@@ -95,9 +96,11 @@ export function calcularDiagnosticoColegio(
   const regimenTabla = est.porcentajePrioritarios >= 80 ? '60_40' : '65_35';
   const regimenProporcion = est.porcentajePrioritarios >= 80 ? '60/40' : '65/35';
 
+  const { docentesEfectivos } = filtrarDocentesSinDobleConteoCondicional(docentes);
+
   // Mapas e índices O(1) para evitar búsquedas cuadráticas en memoria
   const cursosMap = new Map<string, CursoSae>(cursos.map(c => [c.id, c]));
-  const docentesMap = new Map<string, Docente>(docentes.map(d => [d.id, d]));
+  const docentesMap = new Map<string, Docente>(docentesEfectivos.map(d => [d.id, d]));
   const asigsPorDocente = new Map<string, AsignacionHoraria[]>();
   const coAsigsPorDocente = new Map<string, AsignacionHoraria[]>();
 
@@ -337,7 +340,7 @@ export function calcularDiagnosticoColegio(
   let horasLectivasAsignadas = 0;
   const sobreasignacionesAlertas: string[] = [];
 
-  const estadoDocentes = docentes.map(doc => {
+  const estadoDocentes = docentesEfectivos.map(doc => {
     horasContratadasTotales += doc.horasContrato;
     const hDir = doc.horasDirectivas || 0;
     const hInsp = doc.horasInspectorGeneral || 0;
@@ -866,9 +869,11 @@ export function consolidarCarteraTerritorial(
   const docentesCompartidos: DocenteCompartidoTerritorial[] = [];
   const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [e.rbd, e]));
 
+  const { docentesEfectivos } = filtrarDocentesSinDobleConteoCondicional(docentes);
+
   // 1. Auditoría Territorial: Multicontratos Legales vs. Infracción por Sobrecarga (>44h)
   const docentesPorRun: { [run: string]: Docente[] } = {};
-  for (const d of docentes) {
+  for (const d of docentesEfectivos) {
     const runLimpio = normalizarRut(d.run);
     if (!runLimpio) continue;
     if (!docentesPorRun[runLimpio]) {
@@ -1043,9 +1048,11 @@ export function obtenerDocentesConsolidadosTerritorio(
     }
   }
 
+  const { docentesEfectivos } = filtrarDocentesSinDobleConteoCondicional(docentes);
+
   // Agrupar por RUN
   const porRun: { [run: string]: Docente[] } = {};
-  for (const d of docentes) {
+  for (const d of docentesEfectivos) {
     const cleanRun = normalizarRut(d.run);
     if (!cleanRun) continue;
     if (!porRun[cleanRun]) {

@@ -27,6 +27,7 @@ import { extraerGradosDeCurso } from './combinacionCursosService';
 import { cargarPlantillaOficialBuffer } from './templateLoaderService';
 import { findSchoolByRbd, resolveCanonicalRbd } from '../data/slepSchoolsCatalog';
 import { normalizarRut } from '../utils/rutUtils';
+import { filtrarDocentesSinDobleConteoCondicional } from './movilidadTerritorialService';
 
 /**
  * Calcula las horas de contrato docente reglamentarias MINEDUC para una demanda de aula (Total HA),
@@ -406,6 +407,7 @@ export async function generarExcelConsolidadoPalDEP(
 
   const establecimientosRegulares = establecimientos.filter(e => !esEstablecimientoVtf(e));
   const establecimientosVtf = establecimientos.filter(e => esEstablecimientoVtf(e));
+  const { docentesEfectivos } = filtrarDocentesSinDobleConteoCondicional(docentesTerritorio);
 
   // 1. Poblado de Info Funcionario (DOCENTE)
   // Limpiar filas anteriores de la tabla manteniendo estilos de fila 3
@@ -413,7 +415,7 @@ export async function generarExcelConsolidadoPalDEP(
   let currentRowDoc = rowStartDoc;
 
   for (const est of establecimientosRegulares) {
-    const docColegio = docentesTerritorio.filter(d => String(d.rbd) === String(est.rbd) && !d.esVtf);
+    const docColegio = docentesEfectivos.filter(d => String(d.rbd) === String(est.rbd) && !d.esVtf);
     const cursosColegio = cursosTerritorio.filter(c => String(c.rbd) === String(est.rbd));
     const asigsColegio = asignacionesTerritorio.filter(a => String(a.rbd) === String(est.rbd));
 
@@ -528,7 +530,7 @@ export async function generarExcelConsolidadoPalDEP(
     let currentRowVtf = 3;
     for (const est of establecimientosVtf) {
       const rbdNum = Number(est.rbd) || est.rbd;
-      const docVtf = docentesTerritorio.filter(d => String(d.rbd) === String(est.rbd));
+      const docVtf = docentesEfectivos.filter(d => String(d.rbd) === String(est.rbd));
       const aeVtf = asistentesTerritorio.filter(a => String(a.rbd) === String(est.rbd));
 
       for (const d of docVtf) {

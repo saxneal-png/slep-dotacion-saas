@@ -4,7 +4,7 @@ import {
   SlidersHorizontal, FileUp, PieChart, BookOpen, Users, Scale, LayoutGrid,
   Database, Search, Sparkles, BarChart3, CheckCircle2, CloudUpload, RefreshCw,
   UserCheck, Settings, Moon, Sun, Leaf, Eye, Menu, X, Globe,
-  LogOut, ShieldAlert, KeyRound, Loader2, CloudOff, Cloud
+  LogOut, ShieldAlert, KeyRound, Loader2, CloudOff, Cloud, ArrowRightLeft
 } from 'lucide-react';
 import { Establecimiento } from '../types';
 import { AuthSession } from '../types/authTypes';
@@ -44,6 +44,7 @@ interface HeaderProps {
   usuariosActivosCount?: number;
   escuelasActivasCount?: number;
   onAbrirMonitorActividad?: () => void;
+  mostrarMesaMovilidad?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -71,7 +72,8 @@ export const Header: React.FC<HeaderProps> = ({
   puedeVerMonitorActividad = false,
   usuariosActivosCount = 0,
   escuelasActivasCount = 0,
-  onAbrirMonitorActividad
+  onAbrirMonitorActividad,
+  mostrarMesaMovilidad = false
 }) => {
   const permisos = session ? AuthService.getPermisos(session.usuario.role) : null;
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -251,6 +253,17 @@ export const Header: React.FC<HeaderProps> = ({
               <button onClick={() => onSelectVista('estadisticas')} className={navPillClass('estadisticas')}>
                 <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>Estadísticas</span>
+              </button>
+            )}
+
+            {mostrarMesaMovilidad === true && (
+              <button
+                onClick={() => onSelectVista('mesa_movilidad')}
+                className={navPillClass('mesa_movilidad')}
+                title="Mesa Territorial de Movilidad, Vacantes NN y Simulador What-If"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span>Mesa Movilidad</span>
               </button>
             )}
 
@@ -651,6 +664,9 @@ export const Header: React.FC<HeaderProps> = ({
                 { id: 'workflow', label: 'Espacio Escolar', icon: ClipboardCheck },
                 { id: 'consolidador', label: 'Consolidado', icon: Layers },
                 { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3 },
+                ...(mostrarMesaMovilidad === true
+                  ? [{ id: 'mesa_movilidad', label: 'Mesa Movilidad', icon: ArrowRightLeft }]
+                  : []),
                 { id: 'analizador', label: 'Analizador', icon: Sparkles },
                 { id: 'planes_estudio', label: 'Planes & EPJA', icon: BookOpen },
               ].map(item => {

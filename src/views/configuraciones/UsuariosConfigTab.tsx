@@ -18,6 +18,7 @@ const BADGE_COLORES: Record<string, string> = {
   violet: 'bg-violet-500/20 text-violet-300 border-violet-500/40',
   indigo: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
   sky: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+  amber: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
   emerald: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
   teal: 'bg-teal-500/20 text-teal-300 border-teal-500/40'
 };
@@ -27,6 +28,7 @@ const CARGO_POR_ROL: Record<UserRole, string> = {
   subdirector_uatp: 'Subdirector(a) UATP',
   coordinador_uatp: 'Coordinador(a) UATP',
   asesor_uatp: 'Asesor(a) UATP',
+  gdp_validador: 'Validador(a) GDP / Presupuesto',
   director_establecimiento: 'Director(a) de Establecimiento',
   jefe_utp_establecimiento: 'Jefe(a) UTP de Establecimiento'
 };

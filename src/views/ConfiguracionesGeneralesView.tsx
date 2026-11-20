@@ -3,7 +3,8 @@ import {
   Settings, UserCheck, Shield, Sparkles, Sliders, Database, Save, RotateCcw,
   Plus, Trash2, Edit2, CheckCircle2, AlertTriangle, Key, ExternalLink,
   Bot, Eye, HelpCircle, FileSpreadsheet, HardDrive, RefreshCw, Check,
-  Mail, Phone, MapPin, Building2, Layers, Users, Search, BookOpen
+  Mail, Phone, MapPin, Building2, Layers, Users, Search, BookOpen,
+  ToggleLeft, ToggleRight
 } from 'lucide-react';
 import { PlanesEstudioConfigTab } from './configuraciones/PlanesEstudioConfigTab';
 import { UsuariosConfigTab } from './configuraciones/UsuariosConfigTab';
@@ -17,7 +18,8 @@ import {
   GeminiConfig,
   PreferenciasUiConfig,
   Establecimiento,
-  ComunaValleDiguillin
+  ComunaValleDiguillin,
+  FeatureFlagsMovilidad
 } from '../types';
 import {
   cargarConfiguracionGeneral,
@@ -28,7 +30,9 @@ import {
   restablecerConfiguracionPorDefecto,
   reasignarColegiosMasivo,
   actualizarColegiosDeAsesor,
-  sincronizarEquipoAsesoresConUsuariosLocales
+  sincronizarEquipoAsesoresConUsuariosLocales,
+  FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+  actualizarFeatureFlagsMovilidad
 } from '../services/configuracionGeneralService';
 import { sincronizarCatalogoEstablecimientos } from '../database/seedData';
 
@@ -52,6 +56,43 @@ const COMUNAS_DISPONIBLES: ComunaValleDiguillin[] = [
   'Yungay'
 ];
 
+const FEATURE_FLAGS_CATALOGO: Array<{
+  key: keyof FeatureFlagsMovilidad;
+  titulo: string;
+  descripcion: string;
+}> = [
+  {
+    key: 'modulo_movilidad_activo',
+    titulo: 'Mesa Territorial de Movilidad',
+    descripcion: 'Habilita el módulo central de Mesa de Movilidad Territorial para roles autorizados (UATP / GDP / Subdirección).'
+  },
+  {
+    key: 'flag_saneamiento_nn_escuelas',
+    titulo: 'Botón Declarar Vacante en Escuelas',
+    descripcion: 'Muestra el botón "Declarar Necesidad de Vacante" en la nómina docente de cada escuela sin requerir RUN ficticios.'
+  },
+  {
+    key: 'flag_egresos_contingencia',
+    titulo: 'Egresos Proyectados y Vacantes Condicionales',
+    descripcion: 'Activa la pestaña de egresos GDP (Art. 19 S, incentivo al retiro, salud incompatible) y vacantes condicionales.'
+  },
+  {
+    key: 'flag_traslados_voluntarios',
+    titulo: 'Cola Priorizada de Traslados Voluntarios',
+    descripcion: 'Habilita la recepción y ponderación territorial de traslados (Ley Karin, Salud, Dependientes, Ruralidad, Antigüedad).'
+  },
+  {
+    key: 'flag_no_continuidad_titulares',
+    titulo: 'Bolsa de No Continuidad de Titulares (Art. 42)',
+    descripcion: 'Activa el carril prioritario de resguardo laboral para docentes titulares sin continuidad en su escuela de origen.'
+  },
+  {
+    key: 'flag_simulador_calce_automatico',
+    titulo: 'Simulador What-If y Calce Automático',
+    descripcion: 'Habilita el motor de sugerencias automáticas de calce territorial en minutos enteros y matriz de proximidad.'
+  }
+];
+
 export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesViewProps> = ({
   colegios,
   onColegiosActualizados,
@@ -61,9 +102,10 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
   onImportarCarteraSlep,
   onVolver
 }) => {
-  const { can, esSuperUsuario } = usePermisos();
+  const { can, esSuperUsuario, rol, rolReal } = usePermisos();
+  const puedeGestionarFeatureFlags = rol === 'super_usuario' || rol === 'subdirector_uatp';
   const [config, setConfig] = useState<ConfiguracionGeneral>(() => cargarConfiguracionGeneral());
-  const [tabActiva, setTabActiva] = useState<'roles' | 'usuarios' | 'perfil' | 'normativa' | 'planes' | 'ia' | 'ui' | 'db'>(() => {
+  const [tabActiva, setTabActiva] = useState<'roles' | 'usuarios' | 'perfil' | 'normativa' | 'planes' | 'ia' | 'ui' | 'db' | 'modulos'>(() => {
     return esSuperUsuario ? 'roles' : 'usuarios';
   });
   const [mensajeGuardado, setMensajeGuardado] = useState<string | null>(null);
@@ -98,6 +140,12 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
       setConfig(cargarConfiguracionGeneral());
     });
   }, [tabActiva, colegios]);
+
+  useEffect(() => {
+    if (tabActiva === 'modulos' && !puedeGestionarFeatureFlags) {
+      setTabActiva('perfil');
+    }
+  }, [tabActiva, puedeGestionarFeatureFlags]);
 
   // Guardar configuración completa
   const handleGuardarConfig = (nuevaConfig: ConfiguracionGeneral) => {
@@ -149,6 +197,22 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
       }
     };
     handleGuardarConfig(actualizada);
+  };
+
+  // Cambio en vivo de Feature Flags modulares de Movilidad Territorial
+  const handleToggleFeatureFlag = (key: keyof FeatureFlagsMovilidad, titulo: string) => {
+    if (!puedeGestionarFeatureFlags) return;
+    const actuales: FeatureFlagsMovilidad = {
+      ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+      ...(config.featureFlags || {})
+    };
+    const siguienteValor = !actuales[key];
+    const actualizada = actualizarFeatureFlagsMovilidad(
+      { [key]: siguienteValor },
+      rolReal || rol || undefined
+    );
+    setConfig(actualizada);
+    mostrarMensaje(`✓ Interruptor "${titulo}" ${siguienteValor ? 'activado' : 'desactivado'} y guardado.`);
   };
 
   // Probar conexión de Gemini API
@@ -474,7 +538,7 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
 
         <button
           onClick={() => setTabActiva('db')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
             tabActiva === 'db'
               ? 'bg-white text-blue-700 shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -483,6 +547,20 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
           <Database className="w-4 h-4 text-slate-700" />
           <span>Base de Datos & Respaldos</span>
         </button>
+
+        {puedeGestionarFeatureFlags && (
+          <button
+            onClick={() => setTabActiva('modulos')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              tabActiva === 'modulos'
+                ? 'bg-white text-indigo-700 shadow-sm border border-indigo-300/60'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <ToggleRight className="w-4 h-4 text-indigo-600" />
+            <span>Módulos &amp; Feature Flags</span>
+          </button>
+        )}
 
       </div>
 
@@ -1204,6 +1282,83 @@ export const ConfiguracionesGeneralesView: React.FC<ConfiguracionesGeneralesView
             </button>
           </div>
 
+        </div>
+      )}
+
+      {/* 8. PESTAÑA MÓDULOS & FEATURE FLAGS (EXCLUSIVA SUPER USUARIO / SUBDIRECTOR UATP) */}
+      {tabActiva === 'modulos' && puedeGestionarFeatureFlags && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ToggleRight className="w-5 h-5 text-indigo-600" />
+                <span>Módulos &amp; Feature Flags de Movilidad Territorial</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Activa o desactiva en tiempo real los componentes de la Mesa de Movilidad y el botón de vacantes en establecimientos.
+              </p>
+            </div>
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 self-start sm:self-auto">
+              Sincronización en vivo
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {FEATURE_FLAGS_CATALOGO.map(flag => {
+              const flagsActuales: FeatureFlagsMovilidad = {
+                ...FEATURE_FLAGS_MOVILIDAD_DEFAULT,
+                ...(config.featureFlags || {})
+              };
+              const activo = Boolean(flagsActuales[flag.key]);
+              return (
+                <div
+                  key={flag.key}
+                  className={`p-4 rounded-xl border transition-all flex items-start justify-between gap-4 ${
+                    activo
+                      ? 'bg-indigo-50/40 border-indigo-200'
+                      : 'bg-slate-50/70 border-slate-200'
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-slate-900">{flag.titulo}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                          activo
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            : 'bg-slate-200 text-slate-600 border-slate-300'
+                        }`}
+                      >
+                        {activo ? 'Activo' : 'Desactivado'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      {flag.descripcion}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={activo}
+                    onClick={() => handleToggleFeatureFlag(flag.key, flag.titulo)}
+                    className={`shrink-0 p-1 rounded-xl transition-colors ${
+                      activo
+                        ? 'text-indigo-600 hover:bg-indigo-100'
+                        : 'text-slate-400 hover:bg-slate-200'
+                    }`}
+                    title={activo ? `Desactivar ${flag.titulo}` : `Activar ${flag.titulo}`}
+                  >
+                    {activo ? (
+                      <ToggleRight className="w-8 h-8" />
+                    ) : (
+                      <ToggleLeft className="w-8 h-8" />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

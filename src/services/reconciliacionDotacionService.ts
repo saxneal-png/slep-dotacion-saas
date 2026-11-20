@@ -8,7 +8,9 @@ import {
   esModalidadMultigradoOCombinado,
   esModalidadAdultos,
   esModalidadEspecial,
-  esNivelParvulario
+  esNivelParvulario,
+  detectarDocenteVacanteNn,
+  ResultadoDeteccionNn
 } from '@slep/mineduc-engine';
 import {
   reconciliarYLimpiarAsignacionesEnDb,
@@ -25,6 +27,7 @@ export interface DiagnosticoSincronizacion {
   totalAsignaciones: number;
   huerfanasCount: number;
   duplicadasCount: number;
+  vacantesNnCount?: number;
   estaSincronizado: boolean;
   docentesConHorasDisponibles: {
     docente: Docente;
@@ -139,6 +142,7 @@ export function analizarSincronizacionDotacion(
   }).filter(c => c.deficit > 0.05);
 
   const estaSincronizado = huerfanasCount === 0 && duplicadasCount === 0;
+  const vacantesNnCount = detectarVacantesNnEnColegio(docentes, asignaciones).length;
 
   let resumenMensaje = '🟢 Nómina y Malla Curricular 100% sincronizadas sin datos obsoletos.';
   if (huerfanasCount > 0 || duplicadasCount > 0) {
@@ -156,11 +160,72 @@ export function analizarSincronizacionDotacion(
     totalAsignaciones: asignaciones.length,
     huerfanasCount,
     duplicadasCount,
+    vacantesNnCount,
     estaSincronizado,
     docentesConHorasDisponibles,
     cursosIncompletos,
     resumenMensaje
   };
+}
+
+/**
+ * Detecta registros docentes correspondientes a vacantes NN o cargos por proveer en un establecimiento,
+ * retornando sus asignaciones y horas de financiamiento asociadas sin alterar la malla horaria.
+ */
+export function detectarVacantesNnEnColegio(
+  docentes: Docente[],
+  asignaciones: AsignacionHoraria[]
+): Array<{
+  docente: Docente;
+  deteccion: ResultadoDeteccionNn;
+  asignacionesCount: number;
+  horasAulaAsignadas: number;
+  fuentesFinanciamiento: {
+    subvencionGeneral: number;
+    sep: number;
+    pie: number;
+  };
+}> {
+  const resultado: Array<{
+    docente: Docente;
+    deteccion: ResultadoDeteccionNn;
+    asignacionesCount: number;
+    horasAulaAsignadas: number;
+    fuentesFinanciamiento: {
+      subvencionGeneral: number;
+      sep: number;
+      pie: number;
+    };
+  }> = [];
+
+  for (const docente of docentes) {
+    const deteccion = detectarDocenteVacanteNn(docente);
+    if (!deteccion.esVacanteNn) continue;
+
+    const asigsDoc = asignaciones.filter(
+      a => a.docenteId === docente.id || (a.tieneCoDocente && a.coDocenteId === docente.id)
+    );
+    const horasAulaAsignadas = asigsDoc.reduce(
+      (sum, a) => sum + Number(a.horasPedagogicasAula || 0),
+      0
+    );
+
+    resultado.push({
+      docente,
+      deteccion,
+      asignacionesCount: asigsDoc.length,
+      horasAulaAsignadas,
+      fuentesFinanciamiento: {
+        subvencionGeneral:
+          Number(docente.horasSubvencionGeneralTitular || 0) +
+          Number(docente.horasSubvencionGeneralContrata || 0),
+        sep: Number(docente.horasSepTitular || 0) + Number(docente.horasSepContrata || 0),
+        pie: Number(docente.horasPieTitular || 0) + Number(docente.horasPieContrata || 0)
+      }
+    });
+  }
+
+  return resultado;
 }
 
 /**

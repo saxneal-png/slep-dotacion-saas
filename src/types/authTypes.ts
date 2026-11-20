@@ -4,6 +4,7 @@
  * - subdirector_uatp: supervisión territorial global.
  * - coordinador_uatp: supervisa un equipo de asesores y sus carteras.
  * - asesor_uatp: gestiona su cartera de establecimientos.
+ * - gdp_validador: valida egresos proyectados, certezas jurídicas y cuadre GDP.
  * - director_establecimiento / jefe_utp_establecimiento: acotados a un RBD.
  */
 export type RolId =
@@ -11,6 +12,7 @@ export type RolId =
   | 'subdirector_uatp'
   | 'coordinador_uatp'
   | 'asesor_uatp'
+  | 'gdp_validador'
   | 'director_establecimiento'
   | 'jefe_utp_establecimiento';
 

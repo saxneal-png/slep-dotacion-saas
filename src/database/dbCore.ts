@@ -307,12 +307,36 @@ export async function borrarDotacionPeriodo(periodo: number, rbd?: string): Prom
 }
 
 /**
+ * Purga localmente las tablas del módulo Mesa de Movilidad / Egresos
+ * para aislar las sesiones de establecimientos escolares.
+ */
+export async function purgarTablasMovilidadParaEscuela(): Promise<void> {
+  const db = await getDb();
+  db.run("BEGIN TRANSACTION;");
+  try {
+    db.run("DELETE FROM propuestas_calce;");
+    db.run("DELETE FROM escenarios_calce;");
+    db.run("DELETE FROM solicitudes_movilidad;");
+    db.run("DELETE FROM egresos_proyectados;");
+    db.run("COMMIT;");
+  } catch (err) {
+    db.run("ROLLBACK;");
+    throw err;
+  }
+  await persistDb(true);
+}
+
+/**
  * Reinicia completamente la base de datos a su estado inicial, eliminando todas las tablas y datos.
  */
 export async function reiniciarTodaLaBaseDatos(): Promise<void> {
   const db = await getDb();
   db.run("BEGIN TRANSACTION;");
   try {
+    db.run("DELETE FROM propuestas_calce");
+    db.run("DELETE FROM escenarios_calce");
+    db.run("DELETE FROM solicitudes_movilidad");
+    db.run("DELETE FROM egresos_proyectados");
     db.run("DELETE FROM asignaciones_horarias");
     db.run("DELETE FROM cursos_sae");
     db.run("DELETE FROM docentes");
