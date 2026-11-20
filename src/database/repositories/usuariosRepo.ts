@@ -1,6 +1,6 @@
-import { UsuarioSistema } from '../../types/authTypes';
+import { RolId, UsuarioSistema } from '../../types/authTypes';
 import { getDb, persistDb } from '../dbCore';
-import { normalizarRol } from '../../security/rolesDefinitions';
+import { esRolNivelCentral, normalizarRol } from '../../security/rolesDefinitions';
 import { supabase, isSupabaseEnabled } from '../../services/supabaseClient';
 import { SupabaseDotacionService } from '../../services/supabaseDotacionService';
 
@@ -41,7 +41,8 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
     const res = db.exec(`
       SELECT id, username, email, nombre_completo, role, cargo, rbd_asignado,
              cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json,
-             password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password
+             password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password,
+             roles_adicionales_json
       FROM usuarios_sistema
       ORDER BY nombre_completo ASC
     `);
@@ -51,12 +52,25 @@ export async function listarUsuariosDb(): Promise<UsuarioSistema[]> {
       const asesoresSupervisados = parseJsonArray(row[8]);
       const comunasArr = parseJsonArray(row[9]);
       const comunasPermitidas = comunasArr.length > 0 ? comunasArr : undefined;
+      const rolPrincipal = normalizarRol(row[4]);
+      const rolesAdicionalesRaw = parseJsonArray(row[16]);
+      const rolesAdicionales: RolId[] | undefined =
+        esRolNivelCentral(rolPrincipal) && rolesAdicionalesRaw.length > 0
+          ? Array.from(
+              new Set(
+                rolesAdicionalesRaw
+                  .map(r => normalizarRol(r))
+                  .filter(r => r !== rolPrincipal && esRolNivelCentral(r))
+              )
+            )
+          : undefined;
       return {
         id: String(row[0]),
         username: String(row[1]),
         email: row[2] ? String(row[2]) : String(row[1]),
         nombreCompleto: String(row[3]),
-        role: normalizarRol(row[4]),
+        role: rolPrincipal,
+        rolesAdicionales,
         cargo: row[5] ? String(row[5]) : 'Funcionario SLEP',
         rbdAsignado: sanitizeRbdAsignado(row[6] ? String(row[6]) : null) || undefined,
         carteraRbds,
@@ -84,10 +98,15 @@ export async function guardarUsuarioDb(
   const carteraArr = (u.carteraRbds || []).map(r => String(r).trim()).filter(r => Boolean(r) && r !== 'S/RBD');
   const asesoresArr = (u.asesoresSupervisados || []).map(a => String(a).trim()).filter(Boolean);
   const comunasArr = (u.comunasPermitidas || []).map(c => String(c).trim()).filter(Boolean);
+  const rolNorm = normalizarRol(u.role);
+  const rolesAdicionalesArr: RolId[] = esRolNivelCentral(rolNorm) && Array.isArray(u.rolesAdicionales)
+    ? Array.from(new Set(u.rolesAdicionales.map(r => normalizarRol(r)).filter(r => r !== rolNorm && esRolNivelCentral(r))))
+    : [];
 
   const carteraJson = JSON.stringify(carteraArr);
   const asesoresJson = JSON.stringify(asesoresArr);
   const comunasJson = JSON.stringify(comunasArr);
+  const rolesAdicionalesJson = JSON.stringify(rolesAdicionalesArr);
   const rbdClean = sanitizeRbdAsignado(u.rbdAsignado);
   const usernameClean = (u.username || u.email || u.id).trim().toLowerCase();
   const emailClean = u.email ? u.email.trim().toLowerCase() : null;
@@ -98,9 +117,10 @@ export async function guardarUsuarioDb(
       INSERT INTO usuarios_sistema (
         id, username, email, nombre_completo, role, cargo, rbd_asignado,
         cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json,
-        password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password
+        password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password,
+        roles_adicionales_json
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         username=excluded.username,
         email=excluded.email,
@@ -116,7 +136,8 @@ export async function guardarUsuarioDb(
         gemini_api_key=excluded.gemini_api_key,
         activo=excluded.activo,
         ultimo_acceso=excluded.ultimo_acceso,
-        debe_cambiar_password=excluded.debe_cambiar_password;
+        debe_cambiar_password=excluded.debe_cambiar_password,
+        roles_adicionales_json=excluded.roles_adicionales_json;
     `, [
       u.id,
       usernameClean,
@@ -133,7 +154,8 @@ export async function guardarUsuarioDb(
       u.geminiApiKey || null,
       u.activo !== false ? 1 : 0,
       u.ultimoAcceso || null,
-      u.debeCambiarPassword ? 1 : 0
+      u.debeCambiarPassword ? 1 : 0,
+      rolesAdicionalesJson
     ]);
     await persistDb();
   } catch (err) {
@@ -157,6 +179,7 @@ export async function guardarUsuarioDb(
       cartera_rbds_json: carteraArr,
       asesores_supervisados_json: asesoresArr,
       comunas_permitidas_json: comunasArr,
+      roles_adicionales_json: rolesAdicionalesArr,
       activo: u.activo !== false,
       ultimo_acceso: u.ultimoAcceso || null,
       debe_cambiar_password: u.debeCambiarPassword ?? false,
@@ -173,6 +196,13 @@ export async function guardarUsuarioDb(
     let { error } = await supabase
       .from('usuarios_sistema')
       .upsert(payload, { onConflict: 'id' });
+
+    if (error && (error.code === 'PGRST204' || String(error.message || '').includes('roles_adicionales_json'))) {
+      const { roles_adicionales_json: _omit, ...payloadSinRoles } = payload;
+      ({ error } = await supabase
+        .from('usuarios_sistema')
+        .upsert(payloadSinRoles, { onConflict: 'id' }));
+    }
 
     // Si falla por UNIQUE constraint en username o email (23505) debido a un registro con otro ID en Supabase
     if (error && error.code === '23505') {
@@ -269,15 +299,21 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipClo
         const carteraJson = JSON.stringify(carteraArr);
         const asesoresJson = JSON.stringify(asesoresArr);
         const comunasJson = JSON.stringify(comunasArr);
+        const rolNorm = normalizarRol(u.role);
+        const rolesAdicionalesArr: RolId[] = esRolNivelCentral(rolNorm) && Array.isArray(u.rolesAdicionales)
+          ? Array.from(new Set(u.rolesAdicionales.map(r => normalizarRol(r)).filter(r => r !== rolNorm && esRolNivelCentral(r))))
+          : [];
+        const rolesAdicionalesJson = JSON.stringify(rolesAdicionalesArr);
         const rbdClean = sanitizeRbdAsignado(u.rbdAsignado);
 
         db.run(`
           INSERT INTO usuarios_sistema (
             id, username, email, nombre_completo, role, cargo, rbd_asignado,
             cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json,
-            password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password
+            password_hash, salt, gemini_api_key, activo, ultimo_acceso, debe_cambiar_password,
+            roles_adicionales_json
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             username=excluded.username,
             email=excluded.email,
@@ -293,7 +329,8 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipClo
             gemini_api_key=excluded.gemini_api_key,
             activo=excluded.activo,
             ultimo_acceso=excluded.ultimo_acceso,
-            debe_cambiar_password=excluded.debe_cambiar_password;
+            debe_cambiar_password=excluded.debe_cambiar_password,
+            roles_adicionales_json=excluded.roles_adicionales_json;
         `, [
           u.id,
           (u.username || u.email || u.id).trim().toLowerCase(),
@@ -310,7 +347,8 @@ export async function guardarUsuariosBatchDb(usuarios: UsuarioSistema[], skipClo
           u.geminiApiKey || null,
           u.activo !== false ? 1 : 0,
           u.ultimoAcceso || null,
-          u.debeCambiarPassword ? 1 : 0
+          u.debeCambiarPassword ? 1 : 0,
+          rolesAdicionalesJson
         ]);
       }
       db.run("COMMIT;");

@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS usuarios_sistema (
   cartera_rbds_json TEXT,
   asesores_supervisados_json TEXT,
   comunas_permitidas_json TEXT,
+  roles_adicionales_json TEXT,
   password_hash TEXT,
   salt TEXT,
   gemini_api_key TEXT,
@@ -561,7 +562,8 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['hora_salida_turno', 'TEXT']
   ],
   usuarios_sistema: [
-    ['debe_cambiar_password', 'INTEGER DEFAULT 0']
+    ['debe_cambiar_password', 'INTEGER DEFAULT 0'],
+    ['roles_adicionales_json', 'TEXT']
   ],
   configuracion_general: [
     ['feature_flags_json', 'TEXT']

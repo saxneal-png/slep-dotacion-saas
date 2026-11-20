@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AlcanceRol, AuthSession, PermisoKey, PermisosRol, RolId } from '../types/authTypes';
 import { RolesPermisosService } from '../services/rolesPermisosService';
-import { getDefinicionRol, normalizarRol } from './rolesDefinitions';
+import { getDefinicionRol, normalizarRol, obtenerRolesEfectivosUsuario } from './rolesDefinitions';
 import { PERMISO_POR_VISTA, PERMISOS_CONFIGURACIONES } from './permissionCatalog';
 
 export interface PermisosContextValue {
@@ -9,6 +9,10 @@ export interface PermisosContextValue {
   rol: RolId | null;
   /** Rol real del usuario autenticado. */
   rolReal: RolId | null;
+  /** Roles adicionales (doble rol) efectivos del usuario autenticado. */
+  rolesAdicionales: RolId[];
+  /** Todos los roles efectivos (principal + adicionales). */
+  todosLosRoles: RolId[];
   alcance: AlcanceRol;
   esSuperUsuario: boolean;
   /** `true` si el rol tiene el permiso. Deny-by-default sin sesión. */
@@ -25,9 +29,10 @@ export interface PermisosContextValue {
 
 const PermisosContext = createContext<PermisosContextValue | null>(null);
 
-/** Construye el evaluador de permisos para un rol (usable fuera de React). */
-export function crearEvaluador(rol: RolId | null) {
-  const can = (key: PermisoKey) => (rol ? RolesPermisosService.tienePermiso(rol, key) : false);
+/** Construye el evaluador de permisos para un rol y sus roles adicionales (usable fuera de React). */
+export function crearEvaluador(rol: RolId | null, rolesAdicionales: RolId[] = []) {
+  const todos = rol ? Array.from(new Set<RolId>([rol, ...rolesAdicionales])) : [];
+  const can = (key: PermisoKey) => todos.some(r => RolesPermisosService.tienePermiso(r, key));
   const canAny = (keys: PermisoKey[]) => keys.some(can);
   const puedeVerVista = (vista: string) => {
     if (!rol) return false;
@@ -57,12 +62,22 @@ export function useEvaluadorPermisos(session: AuthSession | null): PermisosConte
   const esSuperReal = rolReal === 'super_usuario';
   const simulado = esSuperReal ? RolesPermisosService.getRolSimulado() : null;
   const rol = simulado || rolReal;
+  const rolesAdicionales: RolId[] = useMemo(() => {
+    if (!session || simulado) return [];
+    return obtenerRolesEfectivosUsuario(session.usuario).filter(r => r !== rol);
+  }, [session, simulado, rol]);
+  const todosLosRoles: RolId[] = useMemo(
+    () => (rol ? Array.from(new Set<RolId>([rol, ...rolesAdicionales])) : []),
+    [rol, rolesAdicionales]
+  );
 
   return useMemo<PermisosContextValue>(() => {
-    const ev = crearEvaluador(rol);
+    const ev = crearEvaluador(rol, rolesAdicionales);
     return {
       rol,
       rolReal,
+      rolesAdicionales,
+      todosLosRoles,
       alcance: rol ? getDefinicionRol(rol).alcance : 'establecimiento',
       esSuperUsuario: rol === 'super_usuario',
       ...ev,
@@ -71,7 +86,7 @@ export function useEvaluadorPermisos(session: AuthSession | null): PermisosConte
       setRolSimulado: (r: RolId | null) => { if (esSuperReal) RolesPermisosService.setRolSimulado(r); }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rol, rolReal, version, simulado, esSuperReal]);
+  }, [rol, rolReal, rolesAdicionales, todosLosRoles, version, simulado, esSuperReal]);
 }
 
 /** Provider: recibe el valor calculado por `useEvaluadorPermisos` (o la sesión directamente). */
@@ -85,7 +100,7 @@ export function usePermisos(): PermisosContextValue {
   if (ctx) return ctx;
   const ev = crearEvaluador(null);
   return {
-    rol: null, rolReal: null, alcance: 'establecimiento', esSuperUsuario: false, legado: null,
+    rol: null, rolReal: null, rolesAdicionales: [], todosLosRoles: [], alcance: 'establecimiento', esSuperUsuario: false, legado: null,
     rolSimulado: null, setRolSimulado: () => {}, ...ev
   };
 }

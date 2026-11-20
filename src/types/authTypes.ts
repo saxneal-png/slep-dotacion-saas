@@ -69,6 +69,8 @@ export interface UsuarioSistema {
   nombreCompleto: string;
   email: string;
   role: UserRole;
+  /** Roles secundarios asignados (ej. asesor_uatp + gdp_validador). Solo aplica a nivel central. */
+  rolesAdicionales?: RolId[];
   cargo: string;
   passwordHash: string;
   salt: string;

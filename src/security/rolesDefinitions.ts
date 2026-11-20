@@ -126,3 +126,21 @@ const ROLES_NIVEL_CENTRAL_SET = new Set<RolId>([
 export function esRolNivelCentral(r: unknown): boolean {
   return ROLES_NIVEL_CENTRAL_SET.has(normalizarRol(r));
 }
+
+/**
+ * Retorna la lista deduplicada de roles efectivos de un usuario (principal + adicionales).
+ * Por seguridad, los roles de establecimiento nunca heredan roles adicionales de nivel central.
+ */
+export function obtenerRolesEfectivosUsuario(
+  usuario: { role: unknown; rolesAdicionales?: unknown } | null | undefined
+): RolId[] {
+  if (!usuario) return [];
+  const principal = normalizarRol(usuario.role);
+  if (!esRolNivelCentral(principal)) return [principal];
+  const extras = Array.isArray(usuario.rolesAdicionales)
+    ? usuario.rolesAdicionales
+        .map(r => normalizarRol(r))
+        .filter(r => r !== principal && esRolNivelCentral(r))
+    : [];
+  return Array.from(new Set<RolId>([principal, ...extras]));
+}

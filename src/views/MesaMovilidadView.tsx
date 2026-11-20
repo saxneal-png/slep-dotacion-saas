@@ -283,10 +283,13 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
   rol,
   flags
 }) => {
-  const { can } = usePermisos();
+  const { can, todosLosRoles } = usePermisos();
   const puedeEditarMovilidad = can('mesa_movilidad.editar') || can('mesa_movilidad.crear');
   const puedeEliminarMovilidad = can('mesa_movilidad.eliminar');
-  const puedeValidarGdp = esRolValidadorGdp(rol) || can('gdp_validador.editar');
+  const rolParaGdp: RolId = esRolValidadorGdp(rol)
+    ? rol
+    : todosLosRoles.find(r => esRolValidadorGdp(r)) || rol;
+  const puedeValidarGdp = esRolValidadorGdp(rolParaGdp) || can('gdp_validador.editar');
   const puedeConsolidar = esRolConsolidadorMovilidad(rol);
 
   const colegiosByRbd = useMemo(() => {
@@ -862,7 +865,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
           validadoPor: usuarioActual.email || usuarioActual.nombreCompleto,
           observaciones: egresoObs.trim() || undefined
         },
-        rol,
+        rolParaGdp,
         evaluacionEgresoPreview.liberaVacante ? egresoGenerarVacante : false
       );
       setModalEgresoAbierto(false);
@@ -885,7 +888,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
   const handleEliminarEgreso = async (eg: EgresoProyectado) => {
     setOperacionEnCurso('Eliminando egreso proyectado...');
     try {
-      await eliminarEgresoProyectado(eg.id, rol);
+      await eliminarEgresoProyectado(eg.id, rolParaGdp);
       await recargarModuloMovilidad();
       mostrarFeedback(`Egreso proyectado de ${eg.nombreDocente} eliminado.`);
     } catch (err: any) {

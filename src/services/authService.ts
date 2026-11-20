@@ -1,5 +1,5 @@
 import { UsuarioSistema, UserRole, PermisosRol, AuthSession, RolId, EstadoPausaRevision, ResumenEstamentoPausa } from '../types/authTypes';
-import { normalizarRol, ROLES_DEFINICIONES } from '../security/rolesDefinitions';
+import { esRolNivelCentral, normalizarRol, ROLES_DEFINICIONES } from '../security/rolesDefinitions';
 import { RolesPermisosService } from './rolesPermisosService';
 import { DIRECTORES_TERRITORIO, DirectorItem } from '../data/directoresTerritorio';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
@@ -141,6 +141,8 @@ export const USUARIOS_SEMILLA_BASE: Array<Omit<UsuarioSistema, 'passwordHash' | 
 const SUPER_USUARIO_EMAIL = 'saxneal@gmail.com';
 
 const SUPABASE_USER_PUBLIC_COLUMNS =
+  'id, username, email, nombre_completo, role, roles_adicionales_json, cargo, rbd_asignado, cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json, gemini_api_key, activo, debe_cambiar_password, ultimo_acceso';
+const SUPABASE_USER_PUBLIC_COLUMNS_LEGACY =
   'id, username, email, nombre_completo, role, cargo, rbd_asignado, cartera_rbds_json, asesores_supervisados_json, comunas_permitidas_json, gemini_api_key, activo, debe_cambiar_password, ultimo_acceso';
 
 function isNetworkAuthError(err: any): boolean {
@@ -356,9 +358,15 @@ export class AuthService {
     // 2.0 Sincronización desde Supabase PostgreSQL (Fuente Primaria en Nube, sin exponer password_hash ni salt)
     if (isSupabaseEnabled()) {
       try {
-        const { data: supaUsers, error: supaErr } = await supabase
+        let { data: supaUsers, error: supaErr } = await supabase
           .from('usuarios_sistema')
           .select(SUPABASE_USER_PUBLIC_COLUMNS);
+
+        if (supaErr && (supaErr.code === '42703' || String(supaErr.message || '').includes('roles_adicionales_json'))) {
+          ({ data: supaUsers, error: supaErr } = await supabase
+            .from('usuarios_sistema')
+            .select(SUPABASE_USER_PUBLIC_COLUMNS_LEGACY));
+        }
 
         if (!supaErr && supaUsers && supaUsers.length > 0) {
           const mapLocalById = new Map(usuarios.map(u => [u.id, u]));
@@ -373,6 +381,11 @@ export class AuthService {
             const carteraRbds = parseJsonArray(row.cartera_rbds_json);
             const asesoresSupervisados = parseJsonArray(row.asesores_supervisados_json);
             const comunasArr = parseJsonArray(row.comunas_permitidas_json);
+            const rolesAdicRaw = parseJsonArray(row.roles_adicionales_json);
+            const rolesAdicionales: RolId[] | undefined =
+              esRolNivelCentral(rol) && rolesAdicRaw.length > 0
+                ? Array.from(new Set(rolesAdicRaw.map(r => normalizarRol(r)).filter(r => r !== rol && esRolNivelCentral(r))))
+                : undefined;
             const prevLocal = mapLocalById.get(row.id);
 
             remoteUsers.push({
@@ -381,6 +394,7 @@ export class AuthService {
               email: row.email || row.username || `${row.id}@slepvallediguillin.cl`,
               nombreCompleto: row.nombre_completo || 'Usuario SLEP',
               role: rol,
+              rolesAdicionales: rolesAdicionales ?? prevLocal?.rolesAdicionales,
               cargo: row.cargo || 'Funcionario SLEP',
               rbdAsignado: row.rbd_asignado && row.rbd_asignado !== 'S/RBD' ? String(row.rbd_asignado).trim() : undefined,
               carteraRbds,

@@ -4,7 +4,7 @@ import { AuthService, generateSalt, hashPassword, generarPasswordTemporalSegura 
 import { UsuarioSistema, UserRole, EstadoPausaRevision } from '../../types/authTypes';
 import { ModalControlSesionesEstamentos } from '../../components/auth/ModalControlSesionesEstamentos';
 import { Establecimiento } from '../../types';
-import { ROLES_DEFINICIONES, getDefinicionRol, rolesAsignablesPor, normalizarRol } from '../../security/rolesDefinitions';
+import { ROLES_DEFINICIONES, esRolNivelCentral, getDefinicionRol, rolesAsignablesPor, normalizarRol } from '../../security/rolesDefinitions';
 import { usePermisos } from '../../security/PermisosContext';
 import { guardarPerfilAsesor, actualizarColegiosDeAsesor } from '../../services/configuracionGeneralService';
 
@@ -61,6 +61,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
   const [nombreCompleto, setNombreCompleto] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<UserRole>('director_establecimiento');
+  const [rolesAdicionales, setRolesAdicionales] = useState<UserRole[]>([]);
   const [cargo, setCargo] = useState(CARGO_POR_ROL.director_establecimiento);
   const [password, setPassword] = useState('');
   const [rbdAsignado, setRbdAsignado] = useState<string>(colegios[0]?.rbd || '');
@@ -159,6 +160,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
     setNombreCompleto('');
     setEmail('');
     setRole(rolInicial);
+    setRolesAdicionales([]);
     setCargo(CARGO_POR_ROL[rolInicial]);
     setPassword('');
     setRbdAsignado(colegios[0]?.rbd || '');
@@ -175,7 +177,13 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
     setUsername(u.username);
     setNombreCompleto(u.nombreCompleto);
     setEmail(u.email || '');
-    setRole(normalizarRol(u.role));
+    const rolPrincipal = normalizarRol(u.role);
+    setRole(rolPrincipal);
+    setRolesAdicionales(
+      esRolNivelCentral(rolPrincipal) && Array.isArray(u.rolesAdicionales)
+        ? u.rolesAdicionales.map(r => normalizarRol(r)).filter(r => r !== rolPrincipal && esRolNivelCentral(r))
+        : []
+    );
     setCargo(u.cargo);
     setPassword(''); // Opcional al editar
     setRbdAsignado(u.rbdAsignado || colegios[0]?.rbd || '');
@@ -242,6 +250,9 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
         nombreCompleto: nombreCompleto.trim(),
         email: cleanEmail,
         role,
+        rolesAdicionales: esRolNivelCentral(role)
+          ? rolesAdicionales.filter(r => r !== role && esRolNivelCentral(r))
+          : [],
         cargo: cargo.trim(),
         passwordHash,
         salt,
@@ -577,6 +588,22 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                     <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${BADGE_COLORES[def.color]}`}>
                       {def.nombre}
                     </span>
+                    {esRolNivelCentral(u.role) &&
+                      (u.rolesAdicionales || [])
+                        .filter(r => r !== normalizarRol(u.role) && esRolNivelCentral(r))
+                        .map(r => {
+                          const extraDef = getDefinicionRol(normalizarRol(r));
+                          return (
+                            <span
+                              key={r}
+                              className={`ml-1 inline-block px-1.5 py-0.5 rounded border text-[9px] font-bold ${BADGE_COLORES[extraDef.color] || BADGE_COLORES.amber}`}
+                            >
+                              + {extraDef.nombreCorto}
+                            </span>
+                          );
+                        })}
+                    <span className="hidden">
+                    </span>
                   </td>
                   <td className="px-4 py-3">{describirAlcance(u)}</td>
                   <td className="px-4 py-3">
@@ -740,6 +767,47 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                     ))}
                   </select>
                   <p className="text-[10px] text-slate-500 mt-1">{getDefinicionRol(role).descripcion}</p>
+                  {esRolNivelCentral(role) && !esCuentaOficial && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+                      <div className="text-[11px] font-bold uppercase text-amber-300">
+                        Doble Rol / Roles Adicionales (Nivel Central)
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Permite que un Asesor o Coordinador herede también atribuciones de Validador GDP u otro rol central.
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {rolesAsignables
+                          .filter(r => r.id !== role && esRolNivelCentral(r.id))
+                          .map(r => {
+                            const marcado = rolesAdicionales.includes(r.id);
+                            return (
+                              <label
+                                key={r.id}
+                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-bold cursor-pointer transition-colors ${
+                                  marcado
+                                    ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                                    : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-500'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={marcado}
+                                  onChange={() =>
+                                    setRolesAdicionales(prev =>
+                                      prev.includes(r.id)
+                                        ? prev.filter(x => x !== r.id)
+                                        : [...prev, r.id]
+                                    )
+                                  }
+                                  className="w-3.5 h-3.5 accent-amber-500"
+                                />
+                                <span>+ {r.nombre}</span>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
