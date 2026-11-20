@@ -1718,6 +1718,8 @@ export const App: React.FC = () => {
             colegios={colegios}
             docentesTerritorio={todosLosDocentes}
             asignacionesTerritorio={todasLasAsignaciones}
+            asistentesTerritorio={todosLosAsistentes}
+            cursosTerritorio={todosLosCursos}
             periodoActivo={periodoActivo}
             usuarioActual={session.usuario}
             onDatosActualizados={() => cargarDatos(periodoActivo)}

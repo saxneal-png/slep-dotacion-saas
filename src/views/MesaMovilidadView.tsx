@@ -17,12 +17,19 @@ import {
   ChevronRight,
   X,
   RefreshCw,
-  UserCheck
+  UserCheck,
+  FileSpreadsheet,
+  BookOpen,
+  Eye
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import {
   Establecimiento,
   Docente,
   AsignacionHoraria,
+  AsistenteEducacion,
+  CursoSae,
   FeatureFlagsMovilidad,
   EgresoProyectado,
   CausalEgresoDocente,
@@ -62,14 +69,22 @@ import {
 import {
   evaluarEgresoProyectado,
   calcularPuntajePrioridadMovilidad,
+  obtenerPlanPorCurso,
   TOPE_MINUTOS_SEMANALES_SLEP,
   MAX_MINUTOS_LECTIVOS_ART_69
 } from '@slep/mineduc-engine';
+import {
+  clasificarCategoriaEstablecimiento,
+  esPropuestaNoContinuidad,
+  CategoriaTipoEstablecimiento
+} from '../services/estadisticasHorasService';
 
 export interface MesaMovilidadViewProps {
   colegios: Establecimiento[];
   docentesTerritorio: Docente[];
   asignacionesTerritorio: AsignacionHoraria[];
+  asistentesTerritorio?: AsistenteEducacion[];
+  cursosTerritorio?: CursoSae[];
   periodoActivo: number;
   usuarioActual: AuthSession['usuario'];
   onDatosActualizados: () => Promise<void>;
@@ -165,6 +180,62 @@ function formatearMinutosAHoras(minutos: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+interface CasoNoContinuidadItem {
+  id: string;
+  estamentoTipo: 'DOCENTE' | 'ASISTENTE';
+  rbd: string;
+  establecimientoNombre: string;
+  comuna: string;
+  categoriaEscuela: CategoriaTipoEstablecimiento;
+  tipoPerfilEscuela: string;
+  run: string;
+  nombreCompleto: string;
+  calidadJuridica: string;
+  cargoEspecialidad: string;
+  horasContrato: number;
+  fuenteFinanciamiento: string;
+  propuestaGdp: string;
+  situacionFinalGdp: string;
+  razon: string;
+  tieneRazon: boolean;
+  origenDeteccion: 'PROPUESTA_GDP' | 'SOLICITUD_MESA' | 'AMBOS';
+}
+
+interface AsignaturaDirectaVacante {
+  asignatura: string;
+  cursoNombre: string;
+  horasPedagogicas: number;
+}
+
+interface DeficitAsignaturaColegio {
+  asignatura: string;
+  horasPlan: number;
+  horasCubiertas: number;
+  horasPorCubrir: number;
+}
+
+interface ResumenAsignaturasVacante {
+  directas: AsignaturaDirectaVacante[];
+  totalHorasDirectas: number;
+  deficitEstablecimiento: DeficitAsignaturaColegio[];
+}
+
+function cumpleFiltroTipoEscuela(est: Establecimiento | undefined, filtro: string): boolean {
+  if (filtro === 'TODOS') return true;
+  if (!est) return false;
+  if (filtro.startsWith('CAT:')) {
+    const cat = filtro.replace('CAT:', '') as CategoriaTipoEstablecimiento;
+    return clasificarCategoriaEstablecimiento(est) === cat;
+  }
+  return (est.tipoPerfil || '').toUpperCase() === filtro;
+}
+
+function etiquetaCategoriaEscuela(cat: CategoriaTipoEstablecimiento): string {
+  if (cat === 'LICEO') return 'Liceo';
+  if (cat === 'JARDIN_VTF') return 'Jardín / Sala Cuna VTF';
+  return 'Escuela';
+}
+
 /**
  * Vista ejecutiva territorial de la Mesa de Movilidad, Saneamiento NN,
  * Egresos Proyectados GDP y Simulador What-If.
@@ -203,6 +274,8 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
   colegios,
   docentesTerritorio,
   asignacionesTerritorio,
+  asistentesTerritorio = [],
+  cursosTerritorio = [],
   periodoActivo,
   usuarioActual,
   onDatosActualizados,
@@ -916,6 +989,388 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
     });
   }, [vacantesNn, filtroTipoVacante, filtroComunaVacante, filtroFuenteVacante, busquedaVacante, colegiosByRbd]);
 
+  // ── Vista interna del módulo + Filtro Tipo Escuela en Remanentes ──
+  const [vistaInternaMesa, setVistaInternaMesa] = useState<'tablero' | 'analisis_no_continuidad'>('tablero');
+  const [filtroTipoEscuelaRemanente, setFiltroTipoEscuelaRemanente] = useState<string>('TODOS');
+  const [vacanteAsignaturasModal, setVacanteAsignaturasModal] = useState<Docente | null>(null);
+
+  const remanentesFiltrados = useMemo(() => {
+    if (filtroTipoEscuelaRemanente === 'TODOS') return remanentes;
+    return remanentes.filter(item => {
+      const est = item.establecimiento || colegiosByRbd.get(item.docente.rbd);
+      return cumpleFiltroTipoEscuela(est, filtroTipoEscuelaRemanente);
+    });
+  }, [remanentes, filtroTipoEscuelaRemanente, colegiosByRbd]);
+
+  // ── Análisis y Exportación de No Continuidad (Docentes + Asistentes) ──
+  const [busquedaNcAnalisis, setBusquedaNcAnalisis] = useState<string>('');
+  const [filtroEstamentoNc, setFiltroEstamentoNc] = useState<'TODOS' | 'DOCENTE' | 'ASISTENTE'>('TODOS');
+  const [filtroTipoEscuelaNc, setFiltroTipoEscuelaNc] = useState<string>('TODOS');
+  const [filtroComunaNc, setFiltroComunaNc] = useState<string>('TODAS');
+  const [filtroRazonNc, setFiltroRazonNc] = useState<'TODAS' | 'CON_RAZON' | 'SIN_RAZON'>('TODAS');
+  const [exportandoNc, setExportandoNc] = useState<boolean>(false);
+
+  const casosNoContinuidadConsolidados = useMemo<CasoNoContinuidadItem[]>(() => {
+    const items: CasoNoContinuidadItem[] = [];
+    const solicitudesNcPorDocId = new Map<string, SolicitudMovilidad>();
+    for (const s of solicitudes) {
+      if (s.carril === 'NO_CONTINUIDAD_TITULAR') {
+        solicitudesNcPorDocId.set(s.docenteId, s);
+      }
+    }
+
+    const docentesProcesados = new Set<string>();
+    for (const d of docentesNoVacantes) {
+      const sol = solicitudesNcPorDocId.get(d.id);
+      const esGdpNc = esPropuestaNoContinuidad(d.propuestaGdp) || esPropuestaNoContinuidad(d.situacionFinalGdp);
+      if (!esGdpNc && !sol) continue;
+
+      docentesProcesados.add(d.id);
+      const est = colegiosByRbd.get(d.rbd);
+      const categoriaEscuela = est ? clasificarCategoriaEstablecimiento(est) : 'ESCUELA';
+      const partesRazon = [
+        sol?.fundamento?.trim(),
+        d.observacionesDirector?.trim(),
+        d.observacionesSlep?.trim(),
+        d.observacionesPal?.trim()
+      ].filter((x, idx, arr): x is string => Boolean(x) && arr.indexOf(x) === idx);
+      const razon = partesRazon.join(' | ');
+
+      const fuentes: string[] = [];
+      if ((d.horasSubvencionGeneralTitular || 0) + (d.horasSubvencionGeneralContrata || 0) > 0) fuentes.push('Subv. General');
+      if ((d.horasSepTitular || 0) + (d.horasSepContrata || 0) + (d.horasTallerSep || 0) > 0) fuentes.push('SEP');
+      if ((d.horasPieTitular || 0) + (d.horasPieContrata || 0) > 0) fuentes.push('PIE');
+
+      items.push({
+        id: `nc-doc-${d.id}`,
+        estamentoTipo: 'DOCENTE',
+        rbd: d.rbd,
+        establecimientoNombre: est?.nombre || `RBD ${d.rbd}`,
+        comuna: est?.comuna || 'Sin comuna',
+        categoriaEscuela,
+        tipoPerfilEscuela: est?.tipoPerfil || categoriaEscuela,
+        run: d.run,
+        nombreCompleto: `${d.nombres} ${d.apellidos}`.trim(),
+        calidadJuridica: d.calidadJuridica,
+        cargoEspecialidad: d.asignaturaPrincipal || d.cargoInstitucional || d.estamento,
+        horasContrato: Number(d.horasContrato || 0),
+        fuenteFinanciamiento: fuentes.join(' / ') || 'Subv. General',
+        propuestaGdp: d.propuestaGdp || (sol ? 'No Continuidad (Mesa)' : 'No Continuidad'),
+        situacionFinalGdp: d.situacionFinalGdp || 'Vigente',
+        razon: razon || 'Sin razón especificada en propuesta GDP',
+        tieneRazon: Boolean(razon),
+        origenDeteccion: esGdpNc && sol ? 'AMBOS' : sol ? 'SOLICITUD_MESA' : 'PROPUESTA_GDP'
+      });
+    }
+
+    // Solicitudes de No Continuidad cuyo docente no estaba en docentesNoVacantes
+    for (const [docId, sol] of solicitudesNcPorDocId.entries()) {
+      if (docentesProcesados.has(docId)) continue;
+      const est = colegiosByRbd.get(sol.rbdOrigen);
+      const categoriaEscuela = est ? clasificarCategoriaEstablecimiento(est) : 'ESCUELA';
+      const razon = (sol.fundamento || '').trim();
+      items.push({
+        id: `nc-sol-${sol.id}`,
+        estamentoTipo: 'DOCENTE',
+        rbd: sol.rbdOrigen,
+        establecimientoNombre: est?.nombre || `RBD ${sol.rbdOrigen}`,
+        comuna: est?.comuna || sol.comunaOrigen || 'Sin comuna',
+        categoriaEscuela,
+        tipoPerfilEscuela: est?.tipoPerfil || categoriaEscuela,
+        run: sol.runDocente,
+        nombreCompleto: sol.nombreDocente,
+        calidadJuridica: sol.calidadJuridica,
+        cargoEspecialidad: sol.asignaturaPrincipal || 'Docente',
+        horasContrato: Number(sol.horasContratoActual || 0),
+        fuenteFinanciamiento: sol.fuenteActual === 'SUBVENCION_GENERAL' ? 'Subv. General' : sol.fuenteActual,
+        propuestaGdp: 'No Continuidad (Mesa)',
+        situacionFinalGdp: sol.estadoFlujo,
+        razon: razon || 'Sin razón especificada en solicitud',
+        tieneRazon: Boolean(razon),
+        origenDeteccion: 'SOLICITUD_MESA'
+      });
+    }
+
+    // Asistentes de la Educación con No Continuidad
+    for (const a of asistentesTerritorio) {
+      const esNc = esPropuestaNoContinuidad(a.propuestaGdp) || esPropuestaNoContinuidad(a.situacionFinalGdp);
+      if (!esNc) continue;
+      const est = colegiosByRbd.get(a.rbd);
+      const categoriaEscuela = est ? clasificarCategoriaEstablecimiento(est) : 'ESCUELA';
+      const partesRazon = [
+        a.observacionesDirector?.trim(),
+        a.observacionesSlep?.trim(),
+        a.observacionesPal?.trim(),
+        a.observaciones?.trim()
+      ].filter((x, idx, arr): x is string => Boolean(x) && arr.indexOf(x) === idx);
+      const razon = partesRazon.join(' | ');
+
+      const calidad =
+        (a.horasSubvencionGeneralIndefinido || 0) + (a.horasSepIndefinido || 0) + (a.horasPieIndefinido || 0) > 0
+          ? 'INDEFINIDO'
+          : (a.horasHonorarios || 0) > 0 && a.horasContrato <= (a.horasHonorarios || 0)
+          ? 'HONORARIOS'
+          : 'PLAZO FIJO';
+
+      const fuentes: string[] = [];
+      if ((a.horasSubvencionGeneralIndefinido || 0) + (a.horasSubvencionGeneralPlazoFijo || 0) > 0) fuentes.push('Subv. General');
+      if ((a.horasSepIndefinido || 0) + (a.horasSepPlazoFijo || 0) > 0) fuentes.push('SEP');
+      if ((a.horasPieIndefinido || 0) + (a.horasPiePlazoFijo || 0) > 0) fuentes.push('PIE');
+      if ((a.horasHonorarios || 0) > 0) fuentes.push('Honorarios');
+
+      items.push({
+        id: `nc-ae-${a.id}`,
+        estamentoTipo: 'ASISTENTE',
+        rbd: a.rbd,
+        establecimientoNombre: est?.nombre || `RBD ${a.rbd}`,
+        comuna: est?.comuna || 'Sin comuna',
+        categoriaEscuela,
+        tipoPerfilEscuela: est?.tipoPerfil || categoriaEscuela,
+        run: a.run,
+        nombreCompleto: `${a.nombres} ${a.apellidos}`.trim(),
+        calidadJuridica: calidad,
+        cargoEspecialidad: a.cargoFuncion || a.estamento,
+        horasContrato: Number(a.horasContrato || 0),
+        fuenteFinanciamiento: fuentes.join(' / ') || 'Subv. General',
+        propuestaGdp: a.propuestaGdp || 'No Continuidad',
+        situacionFinalGdp: a.situacionFinalGdp || 'Vigente',
+        razon: razon || 'Sin razón especificada en propuesta GDP',
+        tieneRazon: Boolean(razon),
+        origenDeteccion: 'PROPUESTA_GDP'
+      });
+    }
+
+    return items.sort((a, b) => a.establecimientoNombre.localeCompare(b.establecimientoNombre, 'es') || a.nombreCompleto.localeCompare(b.nombreCompleto, 'es'));
+  }, [docentesNoVacantes, asistentesTerritorio, solicitudes, colegiosByRbd]);
+
+  const casosNoContinuidadFiltrados = useMemo(() => {
+    const q = busquedaNcAnalisis.toLowerCase().trim();
+    return casosNoContinuidadConsolidados.filter(item => {
+      if (filtroEstamentoNc !== 'TODOS' && item.estamentoTipo !== filtroEstamentoNc) return false;
+      const est = colegiosByRbd.get(item.rbd);
+      if (!cumpleFiltroTipoEscuela(est, filtroTipoEscuelaNc)) return false;
+      if (filtroComunaNc !== 'TODAS' && item.comuna !== filtroComunaNc) return false;
+      if (filtroRazonNc === 'CON_RAZON' && !item.tieneRazon) return false;
+      if (filtroRazonNc === 'SIN_RAZON' && item.tieneRazon) return false;
+      if (q) {
+        const hit =
+          item.nombreCompleto.toLowerCase().includes(q) ||
+          item.run.toLowerCase().includes(q) ||
+          item.establecimientoNombre.toLowerCase().includes(q) ||
+          item.rbd.toLowerCase().includes(q) ||
+          item.cargoEspecialidad.toLowerCase().includes(q) ||
+          item.razon.toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [casosNoContinuidadConsolidados, busquedaNcAnalisis, filtroEstamentoNc, filtroTipoEscuelaNc, filtroComunaNc, filtroRazonNc, colegiosByRbd]);
+
+  const resumenNoContinuidad = useMemo(() => {
+    const docentesCount = casosNoContinuidadFiltrados.filter(c => c.estamentoTipo === 'DOCENTE').length;
+    const asistentesCount = casosNoContinuidadFiltrados.filter(c => c.estamentoTipo === 'ASISTENTE').length;
+    const horasTotales = casosNoContinuidadFiltrados.reduce((s, c) => s + c.horasContrato, 0);
+    const conResguardoEstabilidad = casosNoContinuidadFiltrados.filter(c => c.calidadJuridica === 'TITULAR' || c.calidadJuridica === 'INDEFINIDO').length;
+    const sinRazonCount = casosNoContinuidadFiltrados.filter(c => !c.tieneRazon).length;
+
+    const porTipoEscuela = new Map<string, { cantidad: number; horas: number }>();
+    const porRazon = new Map<string, number>();
+    for (const c of casosNoContinuidadFiltrados) {
+      const catLabel = etiquetaCategoriaEscuela(c.categoriaEscuela);
+      const prev = porTipoEscuela.get(catLabel) || { cantidad: 0, horas: 0 };
+      porTipoEscuela.set(catLabel, { cantidad: prev.cantidad + 1, horas: prev.horas + c.horasContrato });
+      porRazon.set(c.razon, (porRazon.get(c.razon) || 0) + 1);
+    }
+
+    return {
+      docentesCount,
+      asistentesCount,
+      horasTotales,
+      conResguardoEstabilidad,
+      sinRazonCount,
+      porTipoEscuela: Array.from(porTipoEscuela.entries()).sort((a, b) => b[1].cantidad - a[1].cantidad),
+      topRazones: Array.from(porRazon.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    };
+  }, [casosNoContinuidadFiltrados]);
+
+  const handleExportarExcelNoContinuidad = async () => {
+    setExportandoNc(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const wsResumen = wb.addWorksheet('Resumen Analítico');
+      wsResumen.columns = [
+        { header: 'Indicador / Categoría', key: 'indicador', width: 42 },
+        { header: 'Cantidad Casos', key: 'cantidad', width: 18 },
+        { header: 'Horas Contrato', key: 'horas', width: 18 }
+      ];
+      wsResumen.getRow(1).font = { bold: true };
+      wsResumen.addRow({ indicador: 'Total Casos No Continuidad', cantidad: casosNoContinuidadFiltrados.length, horas: resumenNoContinuidad.horasTotales });
+      wsResumen.addRow({
+        indicador: 'Docentes (Ley 20.903)',
+        cantidad: resumenNoContinuidad.docentesCount,
+        horas: casosNoContinuidadFiltrados.filter(c => c.estamentoTipo === 'DOCENTE').reduce((s, c) => s + c.horasContrato, 0)
+      });
+      wsResumen.addRow({
+        indicador: 'Asistentes de la Educación (Ley 21.109)',
+        cantidad: resumenNoContinuidad.asistentesCount,
+        horas: casosNoContinuidadFiltrados.filter(c => c.estamentoTipo === 'ASISTENTE').reduce((s, c) => s + c.horasContrato, 0)
+      });
+      wsResumen.addRow({ indicador: 'Titulares / Indefinidos (Resguardo Art. 42)', cantidad: resumenNoContinuidad.conResguardoEstabilidad, horas: '' });
+      wsResumen.addRow({ indicador: 'Casos sin razón especificada', cantidad: resumenNoContinuidad.sinRazonCount, horas: '' });
+      wsResumen.addRow({});
+      wsResumen.addRow({ indicador: 'Desglose por Tipo de Establecimiento', cantidad: 'Casos', horas: 'Horas' }).font = { bold: true };
+      for (const [tipo, data] of resumenNoContinuidad.porTipoEscuela) {
+        wsResumen.addRow({ indicador: tipo, cantidad: data.cantidad, horas: data.horas });
+      }
+
+      const wsDetalle = wb.addWorksheet('Detalle No Continuidad');
+      wsDetalle.columns = [
+        { header: 'RBD', key: 'rbd', width: 10 },
+        { header: 'Establecimiento', key: 'establecimiento', width: 34 },
+        { header: 'Tipo Escuela', key: 'tipoEscuela', width: 20 },
+        { header: 'Comuna', key: 'comuna', width: 16 },
+        { header: 'Estamento', key: 'estamento', width: 14 },
+        { header: 'RUN', key: 'run', width: 14 },
+        { header: 'Nombre Completo', key: 'nombre', width: 30 },
+        { header: 'Calidad Jurídica', key: 'calidad', width: 16 },
+        { header: 'Cargo / Especialidad', key: 'cargo', width: 26 },
+        { header: 'Horas Contrato', key: 'horas', width: 14 },
+        { header: 'Fuente Financiamiento', key: 'fuente', width: 22 },
+        { header: 'Propuesta GDP', key: 'propuesta', width: 20 },
+        { header: 'Situación Final GDP', key: 'situacion', width: 18 },
+        { header: 'Razón / Fundamento', key: 'razon', width: 48 }
+      ];
+      wsDetalle.getRow(1).font = { bold: true };
+      for (const item of casosNoContinuidadFiltrados) {
+        wsDetalle.addRow({
+          rbd: item.rbd,
+          establecimiento: item.establecimientoNombre,
+          tipoEscuela: etiquetaCategoriaEscuela(item.categoriaEscuela),
+          comuna: item.comuna,
+          estamento: item.estamentoTipo === 'DOCENTE' ? 'Docente' : 'Asistente de la Educación',
+          run: item.run,
+          nombre: item.nombreCompleto,
+          calidad: item.calidadJuridica,
+          cargo: item.cargoEspecialidad,
+          horas: item.horasContrato,
+          fuente: item.fuenteFinanciamiento,
+          propuesta: item.propuestaGdp,
+          situacion: item.situacionFinalGdp,
+          razon: item.razon
+        });
+      }
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `Analisis_No_Continuidad_SLEP_${periodoActivo}.xlsx`);
+      setFeedback({ tipo: 'success', mensaje: `Exportado Excel con ${casosNoContinuidadFiltrados.length} casos de No Continuidad.` });
+    } catch (e: any) {
+      setFeedback({ tipo: 'error', mensaje: e?.message || 'Error al exportar Excel de No Continuidad.' });
+    } finally {
+      setExportandoNc(false);
+    }
+  };
+
+  // ── Asignaturas por Cubrir en Bolsa de Vacantes ──
+  const asignaturasPorCubrirPorVacante = useMemo(() => {
+    const mapa = new Map<string, ResumenAsignaturasVacante>();
+    const cursosPorId = new Map<string, CursoSae>();
+    const cursosPorRbd = new Map<string, CursoSae[]>();
+    for (const c of cursosTerritorio) {
+      cursosPorId.set(c.id, c);
+      const arr = cursosPorRbd.get(c.rbd) || [];
+      arr.push(c);
+      cursosPorRbd.set(c.rbd, arr);
+    }
+
+    const vacantesIdsSet = new Set(vacantesNn.map(v => v.id));
+    const asigsPorVacanteId = new Map<string, AsignacionHoraria[]>();
+    const asigsRealesPorRbd = new Map<string, AsignacionHoraria[]>();
+
+    for (const a of asignacionesTerritorio) {
+      if (a.docenteId && vacantesIdsSet.has(a.docenteId)) {
+        const arr = asigsPorVacanteId.get(a.docenteId) || [];
+        arr.push(a);
+        asigsPorVacanteId.set(a.docenteId, arr);
+      } else if (a.docenteId && a.docenteId !== 'SIN_DOCENTE') {
+        const arr = asigsRealesPorRbd.get(a.rbd) || [];
+        arr.push(a);
+        asigsRealesPorRbd.set(a.rbd, arr);
+      }
+    }
+
+    const deficitCachePorRbd = new Map<string, DeficitAsignaturaColegio[]>();
+    const obtenerDeficitColegio = (rbd: string): DeficitAsignaturaColegio[] => {
+      if (deficitCachePorRbd.has(rbd)) return deficitCachePorRbd.get(rbd)!;
+      const cursosCol = cursosPorRbd.get(rbd) || [];
+      const asigsCol = asigsRealesPorRbd.get(rbd) || [];
+      const planPorAsig = new Map<string, number>();
+      const cubiertasPorAsig = new Map<string, number>();
+
+      for (const cur of cursosCol) {
+        const plan = obtenerPlanPorCurso(cur.nivel, cur.regimen, cur.especialidadTp);
+        if (!plan) continue;
+        for (const asig of plan.asignaturasBase || []) {
+          const nombre = (asig.nombre || '').trim();
+          if (!nombre) continue;
+          planPorAsig.set(nombre, (planPorAsig.get(nombre) || 0) + (asig.horasSugeridas || 0));
+        }
+      }
+
+      for (const a of asigsCol) {
+        if (a.esTallerSep || a.esTrabajoColaborativo) continue;
+        const nombre = (a.asignatura || '').trim();
+        if (!nombre) continue;
+        cubiertasPorAsig.set(nombre, (cubiertasPorAsig.get(nombre) || 0) + (a.horasPedagogicasAula || 0));
+      }
+
+      const lista: DeficitAsignaturaColegio[] = [];
+      for (const [asigNombre, hrsPlan] of planPorAsig.entries()) {
+        const normAsig = asigNombre.toLowerCase();
+        let hrsCubiertas = cubiertasPorAsig.get(asigNombre) || 0;
+        if (hrsCubiertas === 0) {
+          for (const [k, v] of cubiertasPorAsig.entries()) {
+            if (k.toLowerCase().includes(normAsig) || normAsig.includes(k.toLowerCase())) {
+              hrsCubiertas += v;
+            }
+          }
+        }
+        const porCubrir = Math.max(0, hrsPlan - hrsCubiertas);
+        if (porCubrir > 0) {
+          lista.push({
+            asignatura: asigNombre,
+            horasPlan: hrsPlan,
+            horasCubiertas: hrsCubiertas,
+            horasPorCubrir: porCubrir
+          });
+        }
+      }
+      lista.sort((a, b) => b.horasPorCubrir - a.horasPorCubrir);
+      deficitCachePorRbd.set(rbd, lista);
+      return lista;
+    };
+
+    for (const v of vacantesNn) {
+      const asigsDirectas = asigsPorVacanteId.get(v.id) || [];
+      const directas: AsignaturaDirectaVacante[] = asigsDirectas.map(a => {
+        const cur = cursosPorId.get(a.cursoId);
+        return {
+          asignatura: a.asignatura || v.asignaturaPrincipal || 'Asignatura por definir',
+          cursoNombre: cur ? `${cur.nivel} ${cur.letra}` : (a.cursoId === 'TRANSVERSAL' ? 'Transversal' : 'Curso'),
+          horasPedagogicas: Number(a.horasPedagogicasAula || 0)
+        };
+      });
+      const totalHorasDirectas = directas.reduce((s, d) => s + d.horasPedagogicas, 0);
+      mapa.set(v.id, {
+        directas,
+        totalHorasDirectas,
+        deficitEstablecimiento: obtenerDeficitColegio(v.rbd)
+      });
+    }
+
+    return mapa;
+  }, [vacantesNn, asignacionesTerritorio, cursosTerritorio]);
+
   const solicitudesNoContinuidad = useMemo(
     () =>
       solicitudes
@@ -1111,9 +1566,271 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Selector de Modo del Módulo */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/80">
+          <button
+            type="button"
+            onClick={() => setVistaInternaMesa('tablero')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              vistaInternaMesa === 'tablero'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Tablero de Calce Territorial (3 Columnas)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setVistaInternaMesa('analisis_no_continuidad')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              vistaInternaMesa === 'analisis_no_continuidad'
+                ? 'bg-rose-700 text-white shadow-xs'
+                : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+            }`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Análisis &amp; Exportación No Continuidad (Docentes y AA.EE.)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black tabular-nums ${
+              vistaInternaMesa === 'analisis_no_continuidad' ? 'bg-white/20 text-white' : 'bg-rose-200 text-rose-900'
+            }`}>
+              {casosNoContinuidadConsolidados.length}
+            </span>
+          </button>
+        </div>
       </div>
 
+      {/* ══ APARTADO: ANÁLISIS Y EXPORTACIÓN DE NO CONTINUIDAD (DOCENTES Y ASISTENTES) ══ */}
+      {vistaInternaMesa === 'analisis_no_continuidad' && (
+        <div className="space-y-4">
+          <div className="card-elevated p-4 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-600" />
+                  <span>Análisis Territorial de Casos de No Continuidad ({casosNoContinuidadFiltrados.length})</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Consolidado de Docentes (Ley 20.903) y Asistentes de la Educación (Ley 21.109) con propuesta o solicitud de No Continuidad y sus fundamentos.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleExportarExcelNoContinuidad}
+                disabled={exportandoNc || casosNoContinuidadFiltrados.length === 0}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>{exportandoNc ? 'Exportando...' : 'Exportar Excel (.xlsx)'}</span>
+              </button>
+            </div>
+
+            {/* KPIs Analíticos */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="text-[10px] font-bold uppercase text-slate-500">Total Casos</div>
+                <div className="text-xl font-black text-slate-900 tabular-nums mt-0.5">{casosNoContinuidadFiltrados.length}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200">
+                <div className="text-[10px] font-bold uppercase text-indigo-800">Docentes</div>
+                <div className="text-xl font-black text-indigo-900 tabular-nums mt-0.5">{resumenNoContinuidad.docentesCount}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-200">
+                <div className="text-[10px] font-bold uppercase text-teal-800">Asistentes (AA.EE.)</div>
+                <div className="text-xl font-black text-teal-900 tabular-nums mt-0.5">{resumenNoContinuidad.asistentesCount}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200">
+                <div className="text-[10px] font-bold uppercase text-amber-800">Horas Totales</div>
+                <div className="text-xl font-black text-amber-900 tabular-nums mt-0.5">{resumenNoContinuidad.horasTotales}h</div>
+              </div>
+              <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200">
+                <div className="text-[10px] font-bold uppercase text-rose-800">Titulares / Indefinidos</div>
+                <div className="text-xl font-black text-rose-900 tabular-nums mt-0.5">
+                  {resumenNoContinuidad.conResguardoEstabilidad}
+                </div>
+              </div>
+            </div>
+
+            {/* Desglose por Tipo de Escuela y Top Razones */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-700">
+                  Distribución por Tipo de Establecimiento
+                </div>
+                {resumenNoContinuidad.porTipoEscuela.length === 0 ? (
+                  <p className="text-xs text-slate-400">Sin registros con los filtros actuales.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {resumenNoContinuidad.porTipoEscuela.map(([tipo, data]) => (
+                      <span key={tipo} className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-800 tabular-nums">
+                        {tipo}: {data.cantidad} ({data.horas}h)
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-700">
+                  Principales Razones Registradas ({resumenNoContinuidad.sinRazonCount} sin razón)
+                </div>
+                {resumenNoContinuidad.topRazones.length === 0 ? (
+                  <p className="text-xs text-slate-400">Sin razones registradas.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {resumenNoContinuidad.topRazones.map(([razon, cnt]) => (
+                      <div key={razon} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-slate-700 truncate">{razon}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-black text-[10px] tabular-nums shrink-0">
+                          {cnt}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Filtros */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+              <div className="relative md:col-span-2">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  value={busquedaNcAnalisis}
+                  onChange={e => setBusquedaNcAnalisis(e.target.value)}
+                  placeholder="Buscar por nombre, RUN, escuela, especialidad o razón..."
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+
+              <select
+                value={filtroEstamentoNc}
+                onChange={e => setFiltroEstamentoNc(e.target.value as any)}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-xl"
+              >
+                <option value="TODOS">Todos los estamentos</option>
+                <option value="DOCENTE">Solo Docentes</option>
+                <option value="ASISTENTE">Solo Asistentes (AA.EE.)</option>
+              </select>
+
+              <select
+                value={filtroTipoEscuelaNc}
+                onChange={e => setFiltroTipoEscuelaNc(e.target.value)}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-xl"
+              >
+                <option value="TODOS">Todo tipo de escuela</option>
+                <option value="CAT:ESCUELA">Escuelas</option>
+                <option value="CAT:LICEO">Liceos</option>
+                <option value="CAT:JARDIN_VTF">Jardines / Salas Cuna VTF</option>
+                <option value="ESCUELA_BASICA">Escuela Básica</option>
+                <option value="LICEO_HC">Liceo HC</option>
+                <option value="LICEO_TP">Liceo TP</option>
+                <option value="LICEO_POLIVALENTE">Liceo Polivalente</option>
+                <option value="ESCUELA_ESPECIAL">Escuela Especial</option>
+                <option value="EPJA">EPJA</option>
+              </select>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                <select
+                  value={filtroComunaNc}
+                  onChange={e => setFiltroComunaNc(e.target.value)}
+                  className="px-2 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-xl"
+                >
+                  <option value="TODAS">Comunas</option>
+                  {comunasDisponibles.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <select
+                  value={filtroRazonNc}
+                  onChange={e => setFiltroRazonNc(e.target.value as any)}
+                  className="px-2 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-300 rounded-xl"
+                >
+                  <option value="TODAS">Razón: Todas</option>
+                  <option value="CON_RAZON">Con razón</option>
+                  <option value="SIN_RAZON">Sin razón</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Tabla de Casos */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-100 text-slate-700 font-black uppercase text-[10px]">
+                  <tr>
+                    <th className="p-2.5">Estamento</th>
+                    <th className="p-2.5">Funcionario / RUN</th>
+                    <th className="p-2.5">Establecimiento / Tipo</th>
+                    <th className="p-2.5">Calidad / Horas</th>
+                    <th className="p-2.5">Cargo / Especialidad</th>
+                    <th className="p-2.5">Propuesta / Estado</th>
+                    <th className="p-2.5">Razón / Fundamento</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {casosNoContinuidadFiltrados.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                        No se registran casos de No Continuidad para los filtros seleccionados.
+                      </td>
+                    </tr>
+                  ) : (
+                    casosNoContinuidadFiltrados.map(item => (
+                      <tr key={item.id} className="hover:bg-slate-50/80">
+                        <td className="p-2.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black border ${
+                            item.estamentoTipo === 'DOCENTE'
+                              ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                              : 'bg-teal-50 text-teal-800 border-teal-200'
+                          }`}>
+                            {item.estamentoTipo === 'DOCENTE' ? 'Docente' : 'Asistente'}
+                          </span>
+                        </td>
+                        <td className="p-2.5">
+                          <div className="font-bold text-slate-900">{item.nombreCompleto}</div>
+                          <div className="text-[11px] font-mono text-slate-500">{item.run}</div>
+                        </td>
+                        <td className="p-2.5">
+                          <div className="font-semibold text-slate-800">{item.establecimientoNombre}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {etiquetaCategoriaEscuela(item.categoriaEscuela)} · {item.comuna} · RBD {item.rbd}
+                          </div>
+                        </td>
+                        <td className="p-2.5 tabular-nums">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            item.calidadJuridica === 'TITULAR' || item.calidadJuridica === 'INDEFINIDO'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {item.calidadJuridica}
+                          </span>
+                          <div className="text-[11px] font-black text-slate-800 mt-0.5">{item.horasContrato}h</div>
+                          <div className="text-[10px] text-slate-500">{item.fuenteFinanciamiento}</div>
+                        </td>
+                        <td className="p-2.5 text-slate-700">{item.cargoEspecialidad}</td>
+                        <td className="p-2.5">
+                          <div className="font-bold text-rose-700">{item.propuestaGdp}</div>
+                          <div className="text-[10px] text-slate-500">{item.situacionFinalGdp}</div>
+                        </td>
+                        <td className="p-2.5 max-w-xs">
+                          <span className={item.tieneRazon ? 'text-slate-800' : 'text-amber-700 italic'}>
+                            {item.razon}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Layout Principal de 3 Columnas */}
+      {vistaInternaMesa === 'tablero' && (
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
         {/* ══ COLUMNA 1: Cola de Movilidad & Egresos Proyectados ══ */}
         <section className="xl:col-span-4 card-elevated p-4 space-y-3">
@@ -1482,13 +2199,43 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
 
           {/* ── Subtab: Docentes con Horas Remanentes ── */}
           {tabCol1 === 'remanentes' && (
-            <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-              {remanentes.length === 0 ? (
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <select
+                  value={filtroTipoEscuelaRemanente}
+                  onChange={e => setFiltroTipoEscuelaRemanente(e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 text-[11px] font-semibold bg-slate-50 border border-slate-300 rounded-xl"
+                  title="Filtrar docentes con horas remanentes por tipo de establecimiento"
+                >
+                  <option value="TODOS">Tipo de Escuela: Todos ({remanentes.length})</option>
+                  <option value="CAT:ESCUELA">Escuelas (Básica / Especial)</option>
+                  <option value="CAT:LICEO">Liceos (HC / TP / Polivalente)</option>
+                  <option value="CAT:JARDIN_VTF">Jardines y Salas Cuna VTF</option>
+                  <option value="ESCUELA_BASICA">Escuela Básica</option>
+                  <option value="LICEO_HC">Liceo HC</option>
+                  <option value="LICEO_TP">Liceo TP</option>
+                  <option value="LICEO_POLIVALENTE">Liceo Polivalente</option>
+                  <option value="ESCUELA_ESPECIAL">Escuela Especial</option>
+                  <option value="EPJA">EPJA (Adultos)</option>
+                </select>
+                {filtroTipoEscuelaRemanente !== 'TODOS' && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltroTipoEscuelaRemanente('TODOS')}
+                    className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 rounded-lg"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-2 max-h-[560px] overflow-y-auto pr-1">
+              {remanentesFiltrados.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-6">
-                  No se detectaron docentes titulares con horas lectivas subutilizadas.
+                  No se detectaron docentes titulares con horas lectivas subutilizadas para el tipo seleccionado.
                 </p>
               ) : (
-                remanentes.map(item => {
+                remanentesFiltrados.map(item => {
                   const seleccionado =
                     !origenSeleccionado?.solicitudMovilidadId &&
                     origenSeleccionado?.docenteId === item.docente.id;
@@ -1554,6 +2301,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                   );
                 })
               )}
+              </div>
             </div>
           )}
 
@@ -2055,13 +2803,23 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                 const tipoMeta = ETIQUETAS_TIPO_VACANTE[tipo];
                 const fuente = inferirFuenteVacante(v);
                 const seleccionada = vacanteDestinoId === v.id;
+                const resumenAsig = asignaturasPorCubrirPorVacante.get(v.id);
+                const directas = resumenAsig?.directas || [];
+                const deficit = resumenAsig?.deficitEstablecimiento || [];
 
                 return (
-                  <button
+                  <div
                     key={v.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setVacanteDestinoId(seleccionada ? '' : v.id)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all space-y-1.5 ${
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setVacanteDestinoId(seleccionada ? '' : v.id);
+                      }
+                    }}
+                    className={`w-full text-left p-3 rounded-xl border transition-all space-y-1.5 cursor-pointer ${
                       seleccionada
                         ? 'bg-indigo-50/80 border-indigo-500 ring-1 ring-indigo-300 shadow-xs'
                         : v.vacanteCondicional
@@ -2093,6 +2851,31 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                       <span className="font-mono text-slate-400">{v.run}</span>
                     </div>
 
+                    {/* Asignaturas por cubrir */}
+                    {(directas.length > 0 || deficit.length > 0) && (
+                      <div className="pt-1 space-y-1">
+                        <div className="flex flex-wrap gap-1">
+                          {directas.slice(0, 3).map((d, idx) => (
+                            <span
+                              key={`${v.id}-dir-${idx}`}
+                              className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-bold tabular-nums"
+                            >
+                              {d.asignatura} · {d.horasPedagogicas} HA ({d.cursoNombre})
+                            </span>
+                          ))}
+                          {directas.length === 0 &&
+                            deficit.slice(0, 3).map((def, idx) => (
+                              <span
+                                key={`${v.id}-def-${idx}`}
+                                className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-bold tabular-nums"
+                              >
+                                Déficit: {def.asignatura} ({def.horasPorCubrir} HA)
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
                     {v.vacanteCondicional && (
                       <div className="px-2 py-1 rounded-lg bg-rose-100 text-rose-900 border border-rose-300 text-[10px] font-black flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3 shrink-0" />
@@ -2103,13 +2886,34 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
                     {v.justificacionVacante && (
                       <p className="text-[10px] text-slate-600 line-clamp-2">{v.justificacionVacante}</p>
                     )}
-                  </button>
+
+                    <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setVacanteAsignaturasModal(v);
+                        }}
+                        className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 hover:text-indigo-900 hover:underline"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>
+                          Ver asignaturas por cubrir (
+                          {directas.length > 0 ? `${directas.length} asig.` : `${deficit.length} déficit`})
+                        </span>
+                      </button>
+                      <span className="text-[10px] font-semibold text-slate-400">
+                        {seleccionada ? '✓ Seleccionada' : 'Clic para elegir'}
+                      </span>
+                    </div>
+                  </div>
                 );
               })
             )}
           </div>
         </section>
       </div>
+      )}
 
       {/* ══ MODAL: Nuevo Escenario ══ */}
       {modalNuevoEscenario && (
@@ -2679,6 +3483,127 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadWorkspaceProps> = ({
           </form>
         </div>
       )}
+
+      {/* ══ MODAL: Asignaturas por Cubrir de la Vacante ══ */}
+      {vacanteAsignaturasModal && (() => {
+        const est = colegiosByRbd.get(vacanteAsignaturasModal.rbd);
+        const resumen = asignaturasPorCubrirPorVacante.get(vacanteAsignaturasModal.id);
+        const directas = resumen?.directas || [];
+        const deficit = resumen?.deficitEstablecimiento || [];
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+              <div className="flex items-start justify-between gap-3 pb-2 border-b border-slate-100">
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-indigo-600" />
+                    <span>Asignaturas por Cubrir — {vacanteAsignaturasModal.asignaturaPrincipal || `${vacanteAsignaturasModal.nombres} ${vacanteAsignaturasModal.apellidos}`}</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {est?.nombre || `RBD ${vacanteAsignaturasModal.rbd}`} · {vacanteAsignaturasModal.horasContrato}h contrato · RUN {vacanteAsignaturasModal.run}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVacanteAsignaturasModal(null)}
+                  className="p-1 text-slate-400 hover:text-slate-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="text-xs font-black text-slate-800 mb-1.5">
+                    1. Asignaciones horarias vinculadas a esta vacante ({resumen?.totalHorasDirectas || 0} HA)
+                  </div>
+                  {directas.length === 0 ? (
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                      Esta vacante no tiene cursos/asignaciones vinculadas directamente todavía. Especialidad declarada:{' '}
+                      <strong className="text-slate-800">{vacanteAsignaturasModal.asignaturaPrincipal || 'No especificada'}</strong>.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700">
+                          <tr>
+                            <th className="p-2">Asignatura</th>
+                            <th className="p-2">Curso</th>
+                            <th className="p-2 text-right">Horas Aula (HA)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {directas.map((d, idx) => (
+                            <tr key={idx}>
+                              <td className="p-2 font-bold text-slate-800">{d.asignatura}</td>
+                              <td className="p-2 text-slate-600">{d.cursoNombre}</td>
+                              <td className="p-2 text-right font-black tabular-nums">{d.horasPedagogicas} HA</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-xs font-black text-slate-800 mb-1.5">
+                    2. Asignaturas con déficit curricular pendiente en el establecimiento ({deficit.length})
+                  </div>
+                  {deficit.length === 0 ? (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                      No se detecta déficit curricular pendiente en los planes del establecimiento.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-amber-50 text-[10px] font-black uppercase text-amber-900">
+                          <tr>
+                            <th className="p-2">Asignatura</th>
+                            <th className="p-2 text-right">Plan (HA)</th>
+                            <th className="p-2 text-right">Cubiertas (HA)</th>
+                            <th className="p-2 text-right">Por Cubrir (HA)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {deficit.map((def, idx) => (
+                            <tr key={idx}>
+                              <td className="p-2 font-bold text-slate-800">{def.asignatura}</td>
+                              <td className="p-2 text-right tabular-nums text-slate-600">{def.horasPlan}</td>
+                              <td className="p-2 text-right tabular-nums text-slate-600">{def.horasCubiertas}</td>
+                              <td className="p-2 text-right font-black tabular-nums text-rose-700">{def.horasPorCubrir} HA</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVacanteDestinoId(vacanteAsignaturasModal.id);
+                    setVacanteAsignaturasModal(null);
+                  }}
+                  className="px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl"
+                >
+                  Seleccionar como Destino
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVacanteAsignaturasModal(null)}
+                  className="px-3.5 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-xl"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
