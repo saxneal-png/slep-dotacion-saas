@@ -60,9 +60,9 @@ export interface StageGatesHeaderProps {
   };
   consolidacionDeshabilitada: boolean;
   tooltipConsolidacion: string;
-  vistaInternaMesa: 'tablero' | 'analisis_no_continuidad';
+  vistaInternaMesa: 'la_mesa' | 'tablero' | 'analisis_no_continuidad';
   casosNoContinuidadCount: number;
-  onCambiarVistaInterna: (vista: 'tablero' | 'analisis_no_continuidad') => void;
+  onCambiarVistaInterna: (vista: 'la_mesa' | 'tablero' | 'analisis_no_continuidad') => void;
   onSelectSubTabCola: (tab: SubTabCol1) => void;
   onAbrirNuevoEscenario: () => void;
   onAbrirClonarEscenario: () => void;
@@ -701,6 +701,18 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
 
       {/* Selector de Modo del Módulo */}
       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/80">
+        <button
+          type="button"
+          onClick={() => onCambiarVistaInterna('la_mesa')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            vistaInternaMesa === 'la_mesa'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>La Mesa (Vista Guiada)</span>
+        </button>
         <button
           type="button"
           onClick={() => onCambiarVistaInterna('tablero')}

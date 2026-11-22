@@ -1,6 +1,12 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { Docente, EscenarioCalce, Establecimiento, PropuestaCalce } from '../types';
+import {
+  Docente,
+  EscenarioCalce,
+  Establecimiento,
+  PropuestaCalce,
+  SolicitudMovilidad
+} from '../types';
 
 function escapeHtml(val: unknown): string {
   return String(val ?? '')
@@ -376,4 +382,159 @@ export async function exportarVacantesRemanentesConcursoExcel(params: {
 
   const buffer = await wb.xlsx.writeBuffer();
   return new Uint8Array(buffer as ArrayBuffer);
+}
+
+export function generarHtmlNotificacionMovilidad(params: {
+  solicitud: SolicitudMovilidad;
+  propuesta?: PropuestaCalce;
+  estOrigen?: Establecimiento;
+  estDestino?: Establecimiento;
+  periodo: number;
+  usuarioActor: string;
+}): string {
+  const { solicitud, propuesta, estOrigen, estDestino, periodo, usuarioActor } = params;
+  const origenTexto = estOrigen
+    ? `${estOrigen.nombre} (RBD ${estOrigen.rbd})`
+    : `RBD ${solicitud.rbdOrigen}`;
+  const destinoRbd = propuesta?.rbdDestino || solicitud.rbdDestinoPreferente || 'Por definir';
+  const destinoTexto = estDestino
+    ? `${estDestino.nombre} (RBD ${estDestino.rbd})`
+    : `RBD ${destinoRbd}`;
+  const horas = propuesta?.horasAsignadas ?? solicitud.horasDisponiblesMover;
+  const fuente = propuesta?.fuenteDestino || solicitud.fuenteActual;
+  const cobertura = propuesta?.tipoCobertura === 'TRANSITORIA_CONDICIONAL' ? 'Transitoria Condicional' : 'Definitiva';
+
+  const fechaEmision = new Date().toLocaleDateString('es-CL', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Notificación de Propuesta de Movilidad ${periodo} - ${escapeHtml(solicitud.nombreDocente)}</title>
+  <style>
+    @page { size: letter; margin: 15mm; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      line-height: 1.45;
+      font-size: 10.5pt;
+      margin: 0;
+      padding: 20px;
+      background-color: #ffffff;
+    }
+    .header {
+      border-bottom: 3px solid #002B49;
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .banner {
+      background-color: #002B49;
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .banner h1 { margin: 0; font-size: 13.5pt; }
+    .banner p { margin: 2px 0 0; font-size: 9pt; opacity: 0.9; }
+    table.info {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      font-size: 9.5pt;
+    }
+    table.info th, table.info td {
+      border: 1px solid #cbd5e1;
+      padding: 7px 10px;
+      text-align: left;
+    }
+    table.info th {
+      width: 28%;
+      background-color: #f1f5f9;
+      color: #002B49;
+      font-weight: 700;
+    }
+    .constancia {
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 14px;
+      background-color: #f8fafc;
+      margin-top: 14px;
+    }
+    .firmas {
+      width: 100%;
+      margin-top: 44px;
+      border-collapse: collapse;
+      page-break-inside: avoid;
+    }
+    .firmas td {
+      width: 50%;
+      text-align: center;
+      padding: 0 22px;
+      vertical-align: bottom;
+    }
+    .linea {
+      border-top: 1px solid #334155;
+      padding-top: 6px;
+      font-weight: 700;
+      font-size: 9pt;
+    }
+    .sub { font-size: 8pt; color: #475569; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <strong style="color:#002B49; font-size:11pt;">SERVICIO LOCAL DE EDUCACIÓN PÚBLICA VALLE DIGUILLÍN</strong><br>
+      <span style="font-size:8.5pt; color:#475569;">Unidad de Apoyo Técnico Pedagógico (UATP) · Mesa Territorial de Movilidad</span>
+    </div>
+    <div style="text-align:right; font-size:8.5pt;">
+      <strong>Fecha:</strong> ${escapeHtml(fechaEmision)}<br>
+      <strong>Emitido por:</strong> ${escapeHtml(usuarioActor)}
+    </div>
+  </div>
+
+  <div class="banner">
+    <h1>Notificación de Propuesta de Movilidad Territorial ${periodo}</h1>
+    <p>Constancia formal para Dirección de Establecimiento de Origen y Funcionario/a (Nemawashi)</p>
+  </div>
+
+  <table class="info">
+    <tr><th>Funcionario/a</th><td>${escapeHtml(solicitud.nombreDocente)}</td></tr>
+    <tr><th>RUN</th><td>${escapeHtml(solicitud.runDocente)}</td></tr>
+    <tr><th>Calidad Jurídica</th><td>${escapeHtml(solicitud.calidadJuridica)} · ${solicitud.horasContratoActual}h contrato actual</td></tr>
+    <tr><th>Carril Normativo</th><td>${escapeHtml(solicitud.carril)}</td></tr>
+    <tr><th>Establecimiento de Origen</th><td>${escapeHtml(origenTexto)}</td></tr>
+    <tr><th>Establecimiento de Destino</th><td>${escapeHtml(destinoTexto)}</td></tr>
+    <tr><th>Jornada / Fuente / Cobertura</th><td>${horas}h · ${escapeHtml(fuente)} · ${escapeHtml(cobertura)}</td></tr>
+  </table>
+
+  <div class="constancia">
+    <strong>Constancia de Toma de Conocimiento y Aceptación:</strong>
+    <p style="margin:6px 0 0; font-size:9pt;">
+      Por medio del presente documento se notifica formalmente a la Dirección del establecimiento de origen y al/a la funcionario/a la propuesta de destinación o traslado territorial para el período ${periodo}, dejando registro de toma de conocimiento y conformidad previa a su consolidación administrativa.
+    </p>
+    <p style="margin:8px 0 0; font-size:9pt;"><strong>Observaciones:</strong> ________________________________________________________________________</p>
+  </div>
+
+  <table class="firmas">
+    <tr>
+      <td>
+        <div class="linea">Dirección Establecimiento de Origen</div>
+        <div class="sub">Nombre, Firma y Timbre · Fecha: ____/____/______</div>
+      </td>
+      <td>
+        <div class="linea">Funcionario/a Notificado/a</div>
+        <div class="sub">Firma y Aceptación · Fecha: ____/____/______</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }

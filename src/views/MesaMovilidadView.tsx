@@ -23,10 +23,17 @@ import {
 } from '../services/movilidadTerritorialService';
 import {
   generarHtmlActaMesaMovilidad,
+  generarHtmlNotificacionMovilidad,
   imprimirActaMesaMovilidad,
   descargarActaWordMesaMovilidad,
   exportarVacantesRemanentesConcursoExcel
 } from '../services/movilidadActaService';
+import { LaMesaPanel } from './movilidad/LaMesaPanel';
+import {
+  CandidatoSugeridoMesa,
+  CasoVacanteLaMesa,
+  construirCasosLaMesa
+} from './movilidad/laMesaEngine';
 import { generarResumenComparativoEscenariosGemini, ResumenComparativoEscenariosResult } from '../services/movilidadGeminiService';
 import { evaluarEgresoProyectado, calcularPuntajePrioridadMovilidad } from '@slep/mineduc-engine';
 import { esPropuestaNoContinuidad } from '../services/estadisticasHorasService';
@@ -156,7 +163,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
     void contarSyncPendientesMovilidad().then(setSyncPendientes).catch(() => {});
   }, []);
 
-  const [vistaInternaMesa, setVistaInternaMesa] = useState<'tablero' | 'analisis_no_continuidad'>('tablero');
+  const [vistaInternaMesa, setVistaInternaMesa] = useState<'la_mesa' | 'tablero' | 'analisis_no_continuidad'>('tablero');
   const [tabCol1, setTabCol1] = useState<SubTabCol1>(() => (
     flags.flag_no_continuidad_titulares ? 'no_continuidad' : flags.flag_traslados_voluntarios ? 'traslados' : flags.flag_egresos_contingencia ? 'egresos_gdp' : 'asistentes_indefinidos'
   ));
@@ -560,6 +567,62 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
     return vacantesNn.filter(v => !cubiertas.has(v.id));
   }, [vacantesNn, propuestas]);
 
+  const solicitudesById = useMemo(
+    () => new Map(solicitudes.map(s => [s.id, s])),
+    [solicitudes]
+  );
+
+  const casosLaMesa = useMemo(
+    () =>
+      construirCasosLaMesa({
+        vacantesNn,
+        solicitudes,
+        docentesTerritorio: docentesNoVacantes,
+        propuestas,
+        colegiosByRbd
+      }),
+    [vacantesNn, solicitudes, docentesNoVacantes, propuestas, colegiosByRbd]
+  );
+
+  const handleAceptarCandidatoLaMesa = (caso: CasoVacanteLaMesa, cand: CandidatoSugeridoMesa) => {
+    if (!escenarioActivo) return;
+    ejecutarOperacion('Agregando propuesta desde La Mesa...', async () => {
+      await agregarPropuestaCalce(
+        {
+          escenarioId: escenarioActivo.id,
+          periodo: periodoActivo,
+          docenteOrigenId: cand.solicitud.docenteId,
+          vacanteDestinoId: caso.vacante.id,
+          solicitudMovilidadId: cand.solicitud.id,
+          egresoOrigenId: caso.vacante.origenEgresoId || undefined,
+          tipoCobertura: caso.vacante.vacanteCondicional ? 'TRANSITORIA_CONDICIONAL' : 'DEFINITIVA',
+          esTrasladoCompleto: cand.candidato.esTrasladoCompleto !== false,
+          expectedVersion: escenarioActivo.version ?? 1,
+          estamentoPersonal: 'DOCENTE'
+        },
+        rol
+      );
+      await refrescarEscenariosYPropuestas(escenarioActivo.id);
+      mostrarFeedback(`Propuesta aceptada: ${cand.solicitud.nombreDocente} asignado a vacante.`);
+    }, 'Error aceptando propuesta en La Mesa');
+  };
+
+  const handleImprimirNotificacion = (solicitud: SolicitudMovilidad, propuesta?: PropuestaCalce) => {
+    try {
+      const html = generarHtmlNotificacionMovilidad({
+        solicitud,
+        propuesta,
+        estOrigen: colegiosByRbd.get(solicitud.rbdOrigen),
+        estDestino: colegiosByRbd.get(propuesta?.rbdDestino || solicitud.rbdDestinoPreferente || ''),
+        periodo: periodoActivo,
+        usuarioActor: actorNombre
+      });
+      imprimirActaMesaMovilidad(html);
+    } catch (err: any) {
+      mostrarFeedback(`Error emitiendo notificación: ${err?.message || err}`, 'error');
+    }
+  };
+
   const handleConfirmarRevertirEscenario = (e: React.FormEvent) => {
     e.preventDefault();
     if (!escenarioActivo) return;
@@ -680,7 +743,32 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
         syncPendientes={syncPendientes} onReintentarSync={handleReintentarSync} reintentandoSync={reintentandoSync}
       />
 
-      {vistaInternaMesa === 'analisis_no_continuidad' ? (
+      {vistaInternaMesa === 'la_mesa' ? (
+        <LaMesaPanel
+          periodoActivo={periodoActivo}
+          escenarioActivo={escenarioActivo}
+          escenarioConsolidado={escenarioConsolidado}
+          puedeEditarMovilidad={puedeEditarMovilidad}
+          operacionEnCurso={operacionEnCurso}
+          casos={casosLaMesa}
+          colegiosByRbd={colegiosByRbd}
+          solicitudesById={solicitudesById}
+          onAceptarCandidato={handleAceptarCandidatoLaMesa}
+          onEliminarPropuesta={propId =>
+            escenarioActivo &&
+            ejecutarOperacion(
+              'Eliminando propuesta...',
+              async () => {
+                await eliminarPropuestaCalce(propId, rol);
+                await refrescarEscenariosYPropuestas(escenarioActivo.id);
+              },
+              'Error eliminando propuesta'
+            )
+          }
+          onImprimirNotificacion={handleImprimirNotificacion}
+          onIrATableroTecnico={() => setVistaInternaMesa('tablero')}
+        />
+      ) : vistaInternaMesa === 'analisis_no_continuidad' ? (
         <AnalisisNoContinuidadPanel casosNoContinuidadConsolidados={casosNoContinuidadConsolidados} colegiosByRbd={colegiosByRbd} comunasDisponibles={comunasDisponibles} periodoActivo={periodoActivo} onFeedback={mostrarFeedback} />
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
