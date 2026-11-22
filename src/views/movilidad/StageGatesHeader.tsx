@@ -9,6 +9,7 @@ import {
   Lock,
   PauseCircle,
   Plus,
+  RefreshCw,
   ScanSearch,
   Sparkles,
   Unlock
@@ -66,6 +67,9 @@ export interface StageGatesHeaderProps {
   onAbrirCompararGemini: () => void;
   onAbrirResolucionExenta: () => void;
   onExportarNominaActosGdp: () => void;
+  syncPendientes: number;
+  onReintentarSync: () => void;
+  reintentandoSync: boolean;
 }
 
 export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
@@ -94,7 +98,10 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
   onAbrirConsolidar,
   onAbrirCompararGemini,
   onAbrirResolucionExenta,
-  onExportarNominaActosGdp
+  onExportarNominaActosGdp,
+  syncPendientes,
+  onReintentarSync,
+  reintentandoSync
 }) => {
   const gate1Abierta = Boolean(pausaRevision?.activa) && previewNnPendientes === 0;
   const gate2Abierta =
@@ -143,6 +150,22 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
                   {escenarioActivo?.numeroResolucion
                     ? `· Res. Ex. ${escenarioActivo.numeroResolucion}`
                     : ''}
+                </span>
+              )}
+              {syncPendientes > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 tabular-nums">
+                  <span>
+                    {syncPendientes} {syncPendientes === 1 ? 'cambio' : 'cambios'} sin sincronizar
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onReintentarSync}
+                    disabled={reintentandoSync}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-amber-700 hover:bg-amber-800 text-white text-[10px] font-black transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-2.5 h-2.5 ${reintentandoSync ? 'animate-spin' : ''}`} />
+                    <span>{reintentandoSync ? 'Reintentando...' : 'Reintentar'}</span>
+                  </button>
                 </span>
               )}
             </div>

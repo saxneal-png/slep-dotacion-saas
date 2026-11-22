@@ -135,6 +135,12 @@ export function esRolNivelCentralMovilidad(rol: unknown): boolean {
   return esRolNivelCentral(rol);
 }
 
+export function esRolEditorMovilidad(rol: unknown): boolean {
+  const raw = typeof rol === 'string' ? rol.trim().toLowerCase() : '';
+  if (raw === 'auditor' || raw === 'visualizador') return false;
+  return esRolNivelCentralMovilidad(rol);
+}
+
 export function esRolValidadorGdp(rol: unknown): boolean {
   const norm = normalizarRol(rol);
   return norm === 'super_usuario' || norm === 'subdirector_uatp' || norm === 'gdp_validador';
@@ -149,6 +155,14 @@ function assertRolNivelCentral(rol: unknown, accion: string): void {
   if (!esRolNivelCentralMovilidad(rol)) {
     throw new Error(
       `Acceso denegado: el rol '${String(rol ?? '')}' no tiene permisos de nivel central para ${accion}.`
+    );
+  }
+}
+
+export function assertRolEditorMovilidad(rol: unknown, accion: string): void {
+  if (!esRolEditorMovilidad(rol)) {
+    throw new Error(
+      `Acceso denegado: el rol '${String(rol ?? '')}' no tiene permisos de edición en Mesa de Movilidad para ${accion}.`
     );
   }
 }
@@ -227,6 +241,177 @@ function construirErrorConflictoVersion(
   return new Error(
     `CONFLICTO_VERSION: El escenario fue modificado por otro usuario (versión esperada ${esperada}, actual ${actual}).`
   );
+}
+
+export type OpSyncMovilidad =
+  | { tabla: string; operacion: 'upsert'; payload: any; onConflict?: string }
+  | {
+      tabla: string;
+      operacion: 'update';
+      payload: any;
+      match: Record<string, string | number | string[]>;
+    }
+  | {
+      tabla: string;
+      operacion: 'delete';
+      match: Record<string, string | number | string[]>;
+    }
+  | {
+      tabla:
+        | 'guardarDocentesBatch'
+        | 'eliminarDocente'
+        | 'guardarAsistentesBatch'
+        | 'eliminarAsistente';
+      operacion: 'servicio';
+      payload: any;
+    };
+
+async function ejecutarOpSyncMovilidad(op: OpSyncMovilidad): Promise<void> {
+  if (op.operacion === 'servicio') {
+    switch (op.tabla) {
+      case 'guardarDocentesBatch':
+        await SupabaseDotacionService.guardarDocentesBatch(op.payload);
+        return;
+      case 'eliminarDocente':
+        await SupabaseDotacionService.eliminarDocente(op.payload);
+        return;
+      case 'guardarAsistentesBatch':
+        await SupabaseDotacionService.guardarAsistentesBatch(op.payload);
+        return;
+      case 'eliminarAsistente':
+        await SupabaseDotacionService.eliminarAsistente(op.payload);
+        return;
+    }
+  }
+
+  if (op.operacion === 'upsert') {
+    const res = await supabase
+      .from(op.tabla)
+      .upsert(op.payload, op.onConflict ? { onConflict: op.onConflict } : undefined);
+    if (res?.error) throw res.error;
+    return;
+  }
+
+  let query: any =
+    op.operacion === 'update'
+      ? supabase.from(op.tabla).update(op.payload)
+      : supabase.from(op.tabla).delete();
+
+  for (const [k, v] of Object.entries(op.match || {})) {
+    query = Array.isArray(v) ? query.in(k, v) : query.eq(k, v);
+  }
+
+  const res = await query;
+  if (res?.error) throw res.error;
+}
+
+export async function syncSupabaseMovilidad(
+  op: OpSyncMovilidad,
+  etiqueta: string
+): Promise<boolean> {
+  if (!isSupabaseEnabled()) return true;
+
+  try {
+    await ejecutarOpSyncMovilidad(op);
+    return true;
+  } catch (err: any) {
+    console.warn(`[movilidadTerritorialService] Aviso sync Supabase (${etiqueta}):`, err);
+    try {
+      const db = await getDb();
+      const nowIso = new Date().toISOString();
+      const id = `sync_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const msgErr = `${etiqueta}: ${String(err?.message || err || 'Error de sincronización')}`;
+      const payloadJson = JSON.stringify(('payload' in op ? op.payload : undefined) ?? null);
+      const matchJson = JSON.stringify(('match' in op ? op.match : undefined) ?? null);
+      const onConflict = op.operacion === 'upsert' ? op.onConflict || null : null;
+
+      db.run(
+        `INSERT INTO sync_pendientes_movilidad (
+          id, tabla, operacion, payload_json, match_json, on_conflict, error, intentos, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?);`,
+        [id, op.tabla, op.operacion, payloadJson, matchJson, onConflict, msgErr, nowIso, nowIso]
+      );
+      await persistDb(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('slep:movilidad_sync_pendiente'));
+      }
+    } catch (dbErr) {
+      console.warn('[movilidadTerritorialService] No se pudo registrar sync pendiente:', dbErr);
+    }
+    return false;
+  }
+}
+
+export async function contarSyncPendientesMovilidad(): Promise<number> {
+  const db = await getDb();
+  const res = db.exec('SELECT COUNT(*) FROM sync_pendientes_movilidad;');
+  return Number(res[0]?.values[0]?.[0] || 0);
+}
+
+export async function reintentarSyncPendientesMovilidad(
+  rolActor: RolId
+): Promise<{ ok: number; fallidos: number }> {
+  assertRolNivelCentral(rolActor, 'reintentar sincronización');
+  if (!isSupabaseEnabled()) {
+    return { ok: 0, fallidos: await contarSyncPendientesMovilidad() };
+  }
+
+  const db = await getDb();
+  const res = db.exec(
+    `SELECT id, tabla, operacion, payload_json, match_json, on_conflict
+     FROM sync_pendientes_movilidad
+     ORDER BY created_at ASC, rowid ASC;`
+  );
+  const rows = res[0]?.values || [];
+  if (rows.length === 0) {
+    return { ok: 0, fallidos: 0 };
+  }
+
+  let ok = 0;
+  let fallidos = 0;
+
+  for (const row of rows) {
+    const id = String(row[0]);
+    const tabla = String(row[1]);
+    const operacion = String(row[2]) as OpSyncMovilidad['operacion'];
+    const payload = row[3] ? JSON.parse(String(row[3])) : null;
+    const match = row[4] ? JSON.parse(String(row[4])) : null;
+    const onConflict = row[5] ? String(row[5]) : undefined;
+
+    let op: OpSyncMovilidad;
+    if (operacion === 'servicio') {
+      op = { tabla: tabla as any, operacion: 'servicio', payload };
+    } else if (operacion === 'upsert') {
+      op = { tabla, operacion: 'upsert', payload, onConflict };
+    } else if (operacion === 'update') {
+      op = { tabla, operacion: 'update', payload, match: match || {} };
+    } else {
+      op = { tabla, operacion: 'delete', match: match || {} };
+    }
+
+    try {
+      await ejecutarOpSyncMovilidad(op);
+      db.run('DELETE FROM sync_pendientes_movilidad WHERE id = ?;', [id]);
+      ok++;
+    } catch (err: any) {
+      const nowIso = new Date().toISOString();
+      const errMsg = String(err?.message || err || 'Error al reintentar sincronización');
+      db.run(
+        `UPDATE sync_pendientes_movilidad
+         SET intentos = COALESCE(intentos, 0) + 1, error = ?, updated_at = ?
+         WHERE id = ?;`,
+        [errMsg, nowIso, id]
+      );
+      fallidos++;
+    }
+  }
+
+  await persistDb(true);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('slep:movilidad_sync_pendiente'));
+  }
+
+  return { ok, fallidos };
 }
 
 /**
@@ -370,7 +555,7 @@ export async function escanearYSanearVacantesNnTerritorio(params: {
   asignacionesPreservadas: number;
   idsMarcados: string[];
 }> {
-  assertRolNivelCentral(params.rolActor, 'escanear y sanear vacantes NN en el territorio');
+  assertRolEditorMovilidad(params.rolActor, 'escanear y sanear vacantes NN en el territorio');
   const periodo = params.periodo ?? 2027;
 
   const docentes = params.rbd
@@ -453,8 +638,9 @@ export async function escanearYSanearVacantesNnTerritorio(params: {
   }
 
   if (isSupabaseEnabled() && docentesActualizados.length > 0) {
-    SupabaseDotacionService.guardarDocentesBatch(docentesActualizados).catch(err =>
-      console.warn('[movilidadTerritorialService] Aviso sync Supabase tras saneamiento NN:', err)
+    void syncSupabaseMovilidad(
+      { tabla: 'guardarDocentesBatch', operacion: 'servicio', payload: docentesActualizados },
+      'saneamiento_nn_docentes'
     );
   }
 
@@ -873,16 +1059,20 @@ export async function guardarEgresoProyectado(
 
   if (isSupabaseEnabled()) {
     for (const delVacId of idsVacantesEliminar) {
-      SupabaseDotacionService.eliminarDocente(delVacId).catch(err =>
-        console.warn('[movilidadTerritorialService] Aviso eliminando vacante previa en Supabase:', err)
+      void syncSupabaseMovilidad(
+        { tabla: 'eliminarDocente', operacion: 'servicio', payload: delVacId },
+        'egreso_eliminar_vacante_previa'
       );
     }
-    supabase
-      .from('egresos_proyectados')
-      .upsert(mapEgresoToSupabase(egresoFinal), { onConflict: 'id' })
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso sync egreso Supabase:', err)
-      );
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'egresos_proyectados',
+        operacion: 'upsert',
+        payload: mapEgresoToSupabase(egresoFinal),
+        onConflict: 'id'
+      },
+      'guardar_egreso_proyectado'
+    );
   }
 
   return {
@@ -920,15 +1110,15 @@ export async function eliminarEgresoProyectado(id: string, rolActor: RolId): Pro
 
   if (isSupabaseEnabled()) {
     if (vacId) {
-      SupabaseDotacionService.eliminarDocente(vacId).catch(() => {});
-    }
-    supabase
-      .from('egresos_proyectados')
-      .delete()
-      .eq('id', id)
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso delete egreso Supabase:', err)
+      void syncSupabaseMovilidad(
+        { tabla: 'eliminarDocente', operacion: 'servicio', payload: vacId },
+        'eliminar_egreso_vacante'
       );
+    }
+    void syncSupabaseMovilidad(
+      { tabla: 'egresos_proyectados', operacion: 'delete', match: { id } },
+      'eliminar_egreso_proyectado'
+    );
   }
 }
 
@@ -1108,39 +1298,46 @@ export async function reincorporarTitularContingencia(params: {
       d => d.id === targetTitularId || vacantesLigadasIds.has(d.id)
     );
     if (docentesSync.length > 0) {
-      SupabaseDotacionService.guardarDocentesBatch(docentesSync).catch(err =>
-        console.warn('[movilidadTerritorialService] Aviso sync docentes reverso Supabase:', err)
+      void syncSupabaseMovilidad(
+        { tabla: 'guardarDocentesBatch', operacion: 'servicio', payload: docentesSync },
+        'reverso_egreso_docentes'
       );
     }
     for (const vacId of vacantesLigadasIds) {
-      supabase
-        .from('asignaciones_horarias')
-        .update({ docente_id: targetTitularId })
-        .eq('docente_id', vacId)
-        .eq('rbd', egresoActual.rbd)
-        .eq('periodo', periodo)
-        .then(() => {}, () => {});
-      supabase
-        .from('asignaciones_horarias')
-        .update({ co_docente_id: targetTitularId })
-        .eq('co_docente_id', vacId)
-        .eq('rbd', egresoActual.rbd)
-        .eq('periodo', periodo)
-        .then(() => {}, () => {});
-    }
-    supabase
-      .from('egresos_proyectados')
-      .update({
-        estado_reversion: 'REVERTIDO_REINCORPORADO',
-        motivo_reversion: motivoClean,
-        fecha_reversion: nowIso,
-        revertido_por: actor,
-        updated_at: nowIso
-      })
-      .eq('id', egresoActual.id)
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso update reverso egreso Supabase:', err)
+      void syncSupabaseMovilidad(
+        {
+          tabla: 'asignaciones_horarias',
+          operacion: 'update',
+          payload: { docente_id: targetTitularId },
+          match: { docente_id: vacId, rbd: egresoActual.rbd, periodo }
+        },
+        'reverso_egreso_asig_docente'
       );
+      void syncSupabaseMovilidad(
+        {
+          tabla: 'asignaciones_horarias',
+          operacion: 'update',
+          payload: { co_docente_id: targetTitularId },
+          match: { co_docente_id: vacId, rbd: egresoActual.rbd, periodo }
+        },
+        'reverso_egreso_asig_codocente'
+      );
+    }
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'egresos_proyectados',
+        operacion: 'update',
+        payload: {
+          estado_reversion: 'REVERTIDO_REINCORPORADO',
+          motivo_reversion: motivoClean,
+          fecha_reversion: nowIso,
+          revertido_por: actor,
+          updated_at: nowIso
+        },
+        match: { id: egresoActual.id }
+      },
+      'reverso_egreso_estado'
+    );
   }
 
   return {
@@ -1277,7 +1474,7 @@ export async function guardarSolicitudMovilidad(
   },
   rolActor: RolId
 ): Promise<SolicitudMovilidad> {
-  assertRolNivelCentral(rolActor, 'guardar solicitudes de movilidad');
+  assertRolEditorMovilidad(rolActor, 'guardar solicitudes de movilidad');
 
   const periodo = sol.periodo || 2027;
   const db = await getDb();
@@ -1407,12 +1604,15 @@ export async function guardarSolicitudMovilidad(
   await persistDb(true);
 
   if (isSupabaseEnabled()) {
-    supabase
-      .from('solicitudes_movilidad')
-      .upsert(mapSolicitudToSupabase(solicitudFinal), { onConflict: 'id' })
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso sync solicitud Supabase:', err)
-      );
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'solicitudes_movilidad',
+        operacion: 'upsert',
+        payload: mapSolicitudToSupabase(solicitudFinal),
+        onConflict: 'id'
+      },
+      'guardar_solicitud_movilidad'
+    );
   }
 
   return solicitudFinal;
@@ -1433,7 +1633,7 @@ export async function avanzarEstadoFlujoMovilidad(
   nuevoEstado: EstadoFlujoMovilidad,
   rolActor: RolId
 ): Promise<SolicitudMovilidad> {
-  assertRolNivelCentral(rolActor, 'avanzar estado de solicitud de movilidad');
+  assertRolEditorMovilidad(rolActor, 'avanzar estado de solicitud de movilidad');
   const db = await getDb();
 
   const res = db.exec(`SELECT ${SOLICITUD_SELECT_COLS} FROM solicitudes_movilidad WHERE id = ? LIMIT 1;`, [
@@ -1475,32 +1675,31 @@ export async function avanzarEstadoFlujoMovilidad(
   };
 
   if (isSupabaseEnabled()) {
-    supabase
-      .from('solicitudes_movilidad')
-      .update({ estado_flujo: nuevoEstado, updated_at: nowIso })
-      .eq('id', id)
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso update estado solicitud Supabase:', err)
-      );
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'solicitudes_movilidad',
+        operacion: 'update',
+        payload: { estado_flujo: nuevoEstado, updated_at: nowIso },
+        match: { id }
+      },
+      'avanzar_estado_flujo_movilidad'
+    );
   }
 
   return actualizada;
 }
 
 export async function eliminarSolicitudMovilidad(id: string, rolActor: RolId): Promise<void> {
-  assertRolNivelCentral(rolActor, 'eliminar solicitudes de movilidad');
+  assertRolEditorMovilidad(rolActor, 'eliminar solicitudes de movilidad');
   const db = await getDb();
   db.run('DELETE FROM solicitudes_movilidad WHERE id = ?;', [id]);
   await persistDb(true);
 
   if (isSupabaseEnabled()) {
-    supabase
-      .from('solicitudes_movilidad')
-      .delete()
-      .eq('id', id)
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso delete solicitud Supabase:', err)
-      );
+    void syncSupabaseMovilidad(
+      { tabla: 'solicitudes_movilidad', operacion: 'delete', match: { id } },
+      'eliminar_solicitud_movilidad'
+    );
   }
 }
 
@@ -2336,7 +2535,7 @@ export async function crearEscenarioCalce(
   params: { periodo: number; nombre: string; descripcion?: string; creadoPor?: string },
   rolActor: RolId
 ): Promise<EscenarioCalce> {
-  assertRolNivelCentral(rolActor, 'crear escenarios de calce');
+  assertRolEditorMovilidad(rolActor, 'crear escenarios de calce');
   const nombreClean = String(params.nombre || '').trim();
   if (!nombreClean) {
     throw new Error('Debe ingresar un nombre válido para el escenario de calce.');
@@ -2391,12 +2590,15 @@ export async function crearEscenarioCalce(
   await persistDb(true);
 
   if (isSupabaseEnabled()) {
-    supabase
-      .from('escenarios_calce')
-      .upsert(mapEscenarioToSupabase(escenario), { onConflict: 'id' })
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso sync escenario Supabase:', err)
-      );
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'escenarios_calce',
+        operacion: 'upsert',
+        payload: mapEscenarioToSupabase(escenario),
+        onConflict: 'id'
+      },
+      'crear_escenario_calce'
+    );
   }
 
   return escenario;
@@ -2408,7 +2610,7 @@ export async function duplicarEscenarioCalce(
   rolActor: RolId,
   usuarioActor?: string
 ): Promise<EscenarioCalce> {
-  assertRolNivelCentral(rolActor, 'duplicar escenarios de calce');
+  assertRolEditorMovilidad(rolActor, 'duplicar escenarios de calce');
   const db = await getDb();
 
   const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
@@ -2499,18 +2701,28 @@ export async function duplicarEscenarioCalce(
   await persistDb(true);
 
   if (isSupabaseEnabled()) {
-    supabase
-      .from('escenarios_calce')
-      .upsert(mapEscenarioToSupabase(nuevoEscenario), { onConflict: 'id' })
-      .then(() => {
-        if (nuevasProps.length > 0) {
-          return supabase
-            .from('propuestas_calce')
-            .upsert(nuevasProps.map(mapPropuestaToSupabase), { onConflict: 'id' });
-        }
-      }, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso duplicando escenario Supabase:', err)
+    void (async () => {
+      await syncSupabaseMovilidad(
+        {
+          tabla: 'escenarios_calce',
+          operacion: 'upsert',
+          payload: mapEscenarioToSupabase(nuevoEscenario),
+          onConflict: 'id'
+        },
+        'duplicar_escenario_calce'
       );
+      if (nuevasProps.length > 0) {
+        await syncSupabaseMovilidad(
+          {
+            tabla: 'propuestas_calce',
+            operacion: 'upsert',
+            payload: nuevasProps.map(mapPropuestaToSupabase),
+            onConflict: 'id'
+          },
+          'duplicar_escenario_propuestas'
+        );
+      }
+    })();
   }
 
   return nuevoEscenario;
@@ -2548,7 +2760,7 @@ export async function agregarPropuestaCalce(
   },
   rolActor: RolId
 ): Promise<PropuestaCalce> {
-  assertRolNivelCentral(rolActor, 'agregar propuestas de calce');
+  assertRolEditorMovilidad(rolActor, 'agregar propuestas de calce');
   const db = await getDb();
 
   const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
@@ -3210,15 +3422,18 @@ export async function agregarPropuestaCalce(
       }
     });
 
-    supabase
-      .from('propuestas_calce')
-      .upsert(mapPropuestaToSupabase(propuesta), { onConflict: 'id' })
-      .then(async ({ error }: any) => {
+    void (async () => {
+      const payloadCompleto = mapPropuestaToSupabase(propuesta);
+      try {
+        const { error }: any = await supabase
+          .from('propuestas_calce')
+          .upsert(payloadCompleto, { onConflict: 'id' });
         if (error && esErrorColumnaFaltanteSupabase(error)) {
-          await supabase
-            .from('propuestas_calce')
-            .upsert(
-              {
+          await syncSupabaseMovilidad(
+            {
+              tabla: 'propuestas_calce',
+              operacion: 'upsert',
+              payload: {
                 id: propuesta.id,
                 escenario_id: propuesta.escenarioId,
                 periodo: propuesta.periodo,
@@ -3243,14 +3458,33 @@ export async function agregarPropuestaCalce(
                 motivo_bloqueo: propuesta.motivoBloqueo || null,
                 estado: propuesta.estado
               },
-              { onConflict: 'id' }
-            );
+              onConflict: 'id'
+            },
+            'agregar_propuesta_calce_compat'
+          );
         } else if (error) {
-          console.warn('[movilidadTerritorialService] Aviso sync propuesta Supabase:', error);
+          await syncSupabaseMovilidad(
+            {
+              tabla: 'propuestas_calce',
+              operacion: 'upsert',
+              payload: payloadCompleto,
+              onConflict: 'id'
+            },
+            'agregar_propuesta_calce'
+          );
         }
-      }, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso sync propuesta Supabase:', err)
-      );
+      } catch {
+        await syncSupabaseMovilidad(
+          {
+            tabla: 'propuestas_calce',
+            operacion: 'upsert',
+            payload: payloadCompleto,
+            onConflict: 'id'
+          },
+          'agregar_propuesta_calce'
+        );
+      }
+    })();
   }
 
   return propuesta;
@@ -3267,7 +3501,7 @@ export async function resolverRebotePropuestaCalce(params: {
   rolActor: RolId;
   expectedVersion?: number;
 }): Promise<PropuestaCalce> {
-  assertRolNivelCentral(params.rolActor, 'resolver vacante de rebote en propuesta de calce');
+  assertRolEditorMovilidad(params.rolActor, 'resolver vacante de rebote en propuesta de calce');
 
   const db = await getDb();
   const propRes = db.exec(`SELECT ${PROPUESTA_SELECT_COLS} FROM propuestas_calce WHERE id = ? LIMIT 1;`, [
@@ -3391,24 +3625,26 @@ export async function resolverRebotePropuestaCalce(params: {
       }
     });
 
-    supabase
-      .from('propuestas_calce')
-      .update({
-        estado_resolucion_rebote: params.estadoResolucion,
-        rebote_cubierto_por_propuesta_id: cubiertoPorId || null,
-        updated_at: nowIso
-      })
-      .eq('id', actual.id)
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso update rebote propuesta Supabase:', err)
-      );
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'propuestas_calce',
+        operacion: 'update',
+        payload: {
+          estado_resolucion_rebote: params.estadoResolucion,
+          rebote_cubierto_por_propuesta_id: cubiertoPorId || null,
+          updated_at: nowIso
+        },
+        match: { id: actual.id }
+      },
+      'resolver_rebote_propuesta'
+    );
   }
 
   return actualizada;
 }
 
 export async function eliminarPropuestaCalce(propuestaId: string, rolActor: RolId): Promise<void> {
-  assertRolNivelCentral(rolActor, 'eliminar propuestas de calce');
+  assertRolEditorMovilidad(rolActor, 'eliminar propuestas de calce');
   const db = await getDb();
 
   const res = db.exec('SELECT escenario_id FROM propuestas_calce WHERE id = ? LIMIT 1;', [
@@ -3461,24 +3697,27 @@ export async function eliminarPropuestaCalce(propuestaId: string, rolActor: RolI
   await persistDb(true);
 
   if (isSupabaseEnabled()) {
-    supabase
-      .from('propuestas_calce')
-      .delete()
-      .eq('id', propuestaId)
-      .then(() => {
-        if (escenarioActualizado) {
-          return supabase
-            .from('escenarios_calce')
-            .update({
+    void (async () => {
+      await syncSupabaseMovilidad(
+        { tabla: 'propuestas_calce', operacion: 'delete', match: { id: propuestaId } },
+        'eliminar_propuesta_calce'
+      );
+      if (escenarioActualizado) {
+        await syncSupabaseMovilidad(
+          {
+            tabla: 'escenarios_calce',
+            operacion: 'update',
+            payload: {
               version: nuevaVersion,
               resumen_metricas_json: escenarioActualizado.resumenMetricas || null,
               updated_at: nowIso
-            })
-            .eq('id', escenarioId);
-        }
-      }, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso delete propuesta Supabase:', err)
-      );
+            },
+            match: { id: escenarioId }
+          },
+          'actualizar_escenario_tras_eliminar_propuesta'
+        );
+      }
+    })();
   }
 }
 
@@ -3491,7 +3730,7 @@ export async function generarSugerenciasCalceAutomatico(
   periodo: number = 2027,
   rolActor: RolId
 ): Promise<PropuestaCalce[]> {
-  assertRolNivelCentral(rolActor, 'generar sugerencias de calce automático');
+  assertRolEditorMovilidad(rolActor, 'generar sugerencias de calce automático');
 
   const flags = obtenerFeatureFlagsMovilidad();
   if (!flags.flag_simulador_calce_automatico) {
@@ -4085,13 +4324,16 @@ export async function consolidarEscenarioAprobado(params: {
     );
 
     if (rpcError) {
-      if (!esErrorFuncionNoEncontradaSupabase(rpcError)) {
-        const msg = String((rpcError as any).message || 'Error ejecutando consolidación RPC.');
-        if (String((rpcError as any).code || '') === '40001' || /CONFLICTO_VERSION/i.test(msg)) {
-          throw new Error(msg.includes('CONFLICTO_VERSION') ? msg : `CONFLICTO_VERSION: ${msg}`);
-        }
-        throw new Error(msg);
+      if (esErrorFuncionNoEncontradaSupabase(rpcError)) {
+        throw new Error(
+          'La función consolidar_escenario_movilidad_rpc no está desplegada en Supabase. Aplique la migración 20261120140000_movilidad_hardening_fases123.sql antes de consolidar.'
+        );
       }
+      const msg = String((rpcError as any).message || 'Error ejecutando consolidación RPC.');
+      if (String((rpcError as any).code || '') === '40001' || /CONFLICTO_VERSION/i.test(msg)) {
+        throw new Error(msg.includes('CONFLICTO_VERSION') ? msg : `CONFLICTO_VERSION: ${msg}`);
+      }
+      throw new Error(msg);
     } else {
       modoEjecucion = 'SUPABASE_RPC';
       if (rpcData && typeof (rpcData as any).nuevaVersion === 'number') {
@@ -4737,62 +4979,66 @@ export async function consolidarEscenarioAprobado(params: {
     if (isSupabaseEnabled()) {
       const docentesSync = Array.from(docentesActualizadosSyncMap.values());
       if (docentesSync.length > 0) {
-        SupabaseDotacionService.guardarDocentesBatch(docentesSync).catch(err =>
-          console.warn(
-            '[movilidadTerritorialService] Aviso sync docentes consolidación Supabase:',
-            err
-          )
+        void syncSupabaseMovilidad(
+          { tabla: 'guardarDocentesBatch', operacion: 'servicio', payload: docentesSync },
+          'consolidar_docentes_batch'
         );
       }
       for (const delId of docentesEliminadosIds) {
-        SupabaseDotacionService.eliminarDocente(delId).catch(err =>
-          console.warn(
-            '[movilidadTerritorialService] Aviso delete docente origen Supabase:',
-            err
-          )
+        void syncSupabaseMovilidad(
+          { tabla: 'eliminarDocente', operacion: 'servicio', payload: delId },
+          'consolidar_eliminar_docente'
         );
       }
       const asistentesSync = Array.from(asistentesActualizadosSyncMap.values());
       if (asistentesSync.length > 0) {
-        SupabaseDotacionService.guardarAsistentesBatch(asistentesSync).catch(err =>
-          console.warn(
-            '[movilidadTerritorialService] Aviso sync asistentes consolidación Supabase:',
-            err
-          )
+        void syncSupabaseMovilidad(
+          { tabla: 'guardarAsistentesBatch', operacion: 'servicio', payload: asistentesSync },
+          'consolidar_asistentes_batch'
         );
       }
       for (const delAstId of asistentesEliminadosIds) {
-        SupabaseDotacionService.eliminarAsistente(delAstId).catch(err =>
-          console.warn(
-            '[movilidadTerritorialService] Aviso delete asistente origen Supabase:',
-            err
-          )
+        void syncSupabaseMovilidad(
+          { tabla: 'eliminarAsistente', operacion: 'servicio', payload: delAstId },
+          'consolidar_eliminar_asistente'
         );
       }
-      supabase
-        .from('escenarios_calce')
-        .update({
-          estado: 'CONSOLIDADO',
-          version: nuevaVersion,
-          consolidado_por: params.usuarioActor,
-          fecha_consolidacion: nowIso,
-          updated_at: nowIso
-        })
-        .eq('id', params.escenarioId)
-        .then(() => {}, () => {});
+      void syncSupabaseMovilidad(
+        {
+          tabla: 'escenarios_calce',
+          operacion: 'update',
+          payload: {
+            estado: 'CONSOLIDADO',
+            version: nuevaVersion,
+            consolidado_por: params.usuarioActor,
+            fecha_consolidacion: nowIso,
+            updated_at: nowIso
+          },
+          match: { id: params.escenarioId }
+        },
+        'consolidar_escenario_estado'
+      );
 
-      supabase
-        .from('propuestas_calce')
-        .update({ estado: 'CONSOLIDADA', updated_at: nowIso })
-        .eq('escenario_id', params.escenarioId)
-        .then(() => {}, () => {});
+      void syncSupabaseMovilidad(
+        {
+          tabla: 'propuestas_calce',
+          operacion: 'update',
+          payload: { estado: 'CONSOLIDADA', updated_at: nowIso },
+          match: { escenario_id: params.escenarioId }
+        },
+        'consolidar_propuestas_estado'
+      );
 
       if (solicitudesConsolidadasIds.length > 0) {
-        supabase
-          .from('solicitudes_movilidad')
-          .update({ estado_flujo: 'CONSOLIDADO', updated_at: nowIso })
-          .in('id', solicitudesConsolidadasIds)
-          .then(() => {}, () => {});
+        void syncSupabaseMovilidad(
+          {
+            tabla: 'solicitudes_movilidad',
+            operacion: 'update',
+            payload: { estado_flujo: 'CONSOLIDADO', updated_at: nowIso },
+            match: { id: solicitudesConsolidadasIds }
+          },
+          'consolidar_solicitudes_estado'
+        );
       }
     }
   }
@@ -4962,45 +5208,55 @@ export async function registrarResolucionExentaEscenario(params: {
   };
 
   if (isSupabaseEnabled()) {
-    supabase
-      .from('escenarios_calce')
-      .update({
-        estado: 'RESOLUCION_EMITIDA',
-        version: nuevaVersion,
-        numero_resolucion: numResClean,
-        fecha_resolucion: fechaResClean,
-        fecha_vigencia: fechaVigClean || null,
-        updated_at: nowIso
-      })
-      .eq('id', params.escenarioId)
-      .then(() => {}, (err: any) =>
-        console.warn('[movilidadTerritorialService] Aviso update resolución escenario Supabase:', err)
-      );
-
-    supabase
-      .from('propuestas_calce')
-      .update({
-        estado: 'CONSOLIDADA',
-        numero_resolucion: numResClean,
-        fecha_resolucion: fechaResClean,
-        fecha_vigencia: fechaVigClean || null,
-        updated_at: nowIso
-      })
-      .eq('escenario_id', params.escenarioId)
-      .then(() => {}, () => {});
-
-    if (solicitudIds.length > 0) {
-      supabase
-        .from('solicitudes_movilidad')
-        .update({
-          estado_flujo: 'RESOLUCION_EMITIDA',
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'escenarios_calce',
+        operacion: 'update',
+        payload: {
+          estado: 'RESOLUCION_EMITIDA',
+          version: nuevaVersion,
           numero_resolucion: numResClean,
           fecha_resolucion: fechaResClean,
           fecha_vigencia: fechaVigClean || null,
           updated_at: nowIso
-        })
-        .in('id', solicitudIds)
-        .then(() => {}, () => {});
+        },
+        match: { id: params.escenarioId }
+      },
+      'resolucion_exenta_escenario'
+    );
+
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'propuestas_calce',
+        operacion: 'update',
+        payload: {
+          estado: 'CONSOLIDADA',
+          numero_resolucion: numResClean,
+          fecha_resolucion: fechaResClean,
+          fecha_vigencia: fechaVigClean || null,
+          updated_at: nowIso
+        },
+        match: { escenario_id: params.escenarioId }
+      },
+      'resolucion_exenta_propuestas'
+    );
+
+    if (solicitudIds.length > 0) {
+      void syncSupabaseMovilidad(
+        {
+          tabla: 'solicitudes_movilidad',
+          operacion: 'update',
+          payload: {
+            estado_flujo: 'RESOLUCION_EMITIDA',
+            numero_resolucion: numResClean,
+            fecha_resolucion: fechaResClean,
+            fecha_vigencia: fechaVigClean || null,
+            updated_at: nowIso
+          },
+          match: { id: solicitudIds }
+        },
+        'resolucion_exenta_solicitudes'
+      );
     }
   }
 

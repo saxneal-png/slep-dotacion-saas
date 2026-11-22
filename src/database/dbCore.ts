@@ -314,6 +314,7 @@ export async function purgarTablasMovilidadParaEscuela(): Promise<void> {
   const db = await getDb();
   db.run("BEGIN TRANSACTION;");
   try {
+    db.run("DELETE FROM sync_pendientes_movilidad;");
     db.run("DELETE FROM propuestas_calce;");
     db.run("DELETE FROM escenarios_calce;");
     db.run("DELETE FROM solicitudes_movilidad;");
@@ -333,6 +334,7 @@ export async function reiniciarTodaLaBaseDatos(): Promise<void> {
   const db = await getDb();
   db.run("BEGIN TRANSACTION;");
   try {
+    db.run("DELETE FROM sync_pendientes_movilidad");
     db.run("DELETE FROM propuestas_calce");
     db.run("DELETE FROM escenarios_calce");
     db.run("DELETE FROM solicitudes_movilidad");

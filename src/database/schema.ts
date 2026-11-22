@@ -465,6 +465,19 @@ CREATE TABLE IF NOT EXISTS propuestas_calce (
   updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS sync_pendientes_movilidad (
+  id TEXT PRIMARY KEY,
+  tabla TEXT NOT NULL,
+  operacion TEXT NOT NULL,
+  payload_json TEXT,
+  match_json TEXT,
+  on_conflict TEXT,
+  error TEXT,
+  intentos INTEGER DEFAULT 0,
+  created_at TEXT,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS __schema_migrations (
   id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL

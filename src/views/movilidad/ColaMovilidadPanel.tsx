@@ -28,7 +28,8 @@ import {
   RemanenteItem,
   SubTabCol1,
   calcularDesgloseTitularContrata,
-  etiquetaEstamentoDocente
+  etiquetaEstamentoDocente,
+  puedeVerDatosSensiblesMovilidad
 } from './movilidadHelpers';
 
 export interface ColaMovilidadPanelProps {
@@ -39,6 +40,10 @@ export interface ColaMovilidadPanelProps {
   puedeEditarMovilidad: boolean;
   puedeEliminarMovilidad: boolean;
   puedeValidarGdp: boolean;
+  rolActual?: unknown;
+  usuarioId?: string;
+  usuarioEmail?: string;
+  usuarioNombre?: string;
   tabCol1: SubTabCol1;
   onChangeTabCol1: (tab: SubTabCol1) => void;
   filtroEstamentoCol1: string;
@@ -94,6 +99,10 @@ export const ColaMovilidadPanel: React.FC<ColaMovilidadPanelProps> = ({
   puedeEditarMovilidad,
   puedeEliminarMovilidad,
   puedeValidarGdp,
+  rolActual,
+  usuarioId,
+  usuarioEmail,
+  usuarioNombre,
   tabCol1,
   onChangeTabCol1,
   filtroEstamentoCol1,
@@ -446,7 +455,15 @@ export const ColaMovilidadPanel: React.FC<ColaMovilidadPanelProps> = ({
 
                       {sol.fundamento && (
                         <p className="text-[10px] text-slate-600 line-clamp-2">
-                          {sol.fundamento}
+                          {puedeVerDatosSensiblesMovilidad(
+                            rolActual,
+                            sol,
+                            usuarioId,
+                            usuarioEmail,
+                            usuarioNombre
+                          )
+                            ? sol.fundamento
+                            : 'Reservado (dato sensible)'}
                         </p>
                       )}
 
@@ -725,9 +742,22 @@ export const ColaMovilidadPanel: React.FC<ColaMovilidadPanelProps> = ({
                     )}
 
                     <div className="text-[10px] text-slate-500 flex flex-wrap gap-2 tabular-nums">
-                      <span>Karin: {sol.puntajeLeyKarin}</span>
-                      <span>Salud: {sol.puntajeSalud}</span>
-                      <span>Dep.: {sol.puntajeCuidadoDependientes}</span>
+                      {(() => {
+                        const verSensible = puedeVerDatosSensiblesMovilidad(
+                          rolActual,
+                          sol,
+                          usuarioId,
+                          usuarioEmail,
+                          usuarioNombre
+                        );
+                        return (
+                          <>
+                            <span>Karin: {verSensible ? sol.puntajeLeyKarin : '—'}</span>
+                            <span>Salud: {verSensible ? sol.puntajeSalud : '—'}</span>
+                            <span>Dep.: {verSensible ? sol.puntajeCuidadoDependientes : '—'}</span>
+                          </>
+                        );
+                      })()}
                       <span>Dist.: {sol.puntajeDistanciaRural}</span>
                       <span>Antig.: {sol.puntajeAntiguedad}</span>
                     </div>
@@ -1025,7 +1055,15 @@ export const ColaMovilidadPanel: React.FC<ColaMovilidadPanelProps> = ({
 
                       {sol.fundamento && (
                         <p className="text-[10px] text-slate-600 line-clamp-2">
-                          {sol.fundamento}
+                          {puedeVerDatosSensiblesMovilidad(
+                            rolActual,
+                            sol,
+                            usuarioId,
+                            usuarioEmail,
+                            usuarioNombre
+                          )
+                            ? sol.fundamento
+                            : 'Reservado (dato sensible)'}
                         </p>
                       )}
 

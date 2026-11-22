@@ -18,7 +18,8 @@ import {
   detectarDocentesHorasRemanentes, detectarAsistentesIndefinidosNoContinuidad, calcularProyeccionTechoPisoHoras, ProyeccionTechoPisoHoras,
   listarEscenariosCalce, crearEscenarioCalce, duplicarEscenarioCalce, listarPropuestasEscenario,
   agregarPropuestaCalce, eliminarPropuestaCalce, resolverRebotePropuestaCalce,
-  generarSugerenciasCalceAutomatico, consolidarEscenarioAprobado, registrarResolucionExentaEscenario, exportarNominaActosAdministrativosGdp
+  generarSugerenciasCalceAutomatico, consolidarEscenarioAprobado, registrarResolucionExentaEscenario, exportarNominaActosAdministrativosGdp,
+  contarSyncPendientesMovilidad, reintentarSyncPendientesMovilidad
 } from '../services/movilidadTerritorialService';
 import { generarResumenComparativoEscenariosGemini, ResumenComparativoEscenariosResult } from '../services/movilidadGeminiService';
 import { evaluarEgresoProyectado, calcularPuntajePrioridadMovilidad } from '@slep/mineduc-engine';
@@ -139,9 +140,14 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
   const [propuestas, setPropuestas] = useState<PropuestaCalce[]>([]);
   const [cargando, setCargando] = useState(true);
   const [operacionEnCurso, setOperacionEnCurso] = useState<string | null>(null);
+  const [syncPendientes, setSyncPendientes] = useState(0);
+  const [reintentandoSync, setReintentandoSync] = useState(false);
   const [feedback, setFeedback] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
   const mostrarFeedback = useCallback((mensaje: string, tipo: 'success' | 'error' = 'success') => {
     setFeedback({ tipo, mensaje }); setTimeout(() => setFeedback(null), 5500);
+  }, []);
+  const refrescarSync = useCallback(() => {
+    void contarSyncPendientesMovilidad().then(setSyncPendientes).catch(() => {});
   }, []);
 
   const [vistaInternaMesa, setVistaInternaMesa] = useState<'tablero' | 'analisis_no_continuidad'>('tablero');
@@ -220,6 +226,40 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
 
   useEffect(() => { recargarModuloMovilidad(); }, [recargarModuloMovilidad]);
   useEffect(() => { recargarPropuestas(escenarioActivoId); }, [escenarioActivoId, recargarPropuestas]);
+  useEffect(() => {
+    let activo = true;
+    reintentarSyncPendientesMovilidad(rol)
+      .catch(() => {})
+      .finally(() => {
+        if (activo) refrescarSync();
+      });
+    const onPendiente = () => refrescarSync();
+    window.addEventListener('slep:movilidad_sync_pendiente', onPendiente);
+    return () => {
+      activo = false;
+      window.removeEventListener('slep:movilidad_sync_pendiente', onPendiente);
+    };
+  }, [rol, refrescarSync]);
+
+  const handleReintentarSync = async () => {
+    setReintentandoSync(true);
+    try {
+      const res = await reintentarSyncPendientesMovilidad(rol);
+      if (res.ok > 0 && res.fallidos === 0) {
+        mostrarFeedback(`Se sincronizaron ${res.ok} cambio(s) pendiente(s) con Supabase.`);
+      } else if (res.fallidos > 0) {
+        mostrarFeedback(
+          `Sincronizados ${res.ok}; ${res.fallidos} cambio(s) siguen pendientes en cola.`,
+          'error'
+        );
+      }
+    } catch (err: any) {
+      mostrarFeedback(`Error reintentando sincronización: ${err?.message || err}`, 'error');
+    } finally {
+      refrescarSync();
+      setReintentandoSync(false);
+    }
+  };
 
   const refrescarEscenariosYPropuestas = useCallback(async (escId?: string) => {
     setEscenarios(await listarEscenariosCalce(periodoActivo, rol));
@@ -558,6 +598,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
         onAbrirClonarEscenario={() => escenarioActivo && setClonarEscNombre(`${escenarioActivo.nombre} (Copia)`)}
         onAbrirEscaneoNn={handleAbrirEscaneoNn} onActivarPausaRevision={handleActivarPausaRevision} onAbrirConsolidar={() => setModalConsolidar(true)}
         onAbrirCompararGemini={handleAbrirCompararGemini} onAbrirResolucionExenta={abrirResolucionModal} onExportarNominaActosGdp={handleExportarNominaActosGdp}
+        syncPendientes={syncPendientes} onReintentarSync={handleReintentarSync} reintentandoSync={reintentandoSync}
       />
 
       {vistaInternaMesa === 'analisis_no_continuidad' ? (
@@ -567,6 +608,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
           <ColaMovilidadPanel
             periodoActivo={periodoActivo} flags={flags} cargando={cargando} operacionEnCurso={operacionEnCurso}
             puedeEditarMovilidad={puedeEditarMovilidad} puedeEliminarMovilidad={puedeEliminarMovilidad} puedeValidarGdp={puedeValidarGdp}
+            rolActual={rol} usuarioId={usuarioActual.id} usuarioEmail={usuarioActual.email} usuarioNombre={usuarioActual.nombreCompleto}
             tabCol1={tabCol1} onChangeTabCol1={setTabCol1} filtroEstamentoCol1={filtroEstamentoCol1} onChangeFiltroEstamentoCol1={setFiltroEstamentoCol1}
             filtroTipoEscuelaRemanente={filtroTipoEscuelaRemanente} onChangeFiltroTipoEscuelaRemanente={setFiltroTipoEscuelaRemanente}
             colegiosByRbd={colegiosByRbd} docentesById={docentesById} comunasDisponibles={comunasDisponibles} origenSeleccionado={origenSeleccionado}

@@ -18,6 +18,10 @@ import {
   CategoriaTipoEstablecimiento
 } from '../../services/estadisticasHorasService';
 import { obtenerPlanPorCurso } from '@slep/mineduc-engine';
+import {
+  esRolValidadorGdp,
+  esRolConsolidadorMovilidad
+} from '../../services/movilidadTerritorialService';
 
 export type SubTabCol1 =
   | 'no_continuidad'
@@ -812,4 +816,30 @@ export function calcularAsignaturasPorCubrirPorVacante(params: {
   }
 
   return mapa;
+}
+
+/**
+ * Determina si el usuario actual puede ver datos sensibles de una solicitud de movilidad
+ * (fundamento y puntajes individuales Ley Karin, Salud y Cuidado de Dependientes).
+ *
+ * NOTA DE SEGURIDAD: Este enmascarado es únicamente una mitigación de interfaz (UI);
+ * la protección real de privacidad y aislamiento por cartera reside en las políticas
+ * RLS de filas en PostgreSQL/Supabase (migración 20261122120000_movilidad_rls_privacidad.sql).
+ */
+export function puedeVerDatosSensiblesMovilidad(
+  rol: unknown,
+  solicitud: Pick<SolicitudMovilidad, 'creadoPor'>,
+  usuarioId?: string,
+  usuarioEmail?: string,
+  usuarioNombre?: string
+): boolean {
+  if (esRolValidadorGdp(rol) || esRolConsolidadorMovilidad(rol)) {
+    return true;
+  }
+  const creador = (solicitud.creadoPor || '').trim().toLowerCase();
+  if (!creador) return false;
+  const candidatos = [usuarioId, usuarioEmail, usuarioNombre]
+    .map(v => (v || '').trim().toLowerCase())
+    .filter(Boolean);
+  return candidatos.includes(creador);
 }

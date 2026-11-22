@@ -14,6 +14,7 @@ import {
 } from '../src/database/db';
 import {
   esRolNivelCentralMovilidad,
+  esRolEditorMovilidad,
   esRolValidadorGdp,
   esRolConsolidadorMovilidad,
   filtrarDocentesSinDobleConteoCondicional,
@@ -1891,5 +1892,49 @@ describe('movilidadTerritorialService - Mesa de Movilidad Territorial y Continge
     expect(proy.detallePorRbd.length).toBe(2);
     const detA = proy.detallePorRbd.find(d => d.rbd === RBD_A)!;
     expect(detA.horasTechoAntes1Marzo).toBeGreaterThan(detA.horasPisoSiEgresanCondicionales);
+  });
+
+  it('15. T1: RBAC de escritura excluye roles auditor y visualizador mientras permite asesor_uatp', async () => {
+    expect(esRolEditorMovilidad('asesor_uatp')).toBe(true);
+    expect(esRolEditorMovilidad('auditor')).toBe(false);
+    expect(esRolEditorMovilidad('visualizador')).toBe(false);
+
+    await expect(
+      guardarSolicitudMovilidad(
+        {
+          periodo: PERIODO,
+          carril: 'TRASLADO_VOLUNTARIO',
+          docenteId: 'doc_rbac_1',
+          runDocente: '12.345.678-5',
+          nombreDocente: 'DOCENTE TEST',
+          rbdOrigen: RBD_A,
+          calidadJuridica: 'TITULAR',
+          horasContratoActual: 44,
+          horasTitularesActuales: 44,
+          horasDisponiblesMover: 44,
+          horasRemanentes: 0,
+          fuenteActual: 'SUBVENCION_GENERAL',
+          estadoFlujo: 'POSTULADO',
+          puntajeSalud: 0,
+          puntajeLeyKarin: 0,
+          puntajeCuidadoDependientes: 0,
+          puntajeDistanciaRural: 0,
+          puntajeAntiguedad: 10
+        },
+        'auditor' as any
+      )
+    ).rejects.toThrow(/Acceso denegado/i);
+
+    await expect(
+      agregarPropuestaCalce(
+        {
+          escenarioId: 'esc_rbac_dummy',
+          periodo: PERIODO,
+          docenteOrigenId: 'doc_rbac_1',
+          vacanteDestinoId: 'vac_rbac_1'
+        },
+        'auditor' as any
+      )
+    ).rejects.toThrow(/Acceso denegado/i);
   });
 });
