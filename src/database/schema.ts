@@ -478,6 +478,14 @@ CREATE TABLE IF NOT EXISTS sync_pendientes_movilidad (
   updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS escenarios_consolidacion_snapshots (
+  escenario_id TEXT PRIMARY KEY,
+  periodo INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS __schema_migrations (
   id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL

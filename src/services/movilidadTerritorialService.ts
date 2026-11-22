@@ -4346,6 +4346,70 @@ export async function consolidarEscenarioAprobado(params: {
   const nuevaVersion = rpcNuevaVersion ?? versionActual + 1;
   const propuestasOrdenadas = ordenarPropuestasTopologicamente(propuestas);
 
+  // Captura previa para snapshot de reversión controlada
+  const docSnapshotIds = new Set<string>();
+  const astSnapshotIds = new Set<string>();
+  const docOrigIdsParaAsig = new Set<string>();
+  for (const p of propuestasOrdenadas) {
+    if (p.estamentoPersonal === 'ASISTENTE') {
+      astSnapshotIds.add(p.docenteOrigenId);
+      if (p.vacanteDestinoId) {
+        if (astMap.has(p.vacanteDestinoId)) astSnapshotIds.add(p.vacanteDestinoId);
+        else if (docMap.has(p.vacanteDestinoId)) docSnapshotIds.add(p.vacanteDestinoId);
+      }
+    } else {
+      docSnapshotIds.add(p.docenteOrigenId);
+      docOrigIdsParaAsig.add(p.docenteOrigenId);
+      if (p.vacanteDestinoId && docMap.has(p.vacanteDestinoId)) {
+        docSnapshotIds.add(p.vacanteDestinoId);
+      }
+    }
+  }
+
+  const docentesPreviosRows: Array<{ columns: string[]; values: any[] }> = [];
+  for (const dId of docSnapshotIds) {
+    const r = db.exec('SELECT * FROM docentes WHERE id = ? LIMIT 1;', [dId]);
+    if (r.length && r[0].values.length) {
+      docentesPreviosRows.push({ columns: r[0].columns, values: r[0].values[0] });
+    }
+  }
+
+  const asistentesPreviosRows: Array<{ columns: string[]; values: any[] }> = [];
+  for (const aId of astSnapshotIds) {
+    const r = db.exec('SELECT * FROM asistentes_educacion WHERE id = ? LIMIT 1;', [aId]);
+    if (r.length && r[0].values.length) {
+      asistentesPreviosRows.push({ columns: r[0].columns, values: r[0].values[0] });
+    }
+  }
+
+  const asignacionesPrevias: Array<{ id: string; docenteId: string; coDocenteId: string | null }> = [];
+  if (docOrigIdsParaAsig.size > 0) {
+    const idsArr = Array.from(docOrigIdsParaAsig);
+    const ph = idsArr.map(() => '?').join(',');
+    const asigRes = db.exec(
+      `SELECT id, docente_id, co_docente_id FROM asignaciones_horarias
+       WHERE (docente_id IN (${ph}) OR co_docente_id IN (${ph}))
+         AND (periodo = ? OR (periodo IS NULL AND ? = 2027));`,
+      [...idsArr, ...idsArr, periodo, periodo]
+    );
+    if (asigRes.length && asigRes[0].values.length) {
+      for (const row of asigRes[0].values) {
+        asignacionesPrevias.push({
+          id: String(row[0]),
+          docenteId: String(row[1]),
+          coDocenteId: row[2] !== null && row[2] !== undefined ? String(row[2]) : null
+        });
+      }
+    }
+  }
+
+  const solicitudesPrevias = Array.from(solicitudesMap.values()).map(s => ({
+    id: s.id,
+    estadoFlujo: s.estadoFlujo
+  }));
+  const reboteDocenteIds: string[] = [];
+  const reboteAsistenteIds: string[] = [];
+
   let propuestasConsolidadas = 0;
   let vacantesReemplazadas = 0;
   let rebotesCreados = 0;
@@ -4578,6 +4642,7 @@ export async function consolidarEscenarioAprobado(params: {
           asistentesActualizadosSyncMap.set(reboteId, astRebObj);
           astMap.set(reboteId, astRebObj);
           reboteIdByPropuesta.set(p.id, reboteId);
+          reboteAsistenteIds.push(reboteId);
           rebotesCreados++;
           rbdsAfectadosSet.add(p.rbdOrigen);
         }
@@ -4887,6 +4952,7 @@ export async function consolidarEscenarioAprobado(params: {
           docentesActualizadosSyncMap.set(reboteId, reboteDocObj);
           docMap.set(reboteId, reboteDocObj);
           reboteIdByPropuesta.set(p.id, reboteId);
+          reboteDocenteIds.push(reboteId);
           rebotesCreados++;
           rbdsAfectadosSet.add(p.rbdOrigen);
         }
@@ -4944,6 +5010,27 @@ export async function consolidarEscenarioAprobado(params: {
         );
       }
     }
+
+    db.run(
+      `INSERT OR REPLACE INTO escenarios_consolidacion_snapshots (
+        escenario_id, periodo, snapshot_json, created_by, created_at
+      ) VALUES (?, ?, ?, ?, ?);`,
+      [
+        params.escenarioId,
+        periodo,
+        JSON.stringify({
+          docentesPrevios: docentesPreviosRows,
+          asistentesPrevios: asistentesPreviosRows,
+          asignacionesPrevias,
+          solicitudesPrevias,
+          reboteDocenteIds,
+          reboteAsistenteIds,
+          rbdsAfectados: Array.from(rbdsAfectadosSet)
+        }),
+        params.usuarioActor,
+        nowIso
+      ]
+    );
 
     db.run('COMMIT;');
   } catch (err) {
@@ -5050,6 +5137,285 @@ export async function consolidarEscenarioAprobado(params: {
     rbdsAfectados,
     nuevaVersion,
     modoEjecucion
+  };
+}
+
+interface SnapshotTablaRow {
+  columns: string[];
+  values: any[];
+}
+
+interface SnapshotConsolidacionEscenario {
+  docentesPrevios: SnapshotTablaRow[];
+  asistentesPrevios: SnapshotTablaRow[];
+  asignacionesPrevias: Array<{ id: string; docenteId: string; coDocenteId: string | null }>;
+  solicitudesPrevias: Array<{ id: string; estadoFlujo: EstadoFlujoMovilidad }>;
+  reboteDocenteIds: string[];
+  reboteAsistenteIds: string[];
+  rbdsAfectados: string[];
+}
+
+export async function revertirEscenarioConsolidado(params: {
+  escenarioId: string;
+  motivo: string;
+  rolActor: RolId;
+  usuarioActor: string;
+}): Promise<{
+  escenarioId: string;
+  docentesRestaurados: number;
+  asistentesRestaurados: number;
+  rebotesEliminados: number;
+  solicitudesRestauradas: number;
+  nuevaVersion: number;
+}> {
+  assertRolConsolidador(params.rolActor, 'revertir un escenario consolidado');
+
+  const motivoClean = String(params.motivo || '').trim();
+  if (motivoClean.length < 5) {
+    throw new Error(
+      'Debe ingresar un motivo fundado (mínimo 5 caracteres) para revertir la consolidación.'
+    );
+  }
+
+  const db = await getDb();
+  const escRes = db.exec(`SELECT ${ESCENARIO_SELECT_COLS} FROM escenarios_calce WHERE id = ? LIMIT 1;`, [
+    params.escenarioId
+  ]);
+  if (!escRes.length || !escRes[0].values.length) {
+    throw new Error(`Escenario '${params.escenarioId}' no encontrado.`);
+  }
+  const escenario = mapRowToEscenario(escRes[0].values[0]);
+
+  if (escenario.estado !== 'CONSOLIDADO') {
+    throw new Error(
+      `Solo se pueden revertir escenarios en estado CONSOLIDADO (estado actual: ${escenario.estado}).`
+    );
+  }
+
+  const snapRes = db.exec(
+    'SELECT snapshot_json FROM escenarios_consolidacion_snapshots WHERE escenario_id = ? LIMIT 1;',
+    [params.escenarioId]
+  );
+  if (!snapRes.length || !snapRes[0].values.length || !snapRes[0].values[0][0]) {
+    throw new Error('No existe snapshot de respaldo para revertir este escenario.');
+  }
+
+  const snapshot = JSON.parse(String(snapRes[0].values[0][0])) as SnapshotConsolidacionEscenario;
+  const periodo = escenario.periodo || 2027;
+  const nowIso = new Date().toISOString();
+  const nuevaVersion = (escenario.version ?? 1) + 1;
+  const actor = String(params.usuarioActor || 'Nivel Central').trim() || 'Nivel Central';
+
+  let docentesRestaurados = 0;
+  let asistentesRestaurados = 0;
+  let rebotesEliminados = 0;
+  let solicitudesRestauradas = 0;
+
+  const docentesRestauradosIds: string[] = [];
+  const asistentesRestauradosIds: string[] = [];
+  const solicitudesRestauradasIdsByEstado = new Map<EstadoFlujoMovilidad, string[]>();
+
+  db.run('BEGIN TRANSACTION;');
+  try {
+    for (const rebDocId of snapshot.reboteDocenteIds || []) {
+      db.run('DELETE FROM docentes WHERE id = ?;', [rebDocId]);
+      rebotesEliminados++;
+    }
+    for (const rebAstId of snapshot.reboteAsistenteIds || []) {
+      db.run('DELETE FROM asistentes_educacion WHERE id = ?;', [rebAstId]);
+      rebotesEliminados++;
+    }
+
+    for (const row of snapshot.docentesPrevios || []) {
+      if (!row.columns.length) continue;
+      const placeholders = row.columns.map(() => '?').join(', ');
+      db.run(
+        `INSERT OR REPLACE INTO docentes (${row.columns.join(', ')}) VALUES (${placeholders});`,
+        row.values
+      );
+      const idIdx = row.columns.indexOf('id');
+      if (idIdx >= 0 && row.values[idIdx]) {
+        docentesRestauradosIds.push(String(row.values[idIdx]));
+      }
+      docentesRestaurados++;
+    }
+
+    for (const row of snapshot.asistentesPrevios || []) {
+      if (!row.columns.length) continue;
+      const placeholders = row.columns.map(() => '?').join(', ');
+      db.run(
+        `INSERT OR REPLACE INTO asistentes_educacion (${row.columns.join(', ')}) VALUES (${placeholders});`,
+        row.values
+      );
+      const idIdx = row.columns.indexOf('id');
+      if (idIdx >= 0 && row.values[idIdx]) {
+        asistentesRestauradosIds.push(String(row.values[idIdx]));
+      }
+      asistentesRestaurados++;
+    }
+
+    for (const asig of snapshot.asignacionesPrevias || []) {
+      db.run('UPDATE asignaciones_horarias SET docente_id = ?, co_docente_id = ? WHERE id = ?;', [
+        asig.docenteId,
+        asig.coDocenteId ?? null,
+        asig.id
+      ]);
+    }
+
+    for (const sol of snapshot.solicitudesPrevias || []) {
+      db.run('UPDATE solicitudes_movilidad SET estado_flujo = ?, updated_at = ? WHERE id = ?;', [
+        sol.estadoFlujo,
+        nowIso,
+        sol.id
+      ]);
+      const list = solicitudesRestauradasIdsByEstado.get(sol.estadoFlujo) || [];
+      list.push(sol.id);
+      solicitudesRestauradasIdsByEstado.set(sol.estadoFlujo, list);
+      solicitudesRestauradas++;
+    }
+
+    db.run("UPDATE propuestas_calce SET estado = 'PROPUESTA', updated_at = ? WHERE escenario_id = ?;", [
+      nowIso,
+      params.escenarioId
+    ]);
+
+    db.run(
+      `UPDATE escenarios_calce
+       SET estado = 'BORRADOR', version = ?, consolidado_por = NULL, fecha_consolidacion = NULL, updated_at = ?
+       WHERE id = ?;`,
+      [nuevaVersion, nowIso, params.escenarioId]
+    );
+
+    db.run('DELETE FROM escenarios_consolidacion_snapshots WHERE escenario_id = ?;', [
+      params.escenarioId
+    ]);
+
+    db.run('COMMIT;');
+  } catch (err) {
+    db.run('ROLLBACK;');
+    throw err;
+  }
+
+  await persistDb(true);
+
+  const rbdsAfectados =
+    snapshot.rbdsAfectados && snapshot.rbdsAfectados.length > 0 ? snapshot.rbdsAfectados : ['SLEP'];
+  for (const rbd of rbdsAfectados) {
+    await registrarEventoAuditoria({
+      rbd,
+      periodo,
+      tipoEvento: 'ACTUALIZACION',
+      entidad: 'DOTACION_COMPLETA',
+      entidadId: params.escenarioId,
+      descripcion: `Reversión controlada de consolidación de escenario '${escenario.nombre}' por ${actor}. Motivo: ${motivoClean}`,
+      detalles: {
+        escenarioId: params.escenarioId,
+        motivo: motivoClean,
+        usuarioActor: actor,
+        rolActor: params.rolActor,
+        docentesRestaurados,
+        asistentesRestaurados,
+        rebotesEliminados,
+        solicitudesRestauradas,
+        nuevaVersion
+      }
+    });
+  }
+
+  if (isSupabaseEnabled()) {
+    const [allDocsPost, allAsistentesPost] = await Promise.all([
+      docentesRestauradosIds.length > 0 ? listarTodosLosDocentesTerritorio(periodo) : Promise.resolve([]),
+      asistentesRestauradosIds.length > 0 ? listarTodosLosAsistentesTerritorio(periodo) : Promise.resolve([])
+    ]);
+
+    const docsRestSet = new Set(docentesRestauradosIds);
+    const docsSync = allDocsPost.filter(d => docsRestSet.has(d.id));
+    if (docsSync.length > 0) {
+      void syncSupabaseMovilidad(
+        { tabla: 'guardarDocentesBatch', operacion: 'servicio', payload: docsSync },
+        'revertir_escenario_docentes'
+      );
+    }
+    for (const rebDocId of snapshot.reboteDocenteIds || []) {
+      void syncSupabaseMovilidad(
+        { tabla: 'eliminarDocente', operacion: 'servicio', payload: rebDocId },
+        'revertir_escenario_eliminar_rebote_docente'
+      );
+    }
+
+    const astRestSet = new Set(asistentesRestauradosIds);
+    const astSync = allAsistentesPost.filter(a => astRestSet.has(a.id));
+    if (astSync.length > 0) {
+      void syncSupabaseMovilidad(
+        { tabla: 'guardarAsistentesBatch', operacion: 'servicio', payload: astSync },
+        'revertir_escenario_asistentes'
+      );
+    }
+    for (const rebAstId of snapshot.reboteAsistenteIds || []) {
+      void syncSupabaseMovilidad(
+        { tabla: 'eliminarAsistente', operacion: 'servicio', payload: rebAstId },
+        'revertir_escenario_eliminar_rebote_asistente'
+      );
+    }
+
+    for (const asig of snapshot.asignacionesPrevias || []) {
+      void syncSupabaseMovilidad(
+        {
+          tabla: 'asignaciones_horarias',
+          operacion: 'update',
+          payload: { docente_id: asig.docenteId, co_docente_id: asig.coDocenteId ?? null },
+          match: { id: asig.id }
+        },
+        'revertir_escenario_asignacion'
+      );
+    }
+
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'escenarios_calce',
+        operacion: 'update',
+        payload: {
+          estado: 'BORRADOR',
+          version: nuevaVersion,
+          consolidado_por: null,
+          fecha_consolidacion: null,
+          updated_at: nowIso
+        },
+        match: { id: params.escenarioId }
+      },
+      'revertir_escenario_estado'
+    );
+
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'propuestas_calce',
+        operacion: 'update',
+        payload: { estado: 'PROPUESTA', updated_at: nowIso },
+        match: { escenario_id: params.escenarioId }
+      },
+      'revertir_escenario_propuestas'
+    );
+
+    for (const [estadoPrevio, solIds] of solicitudesRestauradasIdsByEstado.entries()) {
+      void syncSupabaseMovilidad(
+        {
+          tabla: 'solicitudes_movilidad',
+          operacion: 'update',
+          payload: { estado_flujo: estadoPrevio, updated_at: nowIso },
+          match: { id: solIds }
+        },
+        'revertir_escenario_solicitudes'
+      );
+    }
+  }
+
+  return {
+    escenarioId: params.escenarioId,
+    docentesRestaurados,
+    asistentesRestaurados,
+    rebotesEliminados,
+    solicitudesRestauradas,
+    nuevaVersion
   };
 }
 

@@ -18,9 +18,15 @@ import {
   detectarDocentesHorasRemanentes, detectarAsistentesIndefinidosNoContinuidad, calcularProyeccionTechoPisoHoras, ProyeccionTechoPisoHoras,
   listarEscenariosCalce, crearEscenarioCalce, duplicarEscenarioCalce, listarPropuestasEscenario,
   agregarPropuestaCalce, eliminarPropuestaCalce, resolverRebotePropuestaCalce,
-  generarSugerenciasCalceAutomatico, consolidarEscenarioAprobado, registrarResolucionExentaEscenario, exportarNominaActosAdministrativosGdp,
+  generarSugerenciasCalceAutomatico, consolidarEscenarioAprobado, revertirEscenarioConsolidado, registrarResolucionExentaEscenario, exportarNominaActosAdministrativosGdp,
   contarSyncPendientesMovilidad, reintentarSyncPendientesMovilidad
 } from '../services/movilidadTerritorialService';
+import {
+  generarHtmlActaMesaMovilidad,
+  imprimirActaMesaMovilidad,
+  descargarActaWordMesaMovilidad,
+  exportarVacantesRemanentesConcursoExcel
+} from '../services/movilidadActaService';
 import { generarResumenComparativoEscenariosGemini, ResumenComparativoEscenariosResult } from '../services/movilidadGeminiService';
 import { evaluarEgresoProyectado, calcularPuntajePrioridadMovilidad } from '@slep/mineduc-engine';
 import { esPropuestaNoContinuidad } from '../services/estadisticasHorasService';
@@ -174,6 +180,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
   const [trasladoModal, setTrasladoModal] = useState({ open: false, q: '', docId: '', rbdDest: '', comunaDest: '', leyKarin: 0, salud: 0, dependientes: 0, rural: 0, antiguedad: 0, fundamento: '' });
   const [egresoModal, setEgresoModal] = useState({ open: false, editId: undefined as string | undefined, q: '', docId: '', causal: 'renuncia_voluntaria' as CausalEgresoDocente, certeza: 'en_tramite' as CertezaJuridicaEgreso, excepcion3Anios: false, cpeipFirme: false, fechaCese: '', decreto: '', obs: '', generarVacante: true });
   const [reversoModal, setReversoModal] = useState<{ egreso: EgresoProyectado; motivo: string } | null>(null);
+  const [modalRevertirEscenario, setModalRevertirEscenario] = useState<{ open: boolean; motivo: string }>({ open: false, motivo: '' });
   const [resolucionModal, setResolucionModal] = useState<{ numero: string; fecha: string; vigencia: string } | null>(null);
   const [comparativaState, setComparativaState] = useState<{ open: boolean; a: string; b: string; loading: boolean; result: ResumenComparativoEscenariosResult | null }>({ open: false, a: '', b: '', loading: false, result: null });
 
@@ -548,6 +555,74 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
     mostrarFeedback(`Nómina Actos GDP exportada para escenario "${escenarioActivo.nombre}".`);
   }, 'Error exportando Nómina Actos GDP');
 
+  const vacantesSinCubrir = useMemo(() => {
+    const cubiertas = new Set(propuestas.map(p => p.vacanteDestinoId).filter(Boolean) as string[]);
+    return vacantesNn.filter(v => !cubiertas.has(v.id));
+  }, [vacantesNn, propuestas]);
+
+  const handleConfirmarRevertirEscenario = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!escenarioActivo) return;
+    ejecutarOperacion('Revirtiendo consolidación y restaurando snapshot...', async () => {
+      const res = await revertirEscenarioConsolidado({
+        escenarioId: escenarioActivo.id,
+        motivo: modalRevertirEscenario.motivo,
+        rolActor: rol,
+        usuarioActor: actorNombre
+      });
+      setModalRevertirEscenario({ open: false, motivo: '' });
+      await onDatosActualizados();
+      await recargarModuloMovilidad();
+      await refrescarEscenariosYPropuestas(escenarioActivo.id);
+      mostrarFeedback(`Consolidación revertida (v${res.nuevaVersion}): ${res.docentesRestaurados} docente(s), ${res.rebotesEliminados} rebote(s) eliminados.`);
+    }, 'Error revirtiendo consolidación');
+  };
+
+  const handleImprimirActaMesa = () => {
+    if (!escenarioActivo) return;
+    try {
+      const html = generarHtmlActaMesaMovilidad({
+        escenario: escenarioActivo,
+        propuestas,
+        colegios,
+        vacantesSinCubrir,
+        periodo: periodoActivo,
+        usuarioActor: actorNombre
+      });
+      imprimirActaMesaMovilidad(html);
+    } catch (err: any) {
+      mostrarFeedback(`Error abriendo acta imprimible: ${err?.message || err}`, 'error');
+    }
+  };
+
+  const handleDescargarActaWord = () => {
+    if (!escenarioActivo) return;
+    const html = generarHtmlActaMesaMovilidad({
+      escenario: escenarioActivo,
+      propuestas,
+      colegios,
+      vacantesSinCubrir,
+      periodo: periodoActivo,
+      usuarioActor: actorNombre
+    });
+    const nombreSeguro = escenarioActivo.nombre.replace(/[^a-zA-Z0-9_-]+/g, '_');
+    descargarActaWordMesaMovilidad(html, `Acta_Mesa_Movilidad_${nombreSeguro}_${periodoActivo}.doc`);
+    mostrarFeedback(`Acta Word descargada para escenario "${escenarioActivo.nombre}".`);
+  };
+
+  const handleExportarVacantesConcurso = () => ejecutarOperacion('Exportando vacantes remanentes para concurso GDP (.xlsx)...', async () => {
+    const bytes = await exportarVacantesRemanentesConcursoExcel({
+      vacantesSinCubrir,
+      colegios,
+      periodo: periodoActivo
+    });
+    saveAs(
+      new Blob([new Uint8Array(bytes)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      `Vacantes_Concurso_GDP_${periodoActivo}.xlsx`
+    );
+    mostrarFeedback(`Exportadas ${vacantesSinCubrir.length} vacante(s) remanentes a Excel.`);
+  }, 'Error exportando vacantes para concurso');
+
   const ejecutarComparativaGemini = async (idA: string, idB: string) => {
     const targets = escenarios.filter(e => e.id === idA || e.id === idB);
     if (targets.length === 0) return;
@@ -598,6 +673,10 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
         onAbrirClonarEscenario={() => escenarioActivo && setClonarEscNombre(`${escenarioActivo.nombre} (Copia)`)}
         onAbrirEscaneoNn={handleAbrirEscaneoNn} onActivarPausaRevision={handleActivarPausaRevision} onAbrirConsolidar={() => setModalConsolidar(true)}
         onAbrirCompararGemini={handleAbrirCompararGemini} onAbrirResolucionExenta={abrirResolucionModal} onExportarNominaActosGdp={handleExportarNominaActosGdp}
+        onAbrirRevertirConsolidacion={() => setModalRevertirEscenario({ open: true, motivo: '' })}
+        onImprimirActaMesa={handleImprimirActaMesa}
+        onDescargarActaWord={handleDescargarActaWord}
+        onExportarVacantesConcurso={handleExportarVacantesConcurso}
         syncPendientes={syncPendientes} onReintentarSync={handleReintentarSync} reintentandoSync={reintentandoSync}
       />
 
@@ -743,6 +822,28 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950">Esta acción restituirá al titular como Vigente, reapuntará las asignaciones horarias desde la vacante condicional de regreso al titular y archivará la vacante transitoria.</div>
             <div><label className="block text-xs font-bold text-slate-700 mb-1">Motivo fundamentado obligatorio</label><textarea rows={3} required value={reversoModal.motivo} onChange={e => setReversoModal(r => r ? { ...r, motivo: e.target.value } : r)} placeholder="Ej: Acogida reposición administrativa CPEIP Art. 19 S o alta médica..." className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl" /></div>
             <FormFooter onCancel={() => setReversoModal(null)} submitLabel="Confirmar Reincorporación" submitClass="bg-amber-600 hover:bg-amber-700" disabled={!reversoModal.motivo.trim() || Boolean(operacionEnCurso)} />
+          </form>
+        </ModalShell>
+      )}
+      {modalRevertirEscenario.open && escenarioActivo && (
+        <ModalShell title={<><RotateCcw className="w-4 h-4 text-rose-600" /><span>Revertir Consolidación de Escenario</span></>} subtitle={`Escenario: ${escenarioActivo.nombre} (v${escenarioActivo.version ?? 1})`} onClose={() => setModalRevertirEscenario({ open: false, motivo: '' })} maxWidth="max-w-md">
+          <form onSubmit={handleConfirmarRevertirEscenario} className="space-y-3">
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-950">
+              Esta operación restaurará los registros previos desde el snapshot de consolidación, eliminará las vacantes NN-Rebote generadas, revertirá las solicitudes a su estado anterior y dejará el escenario nuevamente en <strong>BORRADOR</strong>.
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Motivo fundamentado obligatorio (mín. 5 caracteres)</label>
+              <textarea
+                rows={3}
+                required
+                minLength={5}
+                value={modalRevertirEscenario.motivo}
+                onChange={e => setModalRevertirEscenario(s => ({ ...s, motivo: e.target.value }))}
+                placeholder="Ej: Desistimiento documentado del docente o ajuste normativo previo a resolución..."
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+              />
+            </div>
+            <FormFooter onCancel={() => setModalRevertirEscenario({ open: false, motivo: '' })} submitLabel="Confirmar Reversión" submitClass="bg-rose-600 hover:bg-rose-700" disabled={modalRevertirEscenario.motivo.trim().length < 5 || Boolean(operacionEnCurso)} />
           </form>
         </ModalShell>
       )}

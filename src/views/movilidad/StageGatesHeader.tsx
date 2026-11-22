@@ -1,15 +1,19 @@
 import React from 'react';
 import {
+  AlertTriangle,
   ArrowRightLeft,
   Award,
   Copy,
   FileCheck2,
   FileSpreadsheet,
+  FileText,
   Layers,
   Lock,
   PauseCircle,
   Plus,
+  Printer,
   RefreshCw,
+  RotateCcw,
   ScanSearch,
   Sparkles,
   Unlock
@@ -18,6 +22,7 @@ import { EscenarioCalce } from '../../types';
 import { EstadoPausaRevision } from '../../types/authTypes';
 import type { ProyeccionTechoPisoHoras } from '../../services/movilidadTerritorialService';
 import { SubTabCol1 } from './movilidadHelpers';
+import { evaluarEstadoHitosMovilidad, obtenerHitosDefectoPeriodo } from './movilidadCalendario';
 
 export interface StageGatesHeaderProps {
   periodoActivo: number;
@@ -67,6 +72,10 @@ export interface StageGatesHeaderProps {
   onAbrirCompararGemini: () => void;
   onAbrirResolucionExenta: () => void;
   onExportarNominaActosGdp: () => void;
+  onAbrirRevertirConsolidacion?: () => void;
+  onImprimirActaMesa?: () => void;
+  onDescargarActaWord?: () => void;
+  onExportarVacantesConcurso?: () => void;
   syncPendientes: number;
   onReintentarSync: () => void;
   reintentandoSync: boolean;
@@ -99,6 +108,10 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
   onAbrirCompararGemini,
   onAbrirResolucionExenta,
   onExportarNominaActosGdp,
+  onAbrirRevertirConsolidacion,
+  onImprimirActaMesa,
+  onDescargarActaWord,
+  onExportarVacantesConcurso,
   syncPendientes,
   onReintentarSync,
   reintentandoSync
@@ -122,6 +135,16 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
   const esConsolidado = escenarioActivo?.estado === 'CONSOLIDADO';
   const esResolucionEmitida = escenarioActivo?.estado === 'RESOLUCION_EMITIDA';
   const gate5Abierta = esConsolidado || esResolucionEmitida;
+
+  const hoyIso = new Date().toISOString().slice(0, 10);
+  const hitosAndon = evaluarEstadoHitosMovilidad(
+    obtenerHitosDefectoPeriodo(periodoActivo),
+    hoyIso,
+    { 1: gate1Abierta, 2: gate2Abierta, 3: gate3Abierta, 4: gate4Abierta, 5: gate5Abierta }
+  );
+  const hitosAtrasados = hitosAndon.filter(h => h.estado === 'ATRASADO');
+  const hitosProximos = hitosAndon.filter(h => h.estado === 'PROXIMO_VENCER');
+  const hitoUrgente = hitosAtrasados[0] || hitosProximos[0] || null;
 
   return (
     <div className="card-elevated p-4 sm:p-5 space-y-4">
@@ -540,9 +563,79 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
                 <span>Exportar Nómina Actos GDP (.xlsx)</span>
               </button>
             )}
+            {puedeConsolidar && esConsolidado && onAbrirRevertirConsolidacion && (
+              <button
+                type="button"
+                onClick={onAbrirRevertirConsolidacion}
+                disabled={Boolean(operacionEnCurso)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-bold disabled:opacity-45"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Revertir Consolidación</span>
+              </button>
+            )}
+            {escenarioActivo && onImprimirActaMesa && (
+              <button
+                type="button"
+                onClick={onImprimirActaMesa}
+                disabled={Boolean(operacionEnCurso)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-bold disabled:opacity-45"
+              >
+                <Printer className="w-3 h-3 text-indigo-700" />
+                <span>Imprimir Acta</span>
+              </button>
+            )}
+            {escenarioActivo && onDescargarActaWord && (
+              <button
+                type="button"
+                onClick={onDescargarActaWord}
+                disabled={Boolean(operacionEnCurso)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-bold disabled:opacity-45"
+              >
+                <FileText className="w-3 h-3 text-blue-700" />
+                <span>Acta Word (.doc)</span>
+              </button>
+            )}
+            {escenarioActivo && onExportarVacantesConcurso && (
+              <button
+                type="button"
+                onClick={onExportarVacantesConcurso}
+                disabled={Boolean(operacionEnCurso)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-bold disabled:opacity-45"
+              >
+                <FileSpreadsheet className="w-3 h-3 text-amber-700" />
+                <span>Vacantes Concurso (.xlsx)</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Franja Andon de Calendario e Hitos */}
+      {hitoUrgente && (
+        <div
+          className={`px-3 py-2 rounded-xl border text-[11px] flex flex-wrap items-center justify-between gap-2 tabular-nums ${
+            hitosAtrasados.length > 0
+              ? 'bg-rose-50 border-rose-300 text-rose-950'
+              : 'bg-amber-50 border-amber-300 text-amber-950'
+          }`}
+        >
+          <div className="flex items-center gap-2 font-bold">
+            <AlertTriangle
+              className={`w-3.5 h-3.5 shrink-0 ${
+                hitosAtrasados.length > 0 ? 'text-rose-600' : 'text-amber-600'
+              }`}
+            />
+            <span>
+              Alerta Andon: {hitosAtrasados.length} hito(s) atrasado(s) · {hitosProximos.length} próximo(s) a vencer
+            </span>
+          </div>
+          <div className="text-[11px] font-semibold">
+            Más urgente: <strong>Compuerta {hitoUrgente.compuerta} ({hitoUrgente.titulo})</strong> — fecha límite{' '}
+            <span className="font-mono font-bold">{hitoUrgente.fechaLimiteIso}</span>
+          </div>
+        </div>
+      )}
 
       {/* KPIs Ejecutivos en tabular-nums */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-200/80">
