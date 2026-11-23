@@ -17,6 +17,7 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
+import { usePermisos } from '../security/PermisosContext';
 import {
   AsistenteEducacion,
   CursoSae,
@@ -81,6 +82,8 @@ export const JardinVtfWorkspaceView: React.FC<JardinVtfWorkspaceViewProps> = ({
   onGuardarColegio,
   onSelectTab,
 }) => {
+  const { can } = usePermisos();
+  const puedeEditarJardin = can('jardin_vtf.editar');
   const [nivelesJisc, setNivelesJisc] = useState<JiscNivelParvularia[]>([]);
   const [turnos, setTurnos] = useState<TurnoParvulariaVtf[]>([]);
   const [parvulosB3, setParvulosB3] = useState<JiscParvuloB3[]>([]);
@@ -474,7 +477,7 @@ export const JardinVtfWorkspaceView: React.FC<JardinVtfWorkspaceViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {onGuardarColegio && (
+            {onGuardarColegio && puedeEditarJardin && (
               <button
                 type="button"
                 onClick={handleToggleExtensionEstablecimiento}
@@ -488,14 +491,16 @@ export const JardinVtfWorkspaceView: React.FC<JardinVtfWorkspaceViewProps> = ({
                 <span>{colegio.horarioExtensionCierre ? 'Extensión 16:30–19:30 Activa' : 'Activar Extensión Horaria'}</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setSubTab('ingesta')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-sm"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Cargar JISC / PAL VTF</span>
-            </button>
+            {puedeEditarJardin && (
+              <button
+                type="button"
+                onClick={() => setSubTab('ingesta')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-sm"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Cargar JISC / PAL VTF</span>
+              </button>
+            )}
           </div>
         </div>
 

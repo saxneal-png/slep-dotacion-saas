@@ -56,7 +56,9 @@ import {
   esDocenteEducadoraParvulos,
   esAsignacionTrabajoColaborativo,
   obtenerHorasCronologicasTrabajoColab,
-  esExentoImprocedenciaPieEspecial
+  esExentoImprocedenciaPieEspecial,
+  getHorasAulaLectivaAsig,
+  esTrabajoNoAulaPie
 } from '../services/auditoriaDocenteService';
 import { DocenteFichaDetalleModal } from '../components/DocenteFichaDetalleModal';
 import { DocenteFormModal, ESTAMENTOS, TIPOS_FUNCIONES_LABELS } from '../components/DocenteFormModal';
@@ -70,6 +72,7 @@ import {
   obtenerFeatureFlagsMovilidad
 } from '../services/configuracionGeneralService';
 import { crearNecesidadVacanteEscuela } from '../services/movilidadTerritorialService';
+import { usePermisos } from '../security/PermisosContext';
 import { ModoAsignacionDocente } from '../types';
 import {
   FILTRO_ESTAMENTO_FUERA_AULA,
@@ -113,6 +116,12 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   periodoActivo = 2027,
   usuarioActualId
 }) => {
+  const { can } = usePermisos();
+  const puedeEditarDocentes = can('docentes.editar');
+  const puedeEliminarDocentes = can('docentes.eliminar');
+  const puedeEditarNecesidades = can('necesidades_docentes.editar');
+  const onGuardarAsignacionEfectiva = puedeEditarDocentes ? onGuardarAsignacion : undefined;
+  const onEliminarAsignacionEfectiva = puedeEditarDocentes ? onEliminarAsignacion : undefined;
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Docente | null>(null);
   const [docenteFicha, setDocenteFicha] = useState<DocenteConsolidadoTerritorial | null>(null);
@@ -307,30 +316,13 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         ? d.funcionesNoAula.filter(f => !isSepFin(f) && !isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
-      // Función para obtener las horas de aula lectiva (45 minutos) de una asignación frente a curso
-      const getHorasAulaLectivaAsig = (a: any) => {
-        if (a.horasPedagogicasAula && a.horasCronologicasPie && Math.abs(a.horasPedagogicasAula * 0.75 - a.horasCronologicasPie) < 0.1) {
-          return a.horasPedagogicasAula;
-        }
-        if (a.horasCronologicasPie && a.horasPedagogicasAula === Math.round(a.horasCronologicasPie * 1.333)) {
-          return a.horasCronologicasPie;
-        }
-        return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-      };
-
-      // Asignaciones de co-docencia PIE con curso: se calculan como horas de aula lectiva (45 minutos) con proporción Ley 20.903
+      // Asignaciones de co-docencia PIE / Aula de Recursos: se calculan como horas de aula lectiva (45 minutos) con proporción Ley 20.903
       const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
-        const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-        const esTrabajoNoAula = Boolean(
-          a.esTrabajoColaborativo || 
-          a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
-          (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-          (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-        );
-        if (!tieneCurso || esTrabajoNoAula) return false;
-        // Para docente diferencial frente a curso en co-docencia de aula común, es SIEMPRE aula lectiva proporcional Ley 20.903
+        if (esTrabajoNoAulaPie(a) || getHorasAulaLectivaAsig(a) <= 0) return false;
+        // Para docente diferencial frente a estudiantes (curso o Aula de Recursos), es SIEMPRE aula lectiva proporcional Ley 20.903
         if (isPieDoc) return true;
-        return a.esProporcionDocente === true;
+        const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
+        return tieneCurso && a.esProporcionDocente === true;
       });
       const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
         !asigsCoDocenciaPieProporcional.includes(a)
@@ -714,27 +706,31 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setModalSigeAbierto(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all"
-              title="Importar nómina docente oficial descargada desde SIGE (.csv o .xlsx)"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
-              <span>Importar SIGE</span>
-            </button>
+            {puedeEditarDocentes && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setModalSigeAbierto(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all"
+                  title="Importar nómina docente oficial descargada desde SIGE (.csv o .xlsx)"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Importar SIGE</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setModalPegarAbierto(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors"
-              title="Copiar y pegar múltiples docentes desde una planilla Excel"
-            >
-              <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="hidden md:inline">Pegar Excel</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setModalPegarAbierto(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors"
+                  title="Copiar y pegar múltiples docentes desde una planilla Excel"
+                >
+                  <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="hidden md:inline">Pegar Excel</span>
+                </button>
+              </>
+            )}
 
-            {flagSaneamientoNnEscuelas && (
+            {flagSaneamientoNnEscuelas && puedeEditarNecesidades && (
               <button
                 type="button"
                 onClick={() => {
@@ -754,13 +750,15 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               </button>
             )}
 
-            <button
-              onClick={abrirModalNuevo}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Nuevo Docente</span>
-            </button>
+            {puedeEditarDocentes && (
+              <button
+                onClick={abrirModalNuevo}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Nuevo Docente</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1130,8 +1128,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           cursos={cursos}
           asignaciones={asignaciones}
           periodoActivo={periodoActivo}
-          onGuardarAsignacion={onGuardarAsignacion}
-          onEliminarAsignacion={onEliminarAsignacion}
+          onGuardarAsignacion={onGuardarAsignacionEfectiva}
+          onEliminarAsignacion={onEliminarAsignacionEfectiva}
           onAbrirDrawerDocente={(doc) => setDrawerDocenteId(doc.id)}
         />
       )}
@@ -1143,8 +1141,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           docentes={docentes}
           asignaciones={asignaciones}
           periodoActivo={periodoActivo}
-          onGuardarAsignacion={onGuardarAsignacion}
-          onEliminarAsignacion={onEliminarAsignacion}
+          onGuardarAsignacion={onGuardarAsignacionEfectiva}
+          onEliminarAsignacion={onEliminarAsignacionEfectiva}
         />
       )}
 
@@ -1472,24 +1470,28 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => abrirModalEditar(d)}
-                          className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors"
-                          title="Editar docente"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`¿Eliminar al docente ${d.nombres} ${d.apellidos}?`)) {
-                              onEliminarDocente(d.id);
-                            }
-                          }}
-                          className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
-                          title="Eliminar docente"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {puedeEditarDocentes && (
+                          <button
+                            onClick={() => abrirModalEditar(d)}
+                            className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors"
+                            title="Editar docente"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {puedeEliminarDocentes && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`¿Eliminar al docente ${d.nombres} ${d.apellidos}?`)) {
+                                onEliminarDocente(d.id);
+                              }
+                            }}
+                            className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
+                            title="Eliminar docente"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1503,8 +1505,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           asignaciones={asignaciones}
                           docentes={docentes}
                           periodoActivo={periodoActivo}
-                          onGuardarAsignacion={onGuardarAsignacion}
-                          onEliminarAsignacion={onEliminarAsignacion}
+                          onGuardarAsignacion={onGuardarAsignacionEfectiva}
+                          onEliminarAsignacion={onEliminarAsignacionEfectiva}
                         />
                       </td>
                     </tr>
@@ -1531,8 +1533,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           cursos={cursos}
           asignaciones={asignaciones}
           periodoActivo={periodoActivo}
-          onGuardarAsignacion={onGuardarAsignacion}
-          onEliminarAsignacion={onEliminarAsignacion}
+          onGuardarAsignacion={onGuardarAsignacionEfectiva}
+          onEliminarAsignacion={onEliminarAsignacionEfectiva}
         />
       )}
 

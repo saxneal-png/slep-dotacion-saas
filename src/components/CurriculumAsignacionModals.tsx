@@ -7,15 +7,17 @@ import {
   CATALOGO_PROFUNDIZACION_HC_27,
   CATALOGO_PLAN_COMUN_ELECTIVO_3_4,
   esNivelParvulario,
-  resolverCodigoYAmbitoAsignatura
+  resolverCodigoYAmbitoAsignatura,
+  pedagogicasACronologicasPie,
+  decToHhmm
 } from '@slep/mineduc-engine';
 import { esTextoTallerOLibreDisposicion } from '../services/curricularPlanService';
+import { esDocenteEducacionEspecialPie, getHorasAulaLectivaAsig } from '../services/auditoriaDocenteService';
 
 export const TIPOS_APOYO_PIE = [
   { id: 'Co-Docencia en Aula Regular', label: 'Co-Docencia en Aula Regular (Docente Diferencial)', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
   { id: 'Aula de Recursos / Apoyo Especializado', label: 'Aula de Recursos / Apoyo Especializado', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
   { id: 'Apoyo Multidisciplinario / Clínico PAE', label: 'Apoyo Profesional PAE (Fonoaudiólogo / Psicólogo / TO)', estamentoSugerido: 'PROFESIONAL_PAE' },
-  { id: 'Apoyo Técnico en Aula', label: 'Apoyo Técnico en Educación Especial', estamentoSugerido: 'TECNICO_ESPECIAL' },
   { id: 'Trabajo Colaborativo / Co-Planificación', label: 'Trabajo Colaborativo Art. 86 (Docente de Aula)', estamentoSugerido: 'DOCENTE_AULA' }
 ];
 
@@ -488,6 +490,8 @@ export const ModalAsignarCoDocencia: React.FC<ModalCoDocenciaProps> = ({
     if (!docenteId || !asignatura.trim()) return;
 
     const esParv = Boolean(cursoActivo && esNivelParvulario(cursoActivo.nivel));
+    const docObj = docentes.find(d => d.id === docenteId);
+    const esDocDif = Boolean(docObj && esDocenteEducacionEspecialPie(docObj));
 
     const asig: AsignacionHoraria = {
       id: editandoAsig ? editandoAsig.id : `asig-codoc-${Date.now()}`,
@@ -498,7 +502,7 @@ export const ModalAsignarCoDocencia: React.FC<ModalCoDocenciaProps> = ({
       asignatura: asignatura.trim(),
       horasPedagogicasAula: Number(horas),
       esCoDocencia: true,
-      esCoDocenciaParvularia: esParv || Boolean(editandoAsig?.esCoDocenciaParvularia),
+      esCoDocenciaParvularia: esDocDif ? false : (esParv || Boolean(editandoAsig?.esCoDocenciaParvularia)),
       esAgrupacionFlexible: tipoModalidad === 'AGRUPACION_FLEXIBLE',
       esTallerSep: esSep,
       tipoApoyo: tipoModalidad
@@ -679,16 +683,24 @@ export const ModalAsignarPie: React.FC<ModalPieProps> = ({
   const [horas, setHoras] = useState(6);
   const [asignatura, setAsignatura] = useState('Apoyo PIE - Co-docencia Aula Regular');
 
+  const esModalidadAulaPedagogicaPie = (tipo: string) =>
+    !tipo.includes('Colaborativo') && !tipo.includes('86') && !tipo.includes('Clínico') && !tipo.includes('PAE');
+
   useEffect(() => {
     if (!isOpen) return;
     if (editandoAsig) {
+      const tipoEdit = editandoAsig.tipoApoyo || 'Co-Docencia en Aula Regular';
       setDocenteId(editandoAsig.docenteId);
-      setTipoApoyo(editandoAsig.tipoApoyo || 'Co-Docencia en Aula Regular');
-      setHoras(editandoAsig.horasCronologicasPie || editandoAsig.horasPedagogicasAula || 4);
+      setTipoApoyo(tipoEdit);
+      setHoras(
+        esModalidadAulaPedagogicaPie(tipoEdit)
+          ? getHorasAulaLectivaAsig(editandoAsig)
+          : (editandoAsig.horasCronologicasPie || editandoAsig.horasPedagogicasAula || 3)
+      );
       setAsignatura(editandoAsig.asignatura);
     } else {
       setTipoApoyo('Co-Docencia en Aula Regular');
-      setHoras(6);
+      setHoras(8);
       setAsignatura('Apoyo PIE - Co-docencia Aula Regular');
       const pieSugerido = docentes.find(d => d.estamento === 'DOCENTE_DIFERENCIAL') ||
                           docentes.find(d => d.estamento === 'PROFESIONAL_PAE') ||
@@ -699,13 +711,16 @@ export const ModalAsignarPie: React.FC<ModalPieProps> = ({
 
   if (!isOpen || !cursoActivo) return null;
 
+  const esAulaPedagogica = esModalidadAulaPedagogicaPie(tipoApoyo);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!docenteId || !asignatura.trim()) return;
 
     const esColab = tipoApoyo.includes('Colaborativo') || tipoApoyo.includes('86');
-    const horasCron = Number(horas);
-    const horasPed = Math.round(horasCron * 1.333);
+    const numInput = Number(horas);
+    const horasPed = esAulaPedagogica ? numInput : Math.round(numInput * 1.333);
+    const horasCron = esAulaPedagogica ? pedagogicasACronologicasPie(numInput) : numInput;
 
     const asig: AsignacionHoraria = {
       id: editandoAsig ? editandoAsig.id : `asig-pie-${Date.now()}`,
@@ -718,7 +733,8 @@ export const ModalAsignarPie: React.FC<ModalPieProps> = ({
       horasCronologicasPie: horasCron,
       esCoDocencia: true,
       esTrabajoColaborativo: esColab,
-      tipoApoyo
+      tipoApoyo,
+      esProporcionDocente: esAulaPedagogica
     };
 
     await onGuardar(asig);
@@ -798,16 +814,6 @@ export const ModalAsignarPie: React.FC<ModalPieProps> = ({
                     );
                   })}
                 </optgroup>
-                <optgroup label="Asistentes Técnicos en Educación Especial / Aula">
-                  {docentes.filter(d => d.estamento === 'TECNICO_ESPECIAL' || d.estamento === 'ASISTENTE_AULA').map(d => {
-                    const disp = disponibilidadDocentes.get(d.id);
-                    return (
-                      <option key={d.id} value={d.id}>
-                        {d.nombres} {d.apellidos} - {d.horasContrato}h [Libres: {disp?.horasLibres || 0}h]
-                      </option>
-                    );
-                  })}
-                </optgroup>
                 <optgroup label="Docentes de Aula Regular (Co-docencia / Colaborativo)">
                   {docentes.filter(d => d.estamento === 'DOCENTE_AULA').map(d => {
                     const disp = disponibilidadDocentes.get(d.id);
@@ -834,19 +840,23 @@ export const ModalAsignarPie: React.FC<ModalPieProps> = ({
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Horas Cronológicas Semanales *</label>
+              <label className="block font-semibold text-slate-700 mb-1">
+                {esAulaPedagogica ? 'Horas Pedagógicas de Aula (HA 45m) *' : 'Horas Cronológicas Semanales (60m) *'}
+              </label>
               <input
                 type="number"
                 min="1"
                 max="44"
-                step="0.5"
+                step={esAulaPedagogica ? '1' : '0.5'}
                 required
                 value={horas}
                 onChange={e => setHoras(parseFloat(e.target.value) || 0)}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none text-center font-bold text-purple-700 text-base"
               />
-              <p className="text-[10px] text-slate-400 mt-1">
-                Equivale aprox. a {Math.round(horas * 1.333)} horas pedagógicas de aula (HA).
+              <p className="text-[10px] text-slate-500 mt-1">
+                {esAulaPedagogica
+                  ? `Equivale a ${decToHhmm(pedagogicasACronologicasPie(horas || 0))}h cronológicas de cobertura Decreto 170 (Ley 20.903 activa).`
+                  : `Equivale aprox. a ${Math.round(horas * 1.333)} horas pedagógicas de aula (HA).`}
               </p>
             </div>
           </div>

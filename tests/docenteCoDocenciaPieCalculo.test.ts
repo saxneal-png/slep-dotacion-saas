@@ -427,4 +427,75 @@ describe('Cálculo de Carga Horaria para Docente de Aula con Co-Docencia / Apoyo
     expect(docContrato.saldoHoras).toBe(3); // 44 - 41 = 3 entero exacto
     expect(docContrato.estadoSaldo).toBe('HOLGURA');
   });
+
+  it('computa en HA (45m) con proporción Ley 20.903 a una Educadora Diferencial en Nivel Parvulario y en Aula de Recursos (con o sin curso)', () => {
+    const docDiferencialParv: Docente = {
+      id: 'doc-dif-parv',
+      rbd: '12345',
+      periodo: 2027,
+      run: '18.111.222-3',
+      nombres: 'MARIA JOSE',
+      apellidos: 'DIFERENCIAL PARVULOS',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      calidadJuridica: 'CONTRATA',
+      funcionPrincipal: 'Apoyo PIE en NT1 y Kínder',
+      horasContrato: 22,
+      horasPieContrata: 22
+    };
+
+    const cursosMix: CursoSae[] = [
+      { id: 'c-nt1', rbd: '12345', periodo: 2027, nivel: 'NT1 (Pre-Kínder)', letra: 'A', regimen: 'No JEC', cupoSae: 25, matriculaProyectada: 20, alumnosNeet: 5, alumnosNeep: 0 }
+    ];
+
+    const asignacionesDif: AsignacionHoraria[] = [
+      {
+        id: 'asig-dif-nt1',
+        rbd: '12345',
+        periodo: 2027,
+        cursoId: 'c-nt1',
+        docenteId: 'doc-dif-parv',
+        asignatura: 'Apoyo PIE - Co-docencia Aula Común',
+        horasPedagogicasAula: 8,
+        horasCronologicasPie: 6,
+        esCoDocencia: true,
+        esCoDocenciaParvularia: true, // Simula flag legacy erróneo en curso parvulario
+        esProporcionDocente: true,
+        tipoApoyo: 'Co-Docencia en Aula Regular'
+      },
+      {
+        id: 'asig-dif-rec',
+        rbd: '12345',
+        periodo: 2027,
+        cursoId: 'TRANSVERSAL',
+        docenteId: 'doc-dif-parv',
+        asignatura: 'Apoyo PIE - Aula de Recursos',
+        horasPedagogicasAula: 6,
+        horasCronologicasPie: 4.5,
+        esCoDocencia: true,
+        esProporcionDocente: false, // Simula flag legacy erróneo
+        tipoApoyo: 'Aula de Recursos / Refuerzo Especializado'
+      }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio(
+      [colegioMock],
+      [docDiferencialParv],
+      asignacionesDif,
+      cursosMix
+    );
+
+    const contrato = consolidado[0]?.contratos[0];
+    expect(contrato).toBeDefined();
+    if (!contrato) return;
+
+    // 1. Nunca debe clasificarse como Educadora de Párvulos (60m DTO 306) ni como horas cronológicas exentas
+    expect(contrato.horasAula65_35).toBe(14); // 8 HA (NT1) + 6 HA (Aula de Recursos) = 14 HA exactas
+    expect(contrato.horasPieCronologicas).toBe(0);
+    expect(contrato.contratoCalculadoTotal).toBe(16); // Tabla 65/35 para 14 HA = 16 horas de contrato
+    expect(contrato.saldoHoras).toBe(6); // 22 - 16 = 6 horas libres
+
+    // 2. Aula de Recursos sin curso (6 HA) NO debe inflar la demanda curricular del plan de estudios (NT1 = 22h base, nunca 28h)
+    const diag = calcularDiagnosticoColegio(colegioMock, [], cursosMix, [docDiferencialParv], asignacionesDif);
+    expect(diag.balanzaGeneral.horasAulaDemandadasCurriculo).toBe(22);
+  });
 });

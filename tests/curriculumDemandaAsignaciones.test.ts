@@ -96,11 +96,11 @@ describe('Asignación de Docencia y Apoyo PIE por Curso (Decreto 170 / Ord. 2398
     expect(demandaSinJec.horasPaeDecimal).toBe(4.0);
     expect(demandaSinJec.cumpleAforo).toBe(true);
 
-    // Caso 3: Solo NEET (5 NEET + 0 NEEP)
+    // Caso 3: Solo NEET (5 NEET + 0 NEEP) — Tabla Oficial Ord. 2622/2026
     const demandaSoloNeetJec = calcularDemandaNormativaPieCurso(5, 0, true);
     expect(demandaSoloNeetJec.horasTotalCronologicas).toBe(10);
-    expect(demandaSoloNeetJec.horasDiferencialDecimal).toBe(6.25);
-    expect(demandaSoloNeetJec.horasPaeDecimal).toBe(3.75);
+    expect(demandaSoloNeetJec.horasDiferencialDecimal).toBe(6.0);
+    expect(demandaSoloNeetJec.horasPaeDecimal).toBe(4.0);
 
     // Caso 4: Alerta de aforo excedido (> 5 NEET o > 2 NEEP)
     const demandaExcedida = calcularDemandaNormativaPieCurso(6, 3, true);

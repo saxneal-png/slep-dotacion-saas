@@ -72,6 +72,7 @@ export interface AuditoriaIntegralDocenteResult {
  * Helper canónico para identificar a una Educadora de Párvulos (régimen DTO 306 en horas cronológicas de 60m).
  */
 export function esDocenteEducadoraParvulos(doc: Docente): boolean {
+  if (esDocenteEducacionEspecialPie(doc)) return false;
   const rxParv = /p[aá]rvul[oa]|infantil|pre[- ]?b[aá]sica|preescolar|prek[ií]nder|k[ií]nder|\bnt[12]\b/i;
   return (
     doc.estamento === 'EDUCADORA_PARVULO' ||
@@ -329,24 +330,31 @@ export function normalizarFuentesFinanciamientoAsistente(
 }
 
 /**
- * Obtiene las horas pedagógicas de aula lectiva (45 min) de una asignación frente a curso,
- * corrigiendo conversiones duplicadas en asignaciones PIE.
+ * Obtiene las horas pedagógicas de aula lectiva (45 min) de una asignación frente a estudiantes.
+ * Prioriza siempre horasPedagogicasAula sin revertir a horasCronologicasPie.
  */
-export function getHorasAulaLectivaAsig(a: AsignacionHoraria): number {
-  if (
-    a.horasPedagogicasAula &&
-    a.horasCronologicasPie &&
-    Math.abs(a.horasPedagogicasAula * 0.75 - a.horasCronologicasPie) < 0.1
-  ) {
+export function getHorasAulaLectivaAsig(a: Partial<AsignacionHoraria>): number {
+  if (a.horasPedagogicasAula && a.horasPedagogicasAula > 0) {
     return a.horasPedagogicasAula;
   }
-  if (
-    a.horasCronologicasPie &&
-    a.horasPedagogicasAula === Math.round(a.horasCronologicasPie * 1.333)
-  ) {
-    return a.horasCronologicasPie;
+  if (a.horasCronologicasPie && a.horasCronologicasPie > 0) {
+    return Math.round((a.horasCronologicasPie / 0.75) * 100) / 100;
   }
-  return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
+  return 0;
+}
+
+/**
+ * Identifica asignaciones no-lectivas / exentas de proporción aula dentro del ámbito PIE
+ * (Trabajo Colaborativo Art. 86, Coordinación PIE y Apoyo Clínico PAE).
+ * Co-Docencia y Aula de Recursos quedan fuera de este predicado para computar como HA (45m).
+ */
+export function esTrabajoNoAulaPie(a: Partial<AsignacionHoraria>): boolean {
+  return Boolean(
+    a.esTrabajoColaborativo ||
+      a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
+      (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico|coordinaci[oó]n/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico|coordinaci[oó]n/i.test(a.asignatura))
+  );
 }
 
 /**
@@ -516,13 +524,7 @@ export function calcularHorasFueraAulaDocente(
   );
 
   const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
-    const esTrabajoNoAula = Boolean(
-      a.esTrabajoColaborativo ||
-        a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
-        (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-        (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-    );
-    if (esTrabajoNoAula || (Number(a.horasPedagogicasAula) || 0) <= 0) return false;
+    if (esTrabajoNoAulaPie(a) || getHorasAulaLectivaAsig(a) <= 0) return false;
     if (isPieDoc) return true;
     const tieneCurso = Boolean(
       a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO'
@@ -792,13 +794,7 @@ export function auditarCargaDocenteIntegral(
 
   // Asignaciones de co-docencia PIE frente a alumnos (incluye Aula de Recursos) con proporción docente Ley 20.903
   const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
-    const esTrabajoNoAula = Boolean(
-      a.esTrabajoColaborativo ||
-        a.tipoApoyo === 'TRABAJO_COLABORATIVO' ||
-        (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-        (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-    );
-    if (esTrabajoNoAula || (Number(a.horasPedagogicasAula) || 0) <= 0) return false;
+    if (esTrabajoNoAulaPie(a) || getHorasAulaLectivaAsig(a) <= 0) return false;
     if (isPieDoc) return true; // Docente diferencial / PIE frente a alumnos (curso o Aula de Recursos) = hora lectiva aula (45 min)
     const tieneCurso = Boolean(
       a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO'

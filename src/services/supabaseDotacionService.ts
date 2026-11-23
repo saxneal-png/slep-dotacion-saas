@@ -438,6 +438,11 @@ export function mapDocenteFromDb(row: any): Docente {
     estadoSancionGdp: row.estado_sancion_gdp || undefined,
     horasAprobadasGdp: Number(row.horas_aprobadas_gdp || 0),
     situacionFinalGdp: row.situacion_final_gdp || undefined,
+    esVacanteNn: Boolean(row.es_vacante_nn),
+    tipoVacante: row.tipo_vacante ? (String(row.tipo_vacante) as AsistenteEducacion['tipoVacante']) : undefined,
+    justificacionVacante: row.justificacion_vacante ? String(row.justificacion_vacante) : undefined,
+    estadoNecesidad: row.estado_necesidad ? (String(row.estado_necesidad) as AsistenteEducacion['estadoNecesidad']) : undefined,
+    motivoEstadoNecesidad: row.motivo_estado_necesidad ? String(row.motivo_estado_necesidad) : undefined,
     observacionesDirector: row.observaciones_director || undefined,
     observacionesSlep: row.observaciones_slep || undefined,
     esVacanteNn: Boolean(row.es_vacante_nn),
@@ -562,7 +567,12 @@ export function mapAsistenteToDb(ast: AsistenteEducacion) {
     horas_aprobadas_gdp: ast.horasAprobadasGdp || 0,
     situacion_final_gdp: ast.situacionFinalGdp || 'Vigente',
     observaciones_director: ast.observacionesDirector || null,
-    observaciones_slep: ast.observacionesSlep || null
+    observaciones_slep: ast.observacionesSlep || null,
+    ...(ast.esVacanteNn !== undefined ? { es_vacante_nn: Boolean(ast.esVacanteNn) } : {}),
+    ...(ast.tipoVacante ? { tipo_vacante: ast.tipoVacante } : {}),
+    ...(ast.justificacionVacante ? { justificacion_vacante: ast.justificacionVacante } : {}),
+    ...(ast.estadoNecesidad ? { estado_necesidad: ast.estadoNecesidad } : {}),
+    ...(ast.motivoEstadoNecesidad ? { motivo_estado_necesidad: ast.motivoEstadoNecesidad } : {})
   };
 }
 
@@ -613,6 +623,11 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
     estadoSancionGdp: row.estado_sancion_gdp || undefined,
     horasAprobadasGdp: Number(row.horas_aprobadas_gdp || 0),
     situacionFinalGdp: row.situacion_final_gdp || undefined,
+    esVacanteNn: Boolean(row.es_vacante_nn),
+    tipoVacante: row.tipo_vacante ? (String(row.tipo_vacante) as AsistenteEducacion['tipoVacante']) : undefined,
+    justificacionVacante: row.justificacion_vacante ? String(row.justificacion_vacante) : undefined,
+    estadoNecesidad: row.estado_necesidad ? (String(row.estado_necesidad) as AsistenteEducacion['estadoNecesidad']) : undefined,
+    motivoEstadoNecesidad: row.motivo_estado_necesidad ? String(row.motivo_estado_necesidad) : undefined,
     observacionesDirector: row.observaciones_director || undefined,
     observacionesSlep: row.observaciones_slep || undefined
   };

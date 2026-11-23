@@ -21,6 +21,7 @@ import {
   RegistroMovimientoMovilidad
 } from '../types';
 import { ESTAMENTOS } from '../components/DocenteFormModal';
+import { usePermisos } from '../security/PermisosContext';
 import {
   actualizarNecesidadVacanteEscuela,
   cancelarNecesidadVacanteEscuela,
@@ -75,6 +76,8 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
   rolActor,
   onRefreshData
 }) => {
+  const { can } = usePermisos();
+  const puedeEditarNecesidades = can('necesidades_docentes.editar');
   const [necesidades, setNecesidades] = useState<Docente[]>([]);
   const [bloqueadasEnMesa, setBloqueadasEnMesa] = useState<Set<string>>(new Set());
   const [movimientos, setMovimientos] = useState<RegistroMovimientoMovilidad[]>([]);
@@ -385,14 +388,21 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
             Revisa tus solicitudes en <strong>Borrador</strong> antes de enviarlas a Movilidad. Si cometiste un error después de enviar, puedes <strong>Retrotraer</strong> o <strong>Cancelar</strong> sin duplicar requerimientos.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={abrirModalCrear}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs shrink-0 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nueva Necesidad Docente</span>
-        </button>
+        {puedeEditarNecesidades ? (
+          <button
+            type="button"
+            onClick={abrirModalCrear}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs shrink-0 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nueva Necesidad Docente</span>
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold shrink-0">
+            <Lock className="w-3.5 h-3.5" />
+            <span>Solo Lectura</span>
+          </span>
+        )}
       </div>
 
       {/* KPIs */}
@@ -545,6 +555,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                     </div>
 
                     {/* Botones de Acción */}
+                    {puedeEditarNecesidades && (
                     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                       {estado === 'BORRADOR' && (
                         <>
@@ -629,6 +640,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                         </span>
                       )}
                     </div>
+                    )}
                   </div>
                 </div>
               );

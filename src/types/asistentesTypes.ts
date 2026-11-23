@@ -61,6 +61,12 @@ export interface AsistenteEducacion {
   grupoJiscId?: string;
   horaIngresoTurno?: string;
   horaSalidaTurno?: string;
+  // Vacantes y necesidades de cargos Asistentes Ley 21.109
+  esVacanteNn?: boolean;
+  tipoVacante?: 'NN_DETECTADO' | 'NECESIDAD_ESCUELA' | 'CONDICIONAL_EGRESO' | 'REBOTE_MOVILIDAD';
+  justificacionVacante?: string;
+  estadoNecesidad?: 'BORRADOR' | 'ENVIADA' | 'CANCELADA';
+  motivoEstadoNecesidad?: string;
 }
 
 export interface AsistenteResumenEstamento {

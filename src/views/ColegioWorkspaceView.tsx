@@ -34,6 +34,7 @@ import { GdpParametrosModal } from '../components/GdpParametrosModal';
 import { CentroDescargasModal } from '../components/CentroDescargasModal';
 import { ModalAuditoriaIntegridad } from '../components/ModalAuditoriaIntegridad';
 import { PermisosRol } from '../types/authTypes';
+import { usePermisos } from '../security/PermisosContext';
 
 export interface ColegioWorkspaceViewProps {
   colegio: Establecimiento;
@@ -128,6 +129,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 }) => {
   const esJardin = esJardinOSalaCuna(colegio);
   const perfilMeta = getPerfilEstablecimientoMeta(colegio);
+  const { can } = usePermisos();
 
   type TabWorkspace = 'balanza' | 'jardin_vtf' | 'docentes' | 'necesidades' | 'asistentes' | 'cursos' | 'pie' | 'salas';
   const resolveDefaultTabForSchool = (tabSolicitado?: TabWorkspace): TabWorkspace => {
@@ -228,25 +230,34 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
     [docentes]
   );
 
-  const tabs = esJardin
+  const allTabs = esJardin
     ? [
-        { id: 'jardin_vtf' as const, label: 'Gestión Jardín / D.S. 115', icon: Baby, badge: `${cursos.length} niv` },
-        { id: 'docentes' as const, label: 'Educadoras & Dirección', icon: Users, badge: `${docentes.length}` },
-        { id: 'necesidades' as const, label: 'Necesidades Docentes', icon: Sparkles, badge: `${necesidadesDocentesCount}` },
-        { id: 'asistentes' as const, label: 'Técnicos & Auxiliares', icon: Users, badge: `${asistentes.length}` },
-        { id: 'cursos' as const, label: 'Niveles BCEP', icon: BookOpen, badge: `${cursos.length}` },
-        { id: 'salas' as const, label: 'Salas & Aforos (D.S. 548)', icon: LayoutGrid, badge: `${salas.length}` },
-        { id: 'balanza' as const, label: 'Resumen General', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` }
+        { id: 'jardin_vtf' as const, permisoModulo: 'jardin_vtf', label: 'Gestión Jardín / D.S. 115', icon: Baby, badge: `${cursos.length} niv` },
+        { id: 'docentes' as const, permisoModulo: 'docentes', label: 'Educadoras & Dirección', icon: Users, badge: `${docentes.length}` },
+        { id: 'necesidades' as const, permisoModulo: 'necesidades_docentes', label: 'Necesidades Docentes', icon: Sparkles, badge: `${necesidadesDocentesCount}` },
+        { id: 'asistentes' as const, permisoModulo: 'asistentes', label: 'Técnicos & Auxiliares', icon: Users, badge: `${asistentes.length}` },
+        { id: 'cursos' as const, permisoModulo: 'curriculum', label: 'Niveles BCEP', icon: BookOpen, badge: `${cursos.length}` },
+        { id: 'salas' as const, permisoModulo: 'salas_sae', label: 'Salas & Aforos (D.S. 548)', icon: LayoutGrid, badge: `${salas.length}` },
+        { id: 'balanza' as const, permisoModulo: 'balanza', label: 'Resumen General', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` }
       ]
     : [
-        { id: 'balanza' as const, label: 'Balanza & Diagnóstico', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` },
-        { id: 'docentes' as const, label: 'Nómina Docente (Ley 20.903)', icon: Users, badge: `${docentes.length}` },
-        { id: 'necesidades' as const, label: 'Necesidades Docentes', icon: Sparkles, badge: `${necesidadesDocentesCount}` },
-        { id: 'asistentes' as const, label: 'Asistentes Educación', icon: Users, badge: `${asistentes.length}` },
-        { id: 'cursos' as const, label: 'Cursos & Planes MINEDUC', icon: BookOpen, badge: `${cursos.length}` },
-        { id: 'pie' as const, label: 'Auditoría PIE (Dec. 170)', icon: ShieldCheck, badge: `${bg?.horasPieDemandadas || 0}h` },
-        { id: 'salas' as const, label: 'Salas & Aforo SAE (Dec. 548)', icon: LayoutGrid, badge: `${salas.length}` }
+        { id: 'balanza' as const, permisoModulo: 'balanza', label: 'Balanza & Diagnóstico', icon: Scale, badge: balance > 0 ? `+${balance}h` : `${balance}h` },
+        { id: 'docentes' as const, permisoModulo: 'docentes', label: 'Nómina Docente (Ley 20.903)', icon: Users, badge: `${docentes.length}` },
+        { id: 'necesidades' as const, permisoModulo: 'necesidades_docentes', label: 'Necesidades Docentes', icon: Sparkles, badge: `${necesidadesDocentesCount}` },
+        { id: 'asistentes' as const, permisoModulo: 'asistentes', label: 'Asistentes Educación', icon: Users, badge: `${asistentes.length}` },
+        { id: 'cursos' as const, permisoModulo: 'curriculum', label: 'Cursos & Planes MINEDUC', icon: BookOpen, badge: `${cursos.length}` },
+        { id: 'pie' as const, permisoModulo: 'pie', label: 'Auditoría PIE (Dec. 170)', icon: ShieldCheck, badge: `${bg?.horasPieDemandadas || 0}h` },
+        { id: 'salas' as const, permisoModulo: 'salas_sae', label: 'Salas & Aforo SAE (Dec. 548)', icon: LayoutGrid, badge: `${salas.length}` }
       ];
+
+  const tabs = allTabs.filter(t => can(`${t.permisoModulo}.ver` as any));
+  const tabActivaPermitida = tabs.some(t => t.id === tabActiva);
+
+  React.useEffect(() => {
+    if (!tabActivaPermitida && tabs.length > 0) {
+      setTabActiva(tabs[0].id);
+    }
+  }, [tabActivaPermitida, tabs.length]);
 
   return (
     <div className="space-y-3.5 animate-fade-in">
@@ -603,7 +614,18 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
 
       {/* Contenido de Pestaña */}
       <div className="space-y-4">
-        {tabActiva === 'jardin_vtf' && (
+        {tabs.length === 0 ? (
+          <div className="card-elevated p-8 text-center space-y-2">
+            <ShieldAlert className="w-8 h-8 text-amber-500 mx-auto" />
+            <h3 className="text-sm font-black text-slate-800 dark:text-white">
+              Sin pestañas habilitadas para tu rol
+            </h3>
+            <p className="text-xs text-slate-500">
+              El Super Usuario no ha habilitado pestañas del Espacio Escolar para este perfil.
+            </p>
+          </div>
+        ) : null}
+        {tabActiva === 'jardin_vtf' && can('jardin_vtf.ver') && (
           <JardinVtfWorkspaceView
             colegio={colegio}
             periodoActivo={periodoActivo}
@@ -617,7 +639,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           />
         )}
 
-        {tabActiva === 'balanza' && (
+        {tabActiva === 'balanza' && can('balanza.ver') && (
           <BalanzaDiagnosticoView
             diagnostico={diagnostico}
             onExportarExcel={onExportarExcel}
@@ -630,7 +652,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           />
         )}
 
-        {tabActiva === 'docentes' && (
+        {tabActiva === 'docentes' && can('docentes.ver') && (
           <DocentesDotacionView
             colegio={colegio}
             docentes={docentes}
@@ -661,7 +683,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           />
         )}
 
-        {tabActiva === 'necesidades' && (
+        {tabActiva === 'necesidades' && can('necesidades_docentes.ver') && (
           <NecesidadesDocentesView
             colegio={colegio}
             periodoActivo={periodoActivo}
@@ -673,7 +695,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           />
         )}
 
-        {tabActiva === 'asistentes' && onGuardarAsistente && onEliminarAsistente && (
+        {tabActiva === 'asistentes' && can('asistentes.ver') && onGuardarAsistente && onEliminarAsistente && (
           <AsistentesDotacionView
             colegio={colegio}
             asistentes={asistentes}
@@ -686,7 +708,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           />
         )}
 
-        {tabActiva === 'cursos' && (
+        {tabActiva === 'cursos' && can('curriculum.ver') && (
           <CurriculumDemandaView
             colegio={colegio}
             cursos={cursos}
@@ -704,7 +726,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           />
         )}
 
-        {tabActiva === 'pie' && (
+        {tabActiva === 'pie' && can('pie.ver') && (
           <PieAuditorView
             colegio={colegio}
             cursos={cursos}
@@ -717,7 +739,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
           />
         )}
 
-        {tabActiva === 'salas' && (
+        {tabActiva === 'salas' && can('salas_sae.ver') && (
           <SalasSaeView
             colegio={colegio}
             salas={salas}

@@ -27,8 +27,14 @@ import {
   esNivelParvulario,
   CATALOGO_BCEP_PARVULARIA,
   resolverCodigoYAmbitoAsignatura,
-  coincideAsignacionConNucleoBcep
+  coincideAsignacionConNucleoBcep,
+  cronologicasAPedagogicasPie
 } from '@slep/mineduc-engine';
+import {
+  obtenerHorasCronologicasExactasAsig,
+  getHorasAulaLectivaAsig,
+  esDocenteEducacionEspecialPie
+} from '../services/auditoriaDocenteService';
 import {
   listarPlanesEstudio,
   guardarPlanEstudioColegio,
@@ -113,7 +119,6 @@ const TIPOS_APOYO_PIE = [
   { id: 'Co-Docencia en Aula Regular', label: 'Co-Docencia en Aula Regular (Docente Diferencial)', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
   { id: 'Aula de Recursos / Apoyo Especializado', label: 'Aula de Recursos / Apoyo Especializado', estamentoSugerido: 'DOCENTE_DIFERENCIAL' },
   { id: 'Apoyo Multidisciplinario / Clínico PAE', label: 'Apoyo Profesional PAE (Fonoaudiólogo / Psicólogo / TO)', estamentoSugerido: 'PROFESIONAL_PAE' },
-  { id: 'Apoyo Técnico en Aula', label: 'Apoyo Técnico en Educación Especial', estamentoSugerido: 'TECNICO_ESPECIAL' },
   { id: 'Trabajo Colaborativo / Co-Planificación', label: 'Trabajo Colaborativo Art. 86 (Docente de Aula)', estamentoSugerido: 'DOCENTE_AULA' }
 ];
 
@@ -425,9 +430,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   const totalHorasCoDocenciaAsignadas = asignacionesCoDocenciaCurso.reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
   const totalHorasTallerSepAsignadas = asignacionesCurso.filter(a => a.esTallerSep || a.tipoApoyo === 'TALLER_SEP').reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
   const totalHorasColaborativoAsignadas = asignacionesCurso.filter(a => a.esTrabajoColaborativo || a.tipoApoyo === 'TRABAJO_COLABORATIVO').reduce((sum, a) => sum + (a.horasPedagogicasAula || 0), 0);
-  const totalHorasPieAsignadas = asignacionesPieCurso.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
+  const totalHorasPieAsignadas = asignacionesPieCurso.reduce((sum, a) => sum + obtenerHorasCronologicasExactasAsig(a), 0);
 
-  // Demanda normativa PIE según Decreto 170 y Ord. 2398
+  // Demanda normativa PIE según Decreto 170 y Ord. 2622/2026
   const demandaPieCurso = useMemo(() => {
     if (!cursoActivo) {
       return calcularDemandaNormativaPieCurso(0, 0, true);
@@ -446,7 +451,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
 
     for (const a of asignacionesPieCurso) {
       const doc = docentes.find(d => d.id === a.docenteId);
-      const hrs = a.horasCronologicasPie || a.horasPedagogicasAula || 0;
+      const hrs = obtenerHorasCronologicasExactasAsig(a);
       const tipo = (a.tipoApoyo || '').toLowerCase();
 
       if (doc?.estamento === 'DOCENTE_DIFERENCIAL' || tipo.includes('diferencial') || tipo.includes('co-docencia')) {
@@ -824,7 +829,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 const cNeep = c.alumnosNeep !== undefined ? c.alumnosNeep : 2;
                 const demPie = calcularDemandaNormativaPieCurso(cNeet, cNeep, c.regimen === 'JEC');
                 const asigsPie = asignaciones.filter(a => a.cursoId === c.id && esApoyoPie(a));
-                const totPieAsig = asigsPie.reduce((sum, a) => sum + (a.horasCronologicasPie || a.horasPedagogicasAula || 0), 0);
+                const totPieAsig = asigsPie.reduce((sum, a) => sum + obtenerHorasCronologicasExactasAsig(a), 0);
 
                 // Cobertura específica para Educación Parvularia en horas cronológicas (motor unificado DTO 306)
                 const esParvC = esNivelParvulario(c.nivel);
@@ -1935,10 +1940,10 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       <div className="bg-white/10 p-3 rounded-lg border border-white/10">
                         <div className="text-[10px] uppercase font-bold text-purple-200">Educador(a) Diferencial</div>
                         <div className="text-lg font-black text-white">
-                          {demandaPieCurso.horasDiferencialHHMM} <span className="text-xs font-normal text-purple-300">({demandaPieCurso.horasDiferencialDecimal}h)</span>
+                          {cronologicasAPedagogicasPie(demandaPieCurso.horasDiferencialDecimal)} HA <span className="text-xs font-normal text-purple-300">({demandaPieCurso.horasDiferencialHHMM}h cron.)</span>
                         </div>
                         <div className={`text-[10px] font-bold ${desglosePieAsignado.dif >= demandaPieCurso.horasDiferencialDecimal ? 'text-emerald-400' : 'text-amber-300'}`}>
-                          Asignadas: {desglosePieAsignado.dif.toFixed(1)}h
+                          Asignadas: {cronologicasAPedagogicasPie(desglosePieAsignado.dif)} HA ({desglosePieAsignado.dif.toFixed(2).replace(/\.00$/, '')}h cron.)
                         </div>
                       </div>
 
@@ -2071,7 +2076,13 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                   </div>
                                 </td>
                                 <td className="px-4 py-2.5 text-center font-bold text-purple-900">
-                                  {a.horasCronologicasPie || a.horasPedagogicasAula} hrs/sem
+                                  {doc && esDocenteEducacionEspecialPie(doc) && !a.esTrabajoColaborativo ? (
+                                    <span>
+                                      {getHorasAulaLectivaAsig(a)} HA <span className="text-[10px] font-normal text-purple-600">({obtenerHorasCronologicasExactasAsig(a)}h cron.)</span>
+                                    </span>
+                                  ) : (
+                                    <span>{obtenerHorasCronologicasExactasAsig(a)} hrs cron.</span>
+                                  )}
                                 </td>
                                 <td className="px-4 py-2.5 text-right text-[10px] text-slate-400">
                                   Solo lectura

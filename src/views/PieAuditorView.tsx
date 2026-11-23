@@ -4,8 +4,14 @@ import { Establecimiento, CursoSae, Docente, AsignacionHoraria, AsistenteEducaci
 import {
   calcularDemandaNormativaPieCurso,
   esModalidadAdultos,
-  esModalidadEspecial
+  esModalidadEspecial,
+  cronologicasAPedagogicasPie
 } from '@slep/mineduc-engine';
+import {
+  obtenerHorasCronologicasExactasAsig,
+  esDocenteEducacionEspecialPie
+} from '../services/auditoriaDocenteService';
+import { usePermisos } from '../security/PermisosContext';
 
 interface PieAuditorViewProps {
   colegio: Establecimiento | null;
@@ -28,6 +34,8 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   onGuardarAsignacion,
   onEliminarAsignacion
 }) => {
+  const { can } = usePermisos();
+  const puedeEditarPie = can('pie.editar');
   const [draftInputs, setDraftInputs] = useState<Record<string, { neet?: number; neep?: number }>>({});
 
   if (!colegio) {
@@ -72,9 +80,14 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
         (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura))
       );
     });
-    const horasPieAsignadasCurso = asigsPie.reduce((s, a) => s + (a.horasCronologicasPie || a.horasPedagogicasAula * 0.75), 0);
+    const horasPieAsignadasCurso = asigsPie.reduce((s, a) => s + obtenerHorasCronologicasExactasAsig(a), 0);
     return { curso: c, demanda: dem, asigsPie, horasPieAsignadasCurso, esEpja };
   });
+
+  const cursosConPieCount = demandasCursos.filter(
+    d => !d.esEpja && !esModalidadEspecial(d.curso.nivel) && (d.curso.alumnosNeet > 0 || d.curso.alumnosNeep > 0)
+  ).length;
+  const metaCoordinacionPie = cursosConPieCount * 2; // Ord. N° 2622/2026 Sección I.5: al menos 2h cronológicas no lectivas por curso PIE
 
   const totalDemandaEdDiferencial = demandasCursos.reduce((sum, d) => sum + d.demanda.horasDiferencialDecimal, 0);
   const totalDemandaPae = demandasCursos.reduce((sum, d) => sum + d.demanda.horasPaeDecimal, 0);
@@ -82,14 +95,19 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const totalHorasPieGeneral = totalDemandaEdDiferencial + totalDemandaPae;
   const totalHorasPieAsignadas = demandasCursos.reduce((sum, d) => sum + d.horasPieAsignadasCurso, 0);
 
-  // Docentes PIE disponibles en el establecimiento (Docentes Diferenciales)
+  // Docentes PIE disponibles en el establecimiento (Docentes Diferenciales o mixtos con horas PIE)
   // Descuenta horas de coordinación PIE si estuviesen comprometidas en gestión no-aula
   const docentesDiferenciales = docentes
-    .filter(d => d.estamento === 'DOCENTE_DIFERENCIAL')
+    .filter(d => esDocenteEducacionEspecialPie(d) || ((d.horasPieTitular || 0) + (d.horasPieContrata || 0) > 0 && d.estamento !== 'PROFESIONAL_PAE'))
     .map(d => {
       const hPie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
       const horasTotal = hPie;
-      const horasCoord = d.horasCoordinacionPie || 0;
+      const coordFunciones = (d.funcionesNoAula && d.funcionesNoAula.length > 0)
+        ? d.funcionesNoAula
+            .filter(f => String(f.tipo) === 'COORDINACION_PIE' || (f.financiamiento === 'PIE' && /coord/i.test(f.nombre || '')))
+            .reduce((s, f) => s + (Number(f.horas) || 0), 0)
+        : 0;
+      const horasCoord = coordFunciones > 0 ? coordFunciones : (d.horasCoordinacionPie || 0);
       const horasDirectasDisponibles = Math.max(0, horasTotal - horasCoord);
       return {
         ...d,
@@ -150,7 +168,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
         <div className="flex items-center gap-2.5 flex-wrap min-w-0">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 text-[10px] font-bold uppercase tracking-wider">
             <ShieldCheck className="w-3 h-3" />
-            Dec. 170 & Ord. 2398
+            Dec. 170 & Ord. 2622
           </span>
           <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight truncate">
             Auditoría y Cuadre PIE · {colegio.nombre}
@@ -177,6 +195,16 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
             <span className="text-sm font-black font-mono tabular-nums text-blue-600 dark:text-blue-400">{totalDemandaPae.toFixed(1)}h</span>
             <span className={`text-[10px] font-bold font-mono tabular-nums ${balancePae >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
               {balancePae >= 0 ? `+${balancePae.toFixed(1)}h` : `${balancePae.toFixed(1)}h`}
+            </span>
+          </div>
+
+          <div
+            className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+            title={`Ord. N° 2622/2026 (Sección I.5): Al menos 2 hrs cronológicas no lectivas por cada curso con PIE (${cursosConPieCount} cursos × 2h = ${metaCoordinacionPie}h).`}
+          >
+            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">Coord. PIE</span>
+            <span className={`text-sm font-black font-mono tabular-nums ${horasCoordinacionDiferencial >= metaCoordinacionPie ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+              {horasCoordinacionDiferencial}h / {metaCoordinacionPie}h
             </span>
           </div>
         </div>
@@ -235,6 +263,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                         type="number"
                         min="0"
                         max="10"
+                        disabled={!puedeEditarPie}
                         aria-label={`Alumnos NEET ${curso.nivel} ${curso.letra}`}
                         value={draftInputs[curso.id]?.neet ?? curso.alumnosNeet}
                         onChange={e => {
@@ -258,6 +287,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                         type="number"
                         min="0"
                         max="15"
+                        disabled={!puedeEditarPie}
                         aria-label={`Alumnos NEEP ${curso.nivel} ${curso.letra}`}
                         value={draftInputs[curso.id]?.neep ?? curso.alumnosNeep}
                         onChange={e => {
@@ -277,7 +307,10 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                     </td>
 
                     <td className="px-4 py-3 text-center font-bold text-orange-700 bg-orange-50/30">
-                      {demanda.horasDiferencialHHMM} hrs ({demanda.horasDiferencialDecimal}h)
+                      <div>{cronologicasAPedagogicasPie(demanda.horasDiferencialDecimal)} HA</div>
+                      <div className="text-[10px] font-semibold text-orange-600/80">
+                        ({demanda.horasDiferencialHHMM}h cron.)
+                      </div>
                     </td>
 
                     <td className="px-4 py-3 text-center font-bold text-blue-700 bg-blue-50/30">

@@ -219,6 +219,8 @@ export type TipoVacanteDocente =
 
 export type EstadoNecesidadVacante = 'BORRADOR' | 'ENVIADA' | 'CANCELADA';
 
+export type TipoRequerimientoVacante = 'HORAS_AULA' | 'CARGO_DOCENTE' | 'CARGO_ASISTENTE';
+
 export interface Docente {
   id: string;
   rbd: string;

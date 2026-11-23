@@ -30,10 +30,18 @@ import {
   formatearMinutosAHHMM,
   CATALOGO_BCEP_PARVULARIA,
   resolverCodigoYAmbitoAsignatura,
-  coincideAsignacionConNucleoBcep
+  coincideAsignacionConNucleoBcep,
+  pedagogicasACronologicasPie,
+  decToHhmm
 } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../database/db';
-import { calcularHorasFueraAulaDocente } from '../services/auditoriaDocenteService';
+import {
+  calcularHorasFueraAulaDocente,
+  getHorasAulaLectivaAsig,
+  esTrabajoNoAulaPie,
+  esDocenteEducadoraParvulos,
+  esDocenteEducacionEspecialPie
+} from '../services/auditoriaDocenteService';
 import {
   InfoPlanResuelto,
   DisponibilidadAsignatura,
@@ -105,12 +113,6 @@ interface FilaAsignacionProps {
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
 }
 
-export function getHorasAulaLectivaAsig(a: Partial<AsignacionHoraria>): number {
-  if (a.horasPedagogicasAula) return a.horasPedagogicasAula;
-  if (a.horasCronologicasPie) return Math.round(a.horasCronologicasPie * 1.333);
-  return 0;
-}
-
 const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
   asignacion: a,
   docente,
@@ -146,17 +148,12 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
 
   const esPie = esAsignacionPie || (esDocentePiePuro && !a.esTallerSep && !a.esTallerJec);
 
-  const esTrabajoNoAula = Boolean(
-    a.esTrabajoColaborativo || 
-    a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
-    (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-    (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-  );
+  const esTrabajoNoAula = esTrabajoNoAulaPie(a);
 
-  const esDocenteDiferencialFila = docente.estamento === 'DOCENTE_DIFERENCIAL' || 
-    (docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0;
+  const esDocenteDiferencialFila = esDocenteEducacionEspecialPie(docente);
   const esTrabajoColabDocenteAula = esTrabajoNoAula && !esDocenteDiferencialFila;
-  const esApoyoAulaCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO') && !esTrabajoColabDocenteAula;
+  const esAulaLectivaDiferencial = esDocenteDiferencialFila && !esTrabajoNoAula;
+  const esApoyoAulaCurso = (Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO') && !esTrabajoNoAula) || esAulaLectivaDiferencial;
 
   const obtenerValorInicialHoras = () => {
     if (esTrabajoColabDocenteAula) {
@@ -168,9 +165,10 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
       }
       return cron || ha || 0;
     }
-    return esApoyoAulaCurso
-      ? (a.horasPedagogicasAula || a.horasCronologicasPie || 0)
-      : (a.horasCronologicasPie || a.horasPedagogicasAula || 0);
+    if (esApoyoAulaCurso) {
+      return getHorasAulaLectivaAsig(a);
+    }
+    return a.horasCronologicasPie || a.horasPedagogicasAula || 0;
   };
 
   // En todas las asignaturas asignadas a curso, las horas son siempre pedagógicas (45m)
@@ -195,11 +193,7 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
     return calcularDisponibilidadCurso(cursoActual, infoPlan, asignacionesColegio);
   }, [cursoActual, infoPlan, asignacionesColegio]);
 
-  const esEducadoraFila = docente.estamento === 'EDUCADORA_PARVULO' || 
-    Boolean(docente.esEducadoraParvulo) || 
-    Boolean(docente.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.cargoInstitucional)) ||
-    Boolean(docente.titulo && /p[aá]rvulo|infantil|preescolar/i.test(docente.titulo)) ||
-    Boolean(docente.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.funcionPrincipal));
+  const esEducadoraFila = esDocenteEducadoraParvulos(docente);
   const esParvulariaFila = esEducadoraFila && Boolean(cursoActual && esNivelParvulario(cursoActual.nivel));
   const esCoDocParv = esEducadoraFila && Boolean(a.esCoDocenciaParvularia || (esParvulariaFila && esCoDoc));
 
@@ -591,11 +585,12 @@ const FilaAsignacionDocente: React.FC<FilaAsignacionProps> = React.memo(({
                       });
                     }
                   } else if (esApoyoAulaCurso) {
-                    if (h !== a.horasPedagogicasAula || a.esProporcionDocente !== true) {
+                    const cronExacto = esPie ? pedagogicasACronologicasPie(h) : undefined;
+                    if (h !== a.horasPedagogicasAula || a.esProporcionDocente !== true || (esPie && a.horasCronologicasPie !== cronExacto)) {
                       await onGuardarAsignacion({ 
                         ...a, 
                         horasPedagogicasAula: h,
-                        horasCronologicasPie: esPie ? Math.round(h * 0.75 * 10) / 10 : undefined,
+                        horasCronologicasPie: cronExacto,
                         esProporcionDocente: true
                       });
                     }
@@ -1557,7 +1552,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
       return;
     }
 
-    const esParv = Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
+    const esParv = !esDocenteEducacionEspecialPie(docente) && Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
 
     const newAsig: AsignacionHoraria = {
       id: `asig-codoc-${Date.now()}`,
@@ -1739,10 +1734,11 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
     if (!pieCursoId) return;
 
     const esColab = pieTipo.includes('Colaborativo') || pieTipo.includes('86');
-    const esCoDocAula = pieTipo === 'Co-Docencia en Aula Regular';
+    const esClinicoPae = pieTipo.includes('Clínico') || pieTipo.includes('PAE');
+    const esAulaPedagogica = !esColab && !esClinicoPae; // Co-Docencia en Aula Regular y Aula de Recursos son siempre HA (45m)
     const numInput = Number(pieHoras);
-    const horasPed = esCoDocAula ? numInput : Math.round(numInput * 1.333);
-    const horasCron = esCoDocAula ? Math.round(numInput * 0.75 * 10) / 10 : numInput;
+    const horasPed = esAulaPedagogica ? numInput : Math.round(numInput * 1.333);
+    const horasCron = esAulaPedagogica ? pedagogicasACronologicasPie(numInput) : numInput;
 
     const newAsig: AsignacionHoraria = {
       id: `asig-pie-${Date.now()}`,
@@ -1756,7 +1752,7 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
       esCoDocencia: true,
       esTrabajoColaborativo: esColab,
       tipoApoyo: pieTipo,
-      esProporcionDocente: esCoDocAula
+      esProporcionDocente: esAulaPedagogica
     };
 
     await onGuardar(newAsig);
@@ -1792,10 +1788,13 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
               setPieHoras(3);
               setPieAsignatura('Trabajo Colaborativo / Co-Planificación PIE Art. 86');
             } else if (val.includes('Recursos')) {
-              setPieHoras(4);
-              setPieAsignatura('Apoyo PIE - Aula de Recursos');
-            } else {
               setPieHoras(6);
+              setPieAsignatura('Apoyo PIE - Aula de Recursos');
+            } else if (val.includes('Clínico') || val.includes('PAE')) {
+              setPieHoras(4);
+              setPieAsignatura('Apoyo Multidisciplinario / Clínico PAE');
+            } else {
+              setPieHoras(8);
               setPieAsignatura('Apoyo PIE - Co-docencia Aula Común');
             }
           }}
@@ -1822,9 +1821,9 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
         />
       </div>
 
-      <div className="w-28">
+      <div className="w-36">
         <label className="block text-[10px] font-bold text-purple-900 mb-0.5">
-          {pieTipo === 'Co-Docencia en Aula Regular' ? 'Horas Aula (HA)' : 'Horas Cron.'}
+          {(pieTipo === 'Co-Docencia en Aula Regular' || pieTipo.includes('Recursos')) ? 'Horas Aula (HA 45m)' : 'Horas Cron. (60m)'}
         </label>
         <input
           type="number"
@@ -1834,12 +1833,12 @@ const FormAsignarPie: React.FC<FormPieProps> = React.memo(({
           className="w-full px-2 py-1 border border-purple-300 rounded text-xs text-center font-bold focus:ring-1 focus:ring-purple-500 focus:outline-none"
           min={1}
           max={44}
-          step={pieTipo === 'Co-Docencia en Aula Regular' ? '1' : '0.5'}
+          step={(pieTipo === 'Co-Docencia en Aula Regular' || pieTipo.includes('Recursos')) ? '1' : '0.5'}
           required
         />
-        {pieTipo === 'Co-Docencia en Aula Regular' && (
-          <span className="block text-[9px] text-purple-600 font-semibold text-center mt-0.5">
-            Ley 20.903 activa
+        {(pieTipo === 'Co-Docencia en Aula Regular' || pieTipo.includes('Recursos')) && (
+          <span className="block text-[9px] text-purple-700 font-semibold text-center mt-0.5">
+            ≡ {decToHhmm(pedagogicasACronologicasPie(Number(pieHoras) || 0))}h Dto. 170 • Ley 20.903
           </span>
         )}
       </div>
@@ -1936,13 +1935,9 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
     }
   }, [asignaciones, docente.id, cursos, onEliminarAsignacion]);
 
-  // Detección estricta de rol Educadora de Párvulo (nunca por el hecho de dictar un taller en un curso parvulario)
+  // Detección estricta de rol Educadora de Párvulo (excluyendo siempre a Educadoras Diferenciales)
   const esEducadora = useMemo(() => {
-    return docente.estamento === 'EDUCADORA_PARVULO' || 
-           Boolean(docente.esEducadoraParvulo) || 
-           Boolean(docente.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.cargoInstitucional)) ||
-           Boolean(docente.titulo && /p[aá]rvulo|infantil|preescolar/i.test(docente.titulo)) ||
-           Boolean(docente.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(docente.funcionPrincipal));
+    return esDocenteEducadoraParvulos(docente);
   }, [docente]);
 
   // Todos los cursos de Educación Parvularia de la escuela (para el tablero de cobertura)
@@ -2212,21 +2207,14 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
   // Cálculo de Carga Horaria y Proporción Docente Ley 20.903 en tiempo real para este docente
   const resumenCargaHoraria = useMemo(() => {
-    const isDocenteDiferencial = docente.estamento === 'DOCENTE_DIFERENCIAL' || 
-      ((docente.horasPieTitular || 0) + (docente.horasPieContrata || 0) > 0 && 
-       (docente.horasSubvencionGeneralTitular || 0) + (docente.horasSubvencionGeneralContrata || 0) === 0);
+    const isDocenteDiferencial = esDocenteEducacionEspecialPie(docente);
 
-    // Asignaciones vinculadas a curso con proporción activa o por defecto normativo
+    // Asignaciones frente a estudiantes (curso regular o Co-Docencia / Aula de Recursos de Educadora Diferencial)
     const asigsProporcionales = asignacionesDocente.filter(a => {
+      if (esTrabajoNoAulaPie(a)) return false;
+      if (isDocenteDiferencial) return getHorasAulaLectivaAsig(a) > 0;
       const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-      const esTrabajoNoAula = Boolean(
-        a.esTrabajoColaborativo || 
-        a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
-        (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-        (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-      );
-      if (!tieneCurso || esTrabajoNoAula) return false;
-      if (isDocenteDiferencial) return true;
+      if (!tieneCurso) return false;
       return a.esProporcionDocente === true || a.esProporcionDocente !== false;
     });
 

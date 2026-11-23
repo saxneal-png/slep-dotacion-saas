@@ -20,6 +20,7 @@ import { parseAsistentesFromWorkbook } from '../services/analizador/asistentesPa
 import { decodificarArchivoSige } from '../services/sigeParserService';
 import { parsearAsistentesSige } from '../services/sigeAsistentesParser';
 import { exportarLevantamientoIndividualExcel } from '../services/analizador/asistentesLevantamientoExporter';
+import { usePermisos } from '../security/PermisosContext';
 
 export interface AsistentesDotacionViewProps {
   colegio: Establecimiento;
@@ -75,6 +76,9 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
   onGuardarAsistentesBatch,
   onEliminarAsistente
 }) => {
+  const { can } = usePermisos();
+  const puedeEditarAsistentes = can('asistentes.editar');
+  const puedeEliminarAsistentes = can('asistentes.eliminar');
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstamento, setFiltroEstamento] = useState<string>('TODOS');
   const [filtroFuente, setFiltroFuente] = useState<string>('TODAS');
@@ -666,13 +670,15 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
             <span>Exportar Vista (.xlsx)</span>
           </button>
 
-          <button
-            onClick={abrirModalNuevo}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white shadow-md shadow-orange-500/20 flex items-center gap-1.5 transition-all active:scale-[0.98]"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Nuevo Asistente</span>
-          </button>
+          {puedeEditarAsistentes && (
+            <button
+              onClick={abrirModalNuevo}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white shadow-md shadow-orange-500/20 flex items-center gap-1.5 transition-all active:scale-[0.98]"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Nuevo Asistente</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -836,20 +842,24 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                       {/* Acciones */}
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => abrirModalEditar(a)}
-                            className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-                            title="Editar asistente"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onEliminarAsistente(a.id)}
-                            className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/50 text-rose-600 transition-colors"
-                            title="Eliminar funcionario"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {puedeEditarAsistentes && (
+                            <button
+                              onClick={() => abrirModalEditar(a)}
+                              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                              title="Editar asistente"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {puedeEliminarAsistentes && (
+                            <button
+                              onClick={() => onEliminarAsistente(a.id)}
+                              className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/50 text-rose-600 transition-colors"
+                              title="Eliminar funcionario"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

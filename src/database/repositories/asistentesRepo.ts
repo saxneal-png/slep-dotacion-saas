@@ -58,7 +58,12 @@ export function mapRowToAsistente(row: any[]): AsistenteEducacion {
     funcionVtf: row[37] ? (String(row[37]) as AsistenteEducacion['funcionVtf']) : undefined,
     grupoJiscId: row[38] ? String(row[38]) : undefined,
     horaIngresoTurno: row[39] ? String(row[39]) : undefined,
-    horaSalidaTurno: row[40] ? String(row[40]) : undefined
+    horaSalidaTurno: row[40] ? String(row[40]) : undefined,
+    esVacanteNn: Boolean(row[41]),
+    tipoVacante: row[42] ? (String(row[42]) as AsistenteEducacion['tipoVacante']) : undefined,
+    justificacionVacante: row[43] ? String(row[43]) : undefined,
+    estadoNecesidad: row[44] ? (String(row[44]) as AsistenteEducacion['estadoNecesidad']) : undefined,
+    motivoEstadoNecesidad: row[45] ? String(row[45]) : undefined
   };
 }
 
@@ -71,7 +76,8 @@ const ASISTENTE_SELECT_COLS = `
   horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
   accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
   situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios,
-  es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno
+  es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno,
+  es_vacante_nn, tipo_vacante, justificacion_vacante, estado_necesidad, motivo_estado_necesidad
 `;
 
 export function listarAsistentesSync(db: Database, rbd: string, periodo: number = 2027): AsistenteEducacion[] {
@@ -216,8 +222,9 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
       horas_vigentes_anterior, propuesta_gdp, remuneracion_mensual_app, fecha_inicio_contrato, fecha_termino_contrato,
       accion_pme_sep, horas_pro_retencion, descripcion_funcion_gdp, estado_sancion_gdp, horas_aprobadas_gdp,
       situacion_final_gdp, observaciones_director, observaciones_slep, horas_honorarios,
-      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno,
+      es_vacante_nn, tipo_vacante, justificacion_vacante, estado_necesidad, motivo_estado_necesidad
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -260,7 +267,12 @@ export function guardarAsistenteSync(db: Database, a: AsistenteEducacion): void 
     a.funcionVtf || null,
     a.grupoJiscId || null,
     a.horaIngresoTurno || null,
-    a.horaSalidaTurno || null
+    a.horaSalidaTurno || null,
+    a.esVacanteNn ? 1 : 0,
+    a.tipoVacante || null,
+    a.justificacionVacante || null,
+    a.estadoNecesidad || null,
+    a.motivoEstadoNecesidad || null
   ]);
   stmt.free();
 }

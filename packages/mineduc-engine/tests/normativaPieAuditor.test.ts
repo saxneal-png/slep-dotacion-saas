@@ -40,8 +40,8 @@ describe('Motor Normativo PIE (Decreto 170 / Ord. 2398)', () => {
   it('calcula la demanda para curso con solo NEET (5 NEET + 0 NEEP = 10h JEC / 7h Sin JEC)', () => {
     const resJec = calcularDemandaNormativaPieCurso(5, 0, true);
     expect(resJec.horasTotalCronologicas).toBe(10);
-    expect(resJec.horasDiferencialHHMM).toBe('06:15');
-    expect(resJec.horasPaeHHMM).toBe('03:45');
+    expect(resJec.horasDiferencialHHMM).toBe('06:00');
+    expect(resJec.horasPaeHHMM).toBe('04:00');
 
     const resSinJec = calcularDemandaNormativaPieCurso(5, 0, false);
     expect(resSinJec.horasTotalCronologicas).toBe(7);

@@ -640,7 +640,12 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['funcion_vtf', 'TEXT'],
     ['grupo_jisc_id', 'TEXT'],
     ['hora_ingreso_turno', 'TEXT'],
-    ['hora_salida_turno', 'TEXT']
+    ['hora_salida_turno', 'TEXT'],
+    ['es_vacante_nn', 'INTEGER DEFAULT 0'],
+    ['tipo_vacante', 'TEXT'],
+    ['justificacion_vacante', 'TEXT'],
+    ['estado_necesidad', 'TEXT'],
+    ['motivo_estado_necesidad', 'TEXT']
   ],
   usuarios_sistema: [
     ['debe_cambiar_password', 'INTEGER DEFAULT 0'],

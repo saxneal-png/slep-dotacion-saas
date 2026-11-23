@@ -420,8 +420,8 @@ describe('Exención Ley 20.903 (Taller SEP / Trabajo Colaborativo), Co-Docencia 
 
     const consolidado = obtenerDocentesConsolidadosTerritorio([colegio], [docNatalia], asigNatalia);
     const contrato = consolidado[0].contratos[0];
-    expect(contrato.contratoCalculadoTotal).toBe(41); // 15 HA normalizadas (11 HA lectivas) con proporción + 28h coord
-    expect(contrato.saldoHoras).toBe(-2);
+    expect(contrato.contratoCalculadoTotal).toBe(45); // 15 HA pedagógicas exactas (17h contrato en tabla 65/35) + 28h coord = 45h
+    expect(contrato.saldoHoras).toBe(-6);
     expect(contrato.estadoSaldo).toBe('DEFICIT');
   });
 

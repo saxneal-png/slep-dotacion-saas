@@ -3,6 +3,7 @@ import { LayoutGrid, Plus, AlertTriangle, CheckCircle2, Info, Building, Trash2, 
 import { Establecimiento, SalaInfraestructura, CursoSae } from '../types';
 import { evaluarCapacidadSaeYInfraestructura, calcularAforoFisicoSala } from '@slep/mineduc-engine';
 import { esJardinOSalaCuna } from '../utils/establishmentTypeHelpers';
+import { usePermisos } from '../security/PermisosContext';
 
 interface SalasSaeViewProps {
   colegio: Establecimiento | null;
@@ -21,6 +22,9 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
   onEliminarSala,
   onGuardarCurso
 }) => {
+  const { can } = usePermisos();
+  const puedeEditarSalas = can('salas_sae.editar');
+  const puedeEliminarSalas = can('salas_sae.eliminar');
   const [modalSalaOpen, setModalSalaOpen] = useState(false);
   const [editingSala, setEditingSala] = useState<SalaInfraestructura | null>(null);
   const [nombreSala, setNombreSala] = useState('');
@@ -97,13 +101,15 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
           </span>
         </div>
 
-        <button
-          onClick={abrirModalNueva}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm whitespace-nowrap self-start sm:self-auto"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Nueva Sala / Espacio</span>
-        </button>
+        {puedeEditarSalas && (
+          <button
+            onClick={abrirModalNueva}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-sm whitespace-nowrap self-start sm:self-auto"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Nueva Sala / Espacio</span>
+          </button>
+        )}
       </div>
 
       {/* Grilla Comparativa de Cursos, Salas y Cupos SAE */}
@@ -159,6 +165,7 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
 
                     <td className="px-4 py-3">
                       <select
+                        disabled={!puedeEditarSalas}
                         value={curso.salaId || ''}
                         onChange={e => {
                           onGuardarCurso({ ...curso, salaId: e.target.value || undefined });
@@ -187,6 +194,7 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
                         type="number"
                         min="0"
                         max="50"
+                        disabled={!puedeEditarSalas}
                         value={curso.cupoSae}
                         onChange={e => {
                           onGuardarCurso({ ...curso, cupoSae: parseInt(e.target.value) || 0 });
@@ -200,6 +208,7 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
                         type="number"
                         min="0"
                         max="50"
+                        disabled={!puedeEditarSalas}
                         value={curso.matriculaProyectada}
                         onChange={e => {
                           onGuardarCurso({ ...curso, matriculaProyectada: parseInt(e.target.value) || 0 });
@@ -278,22 +287,26 @@ export const SalasSaeView: React.FC<SalasSaeViewProps> = ({
               </div>
 
               <div className="flex items-center gap-1">
-                <button
-                  onClick={() => abrirModalEditar(s)}
-                  className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-200 transition-colors"
-                  title="Editar sala"
-                >
-                  <Edit className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm(`¿Eliminar la sala ${s.nombreSala}?`)) onEliminarSala(s.id);
-                  }}
-                  className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
-                  title="Eliminar sala"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {puedeEditarSalas && (
+                  <button
+                    onClick={() => abrirModalEditar(s)}
+                    className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-200 transition-colors"
+                    title="Editar sala"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {puedeEliminarSalas && (
+                  <button
+                    onClick={() => {
+                      if (confirm(`¿Eliminar la sala ${s.nombreSala}?`)) onEliminarSala(s.id);
+                    }}
+                    className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
+                    title="Eliminar sala"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
           ))}

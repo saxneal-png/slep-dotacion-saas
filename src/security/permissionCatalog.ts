@@ -53,14 +53,16 @@ export const CATALOGO_PERMISOS: ModuloPermiso[] = [
   { id: 'gdp_validador', nombre: 'Validación Egresos GDP', descripcion: 'Registro y validación jurídica de egresos proyectados y vacantes condicionales', grupo: 'territorial', acciones: ['ver', 'editar', 'ejecutar'], critico: true },
 
   // ── Establecimiento ──
-  { id: 'workflow', nombre: 'Espacio Escolar', descripcion: 'Espacio de trabajo del establecimiento', grupo: 'establecimiento', acciones: ['ver'] },
-  { id: 'salas_sae', nombre: 'Salas & Cupos SAE', descripcion: 'Infraestructura y aforos Dto. 548', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
-  { id: 'curriculum', nombre: 'Cursos y Currículum', descripcion: 'Cursos, mallas y demanda curricular', grupo: 'establecimiento', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
+  { id: 'workflow', nombre: 'Espacio Escolar', descripcion: 'Acceso general al espacio de trabajo del establecimiento', grupo: 'establecimiento', acciones: ['ver'] },
+  { id: 'balanza', nombre: 'Pestaña: Balanza & Diagnóstico', descripcion: 'Visualización de superávit y déficit horario', grupo: 'establecimiento', acciones: ['ver'] },
+  { id: 'docentes', nombre: 'Pestaña: Nómina Docente (Ley 20.903)', descripcion: 'Nómina docente, vacantes y asignaciones horarias', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
+  { id: 'necesidades_docentes', nombre: 'Pestaña: Necesidades Docentes', descripcion: 'Borradores, envío, retroceso y cancelación de vacantes docentes', grupo: 'establecimiento', acciones: ['ver', 'editar'] },
+  { id: 'asistentes', nombre: 'Pestaña: Asistentes de la Educación', descripcion: 'Ley 21.109, duplas SEP y PIE', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
+  { id: 'curriculum', nombre: 'Pestaña: Cursos y Currículum', descripcion: 'Cursos, mallas y demanda curricular', grupo: 'establecimiento', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
   { id: 'planes_estudio', nombre: 'Planes de Estudio', descripcion: 'Catálogo de planes MINEDUC y EPJA', grupo: 'establecimiento', acciones: ['ver', 'editar'] },
-  { id: 'docentes', nombre: 'Docentes Ley 20.903', descripcion: 'Nómina docente y asignaciones horarias', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
-  { id: 'asistentes', nombre: 'Asistentes de la Educación', descripcion: 'Ley 21.109, duplas SEP y PIE', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
-  { id: 'pie', nombre: 'Auditoría PIE', descripcion: 'Cuadre de horas Dto. 170', grupo: 'establecimiento', acciones: ['ver', 'editar'] },
-  { id: 'balanza', nombre: 'Balanza & Diagnóstico', descripcion: 'Superávit y déficit horario', grupo: 'establecimiento', acciones: ['ver'] },
+  { id: 'pie', nombre: 'Pestaña: Auditoría PIE (Dec. 170)', descripcion: 'Cuadre de horas Dto. 170', grupo: 'establecimiento', acciones: ['ver', 'editar'] },
+  { id: 'salas_sae', nombre: 'Pestaña: Salas & Aforo SAE (Dec. 548)', descripcion: 'Infraestructura y aforos Dto. 548', grupo: 'establecimiento', acciones: ['ver', 'editar', 'eliminar'] },
+  { id: 'jardin_vtf', nombre: 'Pestaña: Gestión Jardín VTF (D.S. 115)', descripcion: 'Niveles BCEP, coeficientes y dotación de jardines infantiles', grupo: 'establecimiento', acciones: ['ver', 'editar'] },
 
   // ── Datos ──
   { id: 'sige', nombre: 'Ingesta SIGE', descripcion: 'Carga de nóminas oficiales MINEDUC', grupo: 'datos', acciones: ['ver', 'importar'] },
@@ -113,7 +115,7 @@ const solo = (accion: AccionPermiso, ...mods: string[]): PermisoKey[] =>
   mods.filter(id => getModulo(id)?.acciones.includes(accion)).map(id => k(id, accion));
 
 const MODS_TERRITORIAL = ['colegios_asesorados', 'cartera', 'consolidador', 'estadisticas'];
-const MODS_ESTABLECIMIENTO = ['workflow', 'salas_sae', 'curriculum', 'planes_estudio', 'docentes', 'asistentes', 'pie', 'balanza'];
+const MODS_ESTABLECIMIENTO = ['workflow', 'salas_sae', 'curriculum', 'planes_estudio', 'docentes', 'necesidades_docentes', 'asistentes', 'pie', 'balanza', 'jardin_vtf'];
 const MODS_DATOS = ['sige', 'analizador', 'matriz_excel', 'establecimiento_slep', 'centro_descargas', 'planillas_dep'];
 
 /** Matriz por defecto (propuesta aprobada en el plan de implementación). */
@@ -165,9 +167,11 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
     k('curriculum', 'ver'), k('curriculum', 'editar'),
     k('planes_estudio', 'ver'),
     k('docentes', 'ver'), k('docentes', 'editar'),
+    k('necesidades_docentes', 'ver'), k('necesidades_docentes', 'editar'),
     k('asistentes', 'ver'), k('asistentes', 'editar'),
     k('pie', 'ver'), k('pie', 'editar'),
     k('balanza', 'ver'),
+    k('jardin_vtf', 'ver'), k('jardin_vtf', 'editar'),
     ...todo('centro_descargas', 'planillas_dep')
   ],
 
@@ -177,9 +181,11 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
     k('curriculum', 'ver'), k('curriculum', 'editar'),
     k('planes_estudio', 'ver'), k('planes_estudio', 'editar'),
     k('docentes', 'ver'),
+    k('necesidades_docentes', 'ver'),
     k('asistentes', 'ver'),
     k('pie', 'ver'),
     k('balanza', 'ver'),
+    k('jardin_vtf', 'ver'),
     ...todo('centro_descargas', 'planillas_dep')
   ]
 };

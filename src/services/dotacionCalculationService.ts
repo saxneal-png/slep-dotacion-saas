@@ -41,7 +41,9 @@ import {
 } from './curricularPlanService';
 import {
   esAsignacionTrabajoColaborativo,
-  obtenerHorasCronologicasTrabajoColab
+  obtenerHorasCronologicasTrabajoColab,
+  getHorasAulaLectivaAsig,
+  esTrabajoNoAulaPie
 } from './auditoriaDocenteService';
 import { filtrarDocentesSinDobleConteoCondicional } from './movilidadTerritorialService';
 
@@ -190,9 +192,17 @@ export function calcularDiagnosticoColegio(
   }
 
   // 2.1 Talleres Institucionales / Transversales (no asociados a un curso específico)
-  const asignacionesTransversales = asignaciones.filter(
-    a => !a.cursoId || a.cursoId === 'TRANSVERSAL' || a.cursoId === 'SIN_CURSO'
-  );
+  // Excluir únicamente asignaciones PIE / Aula de Recursos / Art. 86 sin curso para no contaminar el plan curricular
+  const asignacionesTransversales = asignaciones.filter(a => {
+    const sinCurso = !a.cursoId || a.cursoId === 'TRANSVERSAL' || a.cursoId === 'SIN_CURSO';
+    if (!sinCurso) return false;
+    const esPieSinCurso = Boolean(
+      a.esTrabajoColaborativo ||
+      (a.tipoApoyo && /pie|decreto 170|recurso|colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
+      (a.asignatura && /pie|decreto 170|aula de recurso|colaborativo|art\.?\s*86/i.test(a.asignatura))
+    );
+    return !esPieSinCurso;
+  });
   for (const asig of asignacionesTransversales) {
     const hrs = asig.horasPedagogicasAula || 0;
     if (hrs > 0) {
@@ -478,29 +488,13 @@ export function calcularDiagnosticoColegio(
       ? doc.funcionesNoAula.filter(f => !isSepFin(f) && !isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
       : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
-    // Función para obtener las horas de aula lectiva (45 minutos) de una asignación frente a curso
-    const getHorasAulaLectivaAsig = (a: any) => {
-      if (a.horasPedagogicasAula && a.horasCronologicasPie && Math.abs(a.horasPedagogicasAula * 0.75 - a.horasCronologicasPie) < 0.1) {
-        return a.horasPedagogicasAula;
-      }
-      if (a.horasCronologicasPie && a.horasPedagogicasAula === Math.round(a.horasCronologicasPie * 1.333)) {
-        return a.horasCronologicasPie;
-      }
-      return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-    };
-
-    // Asignaciones de co-docencia PIE con proporción docente Ley 20.903 (aula regular vinculada a curso)
+    // Asignaciones de co-docencia PIE / Aula de Recursos con proporción docente Ley 20.903 (45 min)
+    // Para Educadoras Diferenciales (isPieDoc), tanto Co-Docencia como Aula de Recursos son siempre HA (45m)
     const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
+      if (esTrabajoNoAulaPie(a) || getHorasAulaLectivaAsig(a) <= 0) return false;
+      if (isPieDoc) return true;
       const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-      const esTrabajoNoAula = Boolean(
-        a.esTrabajoColaborativo || 
-        a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
-        (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-        (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-      );
-      if (!tieneCurso || esTrabajoNoAula) return false;
-      if (isPieDoc) return true; // Docente diferencial frente a curso = hora lectiva aula (45 min)
-      return Boolean(a.esProporcionDocente);
+      return tieneCurso && Boolean(a.esProporcionDocente);
     });
     const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
       !asigsCoDocenciaPieProporcional.includes(a)
@@ -545,11 +539,13 @@ export function calcularDiagnosticoColegio(
     const hExentas = hInstNoAula + sepExentas + pieCronologicas;
     const horasParaDocenciaAula = Math.max(0, doc.horasContrato - hExentas);
 
-    const isEducadoraParvuloDoc = doc.estamento === 'EDUCADORA_PARVULO' ||
+    const isEducadoraParvuloDoc = !isPieDoc && (
+      doc.estamento === 'EDUCADORA_PARVULO' ||
       Boolean(doc.esEducadoraParvulo) ||
       Boolean(doc.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.cargoInstitucional)) ||
       Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
-      Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal));
+      Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal))
+    );
 
     const cursosParvulariosColegio = cursos.filter(x => esNivelParvulario(x.nivel));
     const regimenParvularioPredominante: '65_35' | '60_40' =
@@ -712,7 +708,16 @@ export function calcularDiagnosticoColegio(
 
     const horasSepSinAsignarDoc = Math.max(0, contratoSepDoc - reqSepDoc);
     // Docente diferencial: sus horas lectivas frente a curso (con proporci�n Ley 20.903) tambi�n consumen contrato PIE
-    const pieLectivoReqDoc = isPieDoc ? (auditDoc.req65_35 + auditDoc.req60_40) : 0;
+    // Docente diferencial: solo sus horas PIE lectivas (co-docencia / aula de recursos) consumen contrato PIE
+    const pedPie65 = asigsCoDocenciaPieProporcional
+      .filter(a => !esCurso60ParvORegular(cursosMap.get(a.cursoId)))
+      .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
+    const pedPie60 = asigsCoDocenciaPieProporcional
+      .filter(a => esCurso60ParvORegular(cursosMap.get(a.cursoId)))
+      .reduce((s, a) => s + getHorasAulaLectivaAsig(a), 0);
+    const pieLectivoReqDoc = (pedPie65 > 0 || pedPie60 > 0)
+      ? (buscarContratoMinimoPorTabla(pedPie65, '65_35') + buscarContratoMinimoPorTabla(pedPie60, '60_40'))
+      : 0;
     const horasPieSinAsignarDoc = Math.max(0, contratoPieDoc - pieCronologicas - pieLectivoReqDoc);
     const horasSubvGenSinAsignarDoc = Math.max(0, subTotalDoc - reqSubvDoc);
 
@@ -1206,29 +1211,12 @@ export function obtenerDocentesConsolidadosTerritorio(
         ? doc.funcionesNoAula.filter(f => !isSepFin(f) && !isPieFin(f)).reduce((s, f) => s + (Number(f.horas) || 0), 0)
         : (hDir + hInsp + hTec + hCoord + hConv + hExtra);
 
-      // Función para obtener las horas de aula lectiva (45 minutos) de una asignación frente a curso
-      const getHorasAulaLectivaAsig = (a: any) => {
-        if (a.horasPedagogicasAula && a.horasCronologicasPie && Math.abs(a.horasPedagogicasAula * 0.75 - a.horasCronologicasPie) < 0.1) {
-          return a.horasPedagogicasAula;
-        }
-        if (a.horasCronologicasPie && a.horasPedagogicasAula === Math.round(a.horasCronologicasPie * 1.333)) {
-          return a.horasCronologicasPie;
-        }
-        return a.horasPedagogicasAula || a.horasCronologicasPie || 0;
-      };
-
-      // Asignaciones de co-docencia PIE con proporción docente Ley 20.903 (aula regular vinculada a curso)
+      // Asignaciones de co-docencia PIE / Aula de Recursos con proporción docente Ley 20.903 (45 min)
       const asigsCoDocenciaPieProporcional = asigsCoDocenciaPie.filter(a => {
+        if (esTrabajoNoAulaPie(a) || getHorasAulaLectivaAsig(a) <= 0) return false;
+        if (isPieDoc) return true;
         const tieneCurso = Boolean(a.cursoId && a.cursoId !== 'TRANSVERSAL' && a.cursoId !== 'SIN_CURSO');
-        const esTrabajoNoAula = Boolean(
-          a.esTrabajoColaborativo || 
-          a.tipoApoyo === 'TRABAJO_COLABORATIVO' || 
-          (a.tipoApoyo && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.tipoApoyo)) ||
-          (a.asignatura && /colaborativo|art\.?\s*86|cl[ií]nico/i.test(a.asignatura))
-        );
-        if (!tieneCurso || esTrabajoNoAula) return false;
-        if (isPieDoc) return true; // Docente diferencial frente a curso = hora lectiva aula (45 min)
-        return Boolean(a.esProporcionDocente);
+        return tieneCurso && Boolean(a.esProporcionDocente);
       });
       const asigsCoDocenciaPieCronologicas = asigsCoDocenciaPie.filter(a => 
         !asigsCoDocenciaPieProporcional.includes(a)
@@ -1312,11 +1300,13 @@ export function obtenerDocentesConsolidadosTerritorio(
           };
       const cursosColegio = (cursos || []).filter(c => c.rbd === colegio.rbd);
 
-      const isEducadoraParvuloDoc = doc.estamento === 'EDUCADORA_PARVULO' ||
+      const isEducadoraParvuloDoc = !isPieDoc && (
+        doc.estamento === 'EDUCADORA_PARVULO' ||
         Boolean(doc.esEducadoraParvulo) ||
         Boolean(doc.cargoInstitucional && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.cargoInstitucional)) ||
         Boolean(doc.titulo && /p[aá]rvulo|infantil|preescolar/i.test(doc.titulo)) ||
-        Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal));
+        Boolean(doc.funcionPrincipal && /p[aá]rvulo|infantil|prek[ií]nder|k[ií]nder/i.test(doc.funcionPrincipal))
+      );
 
       const cursosParvulariosColegio = cursosColegio.filter(x => esNivelParvulario(x.nivel));
       const regimenParvularioPredominante: '65_35' | '60_40' =
