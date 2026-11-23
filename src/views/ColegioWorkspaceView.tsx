@@ -707,6 +707,7 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
             onGuardarAsistente={onGuardarAsistente}
             onGuardarAsistentesBatch={onGuardarAsistentesBatch}
             onEliminarAsistente={onEliminarAsistente}
+            onIrANecesidades={() => setTabActiva('necesidades')}
           />
         )}
 

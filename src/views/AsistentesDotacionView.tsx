@@ -31,6 +31,7 @@ export interface AsistentesDotacionViewProps {
   onGuardarAsistente: (asistente: AsistenteEducacion) => Promise<void> | void;
   onGuardarAsistentesBatch?: (asistentes: AsistenteEducacion[], reemplazar?: boolean) => Promise<void> | void;
   onEliminarAsistente: (id: string) => Promise<void> | void;
+  onIrANecesidades?: () => void;
 }
 
 const ESTAMENTO_LABELS: Record<EstamentoAsistente, { label: string; bg: string; text: string; border: string }> = {
@@ -74,7 +75,8 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
   periodoActivo = 2027,
   onGuardarAsistente,
   onGuardarAsistentesBatch,
-  onEliminarAsistente
+  onEliminarAsistente,
+  onIrANecesidades
 }) => {
   const { can } = usePermisos();
   const puedeEditarAsistentes = can('asistentes.editar');
@@ -670,6 +672,17 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
             <span>Exportar Vista (.xlsx)</span>
           </button>
 
+          {onIrANecesidades && can('necesidades_docentes.ver') && can('necesidades_docentes.editar') && (
+            <button
+              type="button"
+              onClick={onIrANecesidades}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1.5 transition-colors shadow-xs"
+              title="Declarar vacante de cargo asistente o profesional Ley 21.109 en Necesidades"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+              <span>Declarar Necesidad de Cargo</span>
+            </button>
+          )}
           {puedeEditarAsistentes && (
             <button
               onClick={abrirModalNuevo}
