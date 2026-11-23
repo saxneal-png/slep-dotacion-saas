@@ -43,7 +43,8 @@ interface PieAuditorViewProps {
 }
 
 type SubTabPieView = 'matriz_multi' | 'equipo_pie' | 'tabla_resumen';
-type FiltroCursosPie = 'TODOS' | 'BRECHA' | 'AFORO_EXCEDIDO';
+type FiltroCursosPie = 'TODOS' | 'BRECHA' | 'CUBIERTOS' | 'AFORO_EXCEDIDO';
+type FiltroEstamentoPie = 'TODOS' | 'DOCENTES' | 'ASISTENTES';
 
 function esProfesionalPaeAsistente(a: AsistenteEducacion): boolean {
   const est = (a.estamento || '').toUpperCase();
@@ -76,7 +77,10 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const [draftInputs, setDraftInputs] = useState<Record<string, { neet?: number; neep?: number }>>({});
   const [subTab, setSubTab] = useState<SubTabPieView>('matriz_multi');
   const [filtroCursos, setFiltroCursos] = useState<FiltroCursosPie>('TODOS');
-  const [filtroDocenteId, setFiltroDocenteId] = useState<string>('TODOS');
+  const [filtroEstamentoPie, setFiltroEstamentoPie] = useState<FiltroEstamentoPie>('TODOS');
+  const [busquedaProfesional, setBusquedaProfesional] = useState('');
+  const [profesionalActivoId, setProfesionalActivoId] = useState<string | null>(null);
+  const [soloCursosProfesionalActivo, setSoloCursosProfesionalActivo] = useState(false);
   const [draftHorasAsig, setDraftHorasAsig] = useState<Record<string, number | string>>({});
   const [jidokaMsg, setJidokaMsg] = useState<string | null>(null);
   const [autoAsignando, setAutoAsignando] = useState(false);
@@ -355,14 +359,16 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const balancePae = horasContratadasPae - totalDemandaPae;
 
   // 4. Acciones de asignación multi-docente directa por curso
-  const handleAgregarEducadoraACurso = async (cursoId: string, faltanHa: number) => {
+  const handleAgregarEducadoraACurso = async (cursoId: string, faltanHa: number, docenteIdPreferido?: string) => {
     if (!onGuardarAsignacion || !puedeEditarPie) return;
     if (docentesDiferenciales.length === 0) {
       alert('No hay Educadoras Diferenciales registradas en la dotación del establecimiento.');
       return;
     }
 
-    const mejorEducadora = [...docentesDiferenciales].sort((a, b) => b.haLibres - a.haLibres)[0];
+    const mejorEducadora =
+      (docenteIdPreferido ? docentesDiferenciales.find(d => d.id === docenteIdPreferido) : undefined) ||
+      [...docentesDiferenciales].sort((a, b) => b.haLibres - a.haLibres)[0];
     const haSugeridas = faltanHa > 0 ? Math.max(1, Math.round(faltanHa)) : 4;
     const haFinal = mejorEducadora.haLibres > 0 ? Math.min(haSugeridas, Math.max(1, mejorEducadora.haLibres)) : haSugeridas;
 
@@ -383,14 +389,16 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     await onGuardarAsignacion(nuevaAsig);
   };
 
-  const handleAgregarPaeACurso = async (cursoId: string, faltanCron: number) => {
+  const handleAgregarPaeACurso = async (cursoId: string, faltanCron: number, paeIdPreferido?: string) => {
     if (!onGuardarAsignacion || !puedeEditarPie) return;
     if (profesionalesPae.length === 0) {
       alert('No hay Profesionales Asistentes PAE (Fonoaudiólogo, Psicólogo, TO) registrados con horas PIE en este establecimiento.');
       return;
     }
 
-    const mejorPae = [...profesionalesPae].sort((a, b) => b.horasLibres - a.horasLibres)[0];
+    const mejorPae =
+      (paeIdPreferido ? profesionalesPae.find(p => p.id === paeIdPreferido) : undefined) ||
+      [...profesionalesPae].sort((a, b) => b.horasLibres - a.horasLibres)[0];
     const hrsSugeridas = faltanCron > 0 ? Math.round(faltanCron * 100) / 100 : 2;
     const hrsFinal = mejorPae.horasLibres > 0 ? Math.min(hrsSugeridas, mejorPae.horasLibres) : hrsSugeridas;
 
@@ -502,14 +510,31 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     }
   };
 
-  // Filtrado de cursos en la matriz visual
+  const profesionalActivoDif = docentesDiferenciales.find(d => d.id === profesionalActivoId) || null;
+  const profesionalActivoPae = profesionalesPae.find(p => p.id === profesionalActivoId) || null;
+  const qProf = busquedaProfesional.trim().toLowerCase();
+  const docentesDifFiltrados = docentesDiferenciales.filter(d => {
+    if (filtroEstamentoPie === 'ASISTENTES') return false;
+    if (!qProf) return true;
+    return `${d.nombres} ${d.apellidos} ${d.run}`.toLowerCase().includes(qProf);
+  });
+  const paeFiltrados = profesionalesPae.filter(p => {
+    if (filtroEstamentoPie === 'DOCENTES') return false;
+    if (!qProf) return true;
+    return `${p.nombre} ${p.run} ${p.cargo}`.toLowerCase().includes(qProf);
+  });
+
+  // Filtrado de cursos en la matriz visual Split
   const cursosFiltrados = demandasCursos.filter(item => {
-    if (filtroDocenteId !== 'TODOS') {
-      const participa = item.asigsPie.some(a => a.docenteId === filtroDocenteId || a.coDocenteId === filtroDocenteId);
+    if (profesionalActivoId && soloCursosProfesionalActivo) {
+      const participa = item.asigsPie.some(a => a.docenteId === profesionalActivoId || a.coDocenteId === profesionalActivoId);
       if (!participa) return false;
     }
     if (filtroCursos === 'BRECHA') {
       return !item.esExentoPie && (item.faltanHaDif > 0 || item.faltanCronPae > 0);
+    }
+    if (filtroCursos === 'CUBIERTOS') {
+      return !item.esExentoPie && item.demanda.horasTotalCronologicas > 0 && item.faltanHaDif === 0 && item.faltanCronPae === 0;
     }
     if (filtroCursos === 'AFORO_EXCEDIDO') {
       return !item.demanda.cumpleAforo;
@@ -669,55 +694,84 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
       )}
 
       {/* ===================================================================== */}
-      {/* SUB-PESTAÑA 1: MATRIZ VISUAL MULTI-DOCENTE POR CURSO (ESTILO SAASSLEP) */}
+      {/* SUB-PESTAÑA 1: SPLIT CUADRATURA PIE (EQUIPO PIE <-> CURSOS)          */}
       {/* ===================================================================== */}
       {subTab === 'matriz_multi' && (
-        <div className="space-y-4">
-          {/* Roster Compacto de Capacidad en Vivo (Bolsillos HA Ley 20.903 y PAE) */}
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+          {/* PANEL IZQUIERDO: EQUIPO PIE DISPONIBLE (STICKY + SCROLL PROPIO) */}
+          <div className="lg:col-span-4 lg:sticky lg:top-4 bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3 lg:max-h-[calc(100vh-140px)] flex flex-col">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                 <UserCheck className="w-4 h-4 text-purple-600" />
-                <span>Capacidad en Vivo del Equipo PIE (clic para filtrar cursos de un profesional)</span>
+                <span>Equipo PIE ({docentesDifFiltrados.length + paeFiltrados.length})</span>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="inline-flex items-center gap-1 text-[11px] bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                  <Filter className="w-3 h-3 text-slate-500 ml-1.5" />
-                  {(['TODOS', 'BRECHA', 'AFORO_EXCEDIDO'] as FiltroCursosPie[]).map(f => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setFiltroCursos(f)}
-                      className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
-                        filtroCursos === f ? 'bg-slate-800 text-white' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {f === 'TODOS' ? 'Todos' : f === 'BRECHA' ? 'Con Brecha' : 'Exceso Aforo'}
-                    </button>
-                  ))}
-                </div>
-                {filtroDocenteId !== 'TODOS' && (
-                  <button
-                    type="button"
-                    onClick={() => setFiltroDocenteId('TODOS')}
-                    className="text-[11px] font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 px-2 py-1 rounded-lg"
-                  >
-                    Limpiar filtro docente ✕
-                  </button>
-                )}
-              </div>
+              {profesionalActivoId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfesionalActivoId(null);
+                    setSoloCursosProfesionalActivo(false);
+                  }}
+                  className="text-[10px] font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 px-2 py-0.5 rounded-md cursor-pointer"
+                >
+                  Deseleccionar ✕
+                </button>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-              {docentesDiferenciales.map(d => {
+            {/* Filtro de Estamento: Todos / Docentes Dif. / Asistentes PAE */}
+            <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-[11px]">
+              {(
+                [
+                  { id: 'TODOS', label: 'Todos' },
+                  { id: 'DOCENTES', label: `Docentes (${docentesDiferenciales.length})` },
+                  { id: 'ASISTENTES', label: `PAE (${profesionalesPae.length})` }
+                ] as { id: FiltroEstamentoPie; label: string }[]
+              ).map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFiltroEstamentoPie(tab.id)}
+                  className={`py-1 px-1.5 rounded-lg font-bold transition-all cursor-pointer truncate ${
+                    filtroEstamentoPie === tab.id ? 'bg-white text-purple-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              value={busquedaProfesional}
+              onChange={e => setBusquedaProfesional(e.target.value)}
+              placeholder="Buscar profesional por nombre o RUN..."
+              className="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-300"
+            />
+
+            <div className="space-y-2 overflow-y-auto pr-1 flex-1">
+              {docentesDifFiltrados.length === 0 && paeFiltrados.length === 0 && (
+                <div className="p-4 text-center text-xs text-slate-400 italic">
+                  No hay profesionales PIE que coincidan con el filtro.
+                </div>
+              )}
+
+              {docentesDifFiltrados.map(d => {
                 const pct = d.maxHaPermitidas > 0 ? Math.min(100, Math.round((d.haAsignadas / d.maxHaPermitidas) * 100)) : 0;
-                const activo = filtroDocenteId === d.id;
+                const activo = profesionalActivoId === d.id;
                 return (
                   <button
                     key={d.id}
                     type="button"
-                    onClick={() => setFiltroDocenteId(activo ? 'TODOS' : d.id)}
-                    className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    onClick={() => {
+                      if (activo) {
+                        setProfesionalActivoId(null);
+                        setSoloCursosProfesionalActivo(false);
+                      } else {
+                        setProfesionalActivoId(d.id);
+                      }
+                    }}
+                    className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
                       activo
                         ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
                         : d.esExcesoLectivo
@@ -726,7 +780,9 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1 text-[11px]">
-                      <span className="font-bold text-slate-900 truncate">👩‍🏫 {d.nombres.split(' ')[0]} {d.apellidos.split(' ')[0]}</span>
+                      <span className="font-bold text-slate-900 truncate">
+                        👩‍🏫 {d.nombres.split(' ')[0]} {d.apellidos.split(' ')[0]}
+                      </span>
                       <span
                         className={`px-1.5 py-0.5 rounded font-black text-[10px] shrink-0 ${
                           d.esExcesoLectivo
@@ -739,8 +795,11 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                         {d.esExcesoLectivo ? 'Exceso' : `${d.haLibres} HA lib.`}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">
-                      {d.haAsignadas} / {d.maxHaPermitidas} HA (Ley 20.903){d.horasCoord > 0 ? ` · ${d.horasCoord}h Coord.` : ''}
+                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between">
+                      <span>
+                        {d.haAsignadas} / {d.maxHaPermitidas} HA · {d.horasTotal}h cto
+                      </span>
+                      {d.horasCoord > 0 && <span className="text-purple-700 font-semibold">{d.horasCoord}h Coord.</span>}
                     </div>
                     <div className="w-full h-1.5 bg-slate-200 rounded-full mt-1.5 overflow-hidden">
                       <div
@@ -754,15 +813,22 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                 );
               })}
 
-              {profesionalesPae.map(p => {
+              {paeFiltrados.map(p => {
                 const pct = p.horasPae > 0 ? Math.min(100, Math.round((p.horasAsignadas / p.horasPae) * 100)) : 0;
-                const activo = filtroDocenteId === p.id;
+                const activo = profesionalActivoId === p.id;
                 return (
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setFiltroDocenteId(activo ? 'TODOS' : p.id)}
-                    className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    onClick={() => {
+                      if (activo) {
+                        setProfesionalActivoId(null);
+                        setSoloCursosProfesionalActivo(false);
+                      } else {
+                        setProfesionalActivoId(p.id);
+                      }
+                    }}
+                    className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
                       activo
                         ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
                         : p.horasAsignadas > p.horasPae
@@ -771,7 +837,9 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1 text-[11px]">
-                      <span className="font-bold text-slate-900 truncate">🩺 {p.nombre.split(' ').slice(0, 2).join(' ')}</span>
+                      <span className="font-bold text-slate-900 truncate">
+                        🩺 {p.nombre.split(' ').slice(0, 2).join(' ')}
+                      </span>
                       <span
                         className={`px-1.5 py-0.5 rounded font-black text-[10px] shrink-0 ${
                           p.horasAsignadas > p.horasPae
@@ -801,8 +869,61 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
             </div>
           </div>
 
-          {/* Tarjetas por Curso (Multi-Docente) */}
-          <div className="space-y-3.5">
+          {/* PANEL DERECHO: CURSOS, COBERTURA Y ASIGNACIÓN DIRECTA */}
+          <div className="lg:col-span-8 space-y-3.5">
+            <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="inline-flex items-center gap-1 text-[11px] bg-slate-100 p-1 rounded-xl border border-slate-200 flex-wrap">
+                <Filter className="w-3 h-3 text-slate-500 ml-1.5" />
+                {(
+                  [
+                    { id: 'TODOS', label: 'Todos' },
+                    { id: 'BRECHA', label: 'Con Brecha' },
+                    { id: 'CUBIERTOS', label: 'Cubiertos' },
+                    { id: 'AFORO_EXCEDIDO', label: 'Exceso Aforo' }
+                  ] as { id: FiltroCursosPie; label: string }[]
+                ).map(f => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFiltroCursos(f.id)}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      filtroCursos === f.id ? 'bg-slate-800 text-white' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {profesionalActivoId ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-bold text-purple-900 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg">
+                    Activo:{' '}
+                    {profesionalActivoDif
+                      ? `${profesionalActivoDif.nombres.split(' ')[0]} ${profesionalActivoDif.apellidos.split(' ')[0]} (${profesionalActivoDif.haLibres} HA lib.)`
+                      : profesionalActivoPae
+                      ? `${profesionalActivoPae.nombre.split(' ').slice(0, 2).join(' ')} (${profesionalActivoPae.horasLibres}h lib.)`
+                      : ''}
+                  </span>
+                  <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={soloCursosProfesionalActivo}
+                      onChange={e => setSoloCursosProfesionalActivo(e.target.checked)}
+                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <span>Solo sus cursos</span>
+                  </label>
+                </div>
+              ) : (
+                <span className="text-[11px] text-slate-500 italic">
+                  Tip: selecciona un profesional a la izquierda para asignarlo en 1 clic.
+                </span>
+              )}
+            </div>
+
+            {/* Tarjetas por Curso (Multi-Docente) */}
+            <div className="space-y-3.5">
             {cursosFiltrados.length === 0 ? (
               <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-400 text-xs italic">
                 No hay cursos que coincidan con el filtro seleccionado.
@@ -1001,22 +1122,50 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
                           {puedeEditarPie && onGuardarAsignacion && (
                             <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleAgregarEducadoraACurso(curso.id, faltanHaDif)}
-                                className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-[11px] shadow-2xs cursor-pointer flex items-center gap-1 transition-colors"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>Educadora Dif. {faltanHaDif > 0 ? `(+${Math.round(faltanHaDif)} HA)` : '(HA)'}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleAgregarPaeACurso(curso.id, faltanCronPae)}
-                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-[11px] shadow-2xs cursor-pointer flex items-center gap-1 transition-colors"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>Profesional PAE {faltanCronPae > 0 ? `(+${faltanCronPae}h)` : '(hrs)'}</span>
-                              </button>
+                              {profesionalActivoDif ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAgregarEducadoraACurso(curso.id, faltanHaDif, profesionalActivoDif.id)}
+                                  className="px-2.5 py-1 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg text-[11px] shadow-xs cursor-pointer flex items-center gap-1 ring-2 ring-purple-200 transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>
+                                    Asignar a {profesionalActivoDif.nombres.split(' ')[0]}{' '}
+                                    {faltanHaDif > 0 ? `(+${Math.round(faltanHaDif)} HA)` : '(+4 HA)'}
+                                  </span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAgregarEducadoraACurso(curso.id, faltanHaDif)}
+                                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-[11px] shadow-2xs cursor-pointer flex items-center gap-1 transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Educadora Dif. {faltanHaDif > 0 ? `(+${Math.round(faltanHaDif)} HA)` : '(HA)'}</span>
+                                </button>
+                              )}
+                              {profesionalActivoPae ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAgregarPaeACurso(curso.id, faltanCronPae, profesionalActivoPae.id)}
+                                  className="px-2.5 py-1 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-[11px] shadow-xs cursor-pointer flex items-center gap-1 ring-2 ring-blue-200 transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>
+                                    Asignar a {profesionalActivoPae.nombre.split(' ')[0]}{' '}
+                                    {faltanCronPae > 0 ? `(+${faltanCronPae}h)` : '(+2h)'}
+                                  </span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAgregarPaeACurso(curso.id, faltanCronPae)}
+                                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-[11px] shadow-2xs cursor-pointer flex items-center gap-1 transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Profesional PAE {faltanCronPae > 0 ? `(+${faltanCronPae}h)` : '(hrs)'}</span>
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1216,6 +1365,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                 );
               })
             )}
+            </div>
           </div>
         </div>
       )}
