@@ -2686,6 +2686,11 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   const topeTitHoras = Math.round((estItem.minutosAulaTitular / 60) * 100) / 100;
                   const asigTitHoras = Math.round((estItem.minutosAsignadosTitular / 60) * 100) / 100;
                   const titularExcedida = asigTitHoras > topeTitHoras + 0.05;
+                  const algunParticipanteExcedido = titularExcedida || estItem.participantes.some(p => {
+                    if (p.tipo !== 'EDUCADORA') return false;
+                    const edInfo = educadorasDisponibles.find(ed => ed.docente.id === p.docenteId);
+                    return Boolean(edInfo && edInfo.horasAsignadas > edInfo.topeAulaHoras + 0.05);
+                  });
 
                   return (
                     <div
@@ -2699,13 +2704,19 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                     >
                       <div className="flex items-center justify-between gap-1.5">
                         <div className="flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full ${estItem.coberturaCompletaPermanencia && !titularExcedida ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <span className={`w-2 h-2 rounded-full ${
+                            algunParticipanteExcedido
+                              ? 'bg-rose-500'
+                              : estItem.coberturaCompletaPermanencia
+                              ? 'bg-emerald-500'
+                              : 'bg-amber-500'
+                          }`} />
                           <span className="text-xs font-black text-slate-900">
                             {cItem.nivel} {cItem.letra} ({cItem.regimen})
                           </span>
                         </div>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                          titularExcedida
+                          algunParticipanteExcedido
                             ? 'bg-rose-100 text-rose-800 border border-rose-300'
                             : estItem.coberturaCompletaPermanencia
                             ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
@@ -2713,6 +2724,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                         }`}>
                           {titularExcedida
                             ? `⚠️ Titular excedida (${asigTitHoras}h / ${topeTitHoras}h tope)`
+                            : algunParticipanteExcedido
+                            ? '⚠️ Exceso lectivo en educadora'
                             : estItem.coberturaCompletaPermanencia
                             ? '✓ 100% Cuadrado'
                             : `Faltan ${estItem.minutosDeficitRestanteTexto} (${estItem.horasAulaSegundaEducadoraRestante}h)`}
@@ -2827,35 +2840,59 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 </button>
               )}
 
-              {/* Si estamos viendo la ficha de la 2da educadora (ej. Raquel Ibáñez) y en el curso faltan horas por cubrir, botón directo para asignárselas a ella */}
-              {cursoParvularioActivo && esEducadora && !dotacionParvulariaCursoActivo.esDocenteActualTitularDelCurso && dotacionParvulariaCursoActivo.minutosDeficitRestante > 0 && onGuardarAsignacion && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const hrsFaltantesCurso = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
-                    const nuevaAsig: AsignacionHoraria = {
-                      id: `asig_codoc_parv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                      rbd: colegio.rbd,
-                      docenteId: docente.id,
-                      asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
-                      cursoId: cursoParvularioActivo.id,
-                      horasPedagogicasAula: hrsFaltantesCurso,
-                      periodo: periodoActivo,
-                      esCoDocencia: true,
-                      esCoDocenciaParvularia: true,
-                      tipoApoyo: 'CO_DOCENCIA',
-                      esProporcionDocente: true
-                    };
-                    await onGuardarAsignacion(nuevaAsig);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>
-                    Asignar a {docente.nombres.split(' ')[0]} las {dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} ({dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante}h) faltantes de {cursoParvularioActivo.nivel} {cursoParvularioActivo.letra}
-                  </span>
-                </button>
-              )}
+              {/* Si estamos viendo la ficha de la 2da educadora y en el curso faltan horas por cubrir, botón directo respetando su tope de aula disponible */}
+              {cursoParvularioActivo && esEducadora && !dotacionParvulariaCursoActivo.esDocenteActualTitularDelCurso && dotacionParvulariaCursoActivo.minutosDeficitRestante > 0 && onGuardarAsignacion && (() => {
+                const hrsFaltantesCurso = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
+                const horasAulaLibresActual = Math.max(0, Math.round((resumenCargaHoraria.topeMaxHorasAulaSegunContrato - resumenCargaHoraria.totalHorasAulaParvularia) * 100) / 100);
+                const hrsAAsignarDirecto = Math.round(Math.min(hrsFaltantesCurso, horasAulaLibresActual) * 100) / 100;
+                const hrsRemanenteCurso = Math.max(0, Math.round((hrsFaltantesCurso - hrsAAsignarDirecto) * 100) / 100);
+                const sinCupo = hrsAAsignarDirecto <= 0.01;
+
+                return (
+                  <button
+                    type="button"
+                    disabled={sinCupo}
+                    onClick={async () => {
+                      if (sinCupo) return;
+                      const nuevaAsig: AsignacionHoraria = {
+                        id: `asig_codoc_parv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                        rbd: colegio.rbd,
+                        docenteId: docente.id,
+                        asignatura: 'Atención Directa y Co-Docencia Parvularia (DTO 306)',
+                        cursoId: cursoParvularioActivo.id,
+                        horasPedagogicasAula: hrsAAsignarDirecto,
+                        periodo: periodoActivo,
+                        esCoDocencia: true,
+                        esCoDocenciaParvularia: true,
+                        tipoApoyo: 'CO_DOCENCIA',
+                        esProporcionDocente: true
+                      };
+                      await onGuardarAsignacion(nuevaAsig);
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl shadow-xs transition-all ${
+                      sinCupo
+                        ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
+                    }`}
+                    title={
+                      sinCupo
+                        ? `El tope legal de aula de ${docente.nombres} (${resumenCargaHoraria.topeMaxHorasAulaSegunContrato}h) ya está completo`
+                        : hrsRemanenteCurso > 0.01
+                        ? `Asignará su disponible exacto (${hrsAAsignarDirecto}h); quedarán ${hrsRemanenteCurso}h pendientes en el curso`
+                        : `Asignar las ${hrsAAsignarDirecto}h faltantes del curso`
+                    }
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>
+                      {sinCupo
+                        ? `Sin cupo disponible en tope de ${docente.nombres.split(' ')[0]} (${resumenCargaHoraria.topeMaxHorasAulaSegunContrato}h)`
+                        : hrsRemanenteCurso > 0.01
+                        ? `Asignar a ${docente.nombres.split(' ')[0]} máx. disp: ${hrsAAsignarDirecto}h (quedarán ${hrsRemanenteCurso}h)`
+                        : `Asignar a ${docente.nombres.split(' ')[0]} las ${dotacionParvulariaCursoActivo.minutosDeficitRestanteTexto} (${hrsAAsignarDirecto}h) faltantes`}
+                    </span>
+                  </button>
+                );
+              })()}
 
               {/* Botón para abrir el modal de Asignar a otra Educadora de Párvulos */}
               {(dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante > 0 || dotacionParvulariaCursoActivo.minutosDeficitRestante > 0) && (
@@ -2864,11 +2901,14 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   onClick={() => {
                     if (cursoParvularioActivo) {
                       const hrsAulaFaltantes = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
-                      setHoras2daEducadoraInput(hrsAulaFaltantes > 0 ? hrsAulaFaltantes : dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante);
                       // Seleccionar por defecto la primera educadora con horas disponibles distinta de la titular del curso
                       const idTitCurso = dotacionParvulariaCursoActivo.titularDocente.id;
                       const candidata = educadorasDisponibles.find(e => e.docente.id !== idTitCurso && e.horasAulaLibres > 0) || educadorasDisponibles.find(e => e.docente.id !== idTitCurso) || educadorasDisponibles[0];
                       setDocenteSeleccionada2daId(candidata ? candidata.docente.id : docente.id);
+                      const hrsSugeridas = candidata && candidata.horasAulaLibres > 0
+                        ? Math.round(Math.min(hrsAulaFaltantes, candidata.horasAulaLibres) * 100) / 100
+                        : hrsAulaFaltantes;
+                      setHoras2daEducadoraInput(hrsSugeridas > 0 ? hrsSugeridas : dotacionParvulariaCursoActivo.horasContratoSegundaEducadoraRestante);
                       setModalSegundaEducadoraOpen(true);
                     }
                   }}
@@ -3195,19 +3235,20 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
 
                     const hrsRestantesNucleo = Math.max(0, Math.round((hrsPlanNucleo - hrsYaAsignadasNucleo) * 100) / 100);
                     const cubierto = hrsRestantesNucleo <= 0.01;
+                    const permanenciaGlobalCubierta = Boolean(dotParvAct?.coberturaCompletaPermanencia);
 
                     // Tope legal restante de la educadora titular actual
                     const hrsTopeRestanteTitular = dotParvAct ? dotParvAct.horasRestantesCapacidadTitular : 99;
-                    const excedeTopeTitular = !cubierto && hrsTopeRestanteTitular > 0 && hrsRestantesNucleo > hrsTopeRestanteTitular;
+                    const excedeTopeTitular = !cubierto && !permanenciaGlobalCubierta && hrsTopeRestanteTitular > 0 && hrsRestantesNucleo > hrsTopeRestanteTitular;
                     const topeTitularAgotado = !cubierto && dotParvAct !== null && hrsTopeRestanteTitular <= 0.01;
 
                     return (
                       <div key={b.id} className="space-y-0.5">
                         <button
                           type="button"
-                          disabled={cubierto}
+                          disabled={cubierto || permanenciaGlobalCubierta}
                           onClick={async () => {
-                            if (!onGuardarAsignacion || cubierto) return;
+                            if (!onGuardarAsignacion || cubierto || permanenciaGlobalCubierta) return;
                             // Si a la titular le queda menos capacidad que el núcleo completo, ofrecer ajustar a su tope exacto o asignar como 2da educadora
                             let horasAAsignar = hrsRestantesNucleo;
                             let comoCoDocencia = false;
@@ -3243,6 +3284,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                           className={`w-full text-left p-1.5 rounded border flex items-center justify-between text-[11px] transition-all ${
                             cubierto
                               ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 cursor-default opacity-85'
+                              : permanenciaGlobalCubierta
+                              ? 'bg-slate-50 border-slate-200 text-slate-600 cursor-default opacity-85'
                               : excedeTopeTitular
                               ? 'bg-amber-50/80 hover:bg-amber-100 border-amber-300 text-slate-900 cursor-pointer'
                               : 'bg-teal-50/50 hover:bg-teal-100 border-teal-200/60 text-slate-800 cursor-pointer'
@@ -3250,6 +3293,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                           title={
                             cubierto
                               ? `✓ ${b.nucleo} ya está 100% cubierto (${hrsYaAsignadasNucleo}h asignadas)`
+                              : permanenciaGlobalCubierta
+                              ? `Permanencia total del curso ya cubierta al 100% (núcleo referencial)`
                               : excedeTopeTitular
                               ? `Quedan ${hrsRestantesNucleo}h en este núcleo (tu tope legal restante es ${hrsTopeRestanteTitular}h)`
                               : `Haz clic para asignar ${hrsRestantesNucleo}h cronológicas de ${b.nucleo} (descuenta directo de la permanencia)`
@@ -3262,12 +3307,16 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                           <span className={`font-black px-1.5 py-0.2 rounded text-[10px] shrink-0 ${
                             cubierto
                               ? 'bg-emerald-200/80 text-emerald-900'
+                              : permanenciaGlobalCubierta
+                              ? 'bg-slate-200 text-slate-600 font-semibold'
                               : hrsYaAsignadasNucleo > 0
                               ? 'bg-amber-200 text-amber-900'
                               : 'bg-teal-200/80 text-teal-900'
                           }`}>
                             {cubierto
                               ? `✓ ${hrsPlanNucleo}h`
+                              : permanenciaGlobalCubierta
+                              ? 'Referencial'
                               : hrsYaAsignadasNucleo > 0
                               ? `Faltan ${hrsRestantesNucleo}h (de ${hrsPlanNucleo}h)`
                               : `${hrsRestantesNucleo}h`}
@@ -3485,7 +3534,15 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
       </div>
 
       {/* Modal Interactivo: Asignar 2da Educadora Complementaria DTO 306 */}
-      {modalSegundaEducadoraOpen && cursoParvularioActivo && dotacionParvulariaCursoActivo && (
+      {modalSegundaEducadoraOpen && cursoParvularioActivo && dotacionParvulariaCursoActivo && (() => {
+        const hrsFaltantesCursoModal = dotacionParvulariaCursoActivo.horasAulaSegundaEducadoraRestante || Math.round((dotacionParvulariaCursoActivo.minutosDeficitRestante / 60) * 100) / 100;
+        const educadoraSeleccionadaObj = educadorasDisponibles.find(e => e.docente.id === docenteSeleccionada2daId);
+        const excedeDisponible = Boolean(educadoraSeleccionadaObj && horas2daEducadoraInput > educadoraSeleccionadaObj.horasAulaLibres + 0.01);
+        const excesoHorasModal = educadoraSeleccionadaObj
+          ? Math.max(0, Math.round((horas2daEducadoraInput - educadoraSeleccionadaObj.horasAulaLibres) * 100) / 100)
+          : 0;
+
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-teal-200 my-auto flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
             {/* Header Modal */}
@@ -3519,6 +3576,14 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                 if (!docenteSeleccionada2daId || horas2daEducadoraInput <= 0) {
                   alert('Por favor selecciona una educadora y una cantidad válida de horas.');
                   return;
+                }
+
+                if (excedeDisponible && educadoraSeleccionadaObj) {
+                  if (!confirm(
+                    `⚠️ Alerta de Exceso Lectivo:\n\nEstás asignando ${horas2daEducadoraInput}h de aula a ${educadoraSeleccionadaObj.docente.nombres} ${educadoraSeleccionadaObj.docente.apellidos}, pero solo dispone de ${educadoraSeleccionadaObj.horasAulaLibres}h aula libres en su contrato (exceso de ${excesoHorasModal}h).\n\n¿Deseas guardar esta asignación de todas formas?`
+                  )) {
+                    return;
+                  }
                 }
 
                 if (onGuardarAsignacion) {
@@ -3570,10 +3635,16 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                   {educadorasDisponibles.map(({ docente: docItem, horasContrato, horasNoAula, horasAsignadas, topeAulaHoras, horasAulaLibres, horasLibres, esEducadora: esEd }) => {
                     const estaSeleccionada = docenteSeleccionada2daId === docItem.id;
                     const esTitularCurso = dotacionParvulariaCursoActivo.titularDocente.id === docItem.id;
+                    const seleccionarEducadora = () => {
+                      setDocenteSeleccionada2daId(docItem.id);
+                      if (horasAulaLibres > 0) {
+                        setHoras2daEducadoraInput(Math.round(Math.min(hrsFaltantesCursoModal, horasAulaLibres) * 100) / 100);
+                      }
+                    };
                     return (
                       <div
                         key={docItem.id}
-                        onClick={() => setDocenteSeleccionada2daId(docItem.id)}
+                        onClick={seleccionarEducadora}
                         className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
                           estaSeleccionada 
                             ? 'bg-teal-50 border-l-4 border-teal-600' 
@@ -3585,7 +3656,7 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
                             type="radio"
                             name="docenteSegunda"
                             checked={estaSeleccionada}
-                            onChange={() => setDocenteSeleccionada2daId(docItem.id)}
+                            onChange={seleccionarEducadora}
                             className="text-teal-600 focus:ring-teal-500"
                           />
                           <div>
@@ -3627,31 +3698,54 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
               </div>
 
               {/* Horas de Aula a Asignar (con cálculo automático del contrato equivalente) */}
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
-                <div>
-                  <label className="block text-slate-800 font-bold mb-0.5">
-                    Horas Cronológicas de Permanencia / Aula a Cubrir (60 min):
-                  </label>
-                  <p className="text-[10px] text-slate-500">
-                    Para cubrir <strong>{horas2daEducadoraInput}h</strong> de aula se requiere un contrato de{' '}
-                    <strong className="text-indigo-700">
-                      {buscarContratoMinimoParvulariaPorMinutos(Math.round(horas2daEducadoraInput * 60), dotacionParvulariaCursoActivo.regimenNormativoProporcion).horasContrato} hrs
-                    </strong>
-                  </p>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="block text-slate-800 font-bold mb-0.5">
+                      Horas Cronológicas de Permanencia / Aula a Cubrir (60 min):
+                    </label>
+                    <p className="text-[10px] text-slate-500">
+                      Para cubrir <strong>{horas2daEducadoraInput}h</strong> de aula se requiere un contrato de{' '}
+                      <strong className="text-indigo-700">
+                        {buscarContratoMinimoParvulariaPorMinutos(Math.round(horas2daEducadoraInput * 60), dotacionParvulariaCursoActivo.regimenNormativoProporcion).horasContrato} hrs
+                      </strong>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0.5}
+                      max={44}
+                      value={horas2daEducadoraInput}
+                      onChange={(e) => setHoras2daEducadoraInput(Math.max(0.5, Number(e.target.value)))}
+                      className={`w-24 text-center font-black text-base bg-white border rounded-lg py-1 focus:ring-2 outline-none ${
+                        excedeDisponible
+                          ? 'border-rose-400 text-rose-800 focus:ring-rose-500'
+                          : 'border-teal-300 text-teal-900 focus:ring-teal-500'
+                      }`}
+                      required
+                    />
+                    <span className="text-xs font-bold text-slate-600">hrs aula</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0.5}
-                    max={44}
-                    value={horas2daEducadoraInput}
-                    onChange={(e) => setHoras2daEducadoraInput(Math.max(0.5, Number(e.target.value)))}
-                    className="w-24 text-center font-black text-base bg-white border border-teal-300 rounded-lg py-1 text-teal-900 focus:ring-2 focus:ring-teal-500 outline-none"
-                    required
-                  />
-                  <span className="text-xs font-bold text-slate-600">hrs aula</span>
-                </div>
+
+                {excedeDisponible && educadoraSeleccionadaObj && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-800 space-y-1.5">
+                    <div className="font-bold">
+                      ⚠️ Sobrepasa el disponible de la educadora ({educadoraSeleccionadaObj.horasAulaLibres}h aula libres): generará un Exceso Lectivo de +{excesoHorasModal}h.
+                    </div>
+                    {educadoraSeleccionadaObj.horasAulaLibres > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setHoras2daEducadoraInput(educadoraSeleccionadaObj.horasAulaLibres)}
+                        className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold rounded-md transition-colors cursor-pointer"
+                      >
+                        Ajustar a su máximo disponible ({educadoraSeleccionadaObj.horasAulaLibres}h)
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Acciones */}
@@ -3674,7 +3768,8 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
             </form>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

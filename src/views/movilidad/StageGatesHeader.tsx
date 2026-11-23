@@ -7,6 +7,7 @@ import {
   FileCheck2,
   FileSpreadsheet,
   FileText,
+  History,
   Layers,
   Lock,
   PauseCircle,
@@ -60,9 +61,9 @@ export interface StageGatesHeaderProps {
   };
   consolidacionDeshabilitada: boolean;
   tooltipConsolidacion: string;
-  vistaInternaMesa: 'la_mesa' | 'tablero' | 'analisis_no_continuidad';
+  vistaInternaMesa: 'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos';
   casosNoContinuidadCount: number;
-  onCambiarVistaInterna: (vista: 'la_mesa' | 'tablero' | 'analisis_no_continuidad') => void;
+  onCambiarVistaInterna: (vista: 'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos') => void;
   onSelectSubTabCola: (tab: SubTabCol1) => void;
   onAbrirNuevoEscenario: () => void;
   onAbrirClonarEscenario: () => void;
@@ -747,6 +748,18 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
           >
             {casosNoContinuidadCount}
           </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onCambiarVistaInterna('registro_movimientos')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            vistaInternaMesa === 'registro_movimientos'
+              ? 'bg-teal-700 text-white shadow-xs'
+              : 'bg-teal-50 text-teal-900 border border-teal-200 hover:bg-teal-100'
+          }`}
+        >
+          <History className="w-3.5 h-3.5" />
+          <span>Registro de Movimientos</span>
         </button>
       </div>
     </div>

@@ -12,6 +12,7 @@ import { obtenerFeatureFlagsMovilidad, puedeUsuarioAccederMesaMovilidad } from '
 import { AuthService } from '../services/authService';
 import {
   esRolNivelCentralMovilidad, esRolValidadorGdp, esRolConsolidadorMovilidad,
+  esVacanteActivaEnMovilidad,
   previsualizarEscaneoVacantesNn, escanearYSanearVacantesNnTerritorio,
   listarEgresosProyectados, guardarEgresoProyectado, eliminarEgresoProyectado, reincorporarTitularContingencia,
   listarSolicitudesMovilidad, guardarSolicitudMovilidad, avanzarEstadoFlujoMovilidad, eliminarSolicitudMovilidad,
@@ -47,6 +48,7 @@ import { ColaMovilidadPanel } from './movilidad/ColaMovilidadPanel';
 import { SimuladorCalcePanel } from './movilidad/SimuladorCalcePanel';
 import { BolsaVacantesPanel, HomologacionTpModal, VacanteAsignaturasModal } from './movilidad/BolsaVacantesPanel';
 import { AnalisisNoContinuidadPanel } from './movilidad/AnalisisNoContinuidadPanel';
+import { RegistroMovimientosPanel } from './movilidad/RegistroMovimientosPanel';
 
 export interface MesaMovilidadViewProps {
   colegios: Establecimiento[];
@@ -138,7 +140,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
   const colegiosByRbd = useMemo(() => new Map(colegios.map(c => [c.rbd, c])), [colegios]);
   const docentesById = useMemo(() => new Map(docentesTerritorio.map(d => [d.id, d])), [docentesTerritorio]);
   const docentesNoVacantes = useMemo(() => docentesTerritorio.filter(d => !d.esVacanteNn), [docentesTerritorio]);
-  const vacantesNn = useMemo(() => docentesTerritorio.filter(d => d.esVacanteNn === true), [docentesTerritorio]);
+  const vacantesNn = useMemo(() => docentesTerritorio.filter(esVacanteActivaEnMovilidad), [docentesTerritorio]);
   const comunasDisponibles = useMemo(() => Array.from(new Set(colegios.map(c => c.comuna).filter(Boolean))).sort((a, b) => a.localeCompare(b)), [colegios]);
 
   const [egresos, setEgresos] = useState<EgresoProyectado[]>([]);
@@ -163,7 +165,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
     void contarSyncPendientesMovilidad().then(setSyncPendientes).catch(() => {});
   }, []);
 
-  const [vistaInternaMesa, setVistaInternaMesa] = useState<'la_mesa' | 'tablero' | 'analisis_no_continuidad'>('tablero');
+  const [vistaInternaMesa, setVistaInternaMesa] = useState<'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos'>('tablero');
   const [tabCol1, setTabCol1] = useState<SubTabCol1>(() => (
     flags.flag_no_continuidad_titulares ? 'no_continuidad' : flags.flag_traslados_voluntarios ? 'traslados' : flags.flag_egresos_contingencia ? 'egresos_gdp' : 'asistentes_indefinidos'
   ));
@@ -770,6 +772,8 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
         />
       ) : vistaInternaMesa === 'analisis_no_continuidad' ? (
         <AnalisisNoContinuidadPanel casosNoContinuidadConsolidados={casosNoContinuidadConsolidados} colegiosByRbd={colegiosByRbd} comunasDisponibles={comunasDisponibles} periodoActivo={periodoActivo} onFeedback={mostrarFeedback} />
+      ) : vistaInternaMesa === 'registro_movimientos' ? (
+        <RegistroMovimientosPanel periodoActivo={periodoActivo} colegios={colegios} />
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
           <ColaMovilidadPanel

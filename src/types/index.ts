@@ -217,6 +217,8 @@ export type TipoVacanteDocente =
   | 'CONDICIONAL_EGRESO'
   | 'REBOTE_MOVILIDAD';
 
+export type EstadoNecesidadVacante = 'BORRADOR' | 'ENVIADA' | 'CANCELADA';
+
 export interface Docente {
   id: string;
   rbd: string;
@@ -288,6 +290,8 @@ export interface Docente {
   justificacionVacante?: string;
   origenEgresoId?: string;
   vacanteCondicional?: boolean;
+  estadoNecesidad?: EstadoNecesidadVacante;
+  motivoEstadoNecesidad?: string;
 }
 
 export interface AsignacionHoraria {
@@ -835,6 +839,40 @@ export interface SolicitudMovilidad {
   fechaVigencia?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type TipoMovimientoMovilidad =
+  | 'CREACION_NECESIDAD'
+  | 'EDICION_NECESIDAD'
+  | 'ENVIO_MOVILIDAD'
+  | 'RETROCESO_NECESIDAD'
+  | 'CANCELACION_NECESIDAD'
+  | 'SOLICITUD_MOVILIDAD'
+  | 'CAMBIO_ESTADO_SOLICITUD'
+  | 'PROPUESTA_CALCE'
+  | 'ELIMINACION_CALCE'
+  | 'CONSOLIDACION_ESCENARIO'
+  | 'REVERSION_ESCENARIO';
+
+export interface RegistroMovimientoMovilidad {
+  id: string;
+  periodo: number;
+  tipoMovimiento: TipoMovimientoMovilidad;
+  entidad: 'NECESIDAD_VACANTE' | 'SOLICITUD_MOVILIDAD' | 'PROPUESTA_CALCE' | 'ESCENARIO';
+  entidadId: string;
+  codigoReferencia?: string;
+  rbdOrigen: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+  rbdDestino?: string;
+  usuarioActor: string;
+  rolActor?: string;
+  estadoAnterior?: string;
+  estadoNuevo?: string;
+  descripcion: string;
+  motivo?: string;
+  detalles?: Record<string, any>;
+  fechaHora: string;
 }
 
 export interface VacanteRebotePlan {

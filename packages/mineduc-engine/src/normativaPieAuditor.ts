@@ -1,6 +1,6 @@
 // =============================================================================
 // REGLA DE NEGOCIO PURA: MOTOR DE AUDITORÍA Y CUADRE PIE (NORMATIVA PIEAUDITOR)
-// Basado en Decreto 170/2009 y Ordinario N° 2398 (20/12/2023) MINEDUC Chile
+// Basado en Decreto 170/2009, Res. Ex. 467/2018, Ord. N° 2398/2023 y Ord. N° 2622/2026 DEP
 // =============================================================================
 
 import { esModalidadAdultos } from './modalidades';
@@ -229,6 +229,23 @@ export function decToHhmm(hoursDecimal: number): string {
   return `${String(finalHrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
+/**
+ * Convierte horas cronológicas de demanda PIE (Decreto 170 / Ord. 2622) a Horas Pedagógicas de aula (45 min).
+ * Todos los tramos de Docente Diferencial en Ord. 2622 son múltiplos exactos de 45m (6:00 -> 8 HA, 8:15 -> 11 HA, etc.).
+ */
+export function cronologicasAPedagogicasPie(horasCron: number): number {
+  if (!horasCron || horasCron <= 0) return 0;
+  return Math.round((horasCron / 0.75) * 100) / 100;
+}
+
+/**
+ * Convierte Horas Pedagógicas de aula (45 min) a su equivalente exacto en horas cronológicas PIE (2 decimales).
+ */
+export function pedagogicasACronologicasPie(horasPed: number): number {
+  if (!horasPed || horasPed <= 0) return 0;
+  return Math.round(horasPed * 0.75 * 100) / 100;
+}
+
 export interface ResultadoDemandaPieCurso {
   horasTotalCronologicas: number;
   horasDiferencialDecimal: number;
@@ -274,14 +291,14 @@ export function calcularDemandaNormativaPieCurso(
     };
   }
 
-  // Caso 1: Solo NEET (sin NEEP)
+  // Caso 1: Solo NEET (sin NEEP) — Tabla Oficial Ord. N° 2622/2026 DEP (pág. 5)
   if (neepCount === 0 && neetCount > 0) {
     if (isJec) {
-      reqEdDif = 6.25; // 06:15
-      reqPae = 3.75;   // 03:45
+      reqEdDif = 6.0;  // 06:00 (8 HA exactas de 45 min)
+      reqPae = 4.0;    // 04:00
       reqTotal = 10.0;
     } else {
-      reqEdDif = 4.50; // 04:30
+      reqEdDif = 4.50; // 04:30 (6 HA exactas de 45 min)
       reqPae = 2.50;   // 02:30
       reqTotal = 7.0;
     }
@@ -498,27 +515,9 @@ export function autoAsignarHorasPieCursos(
       resumenPokaYoke.push(`⚠️ ${curso.nombre}: Faltan ${horasPaeFaltantes.toFixed(2)}h de Asistente PAE.`);
     }
 
-    // 3. Asignar Asistente Técnico en Educación Especial (si hay disponibles y tiene PIE)
-    if (tienePie) {
-      for (const tec of tecnicos) {
-        if (tec.horasRestantes >= 2.0) {
-          const horasTec = Math.min(tec.horasRestantes, isJec ? 4.0 : 2.5);
-          tec.horasRestantes -= horasTec;
-          totalHorasAsignadasTecnicos += horasTec;
-
-          asigsCurso.push({
-            id: `auto-tec-${curso.nombre}-${tec.run}`,
-            funcionario_run: tec.run,
-            nombre: tec.nombre,
-            cargo: tec.cargo || 'Técnico en Educación Especial',
-            tipo_profesional: 'Técnico en Educación Especial',
-            horas_asignadas: parseFloat(horasTec.toFixed(1)),
-            tipo_apoyo: 'Apoyo Técnico en Aula',
-          });
-          break;
-        }
-      }
-    }
+    // 3. Asistente o Técnico Diferencial: conforme al Ord. N° 2622/2026 DEP (Sección I.10),
+    // al pertenecer a la categoría técnica del Art. 7 de la Ley N° 21.109, NO puede financiarse
+    // con cargo a recursos PIE; por tanto no se auto-asigna en la cobertura PIE del curso.
 
     // 4. Asignar Docente de Aula Regular (3.0 hrs de Trabajo Colaborativo Decreto 170 Art. 86 si corresponde)
     if (horasColabRequeridas > 0) {

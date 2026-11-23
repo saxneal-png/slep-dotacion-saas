@@ -17,7 +17,8 @@ const DOCENTE_SELECT_COLS = `
   situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
   es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
   es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional,
-  tramo_carrera_docente, habilitacion_seremi_rbd, habilitacion_seremi_asignatura
+  tramo_carrera_docente, habilitacion_seremi_rbd, habilitacion_seremi_asignatura,
+  estado_necesidad, motivo_estado_necesidad
 `;
 
 function mapRowToDocente(row: any[]): Docente {
@@ -106,7 +107,9 @@ function mapRowToDocente(row: any[]): Docente {
     vacanteCondicional: Boolean(row[58]),
     tramoCarreraDocente: row[59] ? (String(row[59]) as TramoCarreraDocente) : undefined,
     habilitacionSeremiRbd: row[60] ? String(row[60]) : undefined,
-    habilitacionSeremiAsignatura: row[61] ? String(row[61]) : undefined
+    habilitacionSeremiAsignatura: row[61] ? String(row[61]) : undefined,
+    estadoNecesidad: row[62] ? (String(row[62]) as Docente['estadoNecesidad']) : undefined,
+    motivoEstadoNecesidad: row[63] ? String(row[63]) : undefined
   };
 }
 
@@ -188,7 +191,8 @@ const DOCENTE_UPSERT_SQL = `
     situacion_final_gdp, observaciones_director, observaciones_slep, requiere_autorizacion_docente,
     es_vtf, funcion_vtf, grupo_jisc_id, hora_ingreso_turno, hora_salida_turno, reemplazo_de_run,
     es_vacante_nn, tipo_vacante, justificacion_vacante, origen_egreso_id, vacante_condicional,
-    tramo_carrera_docente, habilitacion_seremi_rbd, habilitacion_seremi_asignatura
+    tramo_carrera_docente, habilitacion_seremi_rbd, habilitacion_seremi_asignatura,
+    estado_necesidad, motivo_estado_necesidad
   )
   VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
@@ -197,7 +201,7 @@ const DOCENTE_UPSERT_SQL = `
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-    ?, ?
+    ?, ?, ?, ?
   )
   ON CONFLICT(id) DO UPDATE SET
     rbd=excluded.rbd, run=excluded.run, nombres=excluded.nombres, apellidos=excluded.apellidos,
@@ -251,7 +255,9 @@ const DOCENTE_UPSERT_SQL = `
     vacante_condicional=excluded.vacante_condicional,
     tramo_carrera_docente=excluded.tramo_carrera_docente,
     habilitacion_seremi_rbd=excluded.habilitacion_seremi_rbd,
-    habilitacion_seremi_asignatura=excluded.habilitacion_seremi_asignatura;
+    habilitacion_seremi_asignatura=excluded.habilitacion_seremi_asignatura,
+    estado_necesidad=excluded.estado_necesidad,
+    motivo_estado_necesidad=excluded.motivo_estado_necesidad;
 `;
 
 function buildDocenteUpsertParams(
@@ -308,7 +314,9 @@ function buildDocenteUpsertParams(
     d.vacanteCondicional ? 1 : 0,
     d.tramoCarreraDocente || null,
     d.habilitacionSeremiRbd || null,
-    d.habilitacionSeremiAsignatura || null
+    d.habilitacionSeremiAsignatura || null,
+    d.estadoNecesidad || null,
+    d.motivoEstadoNecesidad || null
   ];
 }
 

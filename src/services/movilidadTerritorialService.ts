@@ -21,13 +21,16 @@ import {
   Establecimiento,
   EstadoEscenarioCalce,
   EstadoFlujoMovilidad,
+  EstadoNecesidadVacante,
   EstadoResolucionRebote,
   EstamentoAsistente,
   EstamentoDocente,
   FuncionNoAulaDocente,
   ImpactoPresupuestarioEgreso,
   PropuestaCalce,
+  RegistroMovimientoMovilidad,
   SolicitudMovilidad,
+  TipoMovimientoMovilidad,
   TramoCarreraDocente,
   VacanteRebotePlan
 } from '../types';
@@ -652,6 +655,203 @@ export async function escanearYSanearVacantesNnTerritorio(params: {
   };
 }
 
+export function esVacanteActivaEnMovilidad(d: Docente): boolean {
+  if (!d.esVacanteNn) return false;
+  if (d.situacionFinalGdp === 'Cancelada') return false;
+  if (d.tipoVacante === 'NECESIDAD_ESCUELA') {
+    return d.estadoNecesidad !== 'BORRADOR' && d.estadoNecesidad !== 'CANCELADA';
+  }
+  return true;
+}
+
+export async function registrarMovimientoMovilidad(params: {
+  periodo?: number;
+  tipoMovimiento: TipoMovimientoMovilidad;
+  entidad: RegistroMovimientoMovilidad['entidad'];
+  entidadId: string;
+  codigoReferencia?: string;
+  rbdOrigen: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+  rbdDestino?: string;
+  usuarioActor: string;
+  rolActor?: string;
+  estadoAnterior?: string;
+  estadoNuevo?: string;
+  descripcion: string;
+  motivo?: string;
+  detalles?: Record<string, any>;
+  fechaHora?: string;
+}): Promise<RegistroMovimientoMovilidad> {
+  const db = await getDb();
+  const id = `mov_reg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const periodo = params.periodo || 2027;
+  const fechaHora = params.fechaHora || new Date().toISOString();
+
+  let nombreEst = params.nombreEstablecimiento;
+  let comunaEst = params.comuna;
+  if ((!nombreEst || !comunaEst) && params.rbdOrigen && params.rbdOrigen !== 'SLEP') {
+    const estRes = db.exec('SELECT nombre, comuna FROM establecimientos WHERE rbd = ? LIMIT 1;', [params.rbdOrigen]);
+    if (estRes.length > 0 && estRes[0].values.length > 0) {
+      nombreEst = nombreEst || (estRes[0].values[0][0] ? String(estRes[0].values[0][0]) : undefined);
+      comunaEst = comunaEst || (estRes[0].values[0][1] ? String(estRes[0].values[0][1]) : undefined);
+    }
+  }
+
+  const registro: RegistroMovimientoMovilidad = {
+    id,
+    periodo,
+    tipoMovimiento: params.tipoMovimiento,
+    entidad: params.entidad,
+    entidadId: params.entidadId,
+    codigoReferencia: params.codigoReferencia,
+    rbdOrigen: params.rbdOrigen,
+    nombreEstablecimiento: nombreEst,
+    comuna: comunaEst,
+    rbdDestino: params.rbdDestino,
+    usuarioActor: params.usuarioActor || 'sistema',
+    rolActor: params.rolActor,
+    estadoAnterior: params.estadoAnterior,
+    estadoNuevo: params.estadoNuevo,
+    descripcion: params.descripcion,
+    motivo: params.motivo,
+    detalles: params.detalles,
+    fechaHora
+  };
+
+  db.run(
+    `INSERT INTO movilidad_registro_movimientos (
+      id, periodo, tipo_movimiento, entidad, entidad_id, codigo_referencia,
+      rbd_origen, nombre_establecimiento, comuna, rbd_destino,
+      usuario_actor, rol_actor, estado_anterior, estado_nuevo,
+      descripcion, motivo, detalles_json, fecha_hora
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    [
+      registro.id,
+      registro.periodo,
+      registro.tipoMovimiento,
+      registro.entidad,
+      registro.entidadId,
+      registro.codigoReferencia || null,
+      registro.rbdOrigen,
+      registro.nombreEstablecimiento || null,
+      registro.comuna || null,
+      registro.rbdDestino || null,
+      registro.usuarioActor,
+      registro.rolActor || null,
+      registro.estadoAnterior || null,
+      registro.estadoNuevo || null,
+      registro.descripcion,
+      registro.motivo || null,
+      registro.detalles ? JSON.stringify(registro.detalles) : null,
+      registro.fechaHora
+    ]
+  );
+
+  await persistDb(true);
+
+  if (isSupabaseEnabled()) {
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'movilidad_registro_movimientos',
+        operacion: 'upsert',
+        onConflict: 'id',
+        payload: {
+          id: registro.id,
+          periodo: registro.periodo,
+          tipo_movimiento: registro.tipoMovimiento,
+          entidad: registro.entidad,
+          entidad_id: registro.entidadId,
+          codigo_referencia: registro.codigoReferencia || null,
+          rbd_origen: registro.rbdOrigen,
+          nombre_establecimiento: registro.nombreEstablecimiento || null,
+          comuna: registro.comuna || null,
+          rbd_destino: registro.rbdDestino || null,
+          usuario_actor: registro.usuarioActor,
+          rol_actor: registro.rolActor || null,
+          estado_anterior: registro.estadoAnterior || null,
+          estado_nuevo: registro.estadoNuevo || null,
+          descripcion: registro.descripcion,
+          motivo: registro.motivo || null,
+          detalles_json: registro.detalles || null,
+          fecha_hora: registro.fechaHora
+        }
+      },
+      'registro_movimientos'
+    );
+  }
+
+  return registro;
+}
+
+export async function listarRegistroMovimientosMovilidad(filtros?: {
+  periodo?: number;
+  rbd?: string;
+  tipoMovimiento?: TipoMovimientoMovilidad;
+  limit?: number;
+}): Promise<RegistroMovimientoMovilidad[]> {
+  const db = await getDb();
+  const periodo = filtros?.periodo || 2027;
+  const where: string[] = ['periodo = ?'];
+  const params: any[] = [periodo];
+
+  if (filtros?.rbd) {
+    where.push('(rbd_origen = ? OR rbd_destino = ?)');
+    params.push(filtros.rbd, filtros.rbd);
+  }
+  if (filtros?.tipoMovimiento) {
+    where.push('tipo_movimiento = ?');
+    params.push(filtros.tipoMovimiento);
+  }
+
+  const limit = filtros?.limit && filtros.limit > 0 ? filtros.limit : 500;
+  params.push(limit);
+
+  const res = db.exec(
+    `SELECT id, periodo, tipo_movimiento, entidad, entidad_id, codigo_referencia,
+            rbd_origen, nombre_establecimiento, comuna, rbd_destino,
+            usuario_actor, rol_actor, estado_anterior, estado_nuevo,
+            descripcion, motivo, detalles_json, fecha_hora
+     FROM movilidad_registro_movimientos
+     WHERE ${where.join(' AND ')}
+     ORDER BY fecha_hora DESC, rowid DESC
+     LIMIT ?;`,
+    params
+  );
+
+  if (!res.length) return [];
+  return res[0].values.map(row => {
+    let detalles: Record<string, any> | undefined;
+    if (row[16]) {
+      try {
+        detalles = JSON.parse(String(row[16]));
+      } catch {
+        detalles = undefined;
+      }
+    }
+    return {
+      id: String(row[0]),
+      periodo: Number(row[1] || periodo),
+      tipoMovimiento: String(row[2]) as TipoMovimientoMovilidad,
+      entidad: String(row[3]) as RegistroMovimientoMovilidad['entidad'],
+      entidadId: String(row[4]),
+      codigoReferencia: row[5] ? String(row[5]) : undefined,
+      rbdOrigen: String(row[6]),
+      nombreEstablecimiento: row[7] ? String(row[7]) : undefined,
+      comuna: row[8] ? String(row[8]) : undefined,
+      rbdDestino: row[9] ? String(row[9]) : undefined,
+      usuarioActor: String(row[10]),
+      rolActor: row[11] ? String(row[11]) : undefined,
+      estadoAnterior: row[12] ? String(row[12]) : undefined,
+      estadoNuevo: row[13] ? String(row[13]) : undefined,
+      descripcion: String(row[14]),
+      motivo: row[15] ? String(row[15]) : undefined,
+      detalles,
+      fechaHora: String(row[17])
+    };
+  });
+}
+
 export async function crearNecesidadVacanteEscuela(params: {
   rbd: string;
   periodo: number;
@@ -661,6 +861,10 @@ export async function crearNecesidadVacanteEscuela(params: {
   fuenteFinanciamiento: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
   justificacion: string;
   usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+  estadoInicial?: 'BORRADOR' | 'ENVIADA';
 }): Promise<Docente> {
   const flags = obtenerFeatureFlagsMovilidad();
   if (!flags.flag_saneamiento_nn_escuelas) {
@@ -690,6 +894,8 @@ export async function crearNecesidadVacanteEscuela(params: {
   const sufijoId = Math.random().toString(36).slice(2, 6);
   const codigoVacante = `VAC-${rbdClean}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+  const estadoInicial: EstadoNecesidadVacante = params.estadoInicial || 'BORRADOR';
+
   const vacante: Docente = {
     id: `vac_esc_${rbdClean}_${periodo}_${Date.now()}_${sufijoId}`,
     rbd: rbdClean,
@@ -713,7 +919,8 @@ export async function crearNecesidadVacanteEscuela(params: {
     justificacionVacante: justificacionClean,
     vacanteCondicional: false,
     propuestaGdp: 'Vacante por proveer',
-    situacionFinalGdp: 'Vigente'
+    situacionFinalGdp: estadoInicial === 'ENVIADA' ? 'Vigente' : 'Borrador',
+    estadoNecesidad: estadoInicial
   };
 
   await guardarDocente(vacante);
@@ -724,17 +931,373 @@ export async function crearNecesidadVacanteEscuela(params: {
     tipoEvento: 'CREACION',
     entidad: 'DOCENTE',
     entidadId: vacante.id,
-    descripcion: `Creación de necesidad de vacante estructurada (${especialidadClean}, ${horasNum}h, ${params.fuenteFinanciamiento}).`,
+    descripcion: `Creación de necesidad de vacante estructurada (${especialidadClean}, ${horasNum}h, ${params.fuenteFinanciamiento}) en estado ${estadoInicial}.`,
     detalles: {
       tipoVacante: 'NECESIDAD_ESCUELA',
       codigoVacante,
       fuenteFinanciamiento: params.fuenteFinanciamiento,
       justificacion: justificacionClean,
+      estadoNecesidad: estadoInicial,
       usuarioActor: params.usuarioActor || 'establecimiento'
     }
   });
 
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'CREACION_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: vacante.id,
+    codigoReferencia: codigoVacante,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoNuevo: estadoInicial,
+    descripcion: `Necesidad creada: ${especialidadClean} (${horasNum}h · ${params.fuenteFinanciamiento})`,
+    motivo: justificacionClean,
+    detalles: {
+      especialidad: especialidadClean,
+      estamento: params.estamento,
+      horasContrato: horasNum,
+      fuenteFinanciamiento: params.fuenteFinanciamiento
+    }
+  });
+
+  if (estadoInicial === 'ENVIADA') {
+    await registrarMovimientoMovilidad({
+      periodo,
+      tipoMovimiento: 'ENVIO_MOVILIDAD',
+      entidad: 'NECESIDAD_VACANTE',
+      entidadId: vacante.id,
+      codigoReferencia: codigoVacante,
+      rbdOrigen: rbdClean,
+      nombreEstablecimiento: params.nombreEstablecimiento,
+      comuna: params.comuna,
+      usuarioActor: params.usuarioActor || 'establecimiento',
+      rolActor: params.rolActor,
+      estadoAnterior: 'BORRADOR',
+      estadoNuevo: 'ENVIADA',
+      descripcion: `Necesidad ${codigoVacante} (${especialidadClean}, ${horasNum}h) enviada a Mesa de Movilidad.`
+    });
+  }
+
   return vacante;
+}
+
+export async function listarNecesidadesVacanteEscuela(
+  rbd: string,
+  periodo: number = 2027
+): Promise<Docente[]> {
+  const rbdClean = String(rbd || '').trim();
+  if (!rbdClean) return [];
+  const docentes = await listarDocentes(rbdClean, periodo);
+  return docentes
+    .filter(d => d.tipoVacante === 'NECESIDAD_ESCUELA')
+    .sort((a, b) => b.id.localeCompare(a.id));
+}
+
+export async function obtenerVacantesConPropuestaActiva(
+  vacanteIds: string[],
+  periodo: number = 2027
+): Promise<Set<string>> {
+  if (!vacanteIds.length) return new Set();
+  const db = await getDb();
+  const placeholders = vacanteIds.map(() => '?').join(',');
+  const res = db.exec(
+    `SELECT DISTINCT vacante_destino_id
+     FROM propuestas_calce
+     WHERE periodo = ?
+       AND vacante_destino_id IN (${placeholders})
+       AND estado IN ('PROPUESTA', 'VALIDADA', 'CONSOLIDADA');`,
+    [periodo, ...vacanteIds]
+  );
+  const result = new Set<string>();
+  if (res.length > 0) {
+    for (const row of res[0].values) {
+      if (row[0]) result.add(String(row[0]));
+    }
+  }
+  return result;
+}
+
+async function cargarNecesidadEscuela(id: string, rbd: string, periodo: number): Promise<Docente> {
+  const docentes = await listarDocentes(rbd, periodo);
+  const found = docentes.find(d => d.id === id && d.tipoVacante === 'NECESIDAD_ESCUELA');
+  if (!found) {
+    throw new Error('No se encontró la necesidad de vacante especificada en este establecimiento.');
+  }
+  return found;
+}
+
+export async function actualizarNecesidadVacanteEscuela(params: {
+  id: string;
+  rbd: string;
+  periodo?: number;
+  especialidad: string;
+  estamento: EstamentoDocente;
+  horasContrato: number;
+  fuenteFinanciamiento: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
+  justificacion: string;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<Docente> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const actual = await cargarNecesidadEscuela(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+
+  if (estadoActual !== 'BORRADOR') {
+    throw new Error(
+      estadoActual === 'ENVIADA'
+        ? 'Esta necesidad ya fue enviada a Movilidad. Debes retrotraerla a Borrador antes de editarla.'
+        : 'No es posible editar una necesidad cancelada.'
+    );
+  }
+
+  const especialidadClean = String(params.especialidad || '').trim();
+  const justificacionClean = String(params.justificacion || '').trim();
+  const horasNum = Number(params.horasContrato);
+  if (!especialidadClean) throw new Error('Debe indicar la especialidad o asignatura requerida.');
+  if (!justificacionClean) throw new Error('Debe ingresar una justificación pedagógica o normativa.');
+  if (!Number.isInteger(horasNum) || horasNum < 1 || horasNum > 44) {
+    throw new Error('Las horas de contrato deben ser un entero entre 1 y 44.');
+  }
+
+  const actualizada: Docente = {
+    ...actual,
+    apellidos: especialidadClean.toUpperCase(),
+    estamento: params.estamento,
+    horasContrato: horasNum,
+    horasSubvencionGeneralTitular: 0,
+    horasSubvencionGeneralContrata: params.fuenteFinanciamiento === 'SUBVENCION_GENERAL' ? horasNum : 0,
+    horasSepTitular: 0,
+    horasSepContrata: params.fuenteFinanciamiento === 'SEP' ? horasNum : 0,
+    horasPieTitular: 0,
+    horasPieContrata: params.fuenteFinanciamiento === 'PIE' ? horasNum : 0,
+    asignaturaPrincipal: especialidadClean,
+    justificacionVacante: justificacionClean
+  };
+
+  await guardarDocente(actualizada);
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'EDICION_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: actualizada.id,
+    codigoReferencia: actualizada.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: 'BORRADOR',
+    estadoNuevo: 'BORRADOR',
+    descripcion: `Necesidad ${actualizada.run} editada en borrador: ${especialidadClean} (${horasNum}h · ${params.fuenteFinanciamiento}).`,
+    motivo: justificacionClean
+  });
+
+  return actualizada;
+}
+
+export async function enviarNecesidadAMovilidad(params: {
+  id: string;
+  rbd: string;
+  periodo?: number;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<Docente> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const actual = await cargarNecesidadEscuela(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+
+  if (estadoActual === 'CANCELADA') {
+    throw new Error('No se puede enviar a Movilidad una necesidad que fue cancelada.');
+  }
+  if (estadoActual === 'ENVIADA') {
+    return actual;
+  }
+
+  const enviada: Docente = {
+    ...actual,
+    estadoNecesidad: 'ENVIADA',
+    situacionFinalGdp: 'Vigente',
+    motivoEstadoNecesidad: undefined
+  };
+
+  await guardarDocente(enviada);
+
+  await registrarEventoAuditoria({
+    rbd: rbdClean,
+    periodo,
+    tipoEvento: 'ACTUALIZACION',
+    entidad: 'DOCENTE',
+    entidadId: enviada.id,
+    descripcion: `Necesidad ${enviada.run} (${enviada.asignaturaPrincipal}, ${enviada.horasContrato}h) enviada a Mesa de Movilidad.`,
+    detalles: { estadoAnterior: estadoActual, estadoNuevo: 'ENVIADA', usuarioActor: params.usuarioActor }
+  });
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'ENVIO_MOVILIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: enviada.id,
+    codigoReferencia: enviada.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: estadoActual,
+    estadoNuevo: 'ENVIADA',
+    descripcion: `Necesidad ${enviada.run} (${enviada.asignaturaPrincipal}, ${enviada.horasContrato}h) enviada al módulo de Movilidad.`
+  });
+
+  return enviada;
+}
+
+export async function retrotraerNecesidadDeMovilidad(params: {
+  id: string;
+  rbd: string;
+  motivo: string;
+  periodo?: number;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<Docente> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const motivoClean = String(params.motivo || '').trim();
+  if (!motivoClean) {
+    throw new Error('Debe indicar el motivo para retrotraer la necesidad desde Movilidad.');
+  }
+
+  const actual = await cargarNecesidadEscuela(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+  if (estadoActual !== 'ENVIADA') {
+    throw new Error('Solo se pueden retrotraer necesidades que se encuentran enviadas a Movilidad.');
+  }
+
+  const enGestion = await obtenerVacantesConPropuestaActiva([actual.id], periodo);
+  if (enGestion.has(actual.id)) {
+    throw new Error(
+      'Esta vacante ya tiene una propuesta o adjudicación activa en un escenario de la Mesa de Movilidad. Solicite a UATP/GDP liberar la propuesta antes de retrotraer.'
+    );
+  }
+
+  const retrotraida: Docente = {
+    ...actual,
+    estadoNecesidad: 'BORRADOR',
+    situacionFinalGdp: 'Borrador',
+    motivoEstadoNecesidad: motivoClean
+  };
+
+  await guardarDocente(retrotraida);
+
+  await registrarEventoAuditoria({
+    rbd: rbdClean,
+    periodo,
+    tipoEvento: 'ACTUALIZACION',
+    entidad: 'DOCENTE',
+    entidadId: retrotraida.id,
+    descripcion: `Necesidad ${retrotraida.run} retrotraída desde Movilidad a Borrador. Motivo: ${motivoClean}`,
+    detalles: { estadoAnterior: 'ENVIADA', estadoNuevo: 'BORRADOR', motivo: motivoClean, usuarioActor: params.usuarioActor }
+  });
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'RETROCESO_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: retrotraida.id,
+    codigoReferencia: retrotraida.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: 'ENVIADA',
+    estadoNuevo: 'BORRADOR',
+    descripcion: `Necesidad ${retrotraida.run} (${retrotraida.asignaturaPrincipal}, ${retrotraida.horasContrato}h) retrotraída a Borrador.`,
+    motivo: motivoClean
+  });
+
+  return retrotraida;
+}
+
+export async function cancelarNecesidadVacanteEscuela(params: {
+  id: string;
+  rbd: string;
+  motivo: string;
+  periodo?: number;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<Docente> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const motivoClean = String(params.motivo || '').trim();
+  if (!motivoClean) {
+    throw new Error('Debe indicar el motivo de cancelación de la necesidad.');
+  }
+
+  const actual = await cargarNecesidadEscuela(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+  if (estadoActual === 'CANCELADA') {
+    return actual;
+  }
+
+  const enGestion = await obtenerVacantesConPropuestaActiva([actual.id], periodo);
+  if (enGestion.has(actual.id)) {
+    throw new Error(
+      'Esta vacante ya tiene una propuesta o adjudicación activa en la Mesa de Movilidad y no puede cancelarse directamente.'
+    );
+  }
+
+  const cancelada: Docente = {
+    ...actual,
+    estadoNecesidad: 'CANCELADA',
+    situacionFinalGdp: 'Cancelada',
+    motivoEstadoNecesidad: motivoClean
+  };
+
+  await guardarDocente(cancelada);
+
+  await registrarEventoAuditoria({
+    rbd: rbdClean,
+    periodo,
+    tipoEvento: 'ELIMINACION',
+    entidad: 'DOCENTE',
+    entidadId: cancelada.id,
+    descripcion: `Necesidad ${cancelada.run} (${cancelada.asignaturaPrincipal}, ${cancelada.horasContrato}h) cancelada. Motivo: ${motivoClean}`,
+    detalles: { estadoAnterior: estadoActual, estadoNuevo: 'CANCELADA', motivo: motivoClean, usuarioActor: params.usuarioActor }
+  });
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'CANCELACION_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: cancelada.id,
+    codigoReferencia: cancelada.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: estadoActual,
+    estadoNuevo: 'CANCELADA',
+    descripcion: `Necesidad ${cancelada.run} (${cancelada.asignaturaPrincipal}, ${cancelada.horasContrato}h) cancelada.`,
+    motivo: motivoClean
+  });
+
+  return cancelada;
 }
 
 // =============================================================================
@@ -1615,6 +2178,21 @@ export async function guardarSolicitudMovilidad(
     );
   }
 
+  await registrarMovimientoMovilidad({
+    periodo: solicitudFinal.periodo,
+    tipoMovimiento: 'SOLICITUD_MOVILIDAD',
+    entidad: 'SOLICITUD_MOVILIDAD',
+    entidadId: solicitudFinal.id,
+    codigoReferencia: solicitudFinal.runDocente,
+    rbdOrigen: solicitudFinal.rbdOrigen,
+    comuna: solicitudFinal.comunaOrigen,
+    rbdDestino: solicitudFinal.rbdDestinoPreferente,
+    usuarioActor: solicitudFinal.creadoPor || 'uatp',
+    estadoNuevo: solicitudFinal.estadoFlujo,
+    descripcion: `Solicitud de movilidad (${solicitudFinal.carril}) para ${solicitudFinal.nombreDocente} (${solicitudFinal.horasDisponiblesMover}h).`,
+    motivo: solicitudFinal.fundamento
+  });
+
   return solicitudFinal;
 }
 
@@ -1685,6 +2263,22 @@ export async function avanzarEstadoFlujoMovilidad(
       'avanzar_estado_flujo_movilidad'
     );
   }
+
+  await registrarMovimientoMovilidad({
+    periodo: actual.periodo,
+    tipoMovimiento: 'CAMBIO_ESTADO_SOLICITUD',
+    entidad: 'SOLICITUD_MOVILIDAD',
+    entidadId: actual.id,
+    codigoReferencia: actual.runDocente,
+    rbdOrigen: actual.rbdOrigen,
+    comuna: actual.comunaOrigen,
+    rbdDestino: actual.rbdDestinoPreferente,
+    usuarioActor: String(rolActor),
+    rolActor: String(rolActor),
+    estadoAnterior: actual.estadoFlujo,
+    estadoNuevo: nuevoEstado,
+    descripcion: `Solicitud de ${actual.nombreDocente} avanzó de ${actual.estadoFlujo} a ${nuevoEstado}.`
+  });
 
   return actualizada;
 }
@@ -5063,6 +5657,20 @@ export async function consolidarEscenarioAprobado(params: {
       });
     }
 
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'CONSOLIDACION_ESCENARIO',
+    entidad: 'ESCENARIO',
+    entidadId: params.escenarioId,
+    codigoReferencia: escenario.nombre,
+    rbdOrigen: rbdsAfectados[0] || 'SLEP',
+    usuarioActor: params.usuarioActor,
+    rolActor: String(params.rolActor),
+    estadoAnterior: escenario.estado,
+    estadoNuevo: 'CONSOLIDADO',
+    descripcion: `Consolidación atómica del escenario '${escenario.nombre}': ${propuestasConsolidadas} propuesta(s), ${vacantesReemplazadas} vacante(s) cubiertas.`
+  });
+
     if (isSupabaseEnabled()) {
       const docentesSync = Array.from(docentesActualizadosSyncMap.values());
       if (docentesSync.length > 0) {
@@ -5321,6 +5929,21 @@ export async function revertirEscenarioConsolidado(params: {
       }
     });
   }
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'REVERSION_ESCENARIO',
+    entidad: 'ESCENARIO',
+    entidadId: params.escenarioId,
+    codigoReferencia: escenario.nombre,
+    rbdOrigen: rbdsAfectados[0] || 'SLEP',
+    usuarioActor: actor,
+    rolActor: String(params.rolActor),
+    estadoAnterior: escenario.estado,
+    estadoNuevo: 'BORRADOR',
+    descripcion: `Reversión controlada del escenario '${escenario.nombre}': ${docentesRestaurados} docente(s) restaurados, ${rebotesEliminados} rebote(s) eliminados.`,
+    motivo: motivoClean
+  });
 
   if (isSupabaseEnabled()) {
     const [allDocsPost, allAsistentesPost] = await Promise.all([

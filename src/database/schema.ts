@@ -486,6 +486,27 @@ CREATE TABLE IF NOT EXISTS escenarios_consolidacion_snapshots (
   created_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS movilidad_registro_movimientos (
+  id TEXT PRIMARY KEY,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  tipo_movimiento TEXT NOT NULL,
+  entidad TEXT NOT NULL,
+  entidad_id TEXT NOT NULL,
+  codigo_referencia TEXT,
+  rbd_origen TEXT NOT NULL,
+  nombre_establecimiento TEXT,
+  comuna TEXT,
+  rbd_destino TEXT,
+  usuario_actor TEXT NOT NULL,
+  rol_actor TEXT,
+  estado_anterior TEXT,
+  estado_nuevo TEXT,
+  descripcion TEXT NOT NULL,
+  motivo TEXT,
+  detalles_json TEXT,
+  fecha_hora TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS __schema_migrations (
   id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL
@@ -581,7 +602,9 @@ const EXTRA_COLUMNS_BY_TABLE: Record<string, ReadonlyArray<readonly [string, str
     ['vacante_condicional', 'INTEGER DEFAULT 0'],
     ['tramo_carrera_docente', 'TEXT'],
     ['habilitacion_seremi_rbd', 'TEXT'],
-    ['habilitacion_seremi_asignatura', 'TEXT']
+    ['habilitacion_seremi_asignatura', 'TEXT'],
+    ['estado_necesidad', 'TEXT'],
+    ['motivo_estado_necesidad', 'TEXT']
   ],
   asignaciones_horarias: [
     ['co_docente_id', 'TEXT'],
@@ -730,7 +753,9 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_egresos_rbd_periodo ON egresos_proyectados(rbd, periodo);',
     'CREATE INDEX IF NOT EXISTS idx_solicitudes_movilidad_periodo ON solicitudes_movilidad(periodo, carril, estado_flujo);',
     'CREATE INDEX IF NOT EXISTS idx_escenarios_calce_periodo ON escenarios_calce(periodo, estado);',
-    'CREATE INDEX IF NOT EXISTS idx_propuestas_calce_escenario ON propuestas_calce(escenario_id);'
+    'CREATE INDEX IF NOT EXISTS idx_propuestas_calce_escenario ON propuestas_calce(escenario_id);',
+    'CREATE INDEX IF NOT EXISTS idx_movilidad_registro_periodo ON movilidad_registro_movimientos(periodo, fecha_hora);',
+    'CREATE INDEX IF NOT EXISTS idx_movilidad_registro_rbd ON movilidad_registro_movimientos(rbd_origen, tipo_movimiento);'
   ];
 
   for (const idxSql of indexes) {

@@ -43,6 +43,7 @@ import {
   esCursoModalidadEpja,
   esCursoNivelMedio34
 } from '../services/curricularPlanService';
+import { auditarCargaDocenteIntegral } from '../services/auditoriaDocenteService';
 import { ModalCombinarCursos } from '../components/ModalCombinarCursos';
 import { ModalDescombinarCurso } from '../components/ModalDescombinarCurso';
 import { ModalReconciliarMalla } from '../components/ModalReconciliarMalla';
@@ -340,6 +341,21 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     if (!esCursoParvulario || !cursoActivo || !colegio) return null;
     return mapaParvulario.get(cursoActivo.id)?.resultado || null;
   }, [esCursoParvulario, cursoActivo, colegio, mapaParvulario]);
+
+  const educadorasSobreasignadasIds = useMemo(() => {
+    const set = new Set<string>();
+    const cursosMap = new Map(cursos.map(c => [c.id, c]));
+    docentes.forEach(d => {
+      const asigsD = asignaciones.filter(a => a.docenteId === d.id);
+      const asigsCoD = asignaciones.filter(a => a.coDocenteId === d.id && a.tieneCoDocente);
+      if (asigsD.length === 0 && asigsCoD.length === 0) return;
+      const audit = auditarCargaDocenteIntegral(d, asigsD, asigsCoD, cursosMap, colegio?.porcentajePrioritarios || 0);
+      if (audit.auditDoc?.esInfractorExcesoLectivo || audit.estaSobreasignado) {
+        set.add(d.id);
+      }
+    });
+    return set;
+  }, [docentes, asignaciones, cursos, colegio?.porcentajePrioritarios]);
 
   // Asignaciones del curso activo (incluyendo asignaturas compartidas en paralelo con este curso)
   const asignacionesCurso = useMemo(() => {
@@ -813,13 +829,18 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                 // Cobertura específica para Educación Parvularia en horas cronológicas (motor unificado DTO 306)
                 const esParvC = esNivelParvulario(c.nivel);
                 const parvInfo = esParvC && colegio ? (mapaParvulario.get(c.id)?.resultado || null) : null;
+                const tieneEducadoraSobreasignada = esParvC && asigsPlanReg.some(a => educadorasSobreasignadasIds.has(a.docenteId));
 
                 const coberturaDocPct = esParvC && parvInfo 
                   ? parvInfo.porcentajeCoberturaPermanencia
                   : (hrsPlan > 0 ? Math.round((totDocPlanAsig / hrsPlan) * 100) : 0);
 
                 const docColor = esParvC && parvInfo
-                  ? (parvInfo.coberturaCompletaPermanencia ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200')
+                  ? (tieneEducadoraSobreasignada
+                      ? 'text-red-700 bg-red-50 border-red-200'
+                      : parvInfo.coberturaCompletaPermanencia
+                      ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                      : 'text-amber-700 bg-amber-50 border-amber-200')
                   : (totDocPlanAsig === hrsPlan ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
                      totDocPlanAsig > hrsPlan ? 'text-red-700 bg-red-50 border-red-200' :
                      'text-amber-700 bg-amber-50 border-amber-200');
@@ -929,7 +950,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                       {esParvC && parvInfo ? (
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${docColor}`} title={`Permanencia DTO 306: ${parvInfo.minutosCubiertosTotalesTexto} cubiertos de ${parvInfo.permanenciaTexto}`}>
                           <BookOpen className="w-3 h-3" />
-                          {parvInfo.minutosCubiertosTotalesTexto} / {parvInfo.permanenciaTexto} ({coberturaDocPct}%)
+                          {tieneEducadoraSobreasignada
+                            ? `${parvInfo.minutosCubiertosTotalesTexto} / ${parvInfo.permanenciaTexto} (⚠️ Exceso)`
+                            : parvInfo.coberturaCompletaPermanencia
+                            ? `✓ ${parvInfo.minutosCubiertosTotalesTexto} / ${parvInfo.permanenciaTexto} (100% Cuadrado)`
+                            : `${parvInfo.minutosCubiertosTotalesTexto} / ${parvInfo.permanenciaTexto} (${coberturaDocPct}%)`}
                         </span>
                       ) : (
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${docColor}`}>
@@ -1451,7 +1476,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                         <tr>
                           <th className="px-4 py-2.5">Asignatura</th>
                           <th className="px-4 py-2.5">Docente Asignado</th>
-                          <th className="px-4 py-2.5 text-center">Horas Aula (HA)</th>
+                          <th className="px-4 py-2.5 text-center">{esCursoParvulario ? 'Horas Aula (60m)' : 'Horas Aula (HA)'}</th>
                           <th className="px-4 py-2.5 text-center">Tipo</th>
                           <th className="px-4 py-2.5 text-right">Acciones</th>
                         </tr>
@@ -1506,7 +1531,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                   )}
                                 </td>
                                 <td className="px-4 py-2.5 text-center font-bold text-slate-800">
-                                  {a.horasPedagogicasAula} HA
+                                  {a.horasPedagogicasAula} {esCursoParvulario ? 'h (60m)' : 'HA'}
                                 </td>
                                 <td className="px-4 py-2.5 text-center">
                                   {esAsignacionLibreDisposicionJec(a, cursoActivo || null, infoPlanActivo) ? (
@@ -1540,11 +1565,22 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           : `Asignaturas Sugeridas por el Plan Oficial (${planActivo.nivel})`}
                       </span>
                       {esCursoParvulario && dotacionParvularia && (
-                        <span className="text-[10px] font-extrabold text-teal-800 bg-teal-100 px-2 py-0.5 rounded-full border border-teal-200">
-                          Por cubrir: {dotacionParvularia.minutosDeficitRestanteTexto} ({dotacionParvularia.horasAulaSegundaEducadoraRestante}h)
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                          dotacionParvularia.coberturaCompletaPermanencia
+                            ? 'text-emerald-800 bg-emerald-100 border-emerald-300'
+                            : 'text-teal-800 bg-teal-100 border-teal-200'
+                        }`}>
+                          {dotacionParvularia.coberturaCompletaPermanencia
+                            ? `✓ Permanencia 100% cubierta (${dotacionParvularia.permanenciaTexto})`
+                            : `Por cubrir: ${dotacionParvularia.minutosDeficitRestanteTexto} (${dotacionParvularia.horasAulaSegundaEducadoraRestante}h)`}
                         </span>
                       )}
                     </h5>
+                    {esCursoParvulario && dotacionParvularia?.coberturaCompletaPermanencia && (
+                      <div className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 font-medium">
+                        ✓ La permanencia total del curso ({dotacionParvularia.permanenciaTexto}) ya está 100% cubierta entre Educadora Titular y Co-Docencia. Los núcleos BCEP siguientes son referenciales para organización curricular.
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       {esCursoParvulario && cursoActivo ? (
                         CATALOGO_BCEP_PARVULARIA.map((b) => {
@@ -1553,6 +1589,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           const hrsAsig = asigsNucleo.reduce((s, a) => s + (a.horasPedagogicasAula || a.horasCronologicasPie || 0), 0);
                           const hrsRestantes = Math.max(0, Math.round((hrsSug - hrsAsig) * 100) / 100);
                           const cubierto = hrsRestantes <= 0.01;
+                          const permanenciaGlobalCubierta = Boolean(dotacionParvularia?.coberturaCompletaPermanencia);
 
                           return (
                             <div
@@ -1560,6 +1597,8 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                               className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
                                 cubierto
                                   ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                                  : permanenciaGlobalCubierta
+                                  ? 'bg-slate-50/80 border-slate-200 text-slate-700'
                                   : hrsAsig > 0
                                   ? 'bg-amber-50/70 border-amber-300 text-amber-950'
                                   : 'bg-white border-slate-200 hover:border-teal-400'
@@ -1576,9 +1615,15 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                               </div>
 
                               {!cubierto && (
-                                <span className="px-2 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold rounded shrink-0">
-                                  Faltan {hrsRestantes}h
-                                </span>
+                                permanenciaGlobalCubierta ? (
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-semibold rounded shrink-0">
+                                    Referencial
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold rounded shrink-0">
+                                    Faltan {hrsRestantes}h
+                                  </span>
+                                )
                               )}
                             </div>
                           );

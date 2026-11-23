@@ -1612,10 +1612,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                   horasContrato: Math.round(horasNum),
                   fuenteFinanciamiento: vacFuente,
                   justificacion: vacJustificacion.trim(),
-                  usuarioActor: usuarioActualId
+                  usuarioActor: usuarioActualId,
+                  nombreEstablecimiento: colegio.nombre,
+                  comuna: colegio.comuna,
+                  estadoInicial: 'BORRADOR'
                 });
                 await onGuardarDocente(vacante);
                 setModalVacanteOpen(false);
+                onNavegarAPestana?.('necesidades');
               } catch (err: any) {
                 setErrorVacante(err?.message || 'Error al registrar la necesidad de vacante.');
               } finally {

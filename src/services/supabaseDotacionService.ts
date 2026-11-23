@@ -338,6 +338,12 @@ export function mapDocenteToDb(
     base.justificacion_vacante = docente.justificacionVacante || null;
     base.origen_egreso_id = docente.origenEgresoId || null;
     base.vacante_condicional = Boolean(docente.vacanteCondicional);
+    if (docente.estadoNecesidad) {
+      base.estado_necesidad = docente.estadoNecesidad;
+    }
+    if (docente.motivoEstadoNecesidad) {
+      base.motivo_estado_necesidad = docente.motivoEstadoNecesidad;
+    }
   }
 
   if (incluirColumnasMovilidad) {
@@ -441,7 +447,9 @@ export function mapDocenteFromDb(row: any): Docente {
     vacanteCondicional: Boolean(row.vacante_condicional),
     tramoCarreraDocente: row.tramo_carrera_docente ? (String(row.tramo_carrera_docente) as Docente['tramoCarreraDocente']) : undefined,
     habilitacionSeremiRbd: row.habilitacion_seremi_rbd ? String(row.habilitacion_seremi_rbd) : undefined,
-    habilitacionSeremiAsignatura: row.habilitacion_seremi_asignatura ? String(row.habilitacion_seremi_asignatura) : undefined
+    habilitacionSeremiAsignatura: row.habilitacion_seremi_asignatura ? String(row.habilitacion_seremi_asignatura) : undefined,
+    estadoNecesidad: row.estado_necesidad ? (String(row.estado_necesidad) as Docente['estadoNecesidad']) : undefined,
+    motivoEstadoNecesidad: row.motivo_estado_necesidad ? String(row.motivo_estado_necesidad) : undefined
   };
 }
 
