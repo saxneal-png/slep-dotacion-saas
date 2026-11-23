@@ -19,6 +19,7 @@ import {
   esNivelParvulario,
   determinarRegimenNormativo,
   buscarContratoMinimoPorTabla,
+  calcularJornadaMinutos,
   cronologicasAPedagogicasPie,
   pedagogicasACronologicasPie,
   decToHhmm
@@ -249,8 +250,20 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
           colegio.porcentajePrioritarios || 0
         );
 
+        const regimenCapDoc: '65_35' | '60_40' =
+          (colegio.porcentajePrioritarios || 0) >= 80 || audit.ha60_40 > audit.ha65_35 ? '60_40' : '65_35';
+        const capSoloPie = calcularJornadaMinutos(
+          horasDirectasDisponibles,
+          0,
+          regimenCapDoc,
+          Boolean(d.aplicaArticulo69)
+        );
+        const horasOtrasFunciones = Math.max(0, d.horasContrato - horasTotal);
         const haAsignadas = audit.haDocenciaEfectiva;
-        const maxHaPermitidas = audit.maxHAPermitidas;
+        const maxHaPermitidas =
+          hPie > 0 && hPie < d.horasContrato
+            ? Math.min(audit.maxHAPermitidas, capSoloPie.horasPedagogicasDisponiblesMax)
+            : audit.maxHAPermitidas;
         const haLibres = Math.max(0, maxHaPermitidas - haAsignadas);
 
         const cursosResumen = asigsDoc
@@ -265,6 +278,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
           ...d,
           horasTotal,
           horasCoord,
+          horasOtrasFunciones,
           horasDirectasDisponibles,
           haAsignadas,
           maxHaPermitidas,
@@ -283,15 +297,43 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
   // 3. Profesionales Asistentes PAE (Docentes PROFESIONAL_PAE + Asistentes PAE) con saldo cronológico
   const profesionalesPae = useMemo(() => {
+    const esAsigNoPie = (asig: AsignacionHoraria) =>
+      Boolean(
+        asig.esTallerSep ||
+          asig.esTrabajoColaborativo ||
+          (asig.tipoApoyo && /sep|taller|colaborativ|apoyo al aula|agrupaci[oó]n flexible/i.test(asig.tipoApoyo))
+      );
+
     const docentesPaeList = docentes
       .filter(d => d.estamento === 'PROFESIONAL_PAE')
       .map(d => {
         const hPie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
-        const horasPae = hPie > 0 ? hPie : d.horasContrato;
+        const coordPie =
+          (d.funcionesNoAula || [])
+            .filter(f => f.financiamiento === 'PIE' && (f.tipo === 'COORDINACION' || /coord/i.test(f.nombre || '')))
+            .reduce((s, f) => s + (Number(f.horas) || 0), 0) || (d.horasCoordinacionPie || 0);
+        const otrasFuncionesNoAula = (d.funcionesNoAula || [])
+          .filter(f => f.financiamiento !== 'PIE')
+          .reduce((s, f) => s + (Number(f.horas) || 0), 0);
+
         const asigsDoc = asignaciones.filter(a => a.docenteId === d.id);
-        const horasAsignadas = asigsDoc.reduce((s, a) => s + obtenerHorasCronologicasExactasAsig(a), 0);
+        const asigsPieDoc = asigsDoc.filter(a => !esAsigNoPie(a));
+        const horasNoPieAsig = asigsDoc
+          .filter(esAsigNoPie)
+          .reduce((s, a) => s + obtenerHorasCronologicasExactasAsig(a), 0);
+
+        const horasOtrasFunciones =
+          hPie > 0 && hPie < d.horasContrato
+            ? Math.max(0, d.horasContrato - hPie)
+            : Math.max(otrasFuncionesNoAula, horasNoPieAsig);
+        const horasPae =
+          hPie > 0
+            ? Math.max(0, hPie - coordPie - (hPie === d.horasContrato ? horasOtrasFunciones : 0))
+            : Math.max(0, d.horasContrato - coordPie - horasOtrasFunciones);
+
+        const horasAsignadas = asigsPieDoc.reduce((s, a) => s + obtenerHorasCronologicasExactasAsig(a), 0);
         const horasLibres = Math.max(0, Math.round((horasPae - horasAsignadas) * 100) / 100);
-        const cursosResumen = asigsDoc.map(a => {
+        const cursosResumen = asigsPieDoc.map(a => {
           const c = cursos.find(cur => cur.id === a.cursoId);
           return `${c ? `${c.nivel} ${c.letra}` : 'Sin curso'} (${obtenerHorasCronologicasExactasAsig(a)}h)`;
         });
@@ -301,6 +343,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
           nombre: `${d.nombres} ${d.apellidos}`,
           cargo: d.titulo || 'Profesional Asistente PAE',
           horasPae,
+          horasOtrasFunciones,
           horasAsignadas,
           horasLibres,
           horasContratoTotal: d.horasContrato,
@@ -319,11 +362,30 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
       })
       .map(a => {
         const hPieRaw = (Number(a.horasPieIndefinido) || 0) + (Number(a.horasPiePlazoFijo) || 0);
-        const hPie = hPieRaw > 0 ? hPieRaw : Number(a.horasContrato || 0);
+        const hOtrasFuentes =
+          (Number(a.horasSubvencionGeneralIndefinido) || 0) +
+          (Number(a.horasSubvencionGeneralPlazoFijo) || 0) +
+          (Number(a.horasSepIndefinido) || 0) +
+          (Number(a.horasSepPlazoFijo) || 0) +
+          (Number(a.horasProRetencion) || 0);
         const asigsAsis = asignaciones.filter(asig => asig.docenteId === a.id);
-        const horasAsignadas = asigsAsis.reduce((s, asig) => s + obtenerHorasCronologicasExactasAsig(asig), 0);
+        const asigsPieAsis = asigsAsis.filter(asig => !esAsigNoPie(asig));
+        const horasNoPieAsig = asigsAsis
+          .filter(esAsigNoPie)
+          .reduce((s, asig) => s + obtenerHorasCronologicasExactasAsig(asig), 0);
+
+        const horasContratoTotal = Number(a.horasContrato || 0);
+        const horasOtrasFunciones = hOtrasFuentes > 0 ? hOtrasFuentes : horasNoPieAsig;
+        const hPie =
+          hPieRaw > 0
+            ? hPieRaw === horasContratoTotal && horasOtrasFunciones > 0
+              ? Math.max(0, hPieRaw - horasOtrasFunciones)
+              : hPieRaw
+            : Math.max(0, horasContratoTotal - horasOtrasFunciones);
+
+        const horasAsignadas = asigsPieAsis.reduce((s, asig) => s + obtenerHorasCronologicasExactasAsig(asig), 0);
         const horasLibres = Math.max(0, Math.round((hPie - horasAsignadas) * 100) / 100);
-        const cursosResumen = asigsAsis.map(asig => {
+        const cursosResumen = asigsPieAsis.map(asig => {
           const c = cursos.find(cur => cur.id === asig.cursoId);
           return `${c ? `${c.nivel} ${c.letra}` : 'Sin curso'} (${obtenerHorasCronologicasExactasAsig(asig)}h)`;
         });
@@ -333,6 +395,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
           nombre: `${a.nombres} ${a.apellidos}`,
           cargo: a.cargoFuncion || 'Profesional Asistente PAE',
           horasPae: hPie,
+          horasOtrasFunciones,
           horasAsignadas,
           horasLibres,
           horasContratoTotal: a.horasContrato,
@@ -795,11 +858,12 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                         {d.esExcesoLectivo ? 'Exceso' : `${d.haLibres} HA lib.`}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between">
-                      <span>
-                        {d.haAsignadas} / {d.maxHaPermitidas} HA · {d.horasTotal}h cto
+                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between gap-1">
+                      <span className="truncate">
+                        {d.haAsignadas} / {d.maxHaPermitidas} HA · {d.horasTotal}h PIE
+                        {d.horasOtrasFunciones > 0 ? ` (${d.horasOtrasFunciones}h otra func.)` : ''}
                       </span>
-                      {d.horasCoord > 0 && <span className="text-purple-700 font-semibold">{d.horasCoord}h Coord.</span>}
+                      {d.horasCoord > 0 && <span className="text-purple-700 font-semibold shrink-0">{d.horasCoord}h Coord.</span>}
                     </div>
                     <div className="w-full h-1.5 bg-slate-200 rounded-full mt-1.5 overflow-hidden">
                       <div
@@ -854,6 +918,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                     </div>
                     <div className="text-[10px] text-slate-500 mt-0.5 truncate">
                       {p.horasAsignadas} / {p.horasPae}h cron. · {p.cargo}
+                      {p.horasOtrasFunciones > 0 ? ` · ${p.horasOtrasFunciones}h otra func.` : ''}
                     </div>
                     <div className="w-full h-1.5 bg-slate-200 rounded-full mt-1.5 overflow-hidden">
                       <div
