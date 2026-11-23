@@ -546,7 +546,13 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     });
   }, [docentes, asignaciones, colegio, cursos, consolidadosTerritoriales, regimenTabla, regimenProporcion]);
 
-  const sobreasignadosCount = docentesAuditados.filter(item => item.valSobre.estaSobreasignado).length;
+  const sobreasignadosCount = docentesAuditados.filter(
+    item =>
+      item.auditMulti.esInfractorExcesoLectivo ||
+      item.valSobre.estaSobreasignado ||
+      item.auditMulti.estadoSaldo === 'DEFICIT' ||
+      item.esImprocedenteFinanciamiento
+  ).length;
 
   const cantidadFuncionesFueraAula = useMemo(() => {
     return docentes.filter(tieneFuncionesFueraDeAulaSinColaborativo).length;
@@ -1228,6 +1234,30 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                         {d.aplicaArticulo69 && (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300" title="Artículo 69: reducción de aula a máx. 24h cronológicas (32 HA) por 30+ años de docencia">
                             ⚖️ Art. 69 (Máx 24h)
+                          </span>
+                        )}
+                        {d.estadoSancionGdp && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                              d.estadoSancionGdp === 'Aprobado'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : d.estadoSancionGdp === 'Rechazado'
+                                ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                : d.estadoSancionGdp === 'Aprobado parcial.'
+                                ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                            title={
+                              d.observacionesSlep
+                                ? `Sanción GDP: ${d.estadoSancionGdp} — ${d.observacionesSlep}`
+                                : `Estado solicitud GDP: ${d.estadoSancionGdp}`
+                            }
+                          >
+                            {d.estadoSancionGdp === 'Pendiente'
+                              ? '⏳ Pendiente Aprobación SLEP'
+                              : d.estadoSancionGdp === 'Aprobado parcial.'
+                              ? `✓ Aprob. Parcial (${d.horasAprobadasGdp ?? d.horasContrato}h)`
+                              : `GDP: ${d.estadoSancionGdp}`}
                           </span>
                         )}
                         {d.requiereAutorizacionDocente && (
