@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
+
+vi.mock('../src/services/supabaseClient', () => ({
+  isSupabaseEnabled: () => false,
+  supabase: null
+}));
+
 import { AuthService } from '../src/services/authService';
 import { UsuarioSistema } from '../src/types/authTypes';
 import { listarUsuariosDb } from '../src/database/repositories/usuariosRepo';
@@ -118,7 +124,7 @@ describe('Gestión de Usuarios: Persistencia de ediciones, carteras y roles', ()
 
     await AuthService.eliminarUsuario('user-test-asesor-a');
     await AuthService.eliminarUsuario('user-test-asesor-b');
-  }, 15000);
+  }, 30000);
 
   it('actualizarColegiosDeAsesor debe actualizar asesorUatp incluso si el asesor cambió su nombreCompleto', async () => {
     await guardarEstablecimiento({

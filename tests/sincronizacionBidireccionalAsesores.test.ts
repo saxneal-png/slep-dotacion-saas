@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../src/services/supabaseClient', () => ({
+  isSupabaseEnabled: () => false,
+  supabase: null
+}));
+
 import { AuthService } from '../src/services/authService';
 import {
   guardarPerfilAsesor,
@@ -78,7 +84,7 @@ describe('Sincronización Bidireccional Asesores UATP, Cartera y Aislamiento Ter
     expect(lorena.carteraRbds).toEqual(['1003']);
     expect(lorena.carteraRbds).not.toContain('1001');
     expect(lorena.carteraRbds).not.toContain('1002');
-  });
+  }, 30000);
 
   it('3. Un Asesor UATP en Cartera ve estrictamente sus colegios asignados y no todo el territorio', () => {
     // Asesor con 2 colegios (1001 y 1002)

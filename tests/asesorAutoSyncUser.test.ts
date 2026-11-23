@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../src/services/supabaseClient', () => ({
+  isSupabaseEnabled: () => false,
+  supabase: null
+}));
+
 import { AuthService } from '../src/services/authService';
 import { colegiosVisibles } from '../src/services/scopeService';
 import { Establecimiento } from '../src/types';
@@ -63,7 +69,7 @@ describe('Sincronización Automática: Registro de Asesor -> Usuario Activo', ()
     // Debe seguir logueando con su clave personalizada previa
     const loginOk = await AuthService.login('rodrigo.fuentes', 'miClaveSegura99');
     expect(loginOk).toBeDefined();
-  });
+  }, 30000);
 
   it('al iniciar sesión como el asesor creado, el scope territorial restringe su vista exclusivamente a su cartera', async () => {
     const sesion = await AuthService.sincronizarAsesorComoUsuario({

@@ -189,6 +189,18 @@ export function flushPersistAsync(): Promise<void> {
   return persistChain;
 }
 
+let persistPendingResolvers: Array<() => void> = [];
+
+function resolvePendingPersistWaiters(): void {
+  const resolvers = persistPendingResolvers;
+  persistPendingResolvers = [];
+  for (const r of resolvers) {
+    try {
+      r();
+    } catch (_) {}
+  }
+}
+
 export function persistDb(forceImmediate = false): Promise<void> {
   dirtyVersion += 1;
   isDbDirty = true;
@@ -199,13 +211,14 @@ export function persistDb(forceImmediate = false): Promise<void> {
   }
 
   if (forceImmediate) {
-    return flushPersistAsync();
+    return flushPersistAsync().finally(resolvePendingPersistWaiters);
   }
 
   return new Promise((resolve) => {
+    persistPendingResolvers.push(resolve);
     persistDebounceTimer = setTimeout(() => {
       persistDebounceTimer = null;
-      flushPersistAsync().then(resolve);
+      flushPersistAsync().finally(resolvePendingPersistWaiters);
     }, 300); // 300ms de debounce máximo y sin requestIdleCallback
   });
 }

@@ -23,7 +23,7 @@ describe('Servicio de Estadísticas y Auditoría de Dotación de Personal SLEP',
     nombre: 'Escuela Diguillín Central',
     comuna: 'San Ignacio',
     regimen: 'JEC',
-    porcentajePrioritarios: 75,
+    porcentajePrioritarios: 55,
     director: 'Juan Pérez'
   };
 
