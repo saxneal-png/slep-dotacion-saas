@@ -95,7 +95,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const demandasCursos = useMemo(() => {
     return cursos.map(c => {
       const esParvulario = esNivelParvulario(c.nivel);
-      const isJec = esParvulario ? false : c.regimen === 'JEC';
+      const isJec = c.regimen === 'JEC';
       const jecMismatchParvularia = esParvulario && c.regimen === 'JEC';
       const regimenProporcionCurso: '65_35' | '60_40' =
         c.regimenProporcion || determinarRegimenNormativo(colegio.porcentajePrioritarios || 0, c.nivel);
@@ -129,15 +129,23 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
         if (a.esTallerSep || a.esTrabajoColaborativo || (a.tipoApoyo && /sep|colaborativ/i.test(a.tipoApoyo))) {
           return false;
         }
-        const doc = docentes.find(d => d.id === a.docenteId || d.id === a.coDocenteId);
-        const esDocPie =
-          doc &&
-          (esDocenteEducacionEspecialPie(doc) || doc.estamento === 'PROFESIONAL_PAE');
-        return Boolean(
-          esDocPie ||
-            (a.tipoApoyo && /pie|decreto 170|recurso|pae|cl[ií]nico/i.test(a.tipoApoyo)) ||
+        // Excluir explícitamente co-docencias de apoyo al aula / agrupaciones flexibles de docentes de aula regular
+        if (
+          a.tipoApoyo &&
+          /apoyo al aula|agrupaci[oó]n flexible/i.test(a.tipoApoyo) &&
+          !/pie|decreto 170|recurso|pae|cl[ií]nico/i.test(a.tipoApoyo)
+        ) {
+          return false;
+        }
+        const docPrincipal = docentes.find(d => d.id === a.docenteId);
+        const esDocPrincipalPie =
+          docPrincipal &&
+          (esDocenteEducacionEspecialPie(docPrincipal) || docPrincipal.estamento === 'PROFESIONAL_PAE');
+        const esEtiquetaPieExplicita = Boolean(
+          (a.tipoApoyo && /pie|decreto 170|recurso|pae|cl[ií]nico|co-docencia en aula regular/i.test(a.tipoApoyo)) ||
             (a.asignatura && /pie|decreto 170|recurso/i.test(a.asignatura))
         );
+        return Boolean(esDocPrincipalPie || esEtiquetaPieExplicita);
       });
 
       const asigsDiferencial = asigsPie.filter(a => {
@@ -844,7 +852,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                             <h4 className="text-sm font-black text-slate-900">
                               {curso.nivel} {curso.letra}
                             </h4>
-                            {puedeEditarPie && !esParvulario ? (
+                            {puedeEditarPie ? (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -853,32 +861,30 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                     regimen: isJec ? 'No JEC' : 'JEC'
                                   })
                                 }
-                                title="Clic para alternar jornada JEC / Sin JEC de este curso (impacta la tabla base Dto. 170: 10h vs 7h)."
+                                title={
+                                  jecMismatchParvularia
+                                    ? 'Curso de Parvularia marcado como JEC en el establecimiento; clic para cambiarlo a No JEC.'
+                                    : 'Clic para alternar jornada JEC / No JEC de este curso (impacta la tabla base Dto. 170: 10h vs 7h).'
+                                }
                                 className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer transition-colors ${
-                                  isJec
+                                  jecMismatchParvularia
+                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+                                    : isJec
                                     ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                                     : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'
                                 }`}
                               >
-                                {isJec ? 'JEC' : 'Sin JEC'}
+                                {isJec ? 'JEC' : 'No JEC'}
                               </button>
                             ) : (
                               <span
                                 className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                  jecMismatchParvularia
-                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                  isJec
+                                    ? 'bg-slate-100 text-slate-700 border-slate-200'
                                     : 'bg-sky-50 text-sky-800 border-sky-200'
                                 }`}
-                                title={
-                                  jecMismatchParvularia
-                                    ? 'Curso de Parvularia etiquetado como JEC en origen; el motor aplica automáticamente Sin JEC (7h base) por normativa.'
-                                    : esParvulario
-                                    ? 'Educación Parvularia aplica siempre régimen Sin JEC.'
-                                    : undefined
-                                }
                               >
-                                {isJec ? 'JEC' : 'Sin JEC'}
-                                {jecMismatchParvularia ? ' (Auto Parv.)' : ''}
+                                {isJec ? 'JEC' : 'No JEC'}
                               </span>
                             )}
                             <span
