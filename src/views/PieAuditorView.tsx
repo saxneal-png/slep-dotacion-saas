@@ -453,6 +453,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   // 4. Acciones de asignación multi-docente directa por curso
   const handleAgregarEducadoraACurso = async (cursoId: string, faltanHa: number, docenteIdPreferido?: string) => {
     if (!onGuardarAsignacion || !puedeEditarPie) return;
+    if (faltanHa <= 0) return;
     if (docentesDiferenciales.length === 0) {
       alert('No hay Educadoras Diferenciales registradas en la dotación del establecimiento.');
       return;
@@ -461,7 +462,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     const mejorEducadora =
       (docenteIdPreferido ? docentesDiferenciales.find(d => d.id === docenteIdPreferido) : undefined) ||
       [...docentesDiferenciales].sort((a, b) => b.haLibres - a.haLibres)[0];
-    const haSugeridas = faltanHa > 0 ? Math.max(1, Math.round(faltanHa)) : 4;
+    const haSugeridas = Math.max(1, Math.round(faltanHa));
     const haFinal = mejorEducadora.haLibres > 0 ? Math.min(haSugeridas, Math.max(1, mejorEducadora.haLibres)) : haSugeridas;
 
     const nuevaAsig: AsignacionHoraria = {
@@ -483,6 +484,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
   const handleAgregarPaeACurso = async (cursoId: string, faltanCron: number, paeIdPreferido?: string) => {
     if (!onGuardarAsignacion || !puedeEditarPie) return;
+    if (faltanCron <= 0) return;
     if (profesionalesPae.length === 0) {
       alert('No hay Profesionales Asistentes PAE (Fonoaudiólogo, Psicólogo, TO) registrados con horas PIE en este establecimiento.');
       return;
@@ -491,7 +493,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     const mejorPae =
       (paeIdPreferido ? profesionalesPae.find(p => p.id === paeIdPreferido) : undefined) ||
       [...profesionalesPae].sort((a, b) => b.horasLibres - a.horasLibres)[0];
-    const hrsSugeridas = faltanCron > 0 ? Math.round(faltanCron * 100) / 100 : 2;
+    const hrsSugeridas = Math.round(faltanCron * 100) / 100;
     const hrsFinal = mejorPae.horasLibres > 0 ? Math.min(hrsSugeridas, mejorPae.horasLibres) : hrsSugeridas;
 
     const nuevaAsig: AsignacionHoraria = {
@@ -1234,7 +1236,11 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
                           {puedeEditarPie && onGuardarAsignacion && (
                             <div className="flex flex-wrap gap-2">
-                              {profesionalActivoDif ? (
+                              {faltanHaDif <= 0 ? (
+                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg text-[11px] border border-emerald-200 flex items-center gap-1 select-none">
+                                  ✓ Diferencial cubierto
+                                </span>
+                              ) : profesionalActivoDif ? (
                                 <button
                                   type="button"
                                   onClick={() => handleAgregarEducadoraACurso(curso.id, faltanHaDif, profesionalActivoDif.id)}
@@ -1242,8 +1248,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                 >
                                   <Plus className="w-3 h-3" />
                                   <span>
-                                    Asignar a {profesionalActivoDif.nombres.split(' ')[0]}{' '}
-                                    {faltanHaDif > 0 ? `(+${Math.round(faltanHaDif)} HA)` : '(+4 HA)'}
+                                    Asignar a {profesionalActivoDif.nombres.split(' ')[0]} (+{Math.round(faltanHaDif)} HA)
                                   </span>
                                 </button>
                               ) : (
@@ -1253,10 +1258,14 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                   className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-[11px] shadow-2xs cursor-pointer flex items-center gap-1 transition-colors"
                                 >
                                   <Plus className="w-3 h-3" />
-                                  <span>Educadora Dif. {faltanHaDif > 0 ? `(+${Math.round(faltanHaDif)} HA)` : '(HA)'}</span>
+                                  <span>Educadora Dif. (+{Math.round(faltanHaDif)} HA)</span>
                                 </button>
                               )}
-                              {profesionalActivoPae ? (
+                              {faltanCronPae <= 0 ? (
+                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg text-[11px] border border-emerald-200 flex items-center gap-1 select-none">
+                                  ✓ PAE cubierto
+                                </span>
+                              ) : profesionalActivoPae ? (
                                 <button
                                   type="button"
                                   onClick={() => handleAgregarPaeACurso(curso.id, faltanCronPae, profesionalActivoPae.id)}
@@ -1264,8 +1273,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                 >
                                   <Plus className="w-3 h-3" />
                                   <span>
-                                    Asignar a {profesionalActivoPae.nombre.split(' ')[0]}{' '}
-                                    {faltanCronPae > 0 ? `(+${faltanCronPae}h)` : '(+2h)'}
+                                    Asignar a {profesionalActivoPae.nombre.split(' ')[0]} (+{faltanCronPae}h)
                                   </span>
                                 </button>
                               ) : (
@@ -1275,7 +1283,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                   className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-[11px] shadow-2xs cursor-pointer flex items-center gap-1 transition-colors"
                                 >
                                   <Plus className="w-3 h-3" />
-                                  <span>Profesional PAE {faltanCronPae > 0 ? `(+${faltanCronPae}h)` : '(hrs)'}</span>
+                                  <span>Profesional PAE (+{faltanCronPae}h)</span>
                                 </button>
                               )}
                             </div>
@@ -1290,7 +1298,13 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                             {/* Tarjetas de Educadoras Diferenciales (HA 45m) */}
                             {asigsDiferencial.map(asig => {
-                              const haVal = draftHorasAsig[asig.id] ?? getHorasAulaLectivaAsig(asig);
+                              const actualHaAsig = getHorasAulaLectivaAsig(asig);
+                              const otrasHaCurso = Math.max(0, haDiferencialAsignadas - actualHaAsig);
+                              const maxHaCursoPermitidas = Math.max(
+                                actualHaAsig,
+                                Math.floor(Math.max(0, haDifRequeridas - otrasHaCurso))
+                              );
+                              const haVal = draftHorasAsig[asig.id] ?? actualHaAsig;
                               const haNum = Number(haVal) || 0;
                               return (
                                 <div
@@ -1335,13 +1349,14 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                       <input
                                         type="number"
                                         min="1"
-                                        max="44"
+                                        max={maxHaCursoPermitidas}
                                         step="1"
                                         disabled={!puedeEditarPie || !onGuardarAsignacion}
                                         value={haVal}
                                         onChange={e => setDraftHorasAsig(prev => ({ ...prev, [asig.id]: e.target.value }))}
                                         onBlur={() => {
-                                          const h = Math.max(1, Math.round(Number(draftHorasAsig[asig.id] ?? getHorasAulaLectivaAsig(asig))));
+                                          const rawH = Math.max(1, Math.round(Number(draftHorasAsig[asig.id] ?? actualHaAsig)));
+                                          const h = Math.min(rawH, maxHaCursoPermitidas);
                                           setDraftHorasAsig(prev => {
                                             const copy = { ...prev };
                                             delete copy[asig.id];
@@ -1388,7 +1403,13 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
                             {/* Tarjetas de Profesionales Asistentes PAE (hrs cron.) */}
                             {asigsPae.map(asig => {
-                              const cronVal = draftHorasAsig[asig.id] ?? obtenerHorasCronologicasExactasAsig(asig);
+                              const actualCronAsig = obtenerHorasCronologicasExactasAsig(asig);
+                              const otrasCronCurso = Math.max(0, cronPaeAsignadas - actualCronAsig);
+                              const maxCronCursoPermitidas = Math.max(
+                                actualCronAsig,
+                                Math.round(Math.max(0, demanda.horasPaeDecimal - otrasCronCurso) * 100) / 100
+                              );
+                              const cronVal = draftHorasAsig[asig.id] ?? actualCronAsig;
                               return (
                                 <div
                                   key={asig.id}
@@ -1438,13 +1459,14 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                       <input
                                         type="number"
                                         min="0.25"
-                                        max="44"
+                                        max={maxCronCursoPermitidas}
                                         step="0.25"
                                         disabled={!puedeEditarPie || !onGuardarAsignacion}
                                         value={cronVal}
                                         onChange={e => setDraftHorasAsig(prev => ({ ...prev, [asig.id]: e.target.value }))}
                                         onBlur={() => {
-                                          const c = Math.max(0.25, Number(draftHorasAsig[asig.id] ?? obtenerHorasCronologicasExactasAsig(asig)));
+                                          const rawC = Math.max(0.25, Number(draftHorasAsig[asig.id] ?? actualCronAsig));
+                                          const c = Math.round(Math.min(rawC, maxCronCursoPermitidas) * 100) / 100;
                                           setDraftHorasAsig(prev => {
                                             const copy = { ...prev };
                                             delete copy[asig.id];
