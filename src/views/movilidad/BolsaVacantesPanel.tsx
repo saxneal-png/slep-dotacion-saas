@@ -14,8 +14,10 @@ import {
   CursoSae,
   Docente,
   Establecimiento,
+  TipoRequerimientoVacante,
   TipoVacanteDocente
 } from '../../types';
+import { esVacanteCargoDocente } from '../../services/movilidadTerritorialService';
 import {
   sugerirHomologacionCurricularTpGemini,
   SugerenciaHomologacionTpResult
@@ -29,6 +31,8 @@ import {
 
 export interface BolsaVacantesPanelProps {
   vacantesFiltradas: Docente[];
+  filtroNaturalezaVacante?: 'TODAS' | TipoRequerimientoVacante;
+  onChangeFiltroNaturalezaVacante?: (val: 'TODAS' | TipoRequerimientoVacante) => void;
   filtroTipoVacante: 'TODAS' | TipoVacanteDocente;
   onChangeFiltroTipoVacante: (val: 'TODAS' | TipoVacanteDocente) => void;
   filtroComunaVacante: string;
@@ -70,6 +74,8 @@ function esVacanteTecnicoProfesional(
 
 export const BolsaVacantesPanel: React.FC<BolsaVacantesPanelProps> = ({
   vacantesFiltradas,
+  filtroNaturalezaVacante = 'TODAS',
+  onChangeFiltroNaturalezaVacante,
   filtroTipoVacante,
   onChangeFiltroTipoVacante,
   filtroComunaVacante,
@@ -109,7 +115,23 @@ export const BolsaVacantesPanel: React.FC<BolsaVacantesPanelProps> = ({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          {onChangeFiltroNaturalezaVacante && (
+            <select
+              value={filtroNaturalezaVacante}
+              onChange={e =>
+                onChangeFiltroNaturalezaVacante(
+                  e.target.value as 'TODAS' | TipoRequerimientoVacante
+                )
+              }
+              className="px-2 py-1.5 text-[11px] font-semibold bg-slate-50 border border-slate-200 rounded-lg"
+            >
+              <option value="TODAS">Todo personal</option>
+              <option value="HORAS_AULA">Horas Aula</option>
+              <option value="CARGO_DOCENTE">Cargos Docentes</option>
+              <option value="CARGO_ASISTENTE">Asistentes 21.109</option>
+            </select>
+          )}
           <select
             value={filtroTipoVacante}
             onChange={e =>
@@ -173,10 +195,13 @@ export const BolsaVacantesPanel: React.FC<BolsaVacantesPanelProps> = ({
             const tipoMeta = ETIQUETAS_TIPO_VACANTE[tipo];
             const fuente = inferirFuenteVacante(v);
             const seleccionada = vacanteDestinoId === v.id;
-            const resumenAsig = asignaturasPorCubrirPorVacante.get(v.id);
+            const esAsistenteCargo = v.id.startsWith('vac_ast_');
+            const esCargoDoc = !esAsistenteCargo && esVacanteCargoDocente(v);
+            const esCargo = esAsistenteCargo || esCargoDoc;
+            const resumenAsig = esCargo ? undefined : asignaturasPorCubrirPorVacante.get(v.id);
             const directas = resumenAsig?.directas || [];
             const deficit = resumenAsig?.deficitEstablecimiento || [];
-            const esTp = esVacanteTecnicoProfesional(v, est);
+            const esTp = !esCargo && esVacanteTecnicoProfesional(v, est);
             const homologacionHabilitada = Boolean(origenSeleccionado) || esTp;
 
             return (
@@ -220,6 +245,19 @@ export const BolsaVacantesPanel: React.FC<BolsaVacantesPanelProps> = ({
                   >
                     {tipoMeta.label}
                   </span>
+                  {esAsistenteCargo ? (
+                    <span className="px-1.5 py-0.5 rounded bg-teal-100 text-teal-900 border border-teal-300 font-black">
+                      Asistente Ley 21.109{v.funcionPrincipal ? ` · ${v.funcionPrincipal}` : ''}
+                    </span>
+                  ) : esCargoDoc ? (
+                    <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-300 font-black">
+                      Cargo Directivo / UTP
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold">
+                      Horas Aula
+                    </span>
+                  )}
                   <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold">
                     {fuente === 'SUBVENCION_GENERAL' ? 'Subv. General' : fuente}
                   </span>

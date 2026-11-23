@@ -3,8 +3,9 @@ import { AlertTriangle, Award, CheckCircle2, FileCheck2, RotateCcw, ScanSearch, 
 import { saveAs } from 'file-saver';
 import {
   Establecimiento, Docente, AsignacionHoraria, AsistenteEducacion, CursoSae,
+  EstamentoDocente,
   FeatureFlagsMovilidad, EgresoProyectado, CausalEgresoDocente, CertezaJuridicaEgreso,
-  SolicitudMovilidad, EscenarioCalce, PropuestaCalce, TipoVacanteDocente
+  SolicitudMovilidad, EscenarioCalce, PropuestaCalce, TipoRequerimientoVacante, TipoVacanteDocente
 } from '../types';
 import { AuthSession, EstadoPausaRevision, RolId } from '../types/authTypes';
 import { usePermisos } from '../security/PermisosContext';
@@ -13,6 +14,8 @@ import { AuthService } from '../services/authService';
 import {
   esRolNivelCentralMovilidad, esRolValidadorGdp, esRolConsolidadorMovilidad,
   esVacanteActivaEnMovilidad,
+  esVacanteAsistenteActivaEnMovilidad,
+  esVacanteCargoDocente,
   previsualizarEscaneoVacantesNn, escanearYSanearVacantesNnTerritorio,
   listarEgresosProyectados, guardarEgresoProyectado, eliminarEgresoProyectado, reincorporarTitularContingencia,
   listarSolicitudesMovilidad, guardarSolicitudMovilidad, avanzarEstadoFlujoMovilidad, eliminarSolicitudMovilidad,
@@ -141,6 +144,37 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
   const docentesById = useMemo(() => new Map(docentesTerritorio.map(d => [d.id, d])), [docentesTerritorio]);
   const docentesNoVacantes = useMemo(() => docentesTerritorio.filter(d => !d.esVacanteNn), [docentesTerritorio]);
   const vacantesNn = useMemo(() => docentesTerritorio.filter(esVacanteActivaEnMovilidad), [docentesTerritorio]);
+  const vacantesAsistentesNn = useMemo<Docente[]>(() => {
+    return asistentesTerritorio
+      .filter(esVacanteAsistenteActivaEnMovilidad)
+      .map(a => ({
+        id: a.id,
+        rbd: a.rbd,
+        periodo: a.periodo,
+        run: a.run,
+        nombres: a.nombres,
+        apellidos: a.apellidos,
+        calidadJuridica: 'CONTRATA' as const,
+        estamento: 'ASISTENTE_AULA' as EstamentoDocente,
+        horasContrato: a.horasContrato,
+        horasSubvencionGeneralContrata:
+          (a.horasSubvencionGeneralPlazoFijo || 0) + (a.horasSubvencionGeneralIndefinido || 0),
+        horasSepContrata: (a.horasSepPlazoFijo || 0) + (a.horasSepIndefinido || 0),
+        horasPieContrata: (a.horasPiePlazoFijo || 0) + (a.horasPieIndefinido || 0),
+        asignaturaPrincipal: a.cargoFuncion,
+        cargoInstitucional: a.cargoFuncion,
+        funcionPrincipal: a.estamento,
+        esVacanteNn: true,
+        tipoVacante: a.tipoVacante || 'NECESIDAD_ESCUELA',
+        justificacionVacante: a.justificacionVacante,
+        vacanteCondicional: false,
+        estadoNecesidad: a.estadoNecesidad
+      }));
+  }, [asistentesTerritorio]);
+  const vacantesBolsaUnificada = useMemo(
+    () => [...vacantesNn, ...vacantesAsistentesNn],
+    [vacantesNn, vacantesAsistentesNn]
+  );
   const comunasDisponibles = useMemo(() => Array.from(new Set(colegios.map(c => c.comuna).filter(Boolean))).sort((a, b) => a.localeCompare(b)), [colegios]);
 
   const [egresos, setEgresos] = useState<EgresoProyectado[]>([]);
@@ -209,7 +243,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
     return () => { window.removeEventListener('slep:sesiones_pausadas', syncPausa); window.removeEventListener('slep:sesiones_reactivadas', syncPausa); };
   }, []);
 
-  const vacanteDestinoSeleccionada = useMemo(() => vacantesNn.find(v => v.id === vacanteDestinoId) || null, [vacantesNn, vacanteDestinoId]);
+  const vacanteDestinoSeleccionada = useMemo(() => vacantesBolsaUnificada.find(v => v.id === vacanteDestinoId) || null, [vacantesBolsaUnificada, vacanteDestinoId]);
   useEffect(() => {
     if (vacanteDestinoSeleccionada?.vacanteCondicional) setTipoCobertura('TRANSITORIA_CONDICIONAL');
     else if (vacanteDestinoSeleccionada) setTipoCobertura('DEFINITIVA');
@@ -314,17 +348,26 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
     };
   }, [solicitudes, docentesNoVacantes, ncForm.sinMarcaGdp, ncForm.busqueda, colegiosByRbd, filtroEstamentoCol1, docentesById, asistentesIndefRaw, remanentes, filtroTipoEscuelaRemanente, egresos]);
 
+  const [filtroNaturalezaVacante, setFiltroNaturalezaVacante] = useState<'TODAS' | TipoRequerimientoVacante>('TODAS');
   const vacantesFiltradas = useMemo(() => {
     const q = vacFiltros.q.toLowerCase().trim();
-    return vacantesNn.filter(v => {
+    return vacantesBolsaUnificada.filter(v => {
+      if (filtroNaturalezaVacante !== 'TODAS') {
+        const nat: TipoRequerimientoVacante = v.id.startsWith('vac_ast_')
+          ? 'CARGO_ASISTENTE'
+          : esVacanteCargoDocente(v)
+          ? 'CARGO_DOCENTE'
+          : 'HORAS_AULA';
+        if (nat !== filtroNaturalezaVacante) return false;
+      }
       if (vacFiltros.tipo !== 'TODAS' && (v.tipoVacante || 'NN_DETECTADO') !== vacFiltros.tipo) return false;
       const est = colegiosByRbd.get(v.rbd);
       if (vacFiltros.comuna !== 'TODAS' && est?.comuna !== vacFiltros.comuna) return false;
       if (vacFiltros.fuente !== 'TODAS' && inferirFuenteVacante(v) !== vacFiltros.fuente) return false;
-      return !q || (v.asignaturaPrincipal || '').toLowerCase().includes(q) || `${v.nombres} ${v.apellidos}`.toLowerCase().includes(q) ||
+      return !q || (v.asignaturaPrincipal || '').toLowerCase().includes(q) || (v.cargoInstitucional || '').toLowerCase().includes(q) || `${v.nombres} ${v.apellidos}`.toLowerCase().includes(q) ||
         (v.run || '').toLowerCase().includes(q) || v.rbd.toLowerCase().includes(q) || (est?.nombre || '').toLowerCase().includes(q) || (est?.comuna || '').toLowerCase().includes(q);
     });
-  }, [vacantesNn, vacFiltros, colegiosByRbd]);
+  }, [vacantesBolsaUnificada, filtroNaturalezaVacante, vacFiltros, colegiosByRbd]);
 
   const casosNoContinuidadConsolidados = useMemo(() => construirCasosNoContinuidad({ docentesNoVacantes, asistentesTerritorio, solicitudes, colegiosByRbd }), [docentesNoVacantes, asistentesTerritorio, solicitudes, colegiosByRbd]);
   const asignaturasPorCubrirPorVacante = useMemo(() => calcularAsignaturasPorCubrirPorVacante({ vacantesNn, asignacionesTerritorio, cursosTerritorio }), [vacantesNn, asignacionesTerritorio, cursosTerritorio]);
@@ -816,7 +859,10 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
             onAbrirResolucionExenta={abrirResolucionModal} onExportarNominaActosGdp={handleExportarNominaActosGdp}
           />
           <BolsaVacantesPanel
-            vacantesFiltradas={vacantesFiltradas} filtroTipoVacante={vacFiltros.tipo} onChangeFiltroTipoVacante={t => setVacFiltros(f => ({ ...f, tipo: t }))}
+            vacantesFiltradas={vacantesFiltradas}
+            filtroNaturalezaVacante={filtroNaturalezaVacante}
+            onChangeFiltroNaturalezaVacante={setFiltroNaturalezaVacante}
+            filtroTipoVacante={vacFiltros.tipo} onChangeFiltroTipoVacante={t => setVacFiltros(f => ({ ...f, tipo: t }))}
             filtroComunaVacante={vacFiltros.comuna} onChangeFiltroComunaVacante={c => setVacFiltros(f => ({ ...f, comuna: c }))}
             filtroFuenteVacante={vacFiltros.fuente} onChangeFiltroFuenteVacante={ft => setVacFiltros(f => ({ ...f, fuente: ft }))}
             busquedaVacante={vacFiltros.q} onChangeBusquedaVacante={q => setVacFiltros(f => ({ ...f, q }))}

@@ -5554,7 +5554,9 @@ export async function consolidarEscenarioAprobado(params: {
                  horas_subvencion_general_indefinido = ?, horas_subvencion_general_plazo_fijo = ?,
                  horas_sep_indefinido = ?, horas_sep_plazo_fijo = ?,
                  horas_pie_indefinido = ?, horas_pie_plazo_fijo = ?,
-                 horas_honorarios = 0, activo = 1, situacion_final_gdp = 'Vigente'
+                 horas_honorarios = 0, activo = 1, situacion_final_gdp = 'Vigente',
+                 es_vacante_nn = 0, tipo_vacante = NULL, justificacion_vacante = NULL,
+                 estado_necesidad = NULL, motivo_estado_necesidad = NULL
              WHERE id = ?;`,
             [
               astOrigen.run,
@@ -5586,7 +5588,12 @@ export async function consolidarEscenarioAprobado(params: {
             horasPiePlazoFijo: piePf,
             horasHonorarios: 0,
             activo: true,
-            situacionFinalGdp: 'Vigente'
+            situacionFinalGdp: 'Vigente',
+            esVacanteNn: false,
+            tipoVacante: undefined,
+            justificacionVacante: undefined,
+            estadoNecesidad: undefined,
+            motivoEstadoNecesidad: undefined
           });
         } else {
           if (docDestSiEsDoc) {

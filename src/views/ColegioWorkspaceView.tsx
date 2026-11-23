@@ -226,8 +226,10 @@ export const ColegioWorkspaceView: React.FC<ColegioWorkspaceViewProps> = ({
   }, [cursos.length, docentes.length, asignaciones.length, asistentes.length, balance]);
 
   const necesidadesDocentesCount = useMemo(
-    () => docentes.filter(d => d.tipoVacante === 'NECESIDAD_ESCUELA' && d.estadoNecesidad !== 'CANCELADA').length,
-    [docentes]
+    () =>
+      docentes.filter(d => d.tipoVacante === 'NECESIDAD_ESCUELA' && d.estadoNecesidad !== 'CANCELADA').length +
+      asistentes.filter(a => a.tipoVacante === 'NECESIDAD_ESCUELA' && a.estadoNecesidad !== 'CANCELADA').length,
+    [docentes, asistentes]
   );
 
   const allTabs = esJardin

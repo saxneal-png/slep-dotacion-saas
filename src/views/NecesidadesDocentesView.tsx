@@ -2,35 +2,49 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Ban,
+  Briefcase,
   CheckCircle2,
   Clock,
   Edit3,
+  GraduationCap,
   History,
   Lock,
   Plus,
   RotateCcw,
   Send,
   Sparkles,
+  Users,
   X
 } from 'lucide-react';
 import {
+  AsistenteEducacion,
   Docente,
   Establecimiento,
   EstadoNecesidadVacante,
+  EstamentoAsistente,
   EstamentoDocente,
-  RegistroMovimientoMovilidad
+  RegistroMovimientoMovilidad,
+  TipoFuncionNoAula,
+  TipoRequerimientoVacante
 } from '../types';
 import { ESTAMENTOS } from '../components/DocenteFormModal';
 import { usePermisos } from '../security/PermisosContext';
 import {
+  actualizarNecesidadVacanteAsistente,
   actualizarNecesidadVacanteEscuela,
+  cancelarNecesidadVacanteAsistente,
   cancelarNecesidadVacanteEscuela,
+  crearNecesidadVacanteAsistente,
   crearNecesidadVacanteEscuela,
+  enviarNecesidadAMovilidad,
+  enviarNecesidadAsistenteAMovilidad,
+  esVacanteCargoDocente,
+  listarNecesidadesVacanteAsistente,
   listarNecesidadesVacanteEscuela,
   listarRegistroMovimientosMovilidad,
   obtenerVacantesConPropuestaActiva,
-  retrotraerNecesidadDeMovilidad,
-  enviarNecesidadAMovilidad
+  retrotraerNecesidadAsistenteDeMovilidad,
+  retrotraerNecesidadDeMovilidad
 } from '../services/movilidadTerritorialService';
 
 export interface NecesidadesDocentesViewProps {
@@ -43,15 +57,58 @@ export interface NecesidadesDocentesViewProps {
 
 type FiltroEstadoNecesidad = 'TODAS' | 'BORRADOR' | 'ENVIADA' | 'CANCELADA';
 
-function obtenerFuenteVacanteDocente(d: Docente): 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' {
+interface NecesidadUnificadaItem {
+  id: string;
+  run: string;
+  categoria: TipoRequerimientoVacante;
+  titulo: string;
+  estamentoLabel: string;
+  horasContrato: number;
+  fuente: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
+  justificacion?: string;
+  estado: EstadoNecesidadVacante;
+  motivoEstado?: string;
+  rawDocente?: Docente;
+  rawAsistente?: AsistenteEducacion;
+}
+
+const ESTAMENTOS_ASISTENTE_OPCIONES: Array<{ id: EstamentoAsistente; label: string }> = [
+  { id: 'PROFESIONAL', label: 'Profesional (Psicólogo, Trab. Social, Fonoaudiólogo, etc.)' },
+  { id: 'TECNICO', label: 'Técnico (Párvulos, Diferencial, etc.)' },
+  { id: 'PARADOCENTE_INSPECTORIA', label: 'Paradocente / Inspectoría de Patio' },
+  { id: 'ADMINISTRATIVO', label: 'Administrativo / Secretaría' },
+  { id: 'AUXILIAR', label: 'Auxiliar de Servicio / Aseo' }
+];
+
+const FUNCIONES_CARGO_DOCENTE: Array<{ id: TipoFuncionNoAula; label: string; estamento: EstamentoDocente }> = [
+  { id: 'INSPECTORIA', label: 'Inspectoría General', estamento: 'DIRECTIVO' },
+  { id: 'DIRECTIVA', label: 'Dirección / Subdirección', estamento: 'DIRECTIVO' },
+  { id: 'UTP', label: 'Jefatura UTP / Curricular', estamento: 'TECNICO_PEDAGOGICO' },
+  { id: 'CONVIVENCIA', label: 'Convivencia Escolar', estamento: 'TECNICO_PEDAGOGICO' },
+  { id: 'ORIENTACION', label: 'Orientación', estamento: 'TECNICO_PEDAGOGICO' },
+  { id: 'EVALUACION', label: 'Evaluación', estamento: 'TECNICO_PEDAGOGICO' },
+  { id: 'COORDINACION', label: 'Coordinación PIE / Ciclo / CRA', estamento: 'TECNICO_PEDAGOGICO' },
+  { id: 'EXTRAESCOLAR', label: 'Coordinación Extraescolar', estamento: 'TECNICO_PEDAGOGICO' }
+];
+
+function obtenerFuenteDocente(d: Docente): 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' {
   if ((d.horasPieContrata || 0) > 0 || (d.horasPieTitular || 0) > 0) return 'PIE';
   if ((d.horasSepContrata || 0) > 0 || (d.horasSepTitular || 0) > 0) return 'SEP';
   return 'SUBVENCION_GENERAL';
 }
 
-function obtenerEstadoEfectivo(d: Docente): EstadoNecesidadVacante {
-  if (d.estadoNecesidad) return d.estadoNecesidad;
-  if (d.situacionFinalGdp === 'Cancelada') return 'CANCELADA';
+function obtenerFuenteAsistente(a: AsistenteEducacion): 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' {
+  if ((a.horasPiePlazoFijo || 0) > 0 || (a.horasPieIndefinido || 0) > 0) return 'PIE';
+  if ((a.horasSepPlazoFijo || 0) > 0 || (a.horasSepIndefinido || 0) > 0) return 'SEP';
+  return 'SUBVENCION_GENERAL';
+}
+
+function obtenerEstadoEfectivo(
+  estadoNecesidad?: EstadoNecesidadVacante,
+  situacionFinalGdp?: string
+): EstadoNecesidadVacante {
+  if (estadoNecesidad) return estadoNecesidad;
+  if (situacionFinalGdp === 'Cancelada') return 'CANCELADA';
   return 'ENVIADA';
 }
 
@@ -59,6 +116,27 @@ const ETIQUETA_FUENTE: Record<'SUBVENCION_GENERAL' | 'SEP' | 'PIE', string> = {
   SUBVENCION_GENERAL: 'Subvención General',
   SEP: 'SEP',
   PIE: 'PIE (Dto. 170)'
+};
+
+const ETIQUETA_CATEGORIA: Record<
+  TipoRequerimientoVacante,
+  { label: string; className: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  HORAS_AULA: {
+    label: 'Horas Aula',
+    className: 'bg-indigo-100 text-indigo-900 border-indigo-200',
+    icon: GraduationCap
+  },
+  CARGO_DOCENTE: {
+    label: 'Cargo Directivo / UTP',
+    className: 'bg-purple-100 text-purple-900 border-purple-200',
+    icon: Briefcase
+  },
+  CARGO_ASISTENTE: {
+    label: 'Asistente Ley 21.109',
+    className: 'bg-teal-100 text-teal-900 border-teal-200',
+    icon: Users
+  }
 };
 
 const ETIQUETA_MOVIMIENTO: Record<string, string> = {
@@ -78,19 +156,23 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
 }) => {
   const { can } = usePermisos();
   const puedeEditarNecesidades = can('necesidades_docentes.editar');
-  const [necesidades, setNecesidades] = useState<Docente[]>([]);
+
+  const [necesidadesDoc, setNecesidadesDoc] = useState<Docente[]>([]);
+  const [necesidadesAst, setNecesidadesAst] = useState<AsistenteEducacion[]>([]);
   const [bloqueadasEnMesa, setBloqueadasEnMesa] = useState<Set<string>>(new Set());
   const [movimientos, setMovimientos] = useState<RegistroMovimientoMovilidad[]>([]);
   const [cargando, setCargando] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstadoNecesidad>('TODAS');
   const [feedback, setFeedback] = useState<{ tipo: 'success' | 'error'; mensaje: string } | null>(null);
 
-  // Modal Crear / Editar
   const [modalForm, setModalForm] = useState<{
     open: boolean;
     editingId: string | null;
-    especialidad: string;
-    estamento: EstamentoDocente;
+    tipoRequerimiento: TipoRequerimientoVacante;
+    especialidadOCargo: string;
+    estamentoDocente: EstamentoDocente;
+    estamentoAsistente: EstamentoAsistente;
+    tipoFuncionNoAula: TipoFuncionNoAula;
     horas: number;
     fuente: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
     justificacion: string;
@@ -99,8 +181,11 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
   }>({
     open: false,
     editingId: null,
-    especialidad: '',
-    estamento: 'DOCENTE_AULA',
+    tipoRequerimiento: 'HORAS_AULA',
+    especialidadOCargo: '',
+    estamentoDocente: 'DOCENTE_AULA',
+    estamentoAsistente: 'PROFESIONAL',
+    tipoFuncionNoAula: 'INSPECTORIA',
     horas: 22,
     fuente: 'SUBVENCION_GENERAL',
     justificacion: '',
@@ -108,18 +193,17 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     error: null
   });
 
-  // Modal Motivo (Retrotraer o Cancelar)
   const [modalMotivo, setModalMotivo] = useState<{
     open: boolean;
     tipo: 'RETROTRAER' | 'CANCELAR';
-    necesidad: Docente | null;
+    item: NecesidadUnificadaItem | null;
     motivo: string;
     procesando: boolean;
     error: string | null;
   }>({
     open: false,
     tipo: 'RETROTRAER',
-    necesidad: null,
+    item: null,
     motivo: '',
     procesando: false,
     error: null
@@ -133,9 +217,13 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
   const cargarDatos = useCallback(async () => {
     setCargando(true);
     try {
-      const lista = await listarNecesidadesVacanteEscuela(colegio.rbd, periodoActivo);
-      setNecesidades(lista);
-      const ids = lista.map(d => d.id);
+      const [docs, asts] = await Promise.all([
+        listarNecesidadesVacanteEscuela(colegio.rbd, periodoActivo),
+        listarNecesidadesVacanteAsistente(colegio.rbd, periodoActivo)
+      ]);
+      setNecesidadesDoc(docs);
+      setNecesidadesAst(asts);
+      const ids = [...docs.map(d => d.id), ...asts.map(a => a.id)];
       const [enMesa, regs] = await Promise.all([
         obtenerVacantesConPropuestaActiva(ids, periodoActivo),
         listarRegistroMovimientosMovilidad({ rbd: colegio.rbd, periodo: periodoActivo, limit: 60 })
@@ -143,7 +231,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
       setBloqueadasEnMesa(enMesa);
       setMovimientos(regs.filter(r => r.entidad === 'NECESIDAD_VACANTE'));
     } catch (err: any) {
-      mostrarFeedback(err?.message || 'Error cargando necesidades docentes.', 'error');
+      mostrarFeedback(err?.message || 'Error cargando necesidades de dotación.', 'error');
     } finally {
       setCargando(false);
     }
@@ -153,6 +241,39 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     void cargarDatos();
   }, [cargarDatos]);
 
+  const necesidadesUnificadas = useMemo<NecesidadUnificadaItem[]>(() => {
+    const itemsDoc: NecesidadUnificadaItem[] = necesidadesDoc.map(d => ({
+      id: d.id,
+      run: d.run,
+      categoria: esVacanteCargoDocente(d) ? 'CARGO_DOCENTE' : 'HORAS_AULA',
+      titulo: d.cargoInstitucional || d.asignaturaPrincipal || d.apellidos,
+      estamentoLabel: ESTAMENTOS.find(e => e.id === d.estamento)?.label || d.estamento,
+      horasContrato: d.horasContrato,
+      fuente: obtenerFuenteDocente(d),
+      justificacion: d.justificacionVacante,
+      estado: obtenerEstadoEfectivo(d.estadoNecesidad, d.situacionFinalGdp),
+      motivoEstado: d.motivoEstadoNecesidad,
+      rawDocente: d
+    }));
+
+    const itemsAst: NecesidadUnificadaItem[] = necesidadesAst.map(a => ({
+      id: a.id,
+      run: a.run,
+      categoria: 'CARGO_ASISTENTE',
+      titulo: a.cargoFuncion || a.apellidos,
+      estamentoLabel:
+        ESTAMENTOS_ASISTENTE_OPCIONES.find(e => e.id === a.estamento)?.label || a.estamento,
+      horasContrato: a.horasContrato,
+      fuente: obtenerFuenteAsistente(a),
+      justificacion: a.justificacionVacante,
+      estado: obtenerEstadoEfectivo(a.estadoNecesidad, a.situacionFinalGdp),
+      motivoEstado: a.motivoEstadoNecesidad,
+      rawAsistente: a
+    }));
+
+    return [...itemsDoc, ...itemsAst].sort((a, b) => b.id.localeCompare(a.id));
+  }, [necesidadesDoc, necesidadesAst]);
+
   const resumen = useMemo(() => {
     let borradores = 0;
     let horasBorrador = 0;
@@ -160,12 +281,11 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     let horasEnviadas = 0;
     let enGestion = 0;
     let canceladas = 0;
-    for (const n of necesidades) {
-      const est = obtenerEstadoEfectivo(n);
-      if (est === 'BORRADOR') {
+    for (const n of necesidadesUnificadas) {
+      if (n.estado === 'BORRADOR') {
         borradores++;
         horasBorrador += n.horasContrato || 0;
-      } else if (est === 'ENVIADA') {
+      } else if (n.estado === 'ENVIADA') {
         enviadas++;
         horasEnviadas += n.horasContrato || 0;
         if (bloqueadasEnMesa.has(n.id)) enGestion++;
@@ -174,34 +294,44 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
       }
     }
     return { borradores, horasBorrador, enviadas, horasEnviadas, enGestion, canceladas };
-  }, [necesidades, bloqueadasEnMesa]);
+  }, [necesidadesUnificadas, bloqueadasEnMesa]);
 
   const necesidadesFiltradas = useMemo(() => {
-    if (filtroEstado === 'TODAS') return necesidades;
-    return necesidades.filter(n => obtenerEstadoEfectivo(n) === filtroEstado);
-  }, [necesidades, filtroEstado]);
+    if (filtroEstado === 'TODAS') return necesidadesUnificadas;
+    return necesidadesUnificadas.filter(n => n.estado === filtroEstado);
+  }, [necesidadesUnificadas, filtroEstado]);
 
-  // Poka-Yoke: detectar posible duplicado al crear
   const posibleDuplicado = useMemo(() => {
     if (!modalForm.open || modalForm.editingId) return null;
-    const espNorm = modalForm.especialidad.trim().toLowerCase();
-    if (!espNorm) return null;
+    const norm = modalForm.especialidadOCargo.trim().toLowerCase();
+    if (!norm) return null;
     return (
-      necesidades.find(n => {
-        const est = obtenerEstadoEfectivo(n);
-        if (est === 'CANCELADA') return false;
-        const nEsp = (n.asignaturaPrincipal || n.apellidos || '').trim().toLowerCase();
-        return nEsp === espNorm && obtenerFuenteVacanteDocente(n) === modalForm.fuente;
-      }) || null
+      necesidadesUnificadas.find(
+        n =>
+          n.estado !== 'CANCELADA' &&
+          n.categoria === modalForm.tipoRequerimiento &&
+          n.titulo.trim().toLowerCase() === norm &&
+          n.fuente === modalForm.fuente
+      ) || null
     );
-  }, [modalForm.open, modalForm.editingId, modalForm.especialidad, modalForm.fuente, necesidades]);
+  }, [
+    modalForm.open,
+    modalForm.editingId,
+    modalForm.tipoRequerimiento,
+    modalForm.especialidadOCargo,
+    modalForm.fuente,
+    necesidadesUnificadas
+  ]);
 
   const abrirModalCrear = () => {
     setModalForm({
       open: true,
       editingId: null,
-      especialidad: '',
-      estamento: 'DOCENTE_AULA',
+      tipoRequerimiento: 'HORAS_AULA',
+      especialidadOCargo: '',
+      estamentoDocente: 'DOCENTE_AULA',
+      estamentoAsistente: 'PROFESIONAL',
+      tipoFuncionNoAula: 'INSPECTORIA',
       horas: 22,
       fuente: 'SUBVENCION_GENERAL',
       justificacion: '',
@@ -210,15 +340,18 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     });
   };
 
-  const abrirModalEditar = (n: Docente) => {
+  const abrirModalEditar = (item: NecesidadUnificadaItem) => {
     setModalForm({
       open: true,
-      editingId: n.id,
-      especialidad: n.asignaturaPrincipal || n.apellidos || '',
-      estamento: n.estamento,
-      horas: n.horasContrato,
-      fuente: obtenerFuenteVacanteDocente(n),
-      justificacion: n.justificacionVacante || '',
+      editingId: item.id,
+      tipoRequerimiento: item.categoria,
+      especialidadOCargo: item.titulo,
+      estamentoDocente: item.rawDocente?.estamento || 'DOCENTE_AULA',
+      estamentoAsistente: item.rawAsistente?.estamento || 'PROFESIONAL',
+      tipoFuncionNoAula: 'INSPECTORIA',
+      horas: item.horasContrato,
+      fuente: item.fuente,
+      justificacion: item.justificacion || '',
       guardando: false,
       error: null
     });
@@ -226,8 +359,14 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
 
   const handleGuardarForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalForm.especialidad.trim()) {
-      setModalForm(s => ({ ...s, error: 'Ingresa la especialidad o asignatura requerida.' }));
+    if (!modalForm.especialidadOCargo.trim()) {
+      setModalForm(s => ({
+        ...s,
+        error:
+          s.tipoRequerimiento === 'HORAS_AULA'
+            ? 'Ingresa la especialidad o asignatura requerida.'
+            : 'Ingresa el cargo o función requerida.'
+      }));
       return;
     }
     const horasNum = Math.round(Number(modalForm.horas));
@@ -236,44 +375,86 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
       return;
     }
     if (!modalForm.justificacion.trim()) {
-      setModalForm(s => ({ ...s, error: 'La justificación pedagógica u operativa es obligatoria.' }));
+      setModalForm(s => ({ ...s, error: 'La justificación operativa o normativa es obligatoria.' }));
       return;
     }
 
     setModalForm(s => ({ ...s, guardando: true, error: null }));
     try {
-      if (modalForm.editingId) {
-        await actualizarNecesidadVacanteEscuela({
-          id: modalForm.editingId,
-          rbd: colegio.rbd,
-          periodo: periodoActivo,
-          especialidad: modalForm.especialidad.trim(),
-          estamento: modalForm.estamento,
-          horasContrato: horasNum,
-          fuenteFinanciamiento: modalForm.fuente,
-          justificacion: modalForm.justificacion.trim(),
-          usuarioActor,
-          rolActor,
-          nombreEstablecimiento: colegio.nombre,
-          comuna: colegio.comuna
-        });
-        mostrarFeedback('Necesidad actualizada en borrador.');
+      if (modalForm.tipoRequerimiento === 'CARGO_ASISTENTE') {
+        if (modalForm.editingId) {
+          await actualizarNecesidadVacanteAsistente({
+            id: modalForm.editingId,
+            rbd: colegio.rbd,
+            periodo: periodoActivo,
+            cargoFuncion: modalForm.especialidadOCargo.trim(),
+            estamento: modalForm.estamentoAsistente,
+            horasContrato: horasNum,
+            fuenteFinanciamiento: modalForm.fuente,
+            justificacion: modalForm.justificacion.trim(),
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna
+          });
+          mostrarFeedback('Necesidad de cargo asistente actualizada en borrador.');
+        } else {
+          await crearNecesidadVacanteAsistente({
+            rbd: colegio.rbd,
+            periodo: periodoActivo,
+            cargoFuncion: modalForm.especialidadOCargo.trim(),
+            estamento: modalForm.estamentoAsistente,
+            horasContrato: horasNum,
+            fuenteFinanciamiento: modalForm.fuente,
+            justificacion: modalForm.justificacion.trim(),
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna,
+            estadoInicial: 'BORRADOR'
+          });
+          mostrarFeedback('Cargo asistente guardado en Borrador. Revísalo y presiona "Enviar a Movilidad".');
+        }
       } else {
-        await crearNecesidadVacanteEscuela({
-          rbd: colegio.rbd,
-          periodo: periodoActivo,
-          especialidad: modalForm.especialidad.trim(),
-          estamento: modalForm.estamento,
-          horasContrato: horasNum,
-          fuenteFinanciamiento: modalForm.fuente,
-          justificacion: modalForm.justificacion.trim(),
-          usuarioActor,
-          rolActor,
-          nombreEstablecimiento: colegio.nombre,
-          comuna: colegio.comuna,
-          estadoInicial: 'BORRADOR'
-        });
-        mostrarFeedback('Necesidad guardada en Borrador. Revísala y presiona "Enviar a Movilidad" cuando esté lista.');
+        const tipoReqDoc: 'HORAS_AULA' | 'CARGO_DOCENTE' =
+          modalForm.tipoRequerimiento === 'CARGO_DOCENTE' ? 'CARGO_DOCENTE' : 'HORAS_AULA';
+        if (modalForm.editingId) {
+          await actualizarNecesidadVacanteEscuela({
+            id: modalForm.editingId,
+            rbd: colegio.rbd,
+            periodo: periodoActivo,
+            especialidad: modalForm.especialidadOCargo.trim(),
+            estamento: modalForm.estamentoDocente,
+            horasContrato: horasNum,
+            fuenteFinanciamiento: modalForm.fuente,
+            justificacion: modalForm.justificacion.trim(),
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna,
+            tipoRequerimiento: tipoReqDoc,
+            tipoFuncionNoAula: modalForm.tipoFuncionNoAula
+          });
+          mostrarFeedback('Necesidad actualizada en borrador.');
+        } else {
+          await crearNecesidadVacanteEscuela({
+            rbd: colegio.rbd,
+            periodo: periodoActivo,
+            especialidad: modalForm.especialidadOCargo.trim(),
+            estamento: modalForm.estamentoDocente,
+            horasContrato: horasNum,
+            fuenteFinanciamiento: modalForm.fuente,
+            justificacion: modalForm.justificacion.trim(),
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna,
+            estadoInicial: 'BORRADOR',
+            tipoRequerimiento: tipoReqDoc,
+            tipoFuncionNoAula: modalForm.tipoFuncionNoAula
+          });
+          mostrarFeedback('Necesidad guardada en Borrador. Revísala y presiona "Enviar a Movilidad".');
+        }
       }
       setModalForm(s => ({ ...s, open: false, guardando: false }));
       await onRefreshData();
@@ -287,20 +468,32 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     }
   };
 
-  const handleEnviarAMovilidad = async (n: Docente) => {
+  const handleEnviarAMovilidad = async (item: NecesidadUnificadaItem) => {
     try {
-      await enviarNecesidadAMovilidad({
-        id: n.id,
-        rbd: colegio.rbd,
-        periodo: periodoActivo,
-        usuarioActor,
-        rolActor,
-        nombreEstablecimiento: colegio.nombre,
-        comuna: colegio.comuna
-      });
+      if (item.categoria === 'CARGO_ASISTENTE') {
+        await enviarNecesidadAsistenteAMovilidad({
+          id: item.id,
+          rbd: colegio.rbd,
+          periodo: periodoActivo,
+          usuarioActor,
+          rolActor,
+          nombreEstablecimiento: colegio.nombre,
+          comuna: colegio.comuna
+        });
+      } else {
+        await enviarNecesidadAMovilidad({
+          id: item.id,
+          rbd: colegio.rbd,
+          periodo: periodoActivo,
+          usuarioActor,
+          rolActor,
+          nombreEstablecimiento: colegio.nombre,
+          comuna: colegio.comuna
+        });
+      }
       await onRefreshData();
       await cargarDatos();
-      mostrarFeedback(`Necesidad ${n.run} enviada a la Mesa de Movilidad SLEP.`);
+      mostrarFeedback(`Necesidad ${item.run} enviada a la Mesa de Movilidad SLEP.`);
     } catch (err: any) {
       mostrarFeedback(err?.message || 'Error enviando necesidad a Movilidad.', 'error');
     }
@@ -308,7 +501,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
 
   const handleConfirmarMotivo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalMotivo.necesidad) return;
+    if (!modalMotivo.item) return;
     if (!modalMotivo.motivo.trim()) {
       setModalMotivo(s => ({ ...s, error: 'Debes ingresar un motivo para dejar registro.' }));
       return;
@@ -316,32 +509,66 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
 
     setModalMotivo(s => ({ ...s, procesando: true, error: null }));
     try {
+      const item = modalMotivo.item;
       if (modalMotivo.tipo === 'RETROTRAER') {
-        await retrotraerNecesidadDeMovilidad({
-          id: modalMotivo.necesidad.id,
-          rbd: colegio.rbd,
-          motivo: modalMotivo.motivo.trim(),
-          periodo: periodoActivo,
-          usuarioActor,
-          rolActor,
-          nombreEstablecimiento: colegio.nombre,
-          comuna: colegio.comuna
-        });
-        mostrarFeedback(`Necesidad ${modalMotivo.necesidad.run} retrotraída a Borrador para revisión.`);
+        if (item.categoria === 'CARGO_ASISTENTE') {
+          await retrotraerNecesidadAsistenteDeMovilidad({
+            id: item.id,
+            rbd: colegio.rbd,
+            motivo: modalMotivo.motivo.trim(),
+            periodo: periodoActivo,
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna
+          });
+        } else {
+          await retrotraerNecesidadDeMovilidad({
+            id: item.id,
+            rbd: colegio.rbd,
+            motivo: modalMotivo.motivo.trim(),
+            periodo: periodoActivo,
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna
+          });
+        }
+        mostrarFeedback(`Necesidad ${item.run} retrotraída a Borrador para revisión.`);
       } else {
-        await cancelarNecesidadVacanteEscuela({
-          id: modalMotivo.necesidad.id,
-          rbd: colegio.rbd,
-          motivo: modalMotivo.motivo.trim(),
-          periodo: periodoActivo,
-          usuarioActor,
-          rolActor,
-          nombreEstablecimiento: colegio.nombre,
-          comuna: colegio.comuna
-        });
-        mostrarFeedback(`Necesidad ${modalMotivo.necesidad.run} cancelada correctamente.`);
+        if (item.categoria === 'CARGO_ASISTENTE') {
+          await cancelarNecesidadVacanteAsistente({
+            id: item.id,
+            rbd: colegio.rbd,
+            motivo: modalMotivo.motivo.trim(),
+            periodo: periodoActivo,
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna
+          });
+        } else {
+          await cancelarNecesidadVacanteEscuela({
+            id: item.id,
+            rbd: colegio.rbd,
+            motivo: modalMotivo.motivo.trim(),
+            periodo: periodoActivo,
+            usuarioActor,
+            rolActor,
+            nombreEstablecimiento: colegio.nombre,
+            comuna: colegio.comuna
+          });
+        }
+        mostrarFeedback(`Necesidad ${item.run} cancelada correctamente.`);
       }
-      setModalMotivo({ open: false, tipo: 'RETROTRAER', necesidad: null, motivo: '', procesando: false, error: null });
+      setModalMotivo({
+        open: false,
+        tipo: 'RETROTRAER',
+        item: null,
+        motivo: '',
+        procesando: false,
+        error: null
+      });
       await onRefreshData();
       await cargarDatos();
     } catch (err: any) {
@@ -382,10 +609,10 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         <div>
           <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-indigo-600" />
-            <span>Gestión de Necesidades Docentes · {colegio.nombre}</span>
+            <span>Gestión de Necesidades de Dotación · {colegio.nombre}</span>
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-            Revisa tus solicitudes en <strong>Borrador</strong> antes de enviarlas a Movilidad. Si cometiste un error después de enviar, puedes <strong>Retrotraer</strong> o <strong>Cancelar</strong> sin duplicar requerimientos.
+            Declara <strong>Horas Aula</strong>, <strong>Cargos Directivos/UTP</strong> o <strong>Asistentes y Profesionales (Ley 21.109)</strong>. Revisa en Borrador antes de enviar a Movilidad.
           </p>
         </div>
         {puedeEditarNecesidades ? (
@@ -395,7 +622,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs shrink-0 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            <span>Nueva Necesidad Docente</span>
+            <span>Nueva Necesidad</span>
           </button>
         ) : (
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold shrink-0">
@@ -445,32 +672,30 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         </div>
       </div>
 
-      {/* Filtros + Tabla de Necesidades */}
+      {/* Filtros + Lista */}
       <div className="card-elevated p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            {(
-              [
-                { id: 'TODAS', label: `Todas (${necesidades.length})` },
-                { id: 'BORRADOR', label: `Borradores (${resumen.borradores})` },
-                { id: 'ENVIADA', label: `Enviadas (${resumen.enviadas})` },
-                { id: 'CANCELADA', label: `Canceladas (${resumen.canceladas})` }
-              ] as const
-            ).map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setFiltroEstado(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                  filtroEstado === tab.id
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-1.5">
+          {(
+            [
+              { id: 'TODAS', label: `Todas (${necesidadesUnificadas.length})` },
+              { id: 'BORRADOR', label: `Borradores (${resumen.borradores})` },
+              { id: 'ENVIADA', label: `Enviadas (${resumen.enviadas})` },
+              { id: 'CANCELADA', label: `Canceladas (${resumen.canceladas})` }
+            ] as const
+          ).map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setFiltroEstado(tab.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                filtroEstado === tab.id
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {cargando ? (
@@ -478,23 +703,22 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         ) : necesidadesFiltradas.length === 0 ? (
           <div className="p-8 text-center rounded-xl border border-dashed border-slate-300 text-xs text-slate-500 space-y-2">
             <p className="font-semibold text-slate-700">No hay necesidades en esta vista.</p>
-            <p>Usa "Nueva Necesidad Docente" para declarar horas vacantes por cubrir.</p>
+            <p>Usa "Nueva Necesidad" para declarar horas aula, cargos directivos o asistentes de la educación.</p>
           </div>
         ) : (
           <div className="space-y-2.5">
             {necesidadesFiltradas.map(n => {
-              const estado = obtenerEstadoEfectivo(n);
-              const fuente = obtenerFuenteVacanteDocente(n);
               const enMesa = bloqueadasEnMesa.has(n.id);
-              const estamentoLabel = ESTAMENTOS.find(e => e.id === n.estamento)?.label || n.estamento;
+              const catMeta = ETIQUETA_CATEGORIA[n.categoria];
+              const CatIcon = catMeta.icon;
 
               return (
                 <div
                   key={n.id}
                   className={`p-3.5 rounded-xl border transition-colors ${
-                    estado === 'BORRADOR'
+                    n.estado === 'BORRADOR'
                       ? 'bg-amber-50/40 border-amber-300'
-                      : estado === 'ENVIADA'
+                      : n.estado === 'ENVIADA'
                       ? 'bg-white border-emerald-200'
                       : 'bg-slate-50 border-slate-200 opacity-80'
                   }`}
@@ -505,36 +729,38 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                         <span className="font-mono text-[11px] font-black px-2 py-0.5 rounded bg-slate-900 text-white">
                           {n.run}
                         </span>
-                        <span className="font-black text-sm text-slate-900">
-                          {n.asignaturaPrincipal || n.apellidos}
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${catMeta.className}`}>
+                          <CatIcon className="w-3 h-3" />
+                          {catMeta.label}
                         </span>
+                        <span className="font-black text-sm text-slate-900">{n.titulo}</span>
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 tabular-nums">
                           {n.horasContrato} hrs
                         </span>
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">
-                          {ETIQUETA_FUENTE[fuente]}
+                          {ETIQUETA_FUENTE[n.fuente]}
                         </span>
-                        <span className="text-[11px] text-slate-500">{estamentoLabel}</span>
+                        <span className="text-[11px] text-slate-500">{n.estamentoLabel}</span>
 
-                        {estado === 'BORRADOR' && (
+                        {n.estado === 'BORRADOR' && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-950">
                             <Clock className="w-3 h-3" />
                             Borrador · Por revisar
                           </span>
                         )}
-                        {estado === 'ENVIADA' && !enMesa && (
+                        {n.estado === 'ENVIADA' && !enMesa && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900">
                             <CheckCircle2 className="w-3 h-3" />
                             Enviada a Movilidad
                           </span>
                         )}
-                        {estado === 'ENVIADA' && enMesa && (
+                        {n.estado === 'ENVIADA' && enMesa && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-600 text-white">
                             <Lock className="w-3 h-3" />
                             En Gestión en Mesa de Movilidad
                           </span>
                         )}
-                        {estado === 'CANCELADA' && (
+                        {n.estado === 'CANCELADA' && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800">
                             <Ban className="w-3 h-3" />
                             Cancelada
@@ -542,104 +768,103 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                         )}
                       </div>
 
-                      {n.justificacionVacante && (
+                      {n.justificacion && (
                         <p className="text-xs text-slate-600">
-                          <strong>Justificación:</strong> {n.justificacionVacante}
+                          <strong>Justificación:</strong> {n.justificacion}
                         </p>
                       )}
-                      {n.motivoEstadoNecesidad && (
+                      {n.motivoEstado && (
                         <p className="text-[11px] text-amber-900 bg-amber-100/70 px-2 py-1 rounded-lg inline-block">
-                          <strong>Último motivo registrado:</strong> {n.motivoEstadoNecesidad}
+                          <strong>Último motivo registrado:</strong> {n.motivoEstado}
                         </p>
                       )}
                     </div>
 
-                    {/* Botones de Acción */}
                     {puedeEditarNecesidades && (
-                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                      {estado === 'BORRADOR' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => abrirModalEditar(n)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>Editar</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleEnviarAMovilidad(n)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Enviar a Movilidad</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModalMotivo({
-                                open: true,
-                                tipo: 'CANCELAR',
-                                necesidad: n,
-                                motivo: '',
-                                procesando: false,
-                                error: null
-                              })
-                            }
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold"
-                          >
-                            <Ban className="w-3.5 h-3.5" />
-                            <span>Cancelar</span>
-                          </button>
-                        </>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                        {n.estado === 'BORRADOR' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => abrirModalEditar(n)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Editar</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleEnviarAMovilidad(n)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>Enviar a Movilidad</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setModalMotivo({
+                                  open: true,
+                                  tipo: 'CANCELAR',
+                                  item: n,
+                                  motivo: '',
+                                  procesando: false,
+                                  error: null
+                                })
+                              }
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>Cancelar</span>
+                            </button>
+                          </>
+                        )}
 
-                      {estado === 'ENVIADA' && !enMesa && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModalMotivo({
-                                open: true,
-                                tipo: 'RETROTRAER',
-                                necesidad: n,
-                                motivo: '',
-                                procesando: false,
-                                error: null
-                              })
-                            }
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 text-xs font-bold"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Retrotraer</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModalMotivo({
-                                open: true,
-                                tipo: 'CANCELAR',
-                                necesidad: n,
-                                motivo: '',
-                                procesando: false,
-                                error: null
-                              })
-                            }
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold"
-                          >
-                            <Ban className="w-3.5 h-3.5" />
-                            <span>Cancelar</span>
-                          </button>
-                        </>
-                      )}
+                        {n.estado === 'ENVIADA' && !enMesa && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setModalMotivo({
+                                  open: true,
+                                  tipo: 'RETROTRAER',
+                                  item: n,
+                                  motivo: '',
+                                  procesando: false,
+                                  error: null
+                                })
+                              }
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 text-xs font-bold"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Retrotraer</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setModalMotivo({
+                                  open: true,
+                                  tipo: 'CANCELAR',
+                                  item: n,
+                                  motivo: '',
+                                  procesando: false,
+                                  error: null
+                                })
+                              }
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>Cancelar</span>
+                            </button>
+                          </>
+                        )}
 
-                      {estado === 'ENVIADA' && enMesa && (
-                        <span className="text-[11px] text-indigo-800 font-semibold px-2 py-1 bg-indigo-50 rounded-lg border border-indigo-200">
-                          Bloqueada: en propuesta/adjudicación UATP
-                        </span>
-                      )}
-                    </div>
+                        {n.estado === 'ENVIADA' && enMesa && (
+                          <span className="text-[11px] text-indigo-800 font-semibold px-2 py-1 bg-indigo-50 rounded-lg border border-indigo-200">
+                            Bloqueada: en propuesta/adjudicación UATP
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -649,7 +874,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         )}
       </div>
 
-      {/* Historial local de movimientos del establecimiento */}
+      {/* Historial local */}
       <div className="card-elevated p-4 space-y-2.5">
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-slate-600" />
@@ -675,9 +900,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                     )}
                     <span className="text-slate-800 font-medium">{m.descripcion}</span>
                   </div>
-                  {m.motivo && (
-                    <div className="text-[11px] text-slate-500">Motivo: {m.motivo}</div>
-                  )}
+                  {m.motivo && <div className="text-[11px] text-slate-500">Motivo: {m.motivo}</div>}
                 </div>
                 <div className="text-[11px] text-slate-500 shrink-0 text-right tabular-nums">
                   <div className="font-semibold text-slate-700">{m.usuarioActor}</div>
@@ -689,7 +912,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         )}
       </div>
 
-      {/* Modal Crear / Editar Necesidad */}
+      {/* Modal Crear / Editar */}
       {modalForm.open && (
         <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <form
@@ -699,7 +922,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="font-black text-slate-900 text-sm">
-                  {modalForm.editingId ? 'Editar Necesidad en Borrador' : 'Nueva Necesidad de Vacante Docente'}
+                  {modalForm.editingId ? 'Editar Necesidad en Borrador' : 'Nueva Necesidad de Dotación'}
                 </h3>
                 <p className="text-[11px] text-slate-500">
                   {colegio.nombre} (RBD {colegio.rbd}) · Periodo {periodoActivo}
@@ -714,13 +937,58 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
               </button>
             </div>
 
+            {/* Selector 3 tipos */}
+            {!modalForm.editingId && (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  ¿Qué tipo de requerimiento necesita el establecimiento?
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { id: 'HORAS_AULA', label: 'Horas Aula', sub: 'Asignatura', icon: GraduationCap },
+                      { id: 'CARGO_DOCENTE', label: 'Cargo Docente', sub: 'Insp. Gral / UTP', icon: Briefcase },
+                      { id: 'CARGO_ASISTENTE', label: 'Asistente / Prof.', sub: 'Ley 21.109', icon: Users }
+                    ] as const
+                  ).map(op => {
+                    const Icon = op.icon;
+                    const active = modalForm.tipoRequerimiento === op.id;
+                    return (
+                      <button
+                        key={op.id}
+                        type="button"
+                        onClick={() =>
+                          setModalForm(s => ({
+                            ...s,
+                            tipoRequerimiento: op.id,
+                            especialidadOCargo: '',
+                            estamentoDocente: op.id === 'CARGO_DOCENTE' ? 'DIRECTIVO' : 'DOCENTE_AULA',
+                            horas: op.id === 'HORAS_AULA' ? 22 : 44
+                          }))
+                        }
+                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                          active
+                            ? 'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-300'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <Icon className={`w-4 h-4 mb-1 ${active ? 'text-indigo-700' : 'text-slate-500'}`} />
+                        <div className="text-[11px] font-black text-slate-900">{op.label}</div>
+                        <div className="text-[10px] text-slate-500">{op.sub}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {posibleDuplicado && (
               <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Posible duplicado detectado:</strong> Ya existe la necesidad{' '}
+                  <strong>Posible duplicado detectado:</strong> Ya existe{' '}
                   <span className="font-mono font-bold">{posibleDuplicado.run}</span> para{' '}
-                  <strong>{posibleDuplicado.asignaturaPrincipal}</strong> ({posibleDuplicado.horasContrato}h). Puedes editarla o retrotraerla en lugar de crear una nueva.
+                  <strong>{posibleDuplicado.titulo}</strong> ({posibleDuplicado.horasContrato}h).
                 </div>
               </div>
             )}
@@ -734,49 +1002,136 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Especialidad / Asignatura Requerida
+                  {modalForm.tipoRequerimiento === 'HORAS_AULA'
+                    ? 'Especialidad / Asignatura Requerida'
+                    : 'Cargo o Función Requerida'}
                 </label>
                 <input
                   type="text"
                   required
-                  list="sugerencias-especialidad-necesidad"
-                  value={modalForm.especialidad}
-                  onChange={e => setModalForm(s => ({ ...s, especialidad: e.target.value }))}
-                  placeholder="Ej: Matemática, Lenguaje y Comunicación, Educación Diferencial..."
+                  list={
+                    modalForm.tipoRequerimiento === 'HORAS_AULA'
+                      ? 'sug-aula'
+                      : modalForm.tipoRequerimiento === 'CARGO_DOCENTE'
+                      ? 'sug-cargo-docente'
+                      : 'sug-cargo-asistente'
+                  }
+                  value={modalForm.especialidadOCargo}
+                  onChange={e => setModalForm(s => ({ ...s, especialidadOCargo: e.target.value }))}
+                  placeholder={
+                    modalForm.tipoRequerimiento === 'HORAS_AULA'
+                      ? 'Ej: Matemática, Lenguaje, Educación Diferencial...'
+                      : modalForm.tipoRequerimiento === 'CARGO_DOCENTE'
+                      ? 'Ej: Inspector General, Jefe UTP, Orientador...'
+                      : 'Ej: Psicólogo/a, Trabajador/a Social, Inspector de Patio...'
+                  }
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
-                <datalist id="sugerencias-especialidad-necesidad">
+                <datalist id="sug-aula">
                   <option value="Lenguaje y Comunicación" />
                   <option value="Matemática" />
                   <option value="Historia, Geografía y Ciencias Sociales" />
                   <option value="Ciencias Naturales" />
                   <option value="Inglés" />
                   <option value="Educación Física y Salud" />
-                  <option value="Artes Visuales / Música" />
                   <option value="Educación General Básica" />
                   <option value="Educación Diferencial (PIE)" />
                   <option value="Educación Parvularia" />
-                  <option value="Especialidad Técnico Profesional" />
+                </datalist>
+                <datalist id="sug-cargo-docente">
+                  <option value="Inspector General" />
+                  <option value="Jefe Técnico-Pedagógico (UTP)" />
+                  <option value="Director/a" />
+                  <option value="Subdirector/a" />
+                  <option value="Orientador/a" />
+                  <option value="Evaluador/a" />
+                  <option value="Encargado/a de Convivencia Escolar" />
+                  <option value="Coordinador/a PIE" />
+                  <option value="Coordinador/a CRA" />
+                </datalist>
+                <datalist id="sug-cargo-asistente">
+                  <option value="Psicólogo/a (Dupla Psicosocial)" />
+                  <option value="Trabajador/a Social (Dupla Psicosocial)" />
+                  <option value="Fonoaudiólogo/a (PIE)" />
+                  <option value="Terapeuta Ocupacional (PIE)" />
+                  <option value="Kinesiólogo/a (PIE)" />
+                  <option value="Inspector/a de Patio (Paradocente)" />
+                  <option value="Técnico en Educación Parvularia" />
+                  <option value="Técnico en Educación Especial" />
+                  <option value="Administrativo / Secretaría" />
+                  <option value="Auxiliar de Servicio / Aseo" />
                 </datalist>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Estamento</label>
-                  <select
-                    value={modalForm.estamento}
-                    onChange={e =>
-                      setModalForm(s => ({ ...s, estamento: e.target.value as EstamentoDocente }))
-                    }
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
-                  >
-                    {ESTAMENTOS.map(est => (
-                      <option key={est.id} value={est.id}>
-                        {est.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {modalForm.tipoRequerimiento === 'CARGO_ASISTENTE' ? (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Estamento Ley 21.109
+                    </label>
+                    <select
+                      value={modalForm.estamentoAsistente}
+                      onChange={e =>
+                        setModalForm(s => ({
+                          ...s,
+                          estamentoAsistente: e.target.value as EstamentoAsistente
+                        }))
+                      }
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                    >
+                      {ESTAMENTOS_ASISTENTE_OPCIONES.map(est => (
+                        <option key={est.id} value={est.id}>
+                          {est.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : modalForm.tipoRequerimiento === 'CARGO_DOCENTE' ? (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Función Directiva / UTP
+                    </label>
+                    <select
+                      value={modalForm.tipoFuncionNoAula}
+                      onChange={e => {
+                        const fn = e.target.value as TipoFuncionNoAula;
+                        const found = FUNCIONES_CARGO_DOCENTE.find(f => f.id === fn);
+                        setModalForm(s => ({
+                          ...s,
+                          tipoFuncionNoAula: fn,
+                          estamentoDocente: found?.estamento || 'DIRECTIVO'
+                        }));
+                      }}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                    >
+                      {FUNCIONES_CARGO_DOCENTE.map(fn => (
+                        <option key={fn.id} value={fn.id}>
+                          {fn.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Estamento</label>
+                    <select
+                      value={modalForm.estamentoDocente}
+                      onChange={e =>
+                        setModalForm(s => ({
+                          ...s,
+                          estamentoDocente: e.target.value as EstamentoDocente
+                        }))
+                      }
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                    >
+                      {ESTAMENTOS.map(est => (
+                        <option key={est.id} value={est.id}>
+                          {est.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -808,7 +1163,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                   }
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
                 >
-                  <option value="SUBVENCION_GENERAL">Subvención General (Plan de Estudio / JEC)</option>
+                  <option value="SUBVENCION_GENERAL">Subvención General</option>
                   <option value="SEP">SEP (Subvención Escolar Preferencial)</option>
                   <option value="PIE">PIE (Programa de Integración Escolar - Dto. 170)</option>
                 </select>
@@ -823,7 +1178,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                   required
                   value={modalForm.justificacion}
                   onChange={e => setModalForm(s => ({ ...s, justificacion: e.target.value }))}
-                  placeholder="Describe la necesidad curricular, aumento de matrícula SAE, cobertura PIE o reemplazo requerido..."
+                  placeholder="Describe la necesidad curricular, cobertura de cargo directivo, dupla SEP, equipo PIE o reemplazo requerido..."
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -853,8 +1208,8 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         </div>
       )}
 
-      {/* Modal Retrotraer / Cancelar con Motivo */}
-      {modalMotivo.open && modalMotivo.necesidad && (
+      {/* Modal Retrotraer / Cancelar */}
+      {modalMotivo.open && modalMotivo.item && (
         <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4">
           <form
             onSubmit={handleConfirmarMotivo}
@@ -864,7 +1219,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
               <h3 className="font-black text-slate-900 text-sm">
                 {modalMotivo.tipo === 'RETROTRAER'
                   ? 'Retrotraer Necesidad desde Movilidad'
-                  : 'Cancelar Necesidad Docente'}
+                  : 'Cancelar Necesidad'}
               </h3>
               <button
                 type="button"
@@ -877,8 +1232,8 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
 
             <p className="text-xs text-slate-600">
               {modalMotivo.tipo === 'RETROTRAER'
-                ? `La necesidad ${modalMotivo.necesidad.run} (${modalMotivo.necesidad.asignaturaPrincipal}, ${modalMotivo.necesidad.horasContrato}h) saldrá de la Bolsa de Movilidad y volverá a estado Borrador para que puedas corregirla.`
-                : `La necesidad ${modalMotivo.necesidad.run} (${modalMotivo.necesidad.asignaturaPrincipal}, ${modalMotivo.necesidad.horasContrato}h) quedará cancelada y no aparecerá en Movilidad.`}
+                ? `La necesidad ${modalMotivo.item.run} (${modalMotivo.item.titulo}, ${modalMotivo.item.horasContrato}h) saldrá de la Bolsa de Movilidad y volverá a Borrador.`
+                : `La necesidad ${modalMotivo.item.run} (${modalMotivo.item.titulo}, ${modalMotivo.item.horasContrato}h) quedará cancelada y no aparecerá en Movilidad.`}
             </p>
 
             {modalMotivo.error && (
@@ -896,11 +1251,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                 required
                 value={modalMotivo.motivo}
                 onChange={e => setModalMotivo(s => ({ ...s, motivo: e.target.value }))}
-                placeholder={
-                  modalMotivo.tipo === 'RETROTRAER'
-                    ? 'Ej: Error en cantidad de horas o fuente de financiamiento...'
-                    : 'Ej: Cobertura resuelta internamente o duplicado...'
-                }
+                placeholder="Ingresa el motivo del cambio..."
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>

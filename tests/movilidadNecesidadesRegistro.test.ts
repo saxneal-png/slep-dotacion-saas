@@ -1,23 +1,33 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getDb,
+  guardarAsistente,
   guardarEstablecimiento,
   guardarDocente,
+  listarAsistentes,
   reiniciarTodaLaBaseDatos
 } from '../src/database/db';
 import {
   crearNecesidadVacanteEscuela,
+  crearNecesidadVacanteAsistente,
   listarNecesidadesVacanteEscuela,
+  listarNecesidadesVacanteAsistente,
   actualizarNecesidadVacanteEscuela,
+  actualizarNecesidadVacanteAsistente,
   enviarNecesidadAMovilidad,
+  enviarNecesidadAsistenteAMovilidad,
   retrotraerNecesidadDeMovilidad,
   cancelarNecesidadVacanteEscuela,
   esVacanteActivaEnMovilidad,
+  esVacanteAsistenteActivaEnMovilidad,
+  esVacanteCargoDocente,
   listarRegistroMovimientosMovilidad,
   crearEscenarioCalce,
-  agregarPropuestaCalce
+  agregarPropuestaCalce,
+  consolidarEscenarioAprobado,
+  revertirEscenarioConsolidado
 } from '../src/services/movilidadTerritorialService';
-import { Docente, Establecimiento } from '../src/types';
+import { AsistenteEducacion, Docente, Establecimiento } from '../src/types';
 
 const PERIODO = 2027;
 const RBD_A = '88401';
@@ -245,5 +255,143 @@ describe('Ciclo de Vida de Necesidades Docentes y Registro de Movimientos', () =
         usuarioActor: 'director.bulnes@slep.cl'
       })
     ).rejects.toThrow(/propuesta o adjudicación activa/i);
+  });
+
+  it('4. Crea y envía un Cargo Directivo/UTP (Inspector General 44h) sin horas aula', async () => {
+    const cargo = await crearNecesidadVacanteEscuela({
+      rbd: RBD_A,
+      periodo: PERIODO,
+      especialidad: 'Inspector General',
+      estamento: 'DIRECTIVO',
+      horasContrato: 44,
+      fuenteFinanciamiento: 'SUBVENCION_GENERAL',
+      justificacion: 'Vacante por jubilación titular Inspectoría General',
+      usuarioActor: 'director.bulnes@slep.cl',
+      tipoRequerimiento: 'CARGO_DOCENTE',
+      tipoFuncionNoAula: 'INSPECTORIA'
+    });
+
+    expect(cargo.estadoNecesidad).toBe('BORRADOR');
+    expect(esVacanteCargoDocente(cargo)).toBe(true);
+    expect(cargo.cargoInstitucional).toBe('Inspector General');
+    expect(cargo.horasInspectorGeneral).toBe(44);
+    expect(esVacanteActivaEnMovilidad(cargo)).toBe(false);
+
+    const enviada = await enviarNecesidadAMovilidad({
+      id: cargo.id,
+      rbd: RBD_A,
+      periodo: PERIODO,
+      usuarioActor: 'director.bulnes@slep.cl'
+    });
+    expect(esVacanteActivaEnMovilidad(enviada)).toBe(true);
+  });
+
+  it('5. Crea, edita, envía, calza, consolida y revierte un Cargo Asistente Ley 21.109 (Psicólogo SEP)', async () => {
+    const vacAst = await crearNecesidadVacanteAsistente({
+      rbd: RBD_A,
+      periodo: PERIODO,
+      cargoFuncion: 'Psicólogo/a (Dupla Psicosocial)',
+      estamento: 'PROFESIONAL',
+      horasContrato: 22,
+      fuenteFinanciamiento: 'SEP',
+      justificacion: 'Cobertura dupla psicosocial PME-SEP',
+      usuarioActor: 'director.bulnes@slep.cl'
+    });
+
+    expect(vacAst.estadoNecesidad).toBe('BORRADOR');
+    expect(vacAst.esDuplaPsicosocial).toBe(true);
+    expect(esVacanteAsistenteActivaEnMovilidad(vacAst)).toBe(false);
+
+    const editadaAst = await actualizarNecesidadVacanteAsistente({
+      id: vacAst.id,
+      rbd: RBD_A,
+      periodo: PERIODO,
+      cargoFuncion: 'Psicólogo/a (Dupla Psicosocial)',
+      estamento: 'PROFESIONAL',
+      horasContrato: 30,
+      fuenteFinanciamiento: 'SEP',
+      justificacion: 'Ampliación jornada dupla psicosocial SEP',
+      usuarioActor: 'director.bulnes@slep.cl'
+    });
+    expect(editadaAst.horasContrato).toBe(30);
+
+    const enviadaAst = await enviarNecesidadAsistenteAMovilidad({
+      id: vacAst.id,
+      rbd: RBD_A,
+      periodo: PERIODO,
+      usuarioActor: 'director.bulnes@slep.cl'
+    });
+    expect(esVacanteAsistenteActivaEnMovilidad(enviadaAst)).toBe(true);
+
+    const listaAst = await listarNecesidadesVacanteAsistente(RBD_A, PERIODO);
+    expect(listaAst).toHaveLength(1);
+
+    const astOrigen: AsistenteEducacion = {
+      id: 'ast_origen_88402',
+      rbd: RBD_B,
+      periodo: PERIODO,
+      run: '16.222.333-4',
+      nombres: 'CAMILA',
+      apellidos: 'ROJAS VERA',
+      cargoFuncion: 'Psicólogo/a',
+      estamento: 'PROFESIONAL',
+      horasContrato: 30,
+      horasSubvencionGeneralIndefinido: 0,
+      horasSubvencionGeneralPlazoFijo: 0,
+      horasSepIndefinido: 30,
+      horasSepPlazoFijo: 0,
+      horasPieIndefinido: 0,
+      horasPiePlazoFijo: 0,
+      esDuplaPsicosocial: true,
+      activo: true
+    };
+    await guardarAsistente(astOrigen);
+
+    const esc = await crearEscenarioCalce(
+      { periodo: PERIODO, nombre: 'Escenario Cargo Asistente' },
+      'subdirector_uatp'
+    );
+    const prop = await agregarPropuestaCalce(
+      {
+        escenarioId: esc.id,
+        periodo: PERIODO,
+        docenteOrigenId: astOrigen.id,
+        vacanteDestinoId: vacAst.id,
+        estamentoPersonal: 'ASISTENTE',
+        horasAsignadas: 30,
+        fuenteDestino: 'SEP',
+        estadoResolucionRebote: 'DERIVADA_A_CONCURSO_GDP'
+      },
+      'subdirector_uatp'
+    );
+    expect(prop.estamentoPersonal).toBe('ASISTENTE');
+    expect(prop.bloqueaConsolidacion).toBe(false);
+
+    await consolidarEscenarioAprobado({
+      escenarioId: esc.id,
+      periodo: PERIODO,
+      rolActor: 'subdirector_uatp',
+      usuarioActor: 'uatp@slep.cl',
+      forzarSinPausa: true,
+      forzarConPendientesNn: true
+    });
+
+    const astDestino = await listarAsistentes(RBD_A, PERIODO);
+    const cubierto = astDestino.find(a => a.run === '16.222.333-4');
+    expect(cubierto).toBeDefined();
+    expect(cubierto?.esVacanteNn).toBe(false);
+    expect(astDestino.some(a => a.run === vacAst.run)).toBe(false);
+
+    await revertirEscenarioConsolidado({
+      escenarioId: esc.id,
+      periodo: PERIODO,
+      motivo: 'Prueba reversión cargo asistente',
+      rolActor: 'subdirector_uatp',
+      usuarioActor: 'uatp@slep.cl'
+    });
+
+    const astDestinoPost = await listarAsistentes(RBD_A, PERIODO);
+    expect(astDestinoPost.some(a => a.id === vacAst.id)).toBe(true);
+    expect(astDestinoPost.some(a => a.run === '16.222.333-4')).toBe(false);
   });
 });
