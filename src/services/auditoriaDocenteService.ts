@@ -6,7 +6,8 @@ import {
   buscarContratoMinimoParvulariaPorMinutos,
   obtenerTramoMineduc,
   esModalidadEspecial,
-  esModalidadLaboral
+  esModalidadLaboral,
+  determinarRegimenNormativo
 } from '@slep/mineduc-engine';
 
 export function esCursoEspecialOLaboral(c: CursoSae | undefined): boolean {
@@ -885,6 +886,9 @@ export function auditarCargaDocenteIntegral(
     if (c?.regimenProporcion) return c.regimenProporcion === '60_40';
     if (isEducadoraParvuloDoc && (esParv || !c)) {
       return regimenParvularioPredominante === '60_40';
+    }
+    if (c) {
+      return determinarRegimenNormativo(porcentajePrioritariosColegio, c.nivel) === '60_40';
     }
     return porcentajePrioritariosColegio >= 80;
   };

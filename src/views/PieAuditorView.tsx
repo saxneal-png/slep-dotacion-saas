@@ -16,10 +16,12 @@ import {
   calcularDemandaNormativaPieCurso,
   esModalidadAdultos,
   esModalidadEspecial,
+  esNivelParvulario,
+  determinarRegimenNormativo,
+  buscarContratoMinimoPorTabla,
   cronologicasAPedagogicasPie,
   pedagogicasACronologicasPie,
-  decToHhmm,
-  calcularJornadaMinutos
+  decToHhmm
 } from '@slep/mineduc-engine';
 import {
   obtenerHorasCronologicasExactasAsig,
@@ -87,14 +89,16 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
     );
   }
 
-  const regimenColegio: '65_35' | '60_40' =
-    colegio.regimenProporcion || (colegio.porcentajePrioritarios >= 80 ? '60_40' : '65_35');
   const periodoActivo = cursos[0]?.periodo || docentes[0]?.periodo || 2027;
 
   // 1. Demandas y asignaciones PIE por curso
   const demandasCursos = useMemo(() => {
     return cursos.map(c => {
-      const isJec = c.regimen === 'JEC';
+      const esParvulario = esNivelParvulario(c.nivel);
+      const isJec = esParvulario ? false : c.regimen === 'JEC';
+      const jecMismatchParvularia = esParvulario && c.regimen === 'JEC';
+      const regimenProporcionCurso: '65_35' | '60_40' =
+        c.regimenProporcion || determinarRegimenNormativo(colegio.porcentajePrioritarios || 0, c.nivel);
       const esEpja = esModalidadAdultos(c.nivel) || ((c as any).nombre ? esModalidadAdultos((c as any).nombre) : false);
       const esEspecial = esModalidadEspecial(c.nivel);
       const esExentoPie = esEpja || esEspecial;
@@ -157,10 +161,17 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
       const haDifRequeridas = cronologicasAPedagogicasPie(dem.horasDiferencialDecimal);
       const faltanHaDif = Math.max(0, Math.round((haDifRequeridas - haDiferencialAsignadas) * 100) / 100);
       const faltanCronPae = Math.max(0, Math.round((dem.horasPaeDecimal - cronPaeAsignadas) * 100) / 100);
+      const contratoEqDifCurso =
+        haDifRequeridas > 0 ? buscarContratoMinimoPorTabla(Math.ceil(haDifRequeridas), regimenProporcionCurso) : 0;
 
       return {
         curso: c,
         demanda: dem,
+        esParvulario,
+        isJec,
+        jecMismatchParvularia,
+        regimenProporcionCurso,
+        contratoEqDifCurso,
         asigsPie,
         asigsDiferencial,
         asigsPae,
@@ -175,7 +186,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
         esExentoPie
       };
     });
-  }, [cursos, asignaciones, docentes, draftInputs]);
+  }, [cursos, asignaciones, docentes, draftInputs, colegio.porcentajePrioritarios]);
 
   const cursosConPieCount = demandasCursos.filter(
     d => !d.esExentoPie && (d.demanda.neetCount > 0 || d.demanda.neepCount > 0)
@@ -322,7 +333,16 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   }, [docentes, asistentes, asignaciones, cursos]);
 
   const horasContratadasPae = profesionalesPae.reduce((s, p) => s + p.horasPae, 0);
-  const balanceDiferencial = horasContratadasDiferencial - totalDemandaEdDiferencial;
+  const haDemanda65 = demandasCursos
+    .filter(d => !d.esExentoPie && d.regimenProporcionCurso === '65_35')
+    .reduce((s, d) => s + d.haDifRequeridas, 0);
+  const haDemanda60 = demandasCursos
+    .filter(d => !d.esExentoPie && d.regimenProporcionCurso === '60_40')
+    .reduce((s, d) => s + d.haDifRequeridas, 0);
+  const contratoDifRequeridoMultitramo =
+    (haDemanda65 > 0 ? buscarContratoMinimoPorTabla(Math.ceil(haDemanda65), '65_35') : 0) +
+    (haDemanda60 > 0 ? buscarContratoMinimoPorTabla(Math.ceil(haDemanda60), '60_40') : 0);
+  const balanceContratoDiferencial = Math.round((horasContratadasDiferencial - contratoDifRequeridoMultitramo) * 10) / 10;
   const balanceHaDiferencial = totalHaCapacidadDiferencial - totalDemandaHaDiferencial;
   const balancePae = horasContratadasPae - totalDemandaPae;
 
@@ -510,7 +530,10 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2">
+          <div
+            className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+            title={`Capacidad máxima Ley 20.903: ${totalHaCapacidadDiferencial} HA | Demanda Dto. 170: ${totalDemandaHaDiferencial} HA (${haDemanda65} HA en 65/35 + ${haDemanda60} HA en 60/40) = ~${contratoDifRequeridoMultitramo}h contrato req. vs ${horasContratadasDiferencial}h contratadas directas.`}
+          >
             <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">Dif. (HA)</span>
             <span className="text-sm font-black font-mono tabular-nums text-orange-600 dark:text-orange-400">
               {totalHaAsignadasDiferencial} / {totalDemandaHaDiferencial} HA
@@ -519,9 +542,25 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
               className={`text-[10px] font-bold font-mono tabular-nums ${
                 balanceHaDiferencial >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
               }`}
-              title={`Capacidad máxima Ley 20.903: ${totalHaCapacidadDiferencial} HA | Demanda Dto. 170: ${totalDemandaHaDiferencial} HA (${totalDemandaEdDiferencial.toFixed(2)}h cron.)`}
             >
               {balanceHaDiferencial >= 0 ? `+${balanceHaDiferencial} HA` : `${balanceHaDiferencial} HA`}
+            </span>
+          </div>
+
+          <div
+            className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+            title={`Comparación homogénea en horas cronológicas de contrato Ley 20.903 (${haDemanda65} HA en 65/35 + ${haDemanda60} HA en 60/40).`}
+          >
+            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">Cto. Dif.</span>
+            <span className="text-sm font-black font-mono tabular-nums text-purple-700 dark:text-purple-400">
+              {horasContratadasDiferencial} / {contratoDifRequeridoMultitramo}h
+            </span>
+            <span
+              className={`text-[10px] font-bold font-mono tabular-nums ${
+                balanceContratoDiferencial >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {balanceContratoDiferencial >= 0 ? `+${balanceContratoDiferencial}h` : `${balanceContratoDiferencial}h`}
             </span>
           </div>
 
@@ -765,6 +804,11 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                 const {
                   curso,
                   demanda,
+                  esParvulario,
+                  isJec,
+                  jecMismatchParvularia,
+                  regimenProporcionCurso,
+                  contratoEqDifCurso,
                   asigsDiferencial,
                   asigsPae,
                   haDiferencialAsignadas,
@@ -800,11 +844,56 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                             <h4 className="text-sm font-black text-slate-900">
                               {curso.nivel} {curso.letra}
                             </h4>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                              {curso.regimen}
-                            </span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
-                              {curso.regimenProporcion === '60_40' || (!curso.regimenProporcion && regimenColegio === '60_40') ? '60/40' : '65/35'}
+                            {puedeEditarPie && !esParvulario ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onGuardarCurso({
+                                    ...curso,
+                                    regimen: isJec ? 'No JEC' : 'JEC'
+                                  })
+                                }
+                                title="Clic para alternar jornada JEC / Sin JEC de este curso (impacta la tabla base Dto. 170: 10h vs 7h)."
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer transition-colors ${
+                                  isJec
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                                    : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'
+                                }`}
+                              >
+                                {isJec ? 'JEC' : 'Sin JEC'}
+                              </button>
+                            ) : (
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                  jecMismatchParvularia
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : 'bg-sky-50 text-sky-800 border-sky-200'
+                                }`}
+                                title={
+                                  jecMismatchParvularia
+                                    ? 'Curso de Parvularia etiquetado como JEC en origen; el motor aplica automáticamente Sin JEC (7h base) por normativa.'
+                                    : esParvulario
+                                    ? 'Educación Parvularia aplica siempre régimen Sin JEC.'
+                                    : undefined
+                                }
+                              >
+                                {isJec ? 'JEC' : 'Sin JEC'}
+                                {jecMismatchParvularia ? ' (Auto Parv.)' : ''}
+                              </span>
+                            )}
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                regimenProporcionCurso === '60_40'
+                                  ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                  : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                              }`}
+                              title={
+                                curso.regimenProporcion
+                                  ? 'Proporción Ley 20.903 definida explícitamente en el curso.'
+                                  : `Proporción Ley 20.903 automática según ${colegio.porcentajePrioritarios || 0}% prioritarios y nivel (${curso.nivel}).`
+                              }
+                            >
+                              {regimenProporcionCurso === '60_40' ? '60/40' : '65/35'}
                             </span>
                           </div>
                           {esExentoPie && (
@@ -878,7 +967,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                                 {haDiferencialAsignadas} / {haDifRequeridas} HA
                               </strong>
                               <span className={`block text-[9px] font-bold ${faltanHaDif === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                {demanda.horasDiferencialHHMM}h cron. · {faltanHaDif > 0 ? `faltan ${faltanHaDif} HA` : '✓ Cubierto'}
+                                {demanda.horasDiferencialHHMM}h aula · ~{contratoEqDifCurso}h cto · {faltanHaDif > 0 ? `faltan ${faltanHaDif} HA` : '✓ Cubierto'}
                               </span>
                             </div>
 
@@ -1255,19 +1344,28 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {demandasCursos.map(({ curso, demanda, horasPieAsignadasCurso }) => {
+                {demandasCursos.map(({ curso, demanda, isJec, regimenProporcionCurso, contratoEqDifCurso, horasPieAsignadasCurso }) => {
                   const pct = demanda.horasTotalCronologicas > 0 ? Math.round((horasPieAsignadasCurso / demanda.horasTotalCronologicas) * 100) : 0;
                   return (
                     <tr key={curso.id} className="hover:bg-slate-50/80">
                       <td className="px-4 py-3 font-bold text-slate-800">{curso.nivel} {curso.letra}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border">{curso.regimen}</span>
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border">
+                            {isJec ? 'JEC' : 'Sin JEC'}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                            {regimenProporcionCurso === '60_40' ? '60/40' : '65/35'}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center font-mono font-bold">{curso.alumnosNeet}</td>
                       <td className="px-4 py-3 text-center font-mono font-bold">{curso.alumnosNeep}</td>
                       <td className="px-4 py-3 text-center font-bold text-orange-700 bg-orange-50/30">
                         <div>{cronologicasAPedagogicasPie(demanda.horasDiferencialDecimal)} HA</div>
-                        <div className="text-[10px] font-semibold text-orange-600/80">({demanda.horasDiferencialHHMM}h cron.)</div>
+                        <div className="text-[10px] font-semibold text-orange-600/80">
+                          {demanda.horasDiferencialHHMM}h aula · ~{contratoEqDifCurso}h cto
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center font-bold text-blue-700 bg-blue-50/30">
                         {demanda.horasPaeHHMM} hrs ({demanda.horasPaeDecimal}h)

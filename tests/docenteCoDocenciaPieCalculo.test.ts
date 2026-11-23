@@ -444,7 +444,7 @@ describe('Cálculo de Carga Horaria para Docente de Aula con Co-Docencia / Apoyo
     };
 
     const cursosMix: CursoSae[] = [
-      { id: 'c-nt1', rbd: '12345', periodo: 2027, nivel: 'NT1 (Pre-Kínder)', letra: 'A', regimen: 'No JEC', cupoSae: 25, matriculaProyectada: 20, alumnosNeet: 5, alumnosNeep: 0 }
+      { id: 'c-nt1', rbd: '12345', periodo: 2027, nivel: 'NT1 (Pre-Kínder)', letra: 'A', regimen: 'No JEC', regimenProporcion: '65_35', cupoSae: 25, matriculaProyectada: 20, alumnosNeet: 5, alumnosNeep: 0 }
     ];
 
     const asignacionesDif: AsignacionHoraria[] = [
@@ -497,5 +497,42 @@ describe('Cálculo de Carga Horaria para Docente de Aula con Co-Docencia / Apoyo
     // 2. Aula de Recursos sin curso (6 HA) NO debe inflar la demanda curricular del plan de estudios (NT1 = 22h base, nunca 28h)
     const diag = calcularDiagnosticoColegio(colegioMock, [], cursosMix, [docDiferencialParv], asignacionesDif);
     expect(diag.balanzaGeneral.horasAulaDemandadasCurriculo).toBe(22);
+  });
+
+  it('aplica proporción mixta 60/40 (1°-4° Básico) y 65/35 (5° Básico+) en establecimiento con 70% prioritarios para Educadora Diferencial', () => {
+    const colegio70: Establecimiento = {
+      ...colegioMock,
+      porcentajePrioritarios: 70
+    };
+    const cursosMixtos: CursoSae[] = [
+      { id: 'c-1b', rbd: '12345', periodo: 2027, nivel: '1° Básico', letra: 'A', regimen: 'SIN_JEC', alumnosTotales: 25, alumnosNeet: 5, alumnosNeep: 1, estadoValidacion: 'OK' },
+      { id: 'c-6b', rbd: '12345', periodo: 2027, nivel: '6° Básico', letra: 'A', regimen: 'JEC', alumnosTotales: 30, alumnosNeet: 5, alumnosNeep: 1, estadoValidacion: 'OK' }
+    ];
+    const docDifMix: Docente = {
+      id: 'doc-dif-mix',
+      rbd: '12345',
+      periodo: 2027,
+      run: '19.888.777-6',
+      nombres: 'CAMILA',
+      apellidos: 'DIFERENCIAL MIXTA',
+      estamento: 'DOCENTE_DIFERENCIAL',
+      calidadJuridica: 'CONTRATA',
+      horasContrato: 30,
+      horasPieContrata: 30
+    };
+    const asigsMix: AsignacionHoraria[] = [
+      { id: 'm1', rbd: '12345', periodo: 2027, cursoId: 'c-1b', docenteId: 'doc-dif-mix', asignatura: 'Apoyo PIE', horasPedagogicasAula: 9, esCoDocencia: true, esProporcionDocente: true, tipoApoyo: 'Co-Docencia en Aula Regular' },
+      { id: 'm2', rbd: '12345', periodo: 2027, cursoId: 'c-6b', docenteId: 'doc-dif-mix', asignatura: 'Apoyo PIE', horasPedagogicasAula: 11, esCoDocencia: true, esProporcionDocente: true, tipoApoyo: 'Co-Docencia en Aula Regular' }
+    ];
+
+    const consolidado = obtenerDocentesConsolidadosTerritorio([colegio70], [docDifMix], asigsMix, cursosMixtos);
+    const contrato = consolidado[0]?.contratos[0];
+    expect(contrato).toBeDefined();
+    if (!contrato) return;
+
+    // 1° Básico -> 60/40 (9 HA); 6° Básico -> 65/35 (11 HA)
+    expect(contrato.horasAula60_40).toBe(9);
+    expect(contrato.horasAula65_35).toBe(11);
+    expect(contrato.esInfractorExcesoLectivo).toBe(false);
   });
 });
