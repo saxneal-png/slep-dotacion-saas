@@ -13,10 +13,20 @@ export function getAlcance(usuario: Pick<UsuarioSistema, 'role'> | null | undefi
 
 /** RBD de la cartera de un asesor: los asignados explícitamente + los que lo registran como asesorUatp. */
 function rbdsDeAsesor(asesor: UsuarioScope, colegios: Establecimiento[]): Set<string> {
-  const set = new Set<string>(asesor.carteraRbds || []);
+  const set = new Set<string>((asesor.carteraRbds || []).map(r => r.trim()).filter(Boolean));
   const nombre = norm(asesor.nombreCompleto);
   if (nombre) {
-    colegios.forEach(c => { if (norm(c.asesorUatp) === nombre) set.add(c.rbd); });
+    colegios.forEach(c => {
+      const cAsesor = norm(c.asesorUatp);
+      const rbd = c.rbd.trim();
+      if (cAsesor === nombre) {
+        set.add(rbd);
+      } else if (cAsesor && cAsesor !== nombre) {
+        // Si el catálogo oficial asigna explícitamente esta escuela a OTRO asesor,
+        // excluirla aunque haya quedado residual en carteraRbds.
+        set.delete(rbd);
+      }
+    });
   }
   return set;
 }

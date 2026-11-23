@@ -41,6 +41,7 @@ import {
   getDb,
   listarEstablecimientos,
   guardarEstablecimiento,
+  actualizarAsesorUatpBatch,
   eliminarEstablecimiento,
   listarSalas,
   listarTodasLasSalas,
@@ -534,7 +535,31 @@ export const App: React.FC = () => {
             setTodasLasAsignaciones(allAsigs);
             setTodosLosAsistentes(allAsist);
           } else if (rolNormal === 'asesor_uatp') {
-            // 2. Si es Asesor UATP, hidratar únicamente las escuelas de su cartera
+            // 2. Sincronizar asignaciones vigentes de asesor_uatp desde Supabase antes de resolver cartera
+            try {
+              const estNube = await SupabaseDotacionService.obtenerEstablecimientos();
+              if (estNube.length > 0) {
+                const localesPorRbd = new Map(listEst.map(e => [e.rbd.trim(), e]));
+                const cambiosAsesor: { rbd: string; asesorUatp?: string }[] = [];
+                for (const remoto of estNube) {
+                  const local = localesPorRbd.get(remoto.rbd.trim());
+                  const remAsesor = (remoto.asesorUatp || '').trim() || undefined;
+                  const locAsesor = (local?.asesorUatp || '').trim() || undefined;
+                  if (local && remAsesor !== locAsesor) {
+                    cambiosAsesor.push({ rbd: remoto.rbd.trim(), asesorUatp: remAsesor });
+                  }
+                }
+                if (cambiosAsesor.length > 0) {
+                  await actualizarAsesorUatpBatch(cambiosAsesor);
+                  listEst = await listarEstablecimientos();
+                  setColegios(listEst);
+                }
+              }
+            } catch (syncEstErr) {
+              console.warn('[cargarDatos] Aviso sincronizando asignaciones de establecimientos para asesor:', syncEstErr);
+            }
+
+            // Hidratar únicamente las escuelas de su cartera vigente
             const permitidos = colegiosVisibles(activeSession.usuario, listEst, usuariosSistema);
             for (const est of permitidos) {
               await SupabaseDotacionService.descargarEIntegrarColegioDesdeSupabase(est.rbd, p);

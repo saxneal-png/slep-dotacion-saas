@@ -277,6 +277,7 @@ export const ColegiosAsesoradosView: React.FC<ColegiosAsesoradosViewProps> = ({
   const handleCambiarAsesorColegio = async (est: Establecimiento, nuevoAsesor: string) => {
     const asesorValor = nuevoAsesor === 'SIN_ASIGNAR' || nuevoAsesor.trim() === '' ? undefined : nuevoAsesor.trim();
     try {
+      await reasignarColegiosMasivo([est.rbd], asesorValor || '', colegios);
       await onGuardarColegio({ ...est, asesorUatp: asesorValor });
       mostrarFeedback(`"${est.nombre}" asignado a ${asesorValor || 'Sin Asignar'}.`);
     } catch {

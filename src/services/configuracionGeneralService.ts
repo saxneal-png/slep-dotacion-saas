@@ -12,6 +12,8 @@ import { actualizarAsesorUatpBatch, guardarEstablecimiento, listarEstablecimient
 import { supabase, isSupabaseEnabled } from './supabaseClient';
 import { SupabaseDotacionService } from './supabaseDotacionService';
 import { esRolNivelCentral, normalizarRol } from '../security/rolesDefinitions';
+import { AuthService } from './authService';
+import { guardarUsuariosBatchDb } from '../database/repositories/usuariosRepo';
 
 const STORAGE_KEY_CONFIG = 'slep_configuracion_general_v1';
 
@@ -622,20 +624,62 @@ export async function reasignarColegiosMasivo(
   nuevoAsesorNombre: string,
   colegiosActuales: Establecimiento[]
 ): Promise<void> {
-  const rbdSet = new Set(rbds.map(r => r.trim()));
+  const rbdSet = new Set(rbds.map(r => r.trim()).filter(Boolean));
+  if (rbdSet.size === 0) return;
+
+  const targetAsesor = nuevoAsesorNombre.trim();
+  const targetNorm = targetAsesor.toLowerCase();
   const modificados: Establecimiento[] = [];
+  const cambiosBatch: { rbd: string; asesorUatp?: string }[] = [];
+
   for (const est of colegiosActuales) {
-    if (rbdSet.has(est.rbd.trim())) {
+    const estRbd = est.rbd.trim();
+    if (rbdSet.has(estRbd)) {
       const actualizado: Establecimiento = {
         ...est,
-        asesorUatp: nuevoAsesorNombre.trim() || undefined
+        asesorUatp: targetAsesor || undefined
       };
-      await guardarEstablecimiento(actualizado, true);
       modificados.push(actualizado);
+      cambiosBatch.push({ rbd: estRbd, asesorUatp: targetAsesor || undefined });
     }
   }
+
+  if (cambiosBatch.length > 0) {
+    await actualizarAsesorUatpBatch(cambiosBatch);
+  }
+
   if (modificados.length > 0 && isSupabaseEnabled()) {
     await SupabaseDotacionService.guardarEstablecimientosBatch(modificados);
+  }
+
+  // Mantener sincronizada la carteraRbds de los usuarios asesor_uatp (quitar del anterior, agregar al nuevo)
+  try {
+    const usuarios = AuthService.getUsuariosLocal();
+    const usuariosModificados = [];
+    for (const u of usuarios) {
+      if (normalizarRol(u.role) !== 'asesor_uatp') continue;
+      const esDestino = Boolean(targetNorm && u.nombreCompleto.trim().toLowerCase() === targetNorm);
+      const actual = (u.carteraRbds || []).map(r => r.trim()).filter(Boolean);
+      let siguiente: string[];
+      if (esDestino) {
+        siguiente = Array.from(new Set([...actual, ...rbdSet]));
+      } else {
+        siguiente = actual.filter(r => !rbdSet.has(r));
+      }
+      if (siguiente.length !== actual.length || siguiente.some((r, idx) => r !== actual[idx])) {
+        usuariosModificados.push({ ...u, carteraRbds: siguiente });
+      }
+    }
+    if (usuariosModificados.length > 0) {
+      const idsMod = new Map(usuariosModificados.map(u => [u.id, u]));
+      const listaActualizada = usuarios.map(u => idsMod.get(u.id) || u);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('slep_usuarios_sistema_v2', JSON.stringify(listaActualizada));
+      }
+      await guardarUsuariosBatchDb(usuariosModificados);
+    }
+  } catch (err) {
+    console.warn('[reasignarColegiosMasivo] Aviso sincronizando carteraRbds de usuarios:', err);
   }
 }
 
