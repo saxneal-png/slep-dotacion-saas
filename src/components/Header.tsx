@@ -238,9 +238,13 @@ export const Header: React.FC<HeaderProps> = ({
             )}
 
             {(!permisos || permisos.puedeVerConsolidadorMaster) && (
-              <button onClick={() => onSelectVista('consolidador')} className={`${navPillClass('consolidador')} relative`}>
+              <button
+                onClick={() => onSelectVista('consolidador')}
+                className={`${navPillClass('consolidador')} relative`}
+                title="Consolidación de Dotación: Solicitudes GDP / Art. 69, Mesa de Movilidad y Cierre DEP"
+              >
                 <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span>Consolidado</span>
+                <span>Consolidación</span>
                 {inconsistenciasCount > 0 && (
                   <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-black ml-0.5 tabular-nums">
                     {inconsistenciasCount}
@@ -253,17 +257,6 @@ export const Header: React.FC<HeaderProps> = ({
               <button onClick={() => onSelectVista('estadisticas')} className={navPillClass('estadisticas')}>
                 <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>Estadísticas</span>
-              </button>
-            )}
-
-            {mostrarMesaMovilidad === true && (
-              <button
-                onClick={() => onSelectVista('mesa_movilidad')}
-                className={navPillClass('mesa_movilidad')}
-                title="Mesa Territorial de Movilidad, Vacantes NN y Simulador What-If"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span>Mesa Movilidad</span>
               </button>
             )}
 
@@ -662,11 +655,8 @@ export const Header: React.FC<HeaderProps> = ({
               {[
                 { id: 'colegios_asesorados', label: 'Dashboard', icon: UserCheck },
                 { id: 'workflow', label: 'Espacio Escolar', icon: ClipboardCheck },
-                { id: 'consolidador', label: 'Consolidado', icon: Layers },
+                { id: 'consolidador', label: 'Consolidación', icon: Layers },
                 { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3 },
-                ...(mostrarMesaMovilidad === true
-                  ? [{ id: 'mesa_movilidad', label: 'Mesa Movilidad', icon: ArrowRightLeft }]
-                  : []),
                 { id: 'analizador', label: 'Analizador', icon: Sparkles },
                 { id: 'planes_estudio', label: 'Planes & EPJA', icon: BookOpen },
               ].map(item => {

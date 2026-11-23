@@ -854,13 +854,91 @@ export type TipoMovimientoMovilidad =
   | 'PROPUESTA_CALCE'
   | 'ELIMINACION_CALCE'
   | 'CONSOLIDACION_ESCENARIO'
-  | 'REVERSION_ESCENARIO';
+  | 'REVERSION_ESCENARIO'
+  | 'SOLICITUD_AJUSTE_GDP'
+  | 'VISACION_UATP_SOLICITUD'
+  | 'SANCION_GDP_SOLICITUD'
+  | 'APLICACION_AJUSTE_NOMINA';
+
+export type TipoMovimientoDotacion =
+  | 'AUMENTO_HORAS'
+  | 'DISMINUCION_HORAS'
+  | 'NO_CONTINUIDAD'
+  | 'CONTRATO_NUEVO'
+  | 'CAMBIO_FUENTE'
+  | 'ACOGIMIENTO_ART_69';
+
+export type EstadoRevisionSolicitudDotacion =
+  | 'PENDIENTE'
+  | 'EN_REVISION_UATP'
+  | 'VISADO_UATP'
+  | 'APROBADO'
+  | 'APROBADO_PARCIAL'
+  | 'RECHAZADO'
+  | 'DERIVADO_MOVILIDAD';
+
+export interface DesgloseFuentesSolicitud {
+  subvGeneralTitular?: number;
+  subvGeneralContrata?: number;
+  sepTitular?: number;
+  sepContrata?: number;
+  pieTitular?: number;
+  pieContrata?: number;
+  subvGeneralIndefinido?: number;
+  subvGeneralPlazoFijo?: number;
+  sepIndefinido?: number;
+  sepPlazoFijo?: number;
+  pieIndefinido?: number;
+  piePlazoFijo?: number;
+  honorarios?: number;
+  proRetencion?: number;
+}
+
+export interface SolicitudMovimientoDotacion {
+  id: string;
+  periodo: number;
+  rbd: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+  entidadTipo: 'DOCENTE' | 'ASISTENTE';
+  funcionarioId: string;
+  runFuncionario: string;
+  nombreFuncionario: string;
+  calidadJuridica?: string;
+  cargoOAsignatura?: string;
+  tipoMovimiento: TipoMovimientoDotacion;
+  propuestaGdpOrigen?: string;
+  horasVigentes: number;
+  horasSolicitadas: number;
+  deltaHoras: number;
+  aplicaArticulo69Previo?: boolean;
+  aplicaArticulo69Solicitado?: boolean;
+  fuentesActuales?: DesgloseFuentesSolicitud;
+  fuentesSolicitadas?: DesgloseFuentesSolicitud;
+  remuneracionMensualEstimada?: number;
+  accionPme?: string;
+  justificacionEscuela: string;
+  estadoRevision: EstadoRevisionSolicitudDotacion;
+  horasAprobadas?: number;
+  visadoUatpPor?: string;
+  fechaVisacionUatp?: string;
+  observacionUatp?: string;
+  sancionadoGdpPor?: string;
+  rolSancionador?: string;
+  fechaSancionGdp?: string;
+  observacionSancion?: string;
+  aplicadoANomina?: boolean;
+  solicitudMovilidadId?: string;
+  creadoPor?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface RegistroMovimientoMovilidad {
   id: string;
   periodo: number;
   tipoMovimiento: TipoMovimientoMovilidad;
-  entidad: 'NECESIDAD_VACANTE' | 'SOLICITUD_MOVILIDAD' | 'PROPUESTA_CALCE' | 'ESCENARIO';
+  entidad: 'NECESIDAD_VACANTE' | 'SOLICITUD_MOVILIDAD' | 'PROPUESTA_CALCE' | 'ESCENARIO' | 'SOLICITUD_DOTACION';
   entidadId: string;
   codigoReferencia?: string;
   rbdOrigen: string;

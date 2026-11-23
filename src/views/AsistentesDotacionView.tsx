@@ -776,6 +776,26 @@ export const AsistentesDotacionView: React.FC<AsistentesDotacionViewProps> = ({
                               Auxiliar
                             </span>
                           )}
+                          {a.estadoSancionGdp && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                                a.estadoSancionGdp === 'Aprobado'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : a.estadoSancionGdp === 'Rechazado'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : a.estadoSancionGdp === 'Aprobado parcial.'
+                                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-300'
+                              }`}
+                              title={a.observacionesSlep ? `GDP: ${a.estadoSancionGdp} — ${a.observacionesSlep}` : `GDP: ${a.estadoSancionGdp}`}
+                            >
+                              {a.estadoSancionGdp === 'Pendiente'
+                                ? '⏳ Pendiente Aprobación'
+                                : a.estadoSancionGdp === 'Aprobado parcial.'
+                                ? `✓ Aprob. Parcial (${a.horasAprobadasGdp ?? a.horasContrato}h)`
+                                : `GDP: ${a.estadoSancionGdp}`}
+                            </span>
+                          )}
                         </div>
                       </td>
 

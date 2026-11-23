@@ -507,6 +507,46 @@ CREATE TABLE IF NOT EXISTS movilidad_registro_movimientos (
   fecha_hora TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS solicitudes_movimiento_dotacion (
+  id TEXT PRIMARY KEY,
+  periodo INTEGER NOT NULL DEFAULT 2027,
+  rbd TEXT NOT NULL,
+  nombre_establecimiento TEXT,
+  comuna TEXT,
+  entidad_tipo TEXT NOT NULL,
+  funcionario_id TEXT NOT NULL,
+  run_funcionario TEXT NOT NULL,
+  nombre_funcionario TEXT NOT NULL,
+  calidad_juridica TEXT,
+  cargo_o_asignatura TEXT,
+  tipo_movimiento TEXT NOT NULL,
+  propuesta_gdp_origen TEXT,
+  horas_vigentes REAL NOT NULL DEFAULT 0,
+  horas_solicitadas REAL NOT NULL DEFAULT 0,
+  delta_horas REAL NOT NULL DEFAULT 0,
+  aplica_articulo_69_previo INTEGER DEFAULT 0,
+  aplica_articulo_69_solicitado INTEGER DEFAULT 0,
+  fuentes_actuales_json TEXT,
+  fuentes_solicitadas_json TEXT,
+  remuneracion_mensual_estimada REAL DEFAULT 0,
+  accion_pme TEXT,
+  justificacion_escuela TEXT NOT NULL,
+  estado_revision TEXT NOT NULL DEFAULT 'PENDIENTE',
+  horas_aprobadas REAL,
+  visado_uatp_por TEXT,
+  fecha_visacion_uatp TEXT,
+  observacion_uatp TEXT,
+  sancionado_gdp_por TEXT,
+  rol_sancionador TEXT,
+  fecha_sancion_gdp TEXT,
+  observacion_sancion TEXT,
+  aplicado_a_nomina INTEGER DEFAULT 0,
+  solicitud_movilidad_id TEXT,
+  creado_por TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS __schema_migrations (
   id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL
@@ -760,7 +800,9 @@ export function runMigrations(db: Database): void {
     'CREATE INDEX IF NOT EXISTS idx_escenarios_calce_periodo ON escenarios_calce(periodo, estado);',
     'CREATE INDEX IF NOT EXISTS idx_propuestas_calce_escenario ON propuestas_calce(escenario_id);',
     'CREATE INDEX IF NOT EXISTS idx_movilidad_registro_periodo ON movilidad_registro_movimientos(periodo, fecha_hora);',
-    'CREATE INDEX IF NOT EXISTS idx_movilidad_registro_rbd ON movilidad_registro_movimientos(rbd_origen, tipo_movimiento);'
+    'CREATE INDEX IF NOT EXISTS idx_movilidad_registro_rbd ON movilidad_registro_movimientos(rbd_origen, tipo_movimiento);',
+    'CREATE INDEX IF NOT EXISTS idx_sol_mov_dot_periodo_estado ON solicitudes_movimiento_dotacion(periodo, estado_revision);',
+    'CREATE INDEX IF NOT EXISTS idx_sol_mov_dot_rbd_func ON solicitudes_movimiento_dotacion(rbd, funcionario_id, periodo);'
   ];
 
   for (const idxSql of indexes) {

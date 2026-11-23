@@ -18,14 +18,13 @@ const CurriculumDemandaView = React.lazy(() => import('./views/CurriculumDemanda
 const PieAuditorView = React.lazy(() => import('./views/PieAuditorView').then(m => ({ default: m.PieAuditorView })));
 const DocentesDotacionView = React.lazy(() => import('./views/DocentesDotacionView').then(m => ({ default: m.DocentesDotacionView })));
 const BalanzaDiagnosticoView = React.lazy(() => import('./views/BalanzaDiagnosticoView').then(m => ({ default: m.BalanzaDiagnosticoView })));
-const ConsolidadorMasterView = React.lazy(() => import('./views/ConsolidadorMasterView').then(m => ({ default: m.ConsolidadorMasterView })));
+const ConsolidacionTerritorialView = React.lazy(() => import('./views/ConsolidacionTerritorialView').then(m => ({ default: m.ConsolidacionTerritorialView })));
 const SigeIngestaView = React.lazy(() => import('./views/SigeIngestaView').then(m => ({ default: m.SigeIngestaView })));
 const ColegioWorkspaceView = React.lazy(() => import('./views/ColegioWorkspaceView').then(m => ({ default: m.ColegioWorkspaceView })));
 const AnalizadorDotacionView = React.lazy(() => import('./views/AnalizadorDotacionView').then(m => ({ default: m.AnalizadorDotacionView })));
 const EstadisticasView = React.lazy(() => import('./views/EstadisticasView').then(m => ({ default: m.EstadisticasView })));
 const PlanesEstudioView = React.lazy(() => import('./views/PlanesEstudioView').then(m => ({ default: m.PlanesEstudioView })));
 const AsistentesDotacionView = React.lazy(() => import('./views/AsistentesDotacionView').then(m => ({ default: m.AsistentesDotacionView })));
-const MesaMovilidadView = React.lazy(() => import('./views/MesaMovilidadView').then(m => ({ default: m.MesaMovilidadView })));
 
 import {
   Establecimiento,
@@ -85,6 +84,10 @@ import { notificarMutacionLocalEmitida } from './services/colaboracionService';
 import { calcularDiagnosticoColegio, consolidarCarteraTerritorial, DiagnosticoColegioCompleto } from './services/dotacionCalculationService';
 import { cargarConfiguracionGeneral, cargarConfiguracionGeneralRemota, obtenerFeatureFlagsMovilidad, puedeUsuarioAccederMesaMovilidad } from './services/configuracionGeneralService';
 import { RolesPermisosService } from './services/rolesPermisosService';
+import {
+  detectarYRegistrarSolicitudesAsistente,
+  detectarYRegistrarSolicitudesDocente
+} from './services/solicitudesDotacionService';
 import { AuthService } from './services/authService';
 import { obtenerGeminiApiKeyActiva } from './services/geminiKeyResolver';
 import { AuthSession, UsuarioSistema } from './types/authTypes';
@@ -877,11 +880,24 @@ export const App: React.FC = () => {
   };
 
   const handleGuardarDocente = async (d: Docente) => {
-    await guardarDocente(d);
+    const previo = docentes.find(x => x.id === d.id) || todosLosDocentes.find(x => x.id === d.id) || null;
+    const est = colegios.find(c => c.rbd === d.rbd) || colegioActivo;
+    const { docenteParaGuardar, solicitudesGeneradas } = await detectarYRegistrarSolicitudesDocente({
+      previo,
+      nuevo: d,
+      establecimiento: est,
+      usuarioActor: session?.usuario?.email || session?.usuario?.nombreCompleto,
+      rolActor: session?.usuario?.role
+    });
+    await guardarDocente(docenteParaGuardar);
     if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const all = await listarTodosLosDocentesTerritorio(periodoActivo);
     setTodosLosDocentes(all);
-    mostrarMensaje(`Docente ${d.nombres} ${d.apellidos} guardado.`);
+    if (solicitudesGeneradas.length > 0) {
+      mostrarMensaje(`Docente ${d.nombres} ${d.apellidos} guardado. Se generó ${solicitudesGeneradas.length} solicitud(es) pendiente(s) de aprobación SLEP.`);
+    } else {
+      mostrarMensaje(`Docente ${d.nombres} ${d.apellidos} guardado.`);
+    }
   };
 
   const handleEliminarDocente = async (id: string) => {
@@ -941,11 +957,24 @@ export const App: React.FC = () => {
   };
 
   const handleGuardarAsistente = async (a: AsistenteEducacion) => {
-    await guardarAsistente(a);
+    const previo = asistentes.find(x => x.id === a.id) || todosLosAsistentes.find(x => x.id === a.id) || null;
+    const est = colegios.find(c => c.rbd === a.rbd) || colegioActivo;
+    const { asistenteParaGuardar, solicitudesGeneradas } = await detectarYRegistrarSolicitudesAsistente({
+      previo,
+      nuevo: a,
+      establecimiento: est,
+      usuarioActor: session?.usuario?.email || session?.usuario?.nombreCompleto,
+      rolActor: session?.usuario?.role
+    });
+    await guardarAsistente(asistenteParaGuardar);
     if (colegioActivo) await cargarDatosColegio(colegioActivo.rbd, periodoActivo, false);
     const all = await listarTodosLosAsistentesTerritorio(periodoActivo);
     setTodosLosAsistentes(all);
-    mostrarMensaje(`Asistente ${a.nombres} guardado exitosamente.`);
+    if (solicitudesGeneradas.length > 0) {
+      mostrarMensaje(`Asistente ${a.nombres} guardado. Se generó ${solicitudesGeneradas.length} solicitud(es) pendiente(s) de aprobación SLEP.`);
+    } else {
+      mostrarMensaje(`Asistente ${a.nombres} guardado exitosamente.`);
+    }
   };
 
   const handleGuardarAsistentesBatch = async (batch: AsistenteEducacion[], reemplazar: boolean = false) => {
@@ -1686,14 +1715,18 @@ export const App: React.FC = () => {
           />
         )}
 
-        {vistaActiva === 'consolidador' && (
-          <ConsolidadorMasterView
+        {(vistaActiva === 'consolidador' || (vistaActiva === 'mesa_movilidad' && puedeVerMesaMovilidad)) && session && (
+          <ConsolidacionTerritorialView
             establecimientos={colegiosPermitidos}
             docentes={docentesScope}
             asistentes={asistentesScope}
             cursos={cursosScope}
             diagnosticos={diagnosticosColegiosPermitidos}
             asignaciones={asignacionesScope}
+            periodoActivo={periodoActivo}
+            usuarioActual={session.usuario}
+            mostrarMesaMovilidad={puedeVerMesaMovilidad}
+            initialSubModulo={vistaActiva === 'mesa_movilidad' ? 'mesa_movilidad' : 'solicitudes_gdp'}
             onImportarCarteraSlep={handleImportarCarteraSlep}
             onExportarExcel={handleExportarExcel}
             onRecargarDatos={handleSincronizarCarteraCompletaDesdeNube}
@@ -1718,6 +1751,9 @@ export const App: React.FC = () => {
             }}
             onExportarExcelGlobal={handleExportarExcel}
             onRecargarDatos={handleSincronizarCarteraCompletaDesdeNube}
+            diagnosticos={diagnosticosColegiosPermitidos}
+            onImportarCarteraSlep={handleImportarCarteraSlep}
+            onGuardarColegio={handleGuardarColegio}
           />
         )}
 
@@ -1748,18 +1784,6 @@ export const App: React.FC = () => {
           />
         )}
 
-        {vistaActiva === 'mesa_movilidad' && puedeVerMesaMovilidad && session && (
-          <MesaMovilidadView
-            colegios={colegios}
-            docentesTerritorio={todosLosDocentes}
-            asignacionesTerritorio={todasLasAsignaciones}
-            asistentesTerritorio={todosLosAsistentes}
-            cursosTerritorio={todosLosCursos}
-            periodoActivo={periodoActivo}
-            usuarioActual={session.usuario}
-            onDatosActualizados={() => cargarDatos(periodoActivo)}
-          />
-        )}
         </React.Suspense>
       </main>
 

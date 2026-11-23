@@ -50,6 +50,7 @@ export const CATALOGO_PERMISOS: ModuloPermiso[] = [
   { id: 'estadisticas', nombre: 'Estadísticas', descripcion: 'Indicadores y estadísticas de horas', grupo: 'territorial', acciones: ['ver', 'exportar'] },
   { id: 'monitoreo_actividad', nombre: 'Actividad en Tiempo Real', descripcion: 'Visualización de usuarios y escuelas activas en la plataforma', grupo: 'territorial', acciones: ['ver'] },
   { id: 'mesa_movilidad', nombre: 'Mesa de Movilidad Territorial', descripcion: 'Simulación de calces, vacantes NN y movilidad docente (solo nivel central)', grupo: 'territorial', acciones: ['ver', 'crear', 'editar', 'eliminar', 'ejecutar'], critico: true },
+  { id: 'solicitudes_dotacion', nombre: 'Solicitudes y Sanción GDP / Art. 69', descripcion: 'Revisión técnica UATP (Editar) y sanción definitiva GDP (Ejecutar) sobre aumentos, disminuciones, no continuidad y Art. 69', grupo: 'territorial', acciones: ['ver', 'editar', 'ejecutar'], critico: true },
   { id: 'gdp_validador', nombre: 'Validación Egresos GDP', descripcion: 'Registro y validación jurídica de egresos proyectados y vacantes condicionales', grupo: 'territorial', acciones: ['ver', 'editar', 'ejecutar'], critico: true },
 
   // ── Establecimiento ──
@@ -124,7 +125,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
 
   subdirector_uatp: [
     ...todo(...MODS_TERRITORIAL),
-    ...todo('mesa_movilidad', 'gdp_validador'),
+    ...todo('mesa_movilidad', 'solicitudes_dotacion', 'gdp_validador'),
     ...solo('ver', ...MODS_ESTABLECIMIENTO),
     k('sige', 'ver'),
     k('analizador', 'ver'), k('analizador', 'exportar'),
@@ -137,6 +138,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
   coordinador_uatp: [
     ...todo(...MODS_TERRITORIAL),
     k('mesa_movilidad', 'ver'), k('mesa_movilidad', 'crear'), k('mesa_movilidad', 'editar'),
+    k('solicitudes_dotacion', 'ver'), k('solicitudes_dotacion', 'editar'),
     ...todo(...MODS_ESTABLECIMIENTO),
     ...todo(...MODS_DATOS),
     ...todo('traspaso_periodos', 'vaciar_dotacion'),
@@ -147,6 +149,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
     ...solo('ver', ...MODS_TERRITORIAL),
     k('monitoreo_actividad', 'ver'),
     k('mesa_movilidad', 'ver'), k('mesa_movilidad', 'crear'), k('mesa_movilidad', 'editar'),
+    k('solicitudes_dotacion', 'ver'), k('solicitudes_dotacion', 'editar'),
     ...todo(...MODS_ESTABLECIMIENTO),
     ...todo(...MODS_DATOS),
     ...todo('traspaso_periodos'),
@@ -158,7 +161,7 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
     k('consolidador', 'ver'), k('consolidador', 'exportar'),
     k('estadisticas', 'ver'),
     k('mesa_movilidad', 'ver'), k('mesa_movilidad', 'crear'), k('mesa_movilidad', 'editar'),
-    ...todo('gdp_validador', 'centro_descargas', 'planillas_dep')
+    ...todo('solicitudes_dotacion', 'gdp_validador', 'centro_descargas', 'planillas_dep')
   ],
 
   director_establecimiento: [
@@ -203,7 +206,7 @@ export const ROLES_SOLO_NIVEL_CENTRAL: RolId[] = [
 ];
 
 /** Módulos estrictamente invisibles y prohibidos para roles de establecimiento. */
-export const MODULOS_INVISIBLES_ESTABLECIMIENTO = new Set(['mesa_movilidad', 'gdp_validador']);
+export const MODULOS_INVISIBLES_ESTABLECIMIENTO = new Set(['mesa_movilidad', 'solicitudes_dotacion', 'gdp_validador']);
 
 /**
  * Normaliza un conjunto de permisos aplicando las reglas de dependencia:

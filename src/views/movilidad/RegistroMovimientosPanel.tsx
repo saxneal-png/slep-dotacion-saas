@@ -33,7 +33,11 @@ const ETIQUETAS_TIPO: Record<TipoMovimientoMovilidad, { label: string; color: st
   PROPUESTA_CALCE: { label: 'Propuesta Calce', color: 'bg-teal-100 text-teal-900 border-teal-300' },
   ELIMINACION_CALCE: { label: 'Eliminación Calce', color: 'bg-orange-100 text-orange-900 border-orange-300' },
   CONSOLIDACION_ESCENARIO: { label: 'Consolidación Escenario', color: 'bg-emerald-700 text-white border-emerald-800' },
-  REVERSION_ESCENARIO: { label: 'Reversión Escenario', color: 'bg-rose-700 text-white border-rose-800' }
+  REVERSION_ESCENARIO: { label: 'Reversión Escenario', color: 'bg-rose-700 text-white border-rose-800' },
+  SOLICITUD_AJUSTE_GDP: { label: 'Solicitud GDP / Art. 69', color: 'bg-amber-100 text-amber-950 border-amber-300' },
+  VISACION_UATP_SOLICITUD: { label: 'Visación Técnica UATP', color: 'bg-indigo-100 text-indigo-900 border-indigo-300' },
+  SANCION_GDP_SOLICITUD: { label: 'Sanción GDP', color: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
+  APLICACION_AJUSTE_NOMINA: { label: 'Aplicación a Nómina', color: 'bg-cyan-100 text-cyan-900 border-cyan-300' }
 };
 
 export const RegistroMovimientosPanel: React.FC<RegistroMovimientosPanelProps> = ({

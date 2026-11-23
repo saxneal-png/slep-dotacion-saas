@@ -616,7 +616,7 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                     Aplica Artículo 69 (Reducción voluntaria de aula por 30+ años de docencia)
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Tope legal máximo de 24 horas cronológicas de aula (32 HA). El remanente pasa automáticamente a tiempo no lectivo.
+                    Tope legal máximo de 24 horas cronológicas de aula (32 HA). El remanente pasa a tiempo no lectivo; requiere revisión y aprobación SLEP/GDP.
                   </p>
                 </div>
               </label>

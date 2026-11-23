@@ -70,6 +70,7 @@ interface ConsolidadorMasterViewProps {
   onExportarExcel: () => void;
   onRecargarDatos?: () => Promise<void> | void;
   onGuardarColegio?: (est: Establecimiento) => Promise<void>;
+  modoVista?: 'completo' | 'analitica' | 'cierre_dep';
 }
 
 export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
@@ -82,7 +83,8 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
   onImportarCarteraSlep,
   onExportarExcel,
   onRecargarDatos,
-  onGuardarColegio
+  onGuardarColegio,
+  modoVista = 'completo'
 }) => {
   const [tabActiva, setTabActiva] = useState<'balance' | 'docentes' | 'asistentes'>('balance');
   const [filtroDocentes, setFiltroDocentes] = useState('');
@@ -543,6 +545,7 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
       </div>
 
       {/* ── CENTRO OFICIAL DEP (PLANILLA PAL 2027 & GDP) ── */}
+      {modoVista !== 'analitica' && (
       <div className="bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-slate-900/10 dark:from-blue-950/40 dark:via-indigo-950/40 dark:to-slate-900/40 border border-blue-200 dark:border-blue-800 rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -639,7 +642,10 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
           </div>
         )}
       </div>
+      )}
 
+      {modoVista !== 'cierre_dep' && (
+      <>
       {/* Filtro Ejecutivo por Tipo de Establecimiento y No Continuidad */}
       <FiltroCarteraTerritorialBar
         categoriasSeleccionadas={categoriasSeleccionadas}
@@ -1599,6 +1605,8 @@ export const ConsolidadorMasterView: React.FC<ConsolidadorMasterViewProps> = ({
         onClose={() => setAsistenteFicha(null)}
         asistenteConsolidado={asistenteFicha}
       />
+      </>
+      )}
 
       {/* ── MODAL EXPORTACIÓN PLANILLA OFICIAL GDP (INDIVIDUAL O MASIVA) ── */}
       {modalGdpAbierto && (

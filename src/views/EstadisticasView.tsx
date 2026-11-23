@@ -43,6 +43,8 @@ import {
   EstadisticasColegioHoras
 } from '../services/estadisticasHorasService';
 import { FiltroCarteraTerritorialBar } from '../components/FiltroCarteraTerritorialBar';
+import { DiagnosticoColegioCompleto } from '../services/dotacionCalculationService';
+import { ConsolidadorMasterView } from './ConsolidadorMasterView';
 
 interface EstadisticasViewProps {
   colegios: Establecimiento[];
@@ -57,6 +59,9 @@ interface EstadisticasViewProps {
   onNavegarColegio?: (est: Establecimiento) => void;
   onExportarExcelGlobal?: () => void;
   onRecargarDatos?: () => Promise<void> | void;
+  diagnosticos?: DiagnosticoColegioCompleto[];
+  onImportarCarteraSlep?: (file: File) => void;
+  onGuardarColegio?: (est: Establecimiento) => Promise<void>;
 }
 
 const COMUNAS: ComunaValleDiguillin[] = [
@@ -113,9 +118,12 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   periodoActivo,
   onNavegarColegio,
   onExportarExcelGlobal,
-  onRecargarDatos
+  onRecargarDatos,
+  diagnosticos = [],
+  onImportarCarteraSlep,
+  onGuardarColegio
 }) => {
-  const [vistaModo, setVistaModo] = useState<'territorial' | 'intra_escuela'>('territorial');
+  const [vistaModo, setVistaModo] = useState<'territorial' | 'intra_escuela' | 'consolidado_nomina'>('territorial');
   const [enfoqueEstamento, setEnfoqueEstamento] = useState<'consolidado' | 'docentes' | 'asistentes'>('consolidado');
   const [comunaFiltro, setComunaFiltro] = useState<string>('TODAS');
   const [busquedaColegioTabla, setBusquedaColegioTabla] = useState<string>('');
@@ -253,6 +261,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 <School className="w-3.5 h-3.5" />
                 <span>Intra-Escuela</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setVistaModo('consolidado_nomina')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  vistaModo === 'consolidado_nomina'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Consolidado &amp; Nómina (&gt;44h)</span>
+              </button>
             </div>
 
             <button
@@ -327,6 +347,27 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODO 3: CONSOLIDADO TERRITORIAL, INCONSISTENCIAS (>44H) Y NÓMINAS        */}
+      {/* ========================================================================= */}
+      {vistaModo === 'consolidado_nomina' && (
+        <div className="animate-in fade-in duration-200">
+          <ConsolidadorMasterView
+            establecimientos={colegios}
+            docentes={todosLosDocentes}
+            asistentes={todosLosAsistentes}
+            cursos={todosLosCursos}
+            diagnosticos={diagnosticos}
+            asignaciones={todasLasAsignaciones}
+            onImportarCarteraSlep={onImportarCarteraSlep || (() => {})}
+            onExportarExcel={onExportarExcelGlobal || (() => {})}
+            onRecargarDatos={onRecargarDatos}
+            onGuardarColegio={onGuardarColegio}
+            modoVista="analitica"
+          />
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MODO 1: PANORAMA TERRITORIAL (SLEP VALLE DIGUILLÍN)                        */}
