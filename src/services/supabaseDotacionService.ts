@@ -438,11 +438,6 @@ export function mapDocenteFromDb(row: any): Docente {
     estadoSancionGdp: row.estado_sancion_gdp || undefined,
     horasAprobadasGdp: Number(row.horas_aprobadas_gdp || 0),
     situacionFinalGdp: row.situacion_final_gdp || undefined,
-    esVacanteNn: Boolean(row.es_vacante_nn),
-    tipoVacante: row.tipo_vacante ? (String(row.tipo_vacante) as AsistenteEducacion['tipoVacante']) : undefined,
-    justificacionVacante: row.justificacion_vacante ? String(row.justificacion_vacante) : undefined,
-    estadoNecesidad: row.estado_necesidad ? (String(row.estado_necesidad) as AsistenteEducacion['estadoNecesidad']) : undefined,
-    motivoEstadoNecesidad: row.motivo_estado_necesidad ? String(row.motivo_estado_necesidad) : undefined,
     observacionesDirector: row.observaciones_director || undefined,
     observacionesSlep: row.observaciones_slep || undefined,
     esVacanteNn: Boolean(row.es_vacante_nn),
@@ -623,13 +618,13 @@ export function mapAsistenteFromDb(row: any): AsistenteEducacion {
     estadoSancionGdp: row.estado_sancion_gdp || undefined,
     horasAprobadasGdp: Number(row.horas_aprobadas_gdp || 0),
     situacionFinalGdp: row.situacion_final_gdp || undefined,
+    observacionesDirector: row.observaciones_director || undefined,
+    observacionesSlep: row.observaciones_slep || undefined,
     esVacanteNn: Boolean(row.es_vacante_nn),
     tipoVacante: row.tipo_vacante ? (String(row.tipo_vacante) as AsistenteEducacion['tipoVacante']) : undefined,
     justificacionVacante: row.justificacion_vacante ? String(row.justificacion_vacante) : undefined,
     estadoNecesidad: row.estado_necesidad ? (String(row.estado_necesidad) as AsistenteEducacion['estadoNecesidad']) : undefined,
-    motivoEstadoNecesidad: row.motivo_estado_necesidad ? String(row.motivo_estado_necesidad) : undefined,
-    observacionesDirector: row.observaciones_director || undefined,
-    observacionesSlep: row.observaciones_slep || undefined
+    motivoEstadoNecesidad: row.motivo_estado_necesidad ? String(row.motivo_estado_necesidad) : undefined
   };
 }
 

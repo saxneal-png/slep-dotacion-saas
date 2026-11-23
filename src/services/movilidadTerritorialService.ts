@@ -30,7 +30,9 @@ import {
   PropuestaCalce,
   RegistroMovimientoMovilidad,
   SolicitudMovilidad,
+  TipoFuncionNoAula,
   TipoMovimientoMovilidad,
+  TipoRequerimientoVacante,
   TramoCarreraDocente,
   VacanteRebotePlan
 } from '../types';
@@ -64,6 +66,7 @@ import {
   guardarAsistente,
   guardarDocente,
   listarAsignaciones,
+  listarAsistentes,
   listarDocentes,
   listarEstablecimientos,
   listarTodasLasAsignaciones,
@@ -664,6 +667,93 @@ export function esVacanteActivaEnMovilidad(d: Docente): boolean {
   return true;
 }
 
+export function esVacanteAsistenteActivaEnMovilidad(a: AsistenteEducacion): boolean {
+  if (!a.esVacanteNn) return false;
+  if (a.situacionFinalGdp === 'Cancelada') return false;
+  if (a.tipoVacante === 'NECESIDAD_ESCUELA') {
+    return a.estadoNecesidad !== 'BORRADOR' && a.estadoNecesidad !== 'CANCELADA';
+  }
+  return true;
+}
+
+export function esVacanteCargoDocente(d: Docente): boolean {
+  if (d.cargoInstitucional) return true;
+  if (
+    d.estamento === 'DIRECTIVO' ||
+    d.estamento === 'TECNICO_PEDAGOGICO' ||
+    d.estamento === 'COORDINADOR_CRA'
+  ) {
+    return true;
+  }
+  return (
+    (d.horasDirectivas || 0) +
+      (d.horasInspectorGeneral || 0) +
+      (d.horasTecnicoPedagogicas || 0) +
+      (d.horasCoordinacion || 0) +
+      (d.horasCoordinacionPie || 0) +
+      (d.horasConvivenciaEscolar || 0) +
+      (d.horasExtraescolar || 0) >
+    0
+  );
+}
+
+function buildCamposCargoDocente(
+  tipoRequerimiento: 'HORAS_AULA' | 'CARGO_DOCENTE' | undefined,
+  cargoNombre: string,
+  horasNum: number,
+  tipoFuncionNoAula?: TipoFuncionNoAula
+): Partial<Docente> {
+  if (tipoRequerimiento !== 'CARGO_DOCENTE') {
+    return {
+      cargoInstitucional: undefined,
+      horasDirectivas: 0,
+      horasInspectorGeneral: 0,
+      horasTecnicoPedagogicas: 0,
+      horasCoordinacion: 0,
+      horasCoordinacionPie: 0,
+      horasConvivenciaEscolar: 0,
+      horasExtraescolar: 0
+    };
+  }
+
+  const norm = cargoNombre.toLowerCase();
+  const base: Partial<Docente> = {
+    cargoInstitucional: cargoNombre,
+    horasDirectivas: 0,
+    horasInspectorGeneral: 0,
+    horasTecnicoPedagogicas: 0,
+    horasCoordinacion: 0,
+    horasCoordinacionPie: 0,
+    horasConvivenciaEscolar: 0,
+    horasExtraescolar: 0
+  };
+
+  if (tipoFuncionNoAula === 'INSPECTORIA' || norm.includes('inspector')) {
+    base.horasInspectorGeneral = horasNum;
+  } else if (tipoFuncionNoAula === 'DIRECTIVA' || norm.includes('director') || norm.includes('subdirector')) {
+    base.horasDirectivas = horasNum;
+  } else if (
+    tipoFuncionNoAula === 'UTP' ||
+    tipoFuncionNoAula === 'EVALUACION' ||
+    tipoFuncionNoAula === 'ORIENTACION' ||
+    norm.includes('utp') ||
+    norm.includes('orientador') ||
+    norm.includes('evaluador')
+  ) {
+    base.horasTecnicoPedagogicas = horasNum;
+  } else if (norm.includes('pie')) {
+    base.horasCoordinacionPie = horasNum;
+  } else if (tipoFuncionNoAula === 'CONVIVENCIA' || norm.includes('convivencia')) {
+    base.horasConvivenciaEscolar = horasNum;
+  } else if (tipoFuncionNoAula === 'EXTRAESCOLAR' || norm.includes('extraescolar')) {
+    base.horasExtraescolar = horasNum;
+  } else {
+    base.horasCoordinacion = horasNum;
+  }
+
+  return base;
+}
+
 export async function registrarMovimientoMovilidad(params: {
   periodo?: number;
   tipoMovimiento: TipoMovimientoMovilidad;
@@ -865,6 +955,8 @@ export async function crearNecesidadVacanteEscuela(params: {
   nombreEstablecimiento?: string;
   comuna?: string;
   estadoInicial?: 'BORRADOR' | 'ENVIADA';
+  tipoRequerimiento?: 'HORAS_AULA' | 'CARGO_DOCENTE';
+  tipoFuncionNoAula?: TipoFuncionNoAula;
 }): Promise<Docente> {
   const flags = obtenerFeatureFlagsMovilidad();
   if (!flags.flag_saneamiento_nn_escuelas) {
@@ -896,6 +988,13 @@ export async function crearNecesidadVacanteEscuela(params: {
 
   const estadoInicial: EstadoNecesidadVacante = params.estadoInicial || 'BORRADOR';
 
+  const camposCargo = buildCamposCargoDocente(
+    params.tipoRequerimiento,
+    especialidadClean,
+    horasNum,
+    params.tipoFuncionNoAula
+  );
+
   const vacante: Docente = {
     id: `vac_esc_${rbdClean}_${periodo}_${Date.now()}_${sufijoId}`,
     rbd: rbdClean,
@@ -913,6 +1012,7 @@ export async function crearNecesidadVacanteEscuela(params: {
     horasSepContrata: params.fuenteFinanciamiento === 'SEP' ? horasNum : 0,
     horasPieTitular: 0,
     horasPieContrata: params.fuenteFinanciamiento === 'PIE' ? horasNum : 0,
+    ...camposCargo,
     asignaturaPrincipal: especialidadClean,
     esVacanteNn: true,
     tipoVacante: 'NECESIDAD_ESCUELA',
@@ -1043,6 +1143,8 @@ export async function actualizarNecesidadVacanteEscuela(params: {
   rolActor?: string;
   nombreEstablecimiento?: string;
   comuna?: string;
+  tipoRequerimiento?: 'HORAS_AULA' | 'CARGO_DOCENTE';
+  tipoFuncionNoAula?: TipoFuncionNoAula;
 }): Promise<Docente> {
   const periodo = params.periodo || 2027;
   const rbdClean = String(params.rbd || '').trim();
@@ -1066,6 +1168,13 @@ export async function actualizarNecesidadVacanteEscuela(params: {
     throw new Error('Las horas de contrato deben ser un entero entre 1 y 44.');
   }
 
+  const camposCargo = buildCamposCargoDocente(
+    params.tipoRequerimiento ?? (esVacanteCargoDocente(actual) ? 'CARGO_DOCENTE' : 'HORAS_AULA'),
+    especialidadClean,
+    horasNum,
+    params.tipoFuncionNoAula
+  );
+
   const actualizada: Docente = {
     ...actual,
     apellidos: especialidadClean.toUpperCase(),
@@ -1077,6 +1186,7 @@ export async function actualizarNecesidadVacanteEscuela(params: {
     horasSepContrata: params.fuenteFinanciamiento === 'SEP' ? horasNum : 0,
     horasPieTitular: 0,
     horasPieContrata: params.fuenteFinanciamiento === 'PIE' ? horasNum : 0,
+    ...camposCargo,
     asignaturaPrincipal: especialidadClean,
     justificacionVacante: justificacionClean
   };
@@ -1294,6 +1404,390 @@ export async function cancelarNecesidadVacanteEscuela(params: {
     estadoAnterior: estadoActual,
     estadoNuevo: 'CANCELADA',
     descripcion: `Necesidad ${cancelada.run} (${cancelada.asignaturaPrincipal}, ${cancelada.horasContrato}h) cancelada.`,
+    motivo: motivoClean
+  });
+
+  return cancelada;
+}
+
+// =============================================================================
+// 3B. Necesidades de Cargos Asistentes de la Educación (Ley 21.109)
+// =============================================================================
+
+function inferirFlagsAsistenteCargo(
+  cargoFuncion: string,
+  estamento: EstamentoAsistente,
+  fuenteFinanciamiento: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE'
+) {
+  const norm = cargoFuncion.toLowerCase();
+  return {
+    esDuplaPsicosocial:
+      norm.includes('psicolog') ||
+      norm.includes('psicólog') ||
+      norm.includes('trabajador social') ||
+      norm.includes('asistente social') ||
+      norm.includes('dupla'),
+    esEquipoPie: fuenteFinanciamiento === 'PIE' || norm.includes('pie') || norm.includes('fonoaudi') || norm.includes('terapeuta'),
+    esTecnicoParvulo: estamento === 'TECNICO' && (norm.includes('parvul') || norm.includes('párvul')),
+    esAuxiliarServicio: estamento === 'AUXILIAR',
+    esInspectorPatio: estamento === 'PARADOCENTE_INSPECTORIA' || norm.includes('inspector')
+  };
+}
+
+export async function crearNecesidadVacanteAsistente(params: {
+  rbd: string;
+  periodo: number;
+  cargoFuncion: string;
+  estamento: EstamentoAsistente;
+  horasContrato: number;
+  fuenteFinanciamiento: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
+  justificacion: string;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+  estadoInicial?: 'BORRADOR' | 'ENVIADA';
+}): Promise<AsistenteEducacion> {
+  const flags = obtenerFeatureFlagsMovilidad();
+  if (!flags.flag_saneamiento_nn_escuelas) {
+    throw new Error('El feature flag flag_saneamiento_nn_escuelas se encuentra desactivado.');
+  }
+
+  const rbdClean = String(params.rbd || '').trim();
+  const cargoClean = String(params.cargoFuncion || '').trim();
+  const justificacionClean = String(params.justificacion || '').trim();
+  const horasNum = Number(params.horasContrato);
+
+  if (!rbdClean) throw new Error('Debe especificar un RBD válido.');
+  if (!cargoClean) throw new Error('Debe indicar el cargo o función requerida.');
+  if (!justificacionClean) throw new Error('Debe ingresar una justificación operativa o normativa.');
+  if (!Number.isInteger(horasNum) || horasNum < 1 || horasNum > 44) {
+    throw new Error('Las horas de contrato deben ser un número entero entre 1 y 44.');
+  }
+
+  const periodo = params.periodo || 2027;
+  const sufijoId = Math.random().toString(36).slice(2, 6);
+  const codigoVacante = `VAC-AST-${rbdClean}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const estadoInicial: EstadoNecesidadVacante = params.estadoInicial || 'BORRADOR';
+  const banderas = inferirFlagsAsistenteCargo(cargoClean, params.estamento, params.fuenteFinanciamiento);
+
+  const vacante: AsistenteEducacion = {
+    id: `vac_ast_${rbdClean}_${periodo}_${Date.now()}_${sufijoId}`,
+    rbd: rbdClean,
+    periodo,
+    run: codigoVacante,
+    nombres: 'VACANTE POR PROVEER',
+    apellidos: cargoClean.toUpperCase(),
+    cargoFuncion: cargoClean,
+    estamento: params.estamento,
+    horasContrato: horasNum,
+    horasSubvencionGeneralIndefinido: 0,
+    horasSubvencionGeneralPlazoFijo: params.fuenteFinanciamiento === 'SUBVENCION_GENERAL' ? horasNum : 0,
+    horasSepIndefinido: 0,
+    horasSepPlazoFijo: params.fuenteFinanciamiento === 'SEP' ? horasNum : 0,
+    horasPieIndefinido: 0,
+    horasPiePlazoFijo: params.fuenteFinanciamiento === 'PIE' ? horasNum : 0,
+    ...banderas,
+    activo: true,
+    propuestaGdp: 'Vacante por proveer',
+    situacionFinalGdp: estadoInicial === 'ENVIADA' ? 'Vigente' : 'Borrador',
+    esVacanteNn: true,
+    tipoVacante: 'NECESIDAD_ESCUELA',
+    justificacionVacante: justificacionClean,
+    estadoNecesidad: estadoInicial
+  };
+
+  await guardarAsistente(vacante);
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'CREACION_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: vacante.id,
+    codigoReferencia: codigoVacante,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoNuevo: estadoInicial,
+    descripcion: `Necesidad de cargo Asistente creada: ${cargoClean} (${params.estamento}, ${horasNum}h · ${params.fuenteFinanciamiento})`,
+    motivo: justificacionClean,
+    detalles: {
+      tipoRequerimiento: 'CARGO_ASISTENTE',
+      estamento: params.estamento,
+      horasContrato: horasNum,
+      fuenteFinanciamiento: params.fuenteFinanciamiento
+    }
+  });
+
+  if (estadoInicial === 'ENVIADA') {
+    await registrarMovimientoMovilidad({
+      periodo,
+      tipoMovimiento: 'ENVIO_MOVILIDAD',
+      entidad: 'NECESIDAD_VACANTE',
+      entidadId: vacante.id,
+      codigoReferencia: codigoVacante,
+      rbdOrigen: rbdClean,
+      nombreEstablecimiento: params.nombreEstablecimiento,
+      comuna: params.comuna,
+      usuarioActor: params.usuarioActor || 'establecimiento',
+      rolActor: params.rolActor,
+      estadoAnterior: 'BORRADOR',
+      estadoNuevo: 'ENVIADA',
+      descripcion: `Necesidad de cargo Asistente ${codigoVacante} (${cargoClean}, ${horasNum}h) enviada a Mesa de Movilidad.`
+    });
+  }
+
+  return vacante;
+}
+
+export async function listarNecesidadesVacanteAsistente(
+  rbd: string,
+  periodo: number = 2027
+): Promise<AsistenteEducacion[]> {
+  const rbdClean = String(rbd || '').trim();
+  if (!rbdClean) return [];
+  const asistentes = await listarAsistentes(rbdClean, periodo);
+  return asistentes
+    .filter(a => a.tipoVacante === 'NECESIDAD_ESCUELA')
+    .sort((a, b) => b.id.localeCompare(a.id));
+}
+
+async function cargarNecesidadAsistente(id: string, rbd: string, periodo: number): Promise<AsistenteEducacion> {
+  const asistentes = await listarAsistentes(rbd, periodo);
+  const found = asistentes.find(a => a.id === id && a.tipoVacante === 'NECESIDAD_ESCUELA');
+  if (!found) {
+    throw new Error('No se encontró la necesidad de cargo asistente especificada en este establecimiento.');
+  }
+  return found;
+}
+
+export async function actualizarNecesidadVacanteAsistente(params: {
+  id: string;
+  rbd: string;
+  periodo?: number;
+  cargoFuncion: string;
+  estamento: EstamentoAsistente;
+  horasContrato: number;
+  fuenteFinanciamiento: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE';
+  justificacion: string;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<AsistenteEducacion> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const actual = await cargarNecesidadAsistente(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+
+  if (estadoActual !== 'BORRADOR') {
+    throw new Error(
+      estadoActual === 'ENVIADA'
+        ? 'Esta necesidad ya fue enviada a Movilidad. Debes retrotraerla a Borrador antes de editarla.'
+        : 'No es posible editar una necesidad cancelada.'
+    );
+  }
+
+  const cargoClean = String(params.cargoFuncion || '').trim();
+  const justificacionClean = String(params.justificacion || '').trim();
+  const horasNum = Number(params.horasContrato);
+  if (!cargoClean) throw new Error('Debe indicar el cargo o función requerida.');
+  if (!justificacionClean) throw new Error('Debe ingresar una justificación operativa o normativa.');
+  if (!Number.isInteger(horasNum) || horasNum < 1 || horasNum > 44) {
+    throw new Error('Las horas de contrato deben ser un entero entre 1 y 44.');
+  }
+
+  const banderas = inferirFlagsAsistenteCargo(cargoClean, params.estamento, params.fuenteFinanciamiento);
+  const actualizada: AsistenteEducacion = {
+    ...actual,
+    apellidos: cargoClean.toUpperCase(),
+    cargoFuncion: cargoClean,
+    estamento: params.estamento,
+    horasContrato: horasNum,
+    horasSubvencionGeneralIndefinido: 0,
+    horasSubvencionGeneralPlazoFijo: params.fuenteFinanciamiento === 'SUBVENCION_GENERAL' ? horasNum : 0,
+    horasSepIndefinido: 0,
+    horasSepPlazoFijo: params.fuenteFinanciamiento === 'SEP' ? horasNum : 0,
+    horasPieIndefinido: 0,
+    horasPiePlazoFijo: params.fuenteFinanciamiento === 'PIE' ? horasNum : 0,
+    ...banderas,
+    justificacionVacante: justificacionClean
+  };
+
+  await guardarAsistente(actualizada);
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'EDICION_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: actualizada.id,
+    codigoReferencia: actualizada.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: 'BORRADOR',
+    estadoNuevo: 'BORRADOR',
+    descripcion: `Necesidad de cargo Asistente ${actualizada.run} editada: ${cargoClean} (${horasNum}h · ${params.fuenteFinanciamiento}).`,
+    motivo: justificacionClean
+  });
+
+  return actualizada;
+}
+
+export async function enviarNecesidadAsistenteAMovilidad(params: {
+  id: string;
+  rbd: string;
+  periodo?: number;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<AsistenteEducacion> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const actual = await cargarNecesidadAsistente(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+  if (estadoActual === 'CANCELADA') throw new Error('No se puede enviar a Movilidad una necesidad cancelada.');
+  if (estadoActual === 'ENVIADA') return actual;
+
+  const enviada: AsistenteEducacion = {
+    ...actual,
+    estadoNecesidad: 'ENVIADA',
+    situacionFinalGdp: 'Vigente',
+    motivoEstadoNecesidad: undefined
+  };
+
+  await guardarAsistente(enviada);
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'ENVIO_MOVILIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: enviada.id,
+    codigoReferencia: enviada.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: estadoActual,
+    estadoNuevo: 'ENVIADA',
+    descripcion: `Necesidad de cargo Asistente ${enviada.run} (${enviada.cargoFuncion}, ${enviada.horasContrato}h) enviada a Mesa de Movilidad.`
+  });
+
+  return enviada;
+}
+
+export async function retrotraerNecesidadAsistenteDeMovilidad(params: {
+  id: string;
+  rbd: string;
+  motivo: string;
+  periodo?: number;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<AsistenteEducacion> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const motivoClean = String(params.motivo || '').trim();
+  if (!motivoClean) throw new Error('Debe indicar el motivo para retrotraer la necesidad desde Movilidad.');
+
+  const actual = await cargarNecesidadAsistente(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+  if (estadoActual !== 'ENVIADA') {
+    throw new Error('Solo se pueden retrotraer necesidades que se encuentran enviadas a Movilidad.');
+  }
+
+  const enGestion = await obtenerVacantesConPropuestaActiva([actual.id], periodo);
+  if (enGestion.has(actual.id)) {
+    throw new Error(
+      'Esta vacante ya tiene una propuesta o adjudicación activa en un escenario de la Mesa de Movilidad. Solicite a UATP/GDP liberar la propuesta antes de retrotraer.'
+    );
+  }
+
+  const retrotraida: AsistenteEducacion = {
+    ...actual,
+    estadoNecesidad: 'BORRADOR',
+    situacionFinalGdp: 'Borrador',
+    motivoEstadoNecesidad: motivoClean
+  };
+
+  await guardarAsistente(retrotraida);
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'RETROCESO_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: retrotraida.id,
+    codigoReferencia: retrotraida.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: 'ENVIADA',
+    estadoNuevo: 'BORRADOR',
+    descripcion: `Necesidad de cargo Asistente ${retrotraida.run} (${retrotraida.cargoFuncion}, ${retrotraida.horasContrato}h) retrotraída a Borrador.`,
+    motivo: motivoClean
+  });
+
+  return retrotraida;
+}
+
+export async function cancelarNecesidadVacanteAsistente(params: {
+  id: string;
+  rbd: string;
+  motivo: string;
+  periodo?: number;
+  usuarioActor?: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+  comuna?: string;
+}): Promise<AsistenteEducacion> {
+  const periodo = params.periodo || 2027;
+  const rbdClean = String(params.rbd || '').trim();
+  const motivoClean = String(params.motivo || '').trim();
+  if (!motivoClean) throw new Error('Debe indicar el motivo de cancelación de la necesidad.');
+
+  const actual = await cargarNecesidadAsistente(params.id, rbdClean, periodo);
+  const estadoActual = actual.estadoNecesidad || 'ENVIADA';
+  if (estadoActual === 'CANCELADA') return actual;
+
+  const enGestion = await obtenerVacantesConPropuestaActiva([actual.id], periodo);
+  if (enGestion.has(actual.id)) {
+    throw new Error(
+      'Esta vacante ya tiene una propuesta o adjudicación activa en la Mesa de Movilidad y no puede cancelarse directamente.'
+    );
+  }
+
+  const cancelada: AsistenteEducacion = {
+    ...actual,
+    estadoNecesidad: 'CANCELADA',
+    situacionFinalGdp: 'Cancelada',
+    motivoEstadoNecesidad: motivoClean
+  };
+
+  await guardarAsistente(cancelada);
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'CANCELACION_NECESIDAD',
+    entidad: 'NECESIDAD_VACANTE',
+    entidadId: cancelada.id,
+    codigoReferencia: cancelada.run,
+    rbdOrigen: rbdClean,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comuna,
+    usuarioActor: params.usuarioActor || 'establecimiento',
+    rolActor: params.rolActor,
+    estadoAnterior: estadoActual,
+    estadoNuevo: 'CANCELADA',
+    descripcion: `Necesidad de cargo Asistente ${cancelada.run} (${cancelada.cargoFuncion}, ${cancelada.horasContrato}h) cancelada.`,
     motivo: motivoClean
   });
 
