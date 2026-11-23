@@ -237,6 +237,30 @@ export async function esRbdEliminado(rbd: string): Promise<boolean> {
   return eliminados.has(clean);
 }
 
+/**
+ * Actualiza el asesor_uatp de múltiples establecimientos en una sola transacción SQLite y 1 persistDb().
+ */
+export async function actualizarAsesorUatpBatch(
+  cambios: { rbd: string; asesorUatp?: string }[]
+): Promise<void> {
+  if (cambios.length === 0) return;
+  const db = await getDb();
+  db.run('BEGIN TRANSACTION');
+  try {
+    for (const item of cambios) {
+      db.run(
+        'UPDATE establecimientos SET asesor_uatp = ? WHERE rbd = ?',
+        [item.asesorUatp ? item.asesorUatp.trim() : null, item.rbd.trim()]
+      );
+    }
+    db.run('COMMIT');
+  } catch (err) {
+    try { db.run('ROLLBACK'); } catch {}
+    throw err;
+  }
+  persistDb();
+}
+
 export async function eliminarEstablecimiento(idOrRbd: string): Promise<void> {
   const db = await getDb();
   

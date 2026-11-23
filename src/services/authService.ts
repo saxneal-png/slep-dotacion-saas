@@ -1008,10 +1008,10 @@ export class AuthService {
     }
 
     localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usuarios));
-    await guardarUsuarioDb(usuario, false, passwordPlain);
-    for (const otroMod of otrosAsesoresModificados) {
-      await guardarUsuarioDb(otroMod);
-    }
+    await Promise.all([
+      guardarUsuarioDb(usuario, false, passwordPlain),
+      ...otrosAsesoresModificados.map(otroMod => guardarUsuarioDb(otroMod))
+    ]);
 
     // 5. Si el usuario modificado es el de la sesiÃ³n actual, refrescar inmediatamente la sesiÃ³n activa
     const sesionActual = this.getSessionActual();

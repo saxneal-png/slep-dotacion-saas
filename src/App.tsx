@@ -1477,7 +1477,12 @@ export const App: React.FC = () => {
           <ConfiguracionesGeneralesView
             colegios={colegios}
             onColegiosActualizados={async () => {
-              await cargarDatos(periodoActivo);
+              const listaActualizada = await listarEstablecimientos();
+              setColegios(listaActualizada);
+              if (colegioActivo) {
+                const actualizado = listaActualizada.find(c => c.rbd === colegioActivo.rbd);
+                if (actualizado) setColegioActivo(actualizado);
+              }
             }}
             onExportarSqlite={handleExportarSqlite}
             onImportarSqlite={handleImportarSqlite}

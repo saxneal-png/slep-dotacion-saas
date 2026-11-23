@@ -8,7 +8,7 @@ import {
   ModoAsignacionDocente,
   FeatureFlagsMovilidad
 } from '../types';
-import { guardarEstablecimiento, listarEstablecimientos } from '../database/db';
+import { actualizarAsesorUatpBatch, guardarEstablecimiento, listarEstablecimientos } from '../database/db';
 import { supabase, isSupabaseEnabled } from './supabaseClient';
 import { SupabaseDotacionService } from './supabaseDotacionService';
 import { esRolNivelCentral, normalizarRol } from '../security/rolesDefinitions';
@@ -654,32 +654,35 @@ export async function actualizarColegiosDeAsesor(
   const asesorNorm = asesorNombre.trim().toLowerCase();
   const anteriorNorm = (nombreAnteriorAsesor || asesorNombre).trim().toLowerCase();
   const modificados: Establecimiento[] = [];
+  const cambiosBatch: { rbd: string; asesorUatp?: string }[] = [];
 
   for (const est of colegiosActuales) {
     const estRbd = est.rbd.trim();
     const estAsesor = (est.asesorUatp || '').trim().toLowerCase();
 
     if (rbdSet.has(estRbd)) {
-      // Debe pertenecer a este asesor (o actualizarse si cambió su nombre)
       if (estAsesor !== asesorNorm || est.asesorUatp !== asesorNombre.trim()) {
         const actualizado: Establecimiento = {
           ...est,
           asesorUatp: asesorNombre.trim()
         };
-        await guardarEstablecimiento(actualizado, true);
         modificados.push(actualizado);
+        cambiosBatch.push({ rbd: estRbd, asesorUatp: asesorNombre.trim() });
       }
     } else {
-      // Si antes pertenecía a este asesor (con el nombre actual o anterior) y ya no está seleccionado, se desasigna
       if (estAsesor === asesorNorm || (anteriorNorm && estAsesor === anteriorNorm)) {
         const actualizado: Establecimiento = {
           ...est,
           asesorUatp: undefined
         };
-        await guardarEstablecimiento(actualizado, true);
         modificados.push(actualizado);
+        cambiosBatch.push({ rbd: estRbd, asesorUatp: undefined });
       }
     }
+  }
+
+  if (cambiosBatch.length > 0) {
+    await actualizarAsesorUatpBatch(cambiosBatch);
   }
 
   if (modificados.length > 0 && isSupabaseEnabled()) {

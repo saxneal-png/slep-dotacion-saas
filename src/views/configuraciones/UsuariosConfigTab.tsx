@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle, Sparkles, RefreshCw, PauseCircle, PlayCircle, Clock } from 'lucide-react';
+import { Users, Plus, Trash2, Edit2, KeyRound, Shield, Check, AlertCircle, RotateCcw, Search, Lock, CheckCircle2, XCircle, Sparkles, RefreshCw, PauseCircle, PlayCircle, Clock, Loader2 } from 'lucide-react';
 import { AuthService, generateSalt, hashPassword, generarPasswordTemporalSegura } from '../../services/authService';
 import { UsuarioSistema, UserRole, EstadoPausaRevision } from '../../types/authTypes';
 import { ModalControlSesionesEstamentos } from '../../components/auth/ModalControlSesionesEstamentos';
@@ -53,6 +53,7 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const [filtroRol, setFiltroRol] = useState<'todos' | UserRole>('todos');
   const [generandoDirectores, setGenerandoDirectores] = useState(false);
+  const [guardandoUsuario, setGuardandoUsuario] = useState(false);
   const [modalControlSesionesAbierto, setModalControlSesionesAbierto] = useState(false);
   const [estadoPausaRevision, setEstadoPausaRevision] = useState<EstadoPausaRevision | null>(() => AuthService.getEstadoPausaRevision());
 
@@ -230,6 +231,8 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
       return;
     }
 
+    if (guardandoUsuario) return;
+    setGuardandoUsuario(true);
     try {
       let salt = usuarioEnEdicion ? usuarioEnEdicion.salt : generateSalt();
       let passwordHash = usuarioEnEdicion ? usuarioEnEdicion.passwordHash : '';
@@ -285,13 +288,14 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
             colegios,
             usuarioEnEdicion?.nombreCompleto
           );
-          if (onColegiosActualizados) {
-            await onColegiosActualizados();
-          }
         } catch (syncErr) {
           console.warn('[UsuariosConfigTab] Aviso sincronizando cartera de asesor:', syncErr);
         }
       }
+      await Promise.all([
+        onColegiosActualizados ? onColegiosActualizados() : Promise.resolve(),
+        cargarLista()
+      ]);
       setMensaje({
         tipo: 'ok',
         texto: usuarioEnEdicion
@@ -299,9 +303,10 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
           : `Usuario "${usuarioAGuardar.username}" creado y habilitado exitosamente.`
       });
       setModalAbierto(false);
-      await cargarLista();
     } catch (err: any) {
       setMensaje({ tipo: 'error', texto: err.message || 'Error al guardar usuario' });
+    } finally {
+      setGuardandoUsuario(false);
     }
   };
 
@@ -949,9 +954,15 @@ export const UsuariosConfigTab: React.FC<UsuariosConfigTabProps> = ({ colegios, 
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition"
+                  disabled={guardandoUsuario}
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-60 rounded-xl shadow-md transition inline-flex items-center gap-1.5"
                 >
-                  {usuarioEnEdicion ? 'Guardar Cambios' : 'Crear Usuario'}
+                  {guardandoUsuario && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>
+                    {guardandoUsuario
+                      ? 'Guardando...'
+                      : (usuarioEnEdicion ? 'Guardar Cambios' : 'Crear Usuario')}
+                  </span>
                 </button>
               </div>
             </form>

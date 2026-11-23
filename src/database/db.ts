@@ -18,6 +18,7 @@ export type { PersistListener } from './dbCore';
 export {
   listarEstablecimientos,
   guardarEstablecimiento,
+  actualizarAsesorUatpBatch,
   obtenerEstablecimientoPorRbd,
   eliminarEstablecimiento,
   registrarRbdEliminado,
