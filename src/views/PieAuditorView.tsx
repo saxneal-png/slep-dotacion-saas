@@ -28,7 +28,9 @@ import {
   obtenerHorasCronologicasExactasAsig,
   esDocenteEducacionEspecialPie,
   getHorasAulaLectivaAsig,
-  auditarCargaDocenteIntegral
+  auditarCargaDocenteIntegral,
+  esAsignacionTrabajoColaborativo,
+  obtenerHorasCronologicasTrabajoColab
 } from '../services/auditoriaDocenteService';
 import { usePermisos } from '../security/PermisosContext';
 
@@ -218,11 +220,7 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
 
   const docentesDiferenciales = useMemo(() => {
     return docentes
-      .filter(
-        d =>
-          esDocenteEducacionEspecialPie(d) ||
-          ((d.horasPieTitular || 0) + (d.horasPieContrata || 0) > 0 && d.estamento !== 'PROFESIONAL_PAE')
-      )
+      .filter(d => esDocenteEducacionEspecialPie(d) && d.estamento !== 'PROFESIONAL_PAE')
       .map(d => {
         const hPie = (d.horasPieTitular || 0) + (d.horasPieContrata || 0);
         const horasTotal = hPie > 0 ? hPie : d.horasContrato;
@@ -420,6 +418,37 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
   const balanceContratoDiferencial = Math.round((horasContratadasDiferencial - contratoDifRequeridoMultitramo) * 10) / 10;
   const balanceHaDiferencial = totalHaCapacidadDiferencial - totalDemandaHaDiferencial;
   const balancePae = horasContratadasPae - totalDemandaPae;
+
+  // 3b. Contabilización de Trabajo Colaborativo (Art. 86 Dto. 170: 3h por curso PIE vs Docentes de Aula Regular)
+  const docentesAulaColab = useMemo(() => {
+    return docentes
+      .filter(d => !esDocenteEducacionEspecialPie(d) && d.estamento !== 'PROFESIONAL_PAE')
+      .map(d => {
+        const asigsColab = asignaciones.filter(a => a.docenteId === d.id && esAsignacionTrabajoColaborativo(a));
+        const cronAsigsColab = asigsColab.reduce((s, a) => s + obtenerHorasCronologicasTrabajoColab(a, false), 0);
+        const hColabDoc = Number(d.horasTrabajoColaborativo) || 0;
+        const hPieContrato = (Number(d.horasPieTitular) || 0) + (Number(d.horasPieContrata) || 0);
+        const horasColab = Math.round(Math.max(cronAsigsColab, hColabDoc, hPieContrato) * 100) / 100;
+        const cursosResumen = asigsColab.map(a => {
+          const c = cursos.find(cur => cur.id === a.cursoId);
+          return `${c ? `${c.nivel} ${c.letra}` : 'General'} (${obtenerHorasCronologicasTrabajoColab(a, false)}h)`;
+        });
+        return {
+          id: d.id,
+          run: d.run,
+          nombre: `${d.nombres} ${d.apellidos}`,
+          horasColab,
+          horasPieContrato: hPieContrato,
+          cronAsigsColab,
+          hColabDoc,
+          cursosResumen
+        };
+      })
+      .filter(d => d.horasColab > 0);
+  }, [docentes, asignaciones, cursos]);
+
+  const totalColabAsignadasAula = Math.round(docentesAulaColab.reduce((s, d) => s + d.horasColab, 0) * 100) / 100;
+  const saldoColabPorAsignar = Math.round((totalDemandaColab - totalColabAsignadasAula) * 100) / 100;
 
   // 4. Acciones de asignación multi-docente directa por curso
   const handleAgregarEducadoraACurso = async (cursoId: string, faltanHa: number, docenteIdPreferido?: string) => {
@@ -687,6 +716,24 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
               }`}
             >
               {horasCoordinacionDiferencial}h / {metaCoordinacionPie}h
+            </span>
+          </div>
+
+          <div
+            className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+            title={`Art. 86 Dto. 170: ${cursosConPieCount} cursos PIE × 3h = ${totalDemandaColab}h disponibles | Asignadas a Docentes de Aula Regular: ${totalColabAsignadasAula}h (${saldoColabPorAsignar >= 0 ? `por asignar ${saldoColabPorAsignar}h` : `exceso ${Math.abs(saldoColabPorAsignar)}h`}).`}
+          >
+            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">Colab. Art. 86</span>
+            <span
+              className={`text-sm font-black font-mono tabular-nums ${
+                saldoColabPorAsignar < 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : saldoColabPorAsignar === 0 && totalDemandaColab > 0
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-indigo-600 dark:text-indigo-400'
+              }`}
+            >
+              {totalColabAsignadasAula} / {totalDemandaColab}h
             </span>
           </div>
         </div>
@@ -1527,6 +1574,74 @@ export const PieAuditorView: React.FC<PieAuditorViewProps> = ({
                 ))
               )}
             </div>
+          </div>
+
+          {/* Contabilización Trabajo Colaborativo Art. 86 Dto. 170 (3h por curso PIE vs Docentes de Aula Regular) */}
+          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">
+                  Contabilización de Trabajo Colaborativo (Art. 86 Dto. 170) — Docentes de Aula Regular
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Bolsa normativa de 3 horas cronológicas por cada curso con PIE ({cursosConPieCount} cursos × 3h = {totalDemandaColab}h disponibles).
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 font-bold border border-slate-200">
+                  Disponible: {totalDemandaColab}h
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800 font-bold border border-indigo-200">
+                  Asignado a Aula Regular: {totalColabAsignadasAula}h
+                </span>
+                <span
+                  className={`px-2.5 py-1 rounded-lg font-black border ${
+                    saldoColabPorAsignar < 0
+                      ? 'bg-rose-50 text-rose-800 border-rose-200'
+                      : saldoColabPorAsignar === 0
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                  }`}
+                >
+                  {saldoColabPorAsignar < 0
+                    ? `Exceso: +${Math.abs(saldoColabPorAsignar)}h`
+                    : saldoColabPorAsignar === 0
+                    ? '✓ Cuadrado (0h saldo)'
+                    : `Por asignar: ${saldoColabPorAsignar}h`}
+                </span>
+              </div>
+            </div>
+
+            {docentesAulaColab.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">
+                No hay docentes de aula regular con horas PIE / Trabajo Colaborativo Art. 86 asignadas en este establecimiento.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                {docentesAulaColab.map(da => (
+                  <div key={da.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 truncate">{da.nombre}</div>
+                        <div className="text-[10px] text-slate-500">RUN: {da.run}</div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 font-black text-[11px] shrink-0">
+                        {da.horasColab}h Colab.
+                      </span>
+                    </div>
+                    {da.cursosResumen.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {da.cursosResumen.map((cr, idx) => (
+                          <span key={idx} className="px-2 py-0.5 bg-indigo-50 text-indigo-800 font-semibold rounded text-[10px] border border-indigo-200">
+                            {cr}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
