@@ -15,6 +15,7 @@ import {
   Printer,
   RefreshCw,
   RotateCcw,
+  Scale,
   ScanSearch,
   Sparkles,
   Unlock
@@ -61,9 +62,9 @@ export interface StageGatesHeaderProps {
   };
   consolidacionDeshabilitada: boolean;
   tooltipConsolidacion: string;
-  vistaInternaMesa: 'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos';
+  vistaInternaMesa: 'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos' | 'solicitudes_nomina';
   casosNoContinuidadCount: number;
-  onCambiarVistaInterna: (vista: 'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos') => void;
+  onCambiarVistaInterna: (vista: 'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos' | 'solicitudes_nomina') => void;
   onSelectSubTabCola: (tab: SubTabCol1) => void;
   onAbrirNuevoEscenario: () => void;
   onAbrirClonarEscenario: () => void;
@@ -760,6 +761,18 @@ export const StageGatesHeader: React.FC<StageGatesHeaderProps> = ({
         >
           <History className="w-3.5 h-3.5" />
           <span>Registro de Movimientos</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onCambiarVistaInterna('solicitudes_nomina')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            vistaInternaMesa === 'solicitudes_nomina'
+              ? 'bg-purple-800 text-white shadow-xs'
+              : 'bg-purple-50 text-purple-900 border border-purple-200 hover:bg-purple-100'
+          }`}
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>Solicitudes Nómina (Horas · Art. 69 · Dto. 352)</span>
         </button>
       </div>
     </div>

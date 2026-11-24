@@ -11,6 +11,7 @@ import {
   Lock,
   Plus,
   RotateCcw,
+  Scale,
   Send,
   Sparkles,
   Users,
@@ -24,11 +25,14 @@ import {
   EstamentoAsistente,
   EstamentoDocente,
   RegistroMovimientoMovilidad,
+  SolicitudMovimientoDotacion,
   TipoFuncionNoAula,
   TipoRequerimientoVacante
 } from '../types';
 import { ESTAMENTOS } from '../components/DocenteFormModal';
 import { usePermisos } from '../security/PermisosContext';
+import { listarDocentes } from '../database/db';
+import { listarSolicitudesMovimientoDotacion } from '../services/solicitudesDotacionService';
 import {
   actualizarNecesidadVacanteAsistente,
   actualizarNecesidadVacanteEscuela,
@@ -38,6 +42,7 @@ import {
   crearNecesidadVacanteEscuela,
   enviarNecesidadAMovilidad,
   enviarNecesidadAsistenteAMovilidad,
+  esVacanteActivaEnMovilidad,
   esVacanteCargoDocente,
   listarNecesidadesVacanteAsistente,
   listarNecesidadesVacanteEscuela,
@@ -159,6 +164,11 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
 
   const [necesidadesDoc, setNecesidadesDoc] = useState<Docente[]>([]);
   const [necesidadesAst, setNecesidadesAst] = useState<AsistenteEducacion[]>([]);
+  const [vacantesNominaNn, setVacantesNominaNn] = useState<Docente[]>([]);
+  const [docentesEscuela, setDocentesEscuela] = useState<Docente[]>([]);
+  const [solicitudesNomina, setSolicitudesNomina] = useState<SolicitudMovimientoDotacion[]>([]);
+  const [subVista, setSubVista] = useState<'vacantes' | 'solicitudes_nomina'>('vacantes');
+  const [filtroTipoSolicitud, setFiltroTipoSolicitud] = useState<'TODAS' | 'HORAS' | 'ART_69' | 'AUT_DOCENTE'>('TODAS');
   const [bloqueadasEnMesa, setBloqueadasEnMesa] = useState<Set<string>>(new Set());
   const [movimientos, setMovimientos] = useState<RegistroMovimientoMovilidad[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -217,12 +227,21 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
   const cargarDatos = useCallback(async () => {
     setCargando(true);
     try {
-      const [docs, asts] = await Promise.all([
+      const [docs, asts, todosDocsEscuela, sols] = await Promise.all([
         listarNecesidadesVacanteEscuela(colegio.rbd, periodoActivo),
-        listarNecesidadesVacanteAsistente(colegio.rbd, periodoActivo)
+        listarNecesidadesVacanteAsistente(colegio.rbd, periodoActivo),
+        listarDocentes(colegio.rbd, periodoActivo),
+        listarSolicitudesMovimientoDotacion({ periodo: periodoActivo, rbd: colegio.rbd })
       ]);
       setNecesidadesDoc(docs);
       setNecesidadesAst(asts);
+      setDocentesEscuela(todosDocsEscuela);
+      setVacantesNominaNn(
+        todosDocsEscuela.filter(
+          d => esVacanteActivaEnMovilidad(d) && d.tipoVacante !== 'NECESIDAD_ESCUELA'
+        )
+      );
+      setSolicitudesNomina(sols);
       const ids = [...docs.map(d => d.id), ...asts.map(a => a.id)];
       const [enMesa, regs] = await Promise.all([
         obtenerVacantesConPropuestaActiva(ids, periodoActivo),
@@ -300,6 +319,111 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     if (filtroEstado === 'TODAS') return necesidadesUnificadas;
     return necesidadesUnificadas.filter(n => n.estado === filtroEstado);
   }, [necesidadesUnificadas, filtroEstado]);
+
+  // Solicitudes de nómina consolidadas (SolicitudMovimientoDotacion + marcas directas en ficha docente)
+  const solicitudesNominaUnificadas = useMemo(() => {
+    const porClave = new Map<string, {
+      id: string;
+      run: string;
+      nombre: string;
+      asignaturaOCargo: string;
+      tipo: 'HORAS' | 'ART_69' | 'AUT_DOCENTE';
+      etiquetaTipo: string;
+      horasVigentes: number;
+      horasSolicitadas: number;
+      estado: string;
+      justificacion?: string;
+      observacionSlep?: string;
+    }>();
+
+    for (const s of solicitudesNomina) {
+      let tipo: 'HORAS' | 'ART_69' | 'AUT_DOCENTE' | null = null;
+      let etiqueta = '';
+      if (s.tipoMovimiento === 'AUMENTO_HORAS' || s.tipoMovimiento === 'DISMINUCION_HORAS') {
+        tipo = 'HORAS';
+        etiqueta = s.tipoMovimiento === 'AUMENTO_HORAS' ? 'Aumento Horas' : 'Disminución Horas';
+      } else if (s.tipoMovimiento === 'ACOGIMIENTO_ART_69') {
+        tipo = 'ART_69';
+        etiqueta = 'Artículo 69 (Máx. 24h)';
+      } else if (s.tipoMovimiento === 'AUTORIZACION_DOCENTE_DTO_352') {
+        tipo = 'AUT_DOCENTE';
+        etiqueta = 'Autorización Docente Dto. 352';
+      }
+      if (!tipo) continue;
+      porClave.set(`${s.funcionarioId}_${tipo}`, {
+        id: s.id,
+        run: s.runFuncionario,
+        nombre: s.nombreFuncionario,
+        asignaturaOCargo: s.cargoOAsignatura || '',
+        tipo,
+        etiquetaTipo: etiqueta,
+        horasVigentes: s.horasVigentes,
+        horasSolicitadas: s.horasSolicitadas,
+        estado: s.estadoRevision,
+        justificacion: s.justificacionEscuela,
+        observacionSlep: s.observacionUatp
+      });
+    }
+
+    for (const d of docentesEscuela) {
+      if (d.esVacanteNn) continue;
+      if (d.aplicaArticulo69 && !porClave.has(`${d.id}_ART_69`)) {
+        porClave.set(`${d.id}_ART_69`, {
+          id: `doc_art69_${d.id}`,
+          run: d.run,
+          nombre: `${d.nombres} ${d.apellidos}`.trim(),
+          asignaturaOCargo: d.asignaturaPrincipal || d.estamento,
+          tipo: 'ART_69',
+          etiquetaTipo: 'Artículo 69 (Máx. 24h)',
+          horasVigentes: d.horasVigentesAnterior ?? d.horasContrato,
+          horasSolicitadas: d.horasContrato,
+          estado: d.estadoSancionGdp || 'Pendiente',
+          justificacion: d.observacionesDirector,
+          observacionSlep: d.observacionesSlep
+        });
+      }
+      if (d.requiereAutorizacionDocente && !porClave.has(`${d.id}_AUT_DOCENTE`)) {
+        porClave.set(`${d.id}_AUT_DOCENTE`, {
+          id: `doc_aut_${d.id}`,
+          run: d.run,
+          nombre: `${d.nombres} ${d.apellidos}`.trim(),
+          asignaturaOCargo: d.habilitacionSeremiAsignatura || d.asignaturaPrincipal || d.estamento,
+          tipo: 'AUT_DOCENTE',
+          etiquetaTipo: 'Autorización Docente Dto. 352',
+          horasVigentes: d.horasVigentesAnterior ?? d.horasContrato,
+          horasSolicitadas: d.horasContrato,
+          estado: d.estadoSancionGdp || 'Pendiente',
+          justificacion: d.observacionesDirector,
+          observacionSlep: d.observacionesSlep
+        });
+      }
+      if (
+        (d.propuestaGdp === 'Aumento Horas' || d.propuestaGdp === 'Disminución Horas') &&
+        !porClave.has(`${d.id}_HORAS`)
+      ) {
+        porClave.set(`${d.id}_HORAS`, {
+          id: `doc_hrs_${d.id}`,
+          run: d.run,
+          nombre: `${d.nombres} ${d.apellidos}`.trim(),
+          asignaturaOCargo: d.asignaturaPrincipal || d.estamento,
+          tipo: 'HORAS',
+          etiquetaTipo: d.propuestaGdp,
+          horasVigentes: d.horasVigentesAnterior ?? d.horasContrato,
+          horasSolicitadas: d.horasContrato,
+          estado: d.estadoSancionGdp || 'Pendiente',
+          justificacion: d.observacionesDirector,
+          observacionSlep: d.observacionesSlep
+        });
+      }
+    }
+
+    return Array.from(porClave.values());
+  }, [solicitudesNomina, docentesEscuela]);
+
+  const solicitudesNominaFiltradas = useMemo(() => {
+    if (filtroTipoSolicitud === 'TODAS') return solicitudesNominaUnificadas;
+    return solicitudesNominaUnificadas.filter(s => s.tipo === filtroTipoSolicitud);
+  }, [solicitudesNominaUnificadas, filtroTipoSolicitud]);
 
   const posibleDuplicado = useMemo(() => {
     if (!modalForm.open || modalForm.editingId) return null;
@@ -632,6 +756,42 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         )}
       </div>
 
+      {/* Selector de Sub-vista */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setSubVista('vacantes')}
+          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+            subVista === 'vacantes'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Vacantes y Cargos por Proveer</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-indigo-500/20 text-current tabular-nums">
+            {necesidadesUnificadas.length + vacantesNominaNn.length}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubVista('solicitudes_nomina')}
+          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+            subVista === 'solicitudes_nomina'
+              ? 'bg-purple-800 text-white shadow-xs'
+              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>Solicitudes de Nómina (Horas · Art. 69 · Aut. Docente)</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-purple-500/20 text-current tabular-nums">
+            {solicitudesNominaUnificadas.length}
+          </span>
+        </button>
+      </div>
+
+      {subVista === 'vacantes' ? (
+      <>
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200">
@@ -873,6 +1033,176 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
           </div>
         )}
       </div>
+
+      {/* Vacantes "Por Proveer" / NN detectadas en Nómina */}
+      {vacantesNominaNn.length > 0 && (
+        <div className="card-elevated p-4 space-y-2.5 border-amber-200 bg-amber-50/20">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              <span>
+                Registros &quot;Por Proveer&quot; / NN de Nómina visibles en Mesa de Movilidad ({vacantesNominaNn.length})
+              </span>
+            </h3>
+            <span className="text-[11px] text-amber-800 font-semibold">
+              Detectados desde Nómina Docente, Egresos o Rebotes
+            </span>
+          </div>
+          <div className="space-y-2">
+            {vacantesNominaNn.map(v => {
+              const fuente = obtenerFuenteDocente(v);
+              const tipoEtiqueta =
+                v.tipoVacante === 'CONDICIONAL_EGRESO'
+                  ? 'Condicional Egreso'
+                  : v.tipoVacante === 'REBOTE_MOVILIDAD'
+                  ? 'NN-Rebote Movilidad'
+                  : 'NN / Por Proveer (Nómina)';
+              return (
+                <div
+                  key={v.id}
+                  className="p-3 rounded-xl bg-white border border-amber-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs"
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[11px] font-black px-2 py-0.5 rounded bg-amber-900 text-white">
+                        {v.run || 'SIN RUN'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        {tipoEtiqueta}
+                      </span>
+                      <span className="font-black text-slate-900">
+                        {v.asignaturaPrincipal || v.cargoInstitucional || `${v.nombres} ${v.apellidos}`}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 tabular-nums">
+                        {v.horasContrato} hrs
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">
+                        {ETIQUETA_FUENTE[fuente]}
+                      </span>
+                    </div>
+                    {v.justificacionVacante && (
+                      <p className="text-[11px] text-slate-600">{v.justificacionVacante}</p>
+                    )}
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Visible en Mesa de Movilidad
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      </>
+      ) : (
+        /* Sub-vista: Solicitudes de Nómina (Horas / Art. 69 / Aut. Docente Dto. 352) */
+        <div className="card-elevated p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'TODAS', label: `Todas (${solicitudesNominaUnificadas.length})` },
+                  {
+                    id: 'HORAS',
+                    label: `Aumento / Disminución Horas (${solicitudesNominaUnificadas.filter(s => s.tipo === 'HORAS').length})`
+                  },
+                  {
+                    id: 'ART_69',
+                    label: `Artículo 69 (${solicitudesNominaUnificadas.filter(s => s.tipo === 'ART_69').length})`
+                  },
+                  {
+                    id: 'AUT_DOCENTE',
+                    label: `Autorización Docente Dto. 352 (${solicitudesNominaUnificadas.filter(s => s.tipo === 'AUT_DOCENTE').length})`
+                  }
+                ] as const
+              ).map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFiltroTipoSolicitud(tab.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    filtroTipoSolicitud === tab.id
+                      ? 'bg-purple-800 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11px] text-slate-500">
+              Originadas desde la ficha docente en Nómina Docente · Aprobación en Mesa de Movilidad / GDP
+            </span>
+          </div>
+
+          {solicitudesNominaFiltradas.length === 0 ? (
+            <div className="p-8 text-center rounded-xl border border-dashed border-slate-300 text-xs text-slate-500">
+              No hay solicitudes de aumento/disminución de horas, Artículo 69 ni Autorización Docente registradas en este establecimiento.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {solicitudesNominaFiltradas.map(s => (
+                <div
+                  key={s.id}
+                  className="p-3.5 rounded-xl bg-white border border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2"
+                >
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800">
+                        {s.run}
+                      </span>
+                      <span className="font-black text-sm text-slate-900">{s.nombre}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                          s.tipo === 'ART_69'
+                            ? 'bg-purple-100 text-purple-900 border-purple-300'
+                            : s.tipo === 'AUT_DOCENTE'
+                            ? 'bg-teal-100 text-teal-900 border-teal-300'
+                            : 'bg-indigo-100 text-indigo-900 border-indigo-200'
+                        }`}
+                      >
+                        {s.etiquetaTipo}
+                      </span>
+                      <span className="text-xs text-slate-600">{s.asignaturaOCargo}</span>
+                      {s.tipo === 'HORAS' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-800 tabular-nums">
+                          {s.horasVigentes}h → {s.horasSolicitadas}h
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-800 tabular-nums">
+                          Contrato: {s.horasSolicitadas}h
+                        </span>
+                      )}
+                    </div>
+                    {s.justificacion && (
+                      <p className="text-[11px] text-slate-600">
+                        <strong>Observación escuela:</strong> {s.justificacion}
+                      </p>
+                    )}
+                    {s.observacionSlep && (
+                      <p className="text-[11px] text-indigo-800">
+                        <strong>Resolución SLEP / GDP:</strong> {s.observacionSlep}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-black border shrink-0 ${
+                      s.estado === 'APROBADO' || s.estado === 'Aprobado'
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                        : s.estado === 'RECHAZADO' || s.estado === 'Rechazado'
+                        ? 'bg-rose-100 text-rose-900 border-rose-300'
+                        : 'bg-amber-50 text-amber-900 border-amber-300'
+                    }`}
+                  >
+                    {s.estado}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Historial local */}
       <div className="card-elevated p-4 space-y-2.5">

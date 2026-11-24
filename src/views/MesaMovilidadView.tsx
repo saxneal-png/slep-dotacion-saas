@@ -52,6 +52,7 @@ import { SimuladorCalcePanel } from './movilidad/SimuladorCalcePanel';
 import { BolsaVacantesPanel, HomologacionTpModal, VacanteAsignaturasModal } from './movilidad/BolsaVacantesPanel';
 import { AnalisisNoContinuidadPanel } from './movilidad/AnalisisNoContinuidadPanel';
 import { RegistroMovimientosPanel } from './movilidad/RegistroMovimientosPanel';
+import { BandejaSolicitudesGdpPanel } from './consolidacion/BandejaSolicitudesGdpPanel';
 
 export interface MesaMovilidadViewProps {
   colegios: Establecimiento[];
@@ -199,7 +200,7 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
     void contarSyncPendientesMovilidad().then(setSyncPendientes).catch(() => {});
   }, []);
 
-  const [vistaInternaMesa, setVistaInternaMesa] = useState<'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos'>('tablero');
+  const [vistaInternaMesa, setVistaInternaMesa] = useState<'la_mesa' | 'tablero' | 'analisis_no_continuidad' | 'registro_movimientos' | 'solicitudes_nomina'>('tablero');
   const [tabCol1, setTabCol1] = useState<SubTabCol1>(() => (
     flags.flag_no_continuidad_titulares ? 'no_continuidad' : flags.flag_traslados_voluntarios ? 'traslados' : flags.flag_egresos_contingencia ? 'egresos_gdp' : 'asistentes_indefinidos'
   ));
@@ -817,6 +818,14 @@ const MesaMovilidadWorkspace: React.FC<MesaMovilidadViewProps & { rol: RolId; fl
         <AnalisisNoContinuidadPanel casosNoContinuidadConsolidados={casosNoContinuidadConsolidados} colegiosByRbd={colegiosByRbd} comunasDisponibles={comunasDisponibles} periodoActivo={periodoActivo} onFeedback={mostrarFeedback} />
       ) : vistaInternaMesa === 'registro_movimientos' ? (
         <RegistroMovimientosPanel periodoActivo={periodoActivo} colegios={colegios} />
+      ) : vistaInternaMesa === 'solicitudes_nomina' ? (
+        <BandejaSolicitudesGdpPanel
+          periodoActivo={periodoActivo}
+          establecimientos={colegios}
+          usuarioActual={usuarioActual}
+          onDatosActualizados={onDatosActualizados}
+          onIrAMesaMovilidad={() => setVistaInternaMesa('tablero')}
+        />
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
           <ColaMovilidadPanel

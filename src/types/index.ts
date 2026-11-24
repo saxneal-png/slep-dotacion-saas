@@ -866,7 +866,8 @@ export type TipoMovimientoDotacion =
   | 'NO_CONTINUIDAD'
   | 'CONTRATO_NUEVO'
   | 'CAMBIO_FUENTE'
-  | 'ACOGIMIENTO_ART_69';
+  | 'ACOGIMIENTO_ART_69'
+  | 'AUTORIZACION_DOCENTE_DTO_352';
 
 export type EstadoRevisionSolicitudDotacion =
   | 'PENDIENTE'

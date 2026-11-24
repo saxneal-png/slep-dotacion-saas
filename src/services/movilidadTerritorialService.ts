@@ -5862,7 +5862,7 @@ export async function consolidarEscenarioAprobado(params: {
         db.run(
           `UPDATE docentes
            SET run = ?, nombres = ?, apellidos = ?, titulo = ?,
-               calidad_juridica = ?, aplica_articulo_69 = ?,
+               calidad_juridica = ?, aplica_articulo_69 = ?, requiere_autorizacion_docente = ?,
                tramo_carrera_docente = ?, habilitacion_seremi_rbd = ?, habilitacion_seremi_asignatura = ?,
                horas_subvencion_general_titular = ?, horas_subvencion_general_contrata = ?,
                horas_sep_titular = ?, horas_sep_contrata = ?,
@@ -5878,6 +5878,7 @@ export async function consolidarEscenarioAprobado(params: {
             docenteOrigen.titulo || null,
             calidadDestino,
             docenteOrigen.aplicaArticulo69 ? 1 : 0,
+            docenteOrigen.requiereAutorizacionDocente ? 1 : 0,
             docenteOrigen.tramoCarreraDocente || null,
             docenteOrigen.habilitacionSeremiRbd || null,
             docenteOrigen.habilitacionSeremiAsignatura || null,
@@ -5899,6 +5900,7 @@ export async function consolidarEscenarioAprobado(params: {
           titulo: docenteOrigen.titulo,
           calidadJuridica: calidadDestino,
           aplicaArticulo69: docenteOrigen.aplicaArticulo69,
+          requiereAutorizacionDocente: docenteOrigen.requiereAutorizacionDocente,
           tramoCarreraDocente: docenteOrigen.tramoCarreraDocente,
           habilitacionSeremiRbd: docenteOrigen.habilitacionSeremiRbd,
           habilitacionSeremiAsignatura: docenteOrigen.habilitacionSeremiAsignatura,

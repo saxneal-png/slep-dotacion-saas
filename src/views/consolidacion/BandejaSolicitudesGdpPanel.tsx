@@ -43,7 +43,8 @@ const ETIQUETA_TIPO: Record<TipoMovimientoDotacion, { label: string; cls: string
   NO_CONTINUIDAD: { label: 'No Continuidad', cls: 'bg-rose-100 text-rose-900 border-rose-200' },
   CONTRATO_NUEVO: { label: 'Nuevo', cls: 'bg-indigo-100 text-indigo-900 border-indigo-200' },
   CAMBIO_FUENTE: { label: 'Cambio Fuente', cls: 'bg-sky-100 text-sky-900 border-sky-200' },
-  ACOGIMIENTO_ART_69: { label: 'Art. 69 (Ley 19.070)', cls: 'bg-purple-100 text-purple-900 border-purple-300' }
+  ACOGIMIENTO_ART_69: { label: 'Art. 69 (Ley 19.070)', cls: 'bg-purple-100 text-purple-900 border-purple-300' },
+  AUTORIZACION_DOCENTE_DTO_352: { label: 'Autorización Dto. 352', cls: 'bg-teal-100 text-teal-900 border-teal-300' }
 };
 
 const ETIQUETA_ESTADO: Record<EstadoRevisionSolicitudDotacion, { label: string; cls: string }> = {
@@ -329,6 +330,7 @@ export const BandejaSolicitudesGdpPanel: React.FC<BandejaSolicitudesGdpPanelProp
             <option value="AUMENTO_HORAS">Aumento de Horas</option>
             <option value="DISMINUCION_HORAS">Disminución de Horas</option>
             <option value="ACOGIMIENTO_ART_69">Acogimiento Art. 69 (Ley 19.070)</option>
+            <option value="AUTORIZACION_DOCENTE_DTO_352">Autorización Docente (Dto. 352)</option>
             <option value="NO_CONTINUIDAD">No Continuidad</option>
             <option value="CONTRATO_NUEVO">Contrato Nuevo</option>
             <option value="CAMBIO_FUENTE">Cambio de Fuente</option>
@@ -408,6 +410,11 @@ export const BandejaSolicitudesGdpPanel: React.FC<BandejaSolicitudesGdpPanelProp
                         {sol.tipoMovimiento === 'ACOGIMIENTO_ART_69' ? (
                           <div className="text-[11px] font-bold text-purple-900">
                             Tope 24h crono (32 HA)
+                            <div className="text-[10px] font-normal text-slate-500">Contrato: {sol.horasSolicitadas}h</div>
+                          </div>
+                        ) : sol.tipoMovimiento === 'AUTORIZACION_DOCENTE_DTO_352' ? (
+                          <div className="text-[11px] font-bold text-teal-900">
+                            Habilitación SEREMI
                             <div className="text-[10px] font-normal text-slate-500">Contrato: {sol.horasSolicitadas}h</div>
                           </div>
                         ) : (

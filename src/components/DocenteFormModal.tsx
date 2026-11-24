@@ -79,6 +79,8 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
   const [asignaturaPrincipal, setAsignaturaPrincipal] = useState('Lenguaje y Comunicación');
   const [aplicaArticulo69, setAplicaArticulo69] = useState(false);
   const [requiereAutorizacionDocente, setRequiereAutorizacionDocente] = useState(false);
+  const [habilitacionSeremiRbd, setHabilitacionSeremiRbd] = useState('');
+  const [habilitacionSeremiAsignatura, setHabilitacionSeremiAsignatura] = useState('');
 
   // Funciones no aula / administrativas
   const [funcionesNoAula, setFuncionesNoAula] = useState<FuncionNoAulaDocente[]>([]);
@@ -126,6 +128,8 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       setAsignaturaPrincipal(editingDoc.asignaturaPrincipal || 'Lenguaje y Comunicación');
       setAplicaArticulo69(Boolean(editingDoc.aplicaArticulo69));
       setRequiereAutorizacionDocente(Boolean(editingDoc.requiereAutorizacionDocente));
+      setHabilitacionSeremiRbd(editingDoc.habilitacionSeremiRbd || '');
+      setHabilitacionSeremiAsignatura(editingDoc.habilitacionSeremiAsignatura || '');
 
       if (editingDoc.funcionesNoAula && editingDoc.funcionesNoAula.length > 0) {
         setFuncionesNoAula([...editingDoc.funcionesNoAula]);
@@ -207,6 +211,8 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       setAsignaturaPrincipal('Lenguaje y Comunicación');
       setAplicaArticulo69(false);
       setRequiereAutorizacionDocente(false);
+      setHabilitacionSeremiRbd('');
+      setHabilitacionSeremiAsignatura('');
       setFuncionesNoAula([]);
       setHorasTallerSep(0);
       setHorasTrabajoColaborativo(0);
@@ -330,6 +336,8 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
       aplicaArticulo69,
       esEducadoraParvulo: estamento === 'EDUCADORA_PARVULO' || Boolean(editingDoc?.esEducadoraParvulo),
       requiereAutorizacionDocente,
+      habilitacionSeremiRbd: habilitacionSeremiRbd.trim() || undefined,
+      habilitacionSeremiAsignatura: habilitacionSeremiAsignatura.trim() || undefined,
       fechaInicioContrato: fechaInicioContrato || undefined,
       fechaTerminoContrato: fechaTerminoContrato || undefined,
       propuestaGdp: propuestaGdp as any,
@@ -638,6 +646,35 @@ export const DocenteFormModal: React.FC<DocenteFormModalProps> = ({
                   </p>
                 </div>
               </label>
+
+              {requiereAutorizacionDocente && (
+                <div className="ml-7 grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-200">
+                  <div>
+                    <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+                      RBD Habilitación SEREMI (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={habilitacionSeremiRbd}
+                      onChange={e => setHabilitacionSeremiRbd(e.target.value)}
+                      placeholder={rbd || 'Ej: 3829'}
+                      className="w-full px-2.5 py-1.5 text-xs border border-indigo-200 rounded-lg bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+                      Asignatura Habilitada SEREMI (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={habilitacionSeremiAsignatura}
+                      onChange={e => setHabilitacionSeremiAsignatura(e.target.value)}
+                      placeholder="Ej: Matemática, Inglés..."
+                      className="w-full px-2.5 py-1.5 text-xs border border-indigo-200 rounded-lg bg-white"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -482,6 +482,43 @@ export async function detectarYRegistrarSolicitudesDocente(params: {
     solicitudesGeneradas.push(solArt69);
   }
 
+  // 1B. Solicitud de Autorización Docente (Decreto N° 352 / SEREMI de Educación)
+  const solicitoAutDocente =
+    Boolean(nuevo.requiereAutorizacionDocente) && !Boolean(previo?.requiereAutorizacionDocente);
+  if (solicitoAutDocente) {
+    const solAut = await guardarSolicitudMovimientoDotacion(
+      {
+        periodo,
+        rbd,
+        nombreEstablecimiento: nombreEst,
+        comuna,
+        entidadTipo: 'DOCENTE',
+        funcionarioId: nuevo.id,
+        runFuncionario: nuevo.run,
+        nombreFuncionario: nombreCompleto,
+        calidadJuridica: nuevo.calidadJuridica,
+        cargoOAsignatura: nuevo.asignaturaPrincipal || nuevo.cargoInstitucional || nuevo.estamento,
+        tipoMovimiento: 'AUTORIZACION_DOCENTE_DTO_352',
+        propuestaGdpOrigen: prop,
+        horasVigentes: horasBase,
+        horasSolicitadas: horasSol,
+        deltaHoras: horasSol - horasBase,
+        fuentesActuales: fuentesPrev,
+        fuentesSolicitadas: fuentesNuev,
+        remuneracionMensualEstimada: nuevo.remuneracionMensual || 0,
+        accionPme: nuevo.accionPme,
+        justificacionEscuela:
+          justificacion ||
+          `Solicitud de Autorización Docente Dto. 352${
+            nuevo.habilitacionSeremiAsignatura ? ` (${nuevo.habilitacionSeremiAsignatura})` : ''
+          }.`,
+        creadoPor: usuarioActor
+      },
+      { usuario: usuarioActor, rol: rolActor }
+    );
+    solicitudesGeneradas.push(solAut);
+  }
+
   // 2. Movimiento contractual / GDP principal
   let tipoMov: TipoMovimientoDotacion | null = null;
   if (prop === 'No Continuidad') {
@@ -756,6 +793,9 @@ export async function sancionarSolicitudDotacion(params: {
         docActualizado.horasContrato = sol.horasVigentes;
         if (sol.tipoMovimiento === 'ACOGIMIENTO_ART_69') {
           docActualizado.aplicaArticulo69 = Boolean(sol.aplicaArticulo69Previo);
+        }
+        if (sol.tipoMovimiento === 'AUTORIZACION_DOCENTE_DTO_352') {
+          docActualizado.requiereAutorizacionDocente = false;
         }
         if (sol.fuentesActuales) {
           docActualizado.horasSubvencionGeneralTitular = sol.fuentesActuales.subvGeneralTitular ?? doc.horasSubvencionGeneralTitular;
