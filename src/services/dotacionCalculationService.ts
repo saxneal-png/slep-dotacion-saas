@@ -1322,7 +1322,12 @@ export function obtenerDocentesConsolidadosTerritorio(
           return regimenParvularioPredominante === '60_40';
         }
         if ('regimenProporcion' in colegio && colegio.regimenProporcion) return colegio.regimenProporcion === '60_40';
-        if (c && isEducadoraParvuloDoc) return determinarRegimenNormativo(colegio.porcentajePrioritarios, c.nivel) === '60_40';
+        if (c) {
+          if (esParv && !isEducadoraParvuloDoc) {
+            return colegio.porcentajePrioritarios >= 80;
+          }
+          return determinarRegimenNormativo(colegio.porcentajePrioritarios, c.nivel) === '60_40';
+        }
         return colegio.porcentajePrioritarios >= 80;
       };
 

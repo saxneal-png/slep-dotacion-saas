@@ -354,9 +354,10 @@ export function homologarDocenteAPal(
     if (curso && curso.regimenProporcion) {
       regProp = curso.regimenProporcion === '60_40' ? '60/40' : '65/35';
     } else {
+      const esCursoParv = Boolean(curso && esNivelParvularia(curso.nivel));
       const regNorm = determinarRegimenNormativo(
         establecimiento.porcentajePrioritarios || 0,
-        esDocenteEducadora ? (curso?.nivel || '') : ''
+        (esCursoParv && !esDocenteEducadora) ? '' : (curso?.nivel || '')
       );
       regProp = regNorm === '60_40' ? '60/40' : '65/35';
     }
