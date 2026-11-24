@@ -939,3 +939,123 @@ export async function derivarSolicitudAMesaMovilidad(params: {
 
   return actualizada;
 }
+
+/**
+ * Permite al establecimiento editar una solicitud de movimiento pendiente
+ * (horas solicitadas, asignatura/cargo o justificación) desde Necesidades Docentes.
+ */
+export async function actualizarSolicitudMovimientoEscuela(params: {
+  id: string;
+  rbd: string;
+  horasSolicitadas?: number;
+  justificacionEscuela?: string;
+  cargoOAsignatura?: string;
+  usuarioActor: string;
+  rolActor?: string;
+}): Promise<SolicitudMovimientoDotacion> {
+  const sol = await obtenerSolicitudPorId(params.id);
+  if (!sol || sol.rbd !== params.rbd) {
+    throw new Error('Solicitud no encontrada para este establecimiento.');
+  }
+  if (sol.estadoRevision !== 'PENDIENTE' && sol.estadoRevision !== 'EN_REVISION_UATP') {
+    throw new Error('Solo se pueden modificar solicitudes en estado Pendiente o En Revisión UATP.');
+  }
+
+  const horasNuevas =
+    params.horasSolicitadas !== undefined ? Math.round(Number(params.horasSolicitadas)) : sol.horasSolicitadas;
+  if (!Number.isFinite(horasNuevas) || horasNuevas < 1 || horasNuevas > 44) {
+    throw new Error('Las horas solicitadas deben estar entre 1 y 44.');
+  }
+
+  const actualizada: SolicitudMovimientoDotacion = {
+    ...sol,
+    horasSolicitadas: horasNuevas,
+    deltaHoras: horasNuevas - sol.horasVigentes,
+    justificacionEscuela:
+      params.justificacionEscuela !== undefined ? params.justificacionEscuela.trim() : sol.justificacionEscuela,
+    cargoOAsignatura:
+      params.cargoOAsignatura !== undefined ? params.cargoOAsignatura.trim() : sol.cargoOAsignatura,
+    updatedAt: new Date().toISOString()
+  };
+
+  await guardarSolicitudMovimientoDotacion(actualizada, {
+    usuario: params.usuarioActor,
+    rol: params.rolActor
+  });
+
+  if (sol.entidadTipo === 'DOCENTE') {
+    const docs = await listarDocentes(sol.rbd, sol.periodo);
+    const doc = docs.find(d => d.id === sol.funcionarioId);
+    if (doc) {
+      const docEditado: Docente = {
+        ...doc,
+        observacionesDirector: actualizada.justificacionEscuela || doc.observacionesDirector,
+        observacionesPal: actualizada.justificacionEscuela || doc.observacionesPal
+      };
+      if (sol.tipoMovimiento === 'AUMENTO_HORAS' || sol.tipoMovimiento === 'DISMINUCION_HORAS') {
+        docEditado.horasContrato = horasNuevas;
+      }
+      if (sol.tipoMovimiento === 'AUTORIZACION_DOCENTE_DTO_352' && actualizada.cargoOAsignatura) {
+        docEditado.habilitacionSeremiAsignatura = actualizada.cargoOAsignatura;
+      }
+      await guardarDocente(docEditado);
+    }
+  }
+
+  return actualizada;
+}
+
+/**
+ * Permite al establecimiento retirar/cancelar una solicitud de movimiento pendiente
+ * y revertir el cambio propuesto en la ficha docente.
+ */
+export async function retirarSolicitudMovimientoEscuela(params: {
+  id: string;
+  rbd: string;
+  motivo: string;
+  usuarioActor: string;
+  rolActor?: string;
+}): Promise<void> {
+  const sol = await obtenerSolicitudPorId(params.id);
+  if (!sol || sol.rbd !== params.rbd) {
+    throw new Error('Solicitud no encontrada para este establecimiento.');
+  }
+  if (sol.estadoRevision !== 'PENDIENTE' && sol.estadoRevision !== 'EN_REVISION_UATP') {
+    throw new Error('Solo se pueden retirar solicitudes en estado Pendiente o En Revisión UATP.');
+  }
+  const motivoClean = String(params.motivo || '').trim();
+  if (!motivoClean) {
+    throw new Error('Debe ingresar un motivo para retirar la solicitud.');
+  }
+
+  const db = await getDb();
+  db.run('DELETE FROM solicitudes_movimiento_dotacion WHERE id = ?;', [sol.id]);
+  await persistDb(true);
+
+  if (isSupabaseEnabled()) {
+    supabase
+      .from('solicitudes_movimiento_dotacion')
+      .delete()
+      .eq('id', sol.id)
+      .then(() => {}, () => {});
+  }
+
+  if (sol.entidadTipo === 'DOCENTE') {
+    const docs = await listarDocentes(sol.rbd, sol.periodo);
+    const doc = docs.find(d => d.id === sol.funcionarioId);
+    if (doc) {
+      const revertido: Docente = { ...doc };
+      if (sol.tipoMovimiento === 'AUMENTO_HORAS' || sol.tipoMovimiento === 'DISMINUCION_HORAS') {
+        revertido.horasContrato = sol.horasVigentes;
+        revertido.propuestaGdp = 'Continuidad';
+      } else if (sol.tipoMovimiento === 'ACOGIMIENTO_ART_69') {
+        revertido.aplicaArticulo69 = Boolean(sol.aplicaArticulo69Previo);
+      } else if (sol.tipoMovimiento === 'AUTORIZACION_DOCENTE_DTO_352') {
+        revertido.requiereAutorizacionDocente = false;
+      } else if (sol.tipoMovimiento === 'NO_CONTINUIDAD') {
+        revertido.propuestaGdp = 'Continuidad';
+      }
+      await guardarDocente(revertido);
+    }
+  }
+}

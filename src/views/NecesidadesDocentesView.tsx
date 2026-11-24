@@ -25,14 +25,21 @@ import {
   EstamentoAsistente,
   EstamentoDocente,
   RegistroMovimientoMovilidad,
+  SolicitudMovilidad,
   SolicitudMovimientoDotacion,
   TipoFuncionNoAula,
+  TipoMovimientoDotacion,
   TipoRequerimientoVacante
 } from '../types';
 import { ESTAMENTOS } from '../components/DocenteFormModal';
 import { usePermisos } from '../security/PermisosContext';
-import { listarDocentes } from '../database/db';
-import { listarSolicitudesMovimientoDotacion } from '../services/solicitudesDotacionService';
+import { guardarDocente, listarDocentes } from '../database/db';
+import {
+  actualizarSolicitudMovimientoEscuela,
+  detectarYRegistrarSolicitudesDocente,
+  listarSolicitudesMovimientoDotacion,
+  retirarSolicitudMovimientoEscuela
+} from '../services/solicitudesDotacionService';
 import {
   actualizarNecesidadVacanteAsistente,
   actualizarNecesidadVacanteEscuela,
@@ -44,10 +51,13 @@ import {
   enviarNecesidadAsistenteAMovilidad,
   esVacanteActivaEnMovilidad,
   esVacanteCargoDocente,
+  guardarSolicitudTrasladoEscuela,
   listarNecesidadesVacanteAsistente,
   listarNecesidadesVacanteEscuela,
   listarRegistroMovimientosMovilidad,
+  listarSolicitudesTrasladoEscuela,
   obtenerVacantesConPropuestaActiva,
+  retirarSolicitudTrasladoEscuela,
   retrotraerNecesidadAsistenteDeMovilidad,
   retrotraerNecesidadDeMovilidad
 } from '../services/movilidadTerritorialService';
@@ -167,8 +177,53 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
   const [vacantesNominaNn, setVacantesNominaNn] = useState<Docente[]>([]);
   const [docentesEscuela, setDocentesEscuela] = useState<Docente[]>([]);
   const [solicitudesNomina, setSolicitudesNomina] = useState<SolicitudMovimientoDotacion[]>([]);
+  const [solicitudesTraslado, setSolicitudesTraslado] = useState<SolicitudMovilidad[]>([]);
   const [subVista, setSubVista] = useState<'vacantes' | 'solicitudes_nomina'>('vacantes');
-  const [filtroTipoSolicitud, setFiltroTipoSolicitud] = useState<'TODAS' | 'HORAS' | 'ART_69' | 'AUT_DOCENTE'>('TODAS');
+  const [filtroTipoSolicitud, setFiltroTipoSolicitud] = useState<
+    'TODAS' | 'TRASLADO' | 'HORAS' | 'ART_69' | 'AUT_DOCENTE' | 'OTRO'
+  >('TODAS');
+  const [modalSolicitudSlep, setModalSolicitudSlep] = useState<{
+    open: boolean;
+    editingId: string | null;
+    editingOrigen: 'SOLICITUD_DOTACION' | 'SOLICITUD_TRASLADO' | null;
+    docenteId: string;
+    tipoSolicitud: 'TRASLADO' | 'AUMENTO_HORAS' | 'DISMINUCION_HORAS' | 'ACOGIMIENTO_ART_69' | 'AUTORIZACION_DOCENTE_DTO_352' | 'NO_CONTINUIDAD';
+    horasSolicitadas: number;
+    comunaDestino: string;
+    asignaturaHabilitada: string;
+    justificacion: string;
+    guardando: boolean;
+    error: string | null;
+  }>({
+    open: false,
+    editingId: null,
+    editingOrigen: null,
+    docenteId: '',
+    tipoSolicitud: 'AUMENTO_HORAS',
+    horasSolicitadas: 30,
+    comunaDestino: '',
+    asignaturaHabilitada: '',
+    justificacion: '',
+    guardando: false,
+    error: null
+  });
+  const [modalRetirarSol, setModalRetirarSol] = useState<{
+    open: boolean;
+    id: string;
+    origen: 'SOLICITUD_DOTACION' | 'SOLICITUD_TRASLADO';
+    titulo: string;
+    motivo: string;
+    procesando: boolean;
+    error: string | null;
+  }>({
+    open: false,
+    id: '',
+    origen: 'SOLICITUD_DOTACION',
+    titulo: '',
+    motivo: '',
+    procesando: false,
+    error: null
+  });
   const [bloqueadasEnMesa, setBloqueadasEnMesa] = useState<Set<string>>(new Set());
   const [movimientos, setMovimientos] = useState<RegistroMovimientoMovilidad[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -227,11 +282,12 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
   const cargarDatos = useCallback(async () => {
     setCargando(true);
     try {
-      const [docs, asts, todosDocsEscuela, sols] = await Promise.all([
+      const [docs, asts, todosDocsEscuela, sols, traslados] = await Promise.all([
         listarNecesidadesVacanteEscuela(colegio.rbd, periodoActivo),
         listarNecesidadesVacanteAsistente(colegio.rbd, periodoActivo),
         listarDocentes(colegio.rbd, periodoActivo),
-        listarSolicitudesMovimientoDotacion({ periodo: periodoActivo, rbd: colegio.rbd })
+        listarSolicitudesMovimientoDotacion({ periodo: periodoActivo, rbd: colegio.rbd }),
+        listarSolicitudesTrasladoEscuela(colegio.rbd, periodoActivo)
       ]);
       setNecesidadesDoc(docs);
       setNecesidadesAst(asts);
@@ -242,6 +298,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
         )
       );
       setSolicitudesNomina(sols);
+      setSolicitudesTraslado(traslados);
       const ids = [...docs.map(d => d.id), ...asts.map(a => a.id)];
       const [enMesa, regs] = await Promise.all([
         obtenerVacantesConPropuestaActiva(ids, periodoActivo),
@@ -320,25 +377,51 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     return necesidadesUnificadas.filter(n => n.estado === filtroEstado);
   }, [necesidadesUnificadas, filtroEstado]);
 
-  // Solicitudes de nómina consolidadas (SolicitudMovimientoDotacion + marcas directas en ficha docente)
+  // Solicitudes de aprobación SLEP consolidadas (Traslados + SolicitudMovimientoDotacion + marcas directas en ficha)
   const solicitudesNominaUnificadas = useMemo(() => {
+    type TipoFiltroSol = 'TRASLADO' | 'HORAS' | 'ART_69' | 'AUT_DOCENTE' | 'OTRO';
     const porClave = new Map<string, {
       id: string;
+      origen: 'SOLICITUD_DOTACION' | 'SOLICITUD_TRASLADO' | 'DOCENTE_FICHA';
+      docenteId: string;
       run: string;
       nombre: string;
       asignaturaOCargo: string;
-      tipo: 'HORAS' | 'ART_69' | 'AUT_DOCENTE';
+      tipo: TipoFiltroSol;
+      tipoMovimientoOriginal: 'TRASLADO' | TipoMovimientoDotacion;
       etiquetaTipo: string;
       horasVigentes: number;
       horasSolicitadas: number;
+      comunaDestino?: string;
       estado: string;
+      editable: boolean;
       justificacion?: string;
       observacionSlep?: string;
     }>();
 
+    for (const t of solicitudesTraslado) {
+      porClave.set(`tras_${t.id}`, {
+        id: t.id,
+        origen: 'SOLICITUD_TRASLADO',
+        docenteId: t.docenteId,
+        run: t.runDocente,
+        nombre: t.nombreDocente,
+        asignaturaOCargo: t.asignaturaPrincipal || t.calidadJuridica,
+        tipo: 'TRASLADO',
+        tipoMovimientoOriginal: 'TRASLADO',
+        etiquetaTipo: 'Solicitud de Traslado',
+        horasVigentes: t.horasContratoActual,
+        horasSolicitadas: t.horasDisponiblesMover,
+        comunaDestino: t.comunaDestinoPreferente,
+        estado: t.estadoFlujo,
+        editable: t.estadoFlujo === 'POSTULADO',
+        justificacion: t.fundamento
+      });
+    }
+
     for (const s of solicitudesNomina) {
-      let tipo: 'HORAS' | 'ART_69' | 'AUT_DOCENTE' | null = null;
-      let etiqueta = '';
+      let tipo: TipoFiltroSol = 'OTRO';
+      let etiqueta: string = s.tipoMovimiento;
       if (s.tipoMovimiento === 'AUMENTO_HORAS' || s.tipoMovimiento === 'DISMINUCION_HORAS') {
         tipo = 'HORAS';
         etiqueta = s.tipoMovimiento === 'AUMENTO_HORAS' ? 'Aumento Horas' : 'Disminución Horas';
@@ -348,18 +431,27 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
       } else if (s.tipoMovimiento === 'AUTORIZACION_DOCENTE_DTO_352') {
         tipo = 'AUT_DOCENTE';
         etiqueta = 'Autorización Docente Dto. 352';
+      } else if (s.tipoMovimiento === 'NO_CONTINUIDAD') {
+        etiqueta = 'No Continuidad';
+      } else if (s.tipoMovimiento === 'CAMBIO_FUENTE') {
+        etiqueta = 'Cambio Fuente';
+      } else if (s.tipoMovimiento === 'CONTRATO_NUEVO') {
+        etiqueta = 'Contrato Nuevo';
       }
-      if (!tipo) continue;
-      porClave.set(`${s.funcionarioId}_${tipo}`, {
+      porClave.set(`${s.funcionarioId}_${s.tipoMovimiento}`, {
         id: s.id,
+        origen: 'SOLICITUD_DOTACION',
+        docenteId: s.funcionarioId,
         run: s.runFuncionario,
         nombre: s.nombreFuncionario,
         asignaturaOCargo: s.cargoOAsignatura || '',
         tipo,
+        tipoMovimientoOriginal: s.tipoMovimiento,
         etiquetaTipo: etiqueta,
         horasVigentes: s.horasVigentes,
         horasSolicitadas: s.horasSolicitadas,
         estado: s.estadoRevision,
+        editable: s.estadoRevision === 'PENDIENTE' || s.estadoRevision === 'EN_REVISION_UATP',
         justificacion: s.justificacionEscuela,
         observacionSlep: s.observacionUatp
       });
@@ -367,50 +459,40 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
 
     for (const d of docentesEscuela) {
       if (d.esVacanteNn) continue;
-      if (d.aplicaArticulo69 && !porClave.has(`${d.id}_ART_69`)) {
-        porClave.set(`${d.id}_ART_69`, {
+      if (d.aplicaArticulo69 && !porClave.has(`${d.id}_ACOGIMIENTO_ART_69`)) {
+        porClave.set(`${d.id}_ACOGIMIENTO_ART_69`, {
           id: `doc_art69_${d.id}`,
+          origen: 'DOCENTE_FICHA',
+          docenteId: d.id,
           run: d.run,
           nombre: `${d.nombres} ${d.apellidos}`.trim(),
           asignaturaOCargo: d.asignaturaPrincipal || d.estamento,
           tipo: 'ART_69',
+          tipoMovimientoOriginal: 'ACOGIMIENTO_ART_69',
           etiquetaTipo: 'Artículo 69 (Máx. 24h)',
           horasVigentes: d.horasVigentesAnterior ?? d.horasContrato,
           horasSolicitadas: d.horasContrato,
           estado: d.estadoSancionGdp || 'Pendiente',
+          editable: false,
           justificacion: d.observacionesDirector,
           observacionSlep: d.observacionesSlep
         });
       }
-      if (d.requiereAutorizacionDocente && !porClave.has(`${d.id}_AUT_DOCENTE`)) {
-        porClave.set(`${d.id}_AUT_DOCENTE`, {
+      if (d.requiereAutorizacionDocente && !porClave.has(`${d.id}_AUTORIZACION_DOCENTE_DTO_352`)) {
+        porClave.set(`${d.id}_AUTORIZACION_DOCENTE_DTO_352`, {
           id: `doc_aut_${d.id}`,
+          origen: 'DOCENTE_FICHA',
+          docenteId: d.id,
           run: d.run,
           nombre: `${d.nombres} ${d.apellidos}`.trim(),
           asignaturaOCargo: d.habilitacionSeremiAsignatura || d.asignaturaPrincipal || d.estamento,
           tipo: 'AUT_DOCENTE',
+          tipoMovimientoOriginal: 'AUTORIZACION_DOCENTE_DTO_352',
           etiquetaTipo: 'Autorización Docente Dto. 352',
           horasVigentes: d.horasVigentesAnterior ?? d.horasContrato,
           horasSolicitadas: d.horasContrato,
           estado: d.estadoSancionGdp || 'Pendiente',
-          justificacion: d.observacionesDirector,
-          observacionSlep: d.observacionesSlep
-        });
-      }
-      if (
-        (d.propuestaGdp === 'Aumento Horas' || d.propuestaGdp === 'Disminución Horas') &&
-        !porClave.has(`${d.id}_HORAS`)
-      ) {
-        porClave.set(`${d.id}_HORAS`, {
-          id: `doc_hrs_${d.id}`,
-          run: d.run,
-          nombre: `${d.nombres} ${d.apellidos}`.trim(),
-          asignaturaOCargo: d.asignaturaPrincipal || d.estamento,
-          tipo: 'HORAS',
-          etiquetaTipo: d.propuestaGdp,
-          horasVigentes: d.horasVigentesAnterior ?? d.horasContrato,
-          horasSolicitadas: d.horasContrato,
-          estado: d.estadoSancionGdp || 'Pendiente',
+          editable: false,
           justificacion: d.observacionesDirector,
           observacionSlep: d.observacionesSlep
         });
@@ -418,7 +500,170 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
     }
 
     return Array.from(porClave.values());
-  }, [solicitudesNomina, docentesEscuela]);
+  }, [solicitudesNomina, solicitudesTraslado, docentesEscuela]);
+
+  const docentesActivosEscuela = useMemo(
+    () => docentesEscuela.filter(d => !d.esVacanteNn),
+    [docentesEscuela]
+  );
+
+  const abrirModalNuevaSolicitudSlep = () => {
+    const primero = docentesActivosEscuela[0];
+    setModalSolicitudSlep({
+      open: true,
+      editingId: null,
+      editingOrigen: null,
+      docenteId: primero?.id || '',
+      tipoSolicitud: 'AUMENTO_HORAS',
+      horasSolicitadas: primero ? Math.min(44, (primero.horasContrato || 30) + 4) : 30,
+      comunaDestino: '',
+      asignaturaHabilitada: primero?.asignaturaPrincipal || '',
+      justificacion: '',
+      guardando: false,
+      error: null
+    });
+  };
+
+  const handleGuardarSolicitudSlep = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const doc = docentesActivosEscuela.find(d => d.id === modalSolicitudSlep.docenteId);
+    if (!doc && !modalSolicitudSlep.editingId) {
+      setModalSolicitudSlep(s => ({ ...s, error: 'Selecciona un docente de la nómina.' }));
+      return;
+    }
+    if (!modalSolicitudSlep.justificacion.trim()) {
+      setModalSolicitudSlep(s => ({ ...s, error: 'Ingresa la justificación o fundamento de la solicitud.' }));
+      return;
+    }
+    setModalSolicitudSlep(s => ({ ...s, guardando: true, error: null }));
+    try {
+      if (modalSolicitudSlep.editingId && modalSolicitudSlep.editingOrigen === 'SOLICITUD_DOTACION') {
+        await actualizarSolicitudMovimientoEscuela({
+          id: modalSolicitudSlep.editingId,
+          rbd: colegio.rbd,
+          horasSolicitadas:
+            modalSolicitudSlep.tipoSolicitud === 'AUMENTO_HORAS' ||
+            modalSolicitudSlep.tipoSolicitud === 'DISMINUCION_HORAS'
+              ? modalSolicitudSlep.horasSolicitadas
+              : undefined,
+          cargoOAsignatura:
+            modalSolicitudSlep.tipoSolicitud === 'AUTORIZACION_DOCENTE_DTO_352'
+              ? modalSolicitudSlep.asignaturaHabilitada
+              : undefined,
+          justificacionEscuela: modalSolicitudSlep.justificacion.trim(),
+          usuarioActor,
+          rolActor
+        });
+        mostrarFeedback('Solicitud modificada correctamente.');
+      } else if (modalSolicitudSlep.tipoSolicitud === 'TRASLADO' && doc) {
+        await guardarSolicitudTrasladoEscuela({
+          id: modalSolicitudSlep.editingId || undefined,
+          periodo: periodoActivo,
+          docente: doc,
+          comunaOrigen: colegio.comuna,
+          comunaDestinoPreferente: modalSolicitudSlep.comunaDestino.trim() || undefined,
+          fundamento: modalSolicitudSlep.justificacion.trim(),
+          usuarioActor,
+          rolActor,
+          nombreEstablecimiento: colegio.nombre
+        });
+        mostrarFeedback(
+          modalSolicitudSlep.editingId
+            ? 'Solicitud de traslado actualizada.'
+            : 'Solicitud de traslado registrada y enviada a Mesa de Movilidad.'
+        );
+      } else if (doc) {
+        const previo: Docente = { ...doc };
+        const nuevo: Docente = {
+          ...doc,
+          observacionesDirector: modalSolicitudSlep.justificacion.trim(),
+          observacionesPal: modalSolicitudSlep.justificacion.trim()
+        };
+        if (modalSolicitudSlep.tipoSolicitud === 'AUMENTO_HORAS') {
+          nuevo.horasContrato = Math.round(modalSolicitudSlep.horasSolicitadas);
+          nuevo.propuestaGdp = 'Aumento Horas';
+        } else if (modalSolicitudSlep.tipoSolicitud === 'DISMINUCION_HORAS') {
+          nuevo.horasContrato = Math.round(modalSolicitudSlep.horasSolicitadas);
+          nuevo.propuestaGdp = 'Disminución Horas';
+        } else if (modalSolicitudSlep.tipoSolicitud === 'ACOGIMIENTO_ART_69') {
+          nuevo.aplicaArticulo69 = true;
+        } else if (modalSolicitudSlep.tipoSolicitud === 'AUTORIZACION_DOCENTE_DTO_352') {
+          nuevo.requiereAutorizacionDocente = true;
+          nuevo.habilitacionSeremiRbd = colegio.rbd;
+          nuevo.habilitacionSeremiAsignatura =
+            modalSolicitudSlep.asignaturaHabilitada.trim() || doc.asignaturaPrincipal;
+        } else if (modalSolicitudSlep.tipoSolicitud === 'NO_CONTINUIDAD') {
+          nuevo.propuestaGdp = 'No Continuidad';
+        }
+        await guardarDocente(nuevo);
+        await detectarYRegistrarSolicitudesDocente({
+          previo,
+          nuevo,
+          establecimiento: colegio,
+          usuarioActor,
+          rolActor
+        });
+        mostrarFeedback('Solicitud de aprobación SLEP creada y enviada para revisión.');
+      }
+      setModalSolicitudSlep(s => ({ ...s, open: false, guardando: false }));
+      setSubVista('solicitudes_nomina');
+      await onRefreshData();
+      await cargarDatos();
+    } catch (err: any) {
+      setModalSolicitudSlep(s => ({
+        ...s,
+        guardando: false,
+        error: err?.message || 'Error guardando la solicitud.'
+      }));
+    }
+  };
+
+  const handleConfirmarRetirarSol = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalRetirarSol.motivo.trim()) {
+      setModalRetirarSol(s => ({ ...s, error: 'Debes ingresar un motivo.' }));
+      return;
+    }
+    setModalRetirarSol(s => ({ ...s, procesando: true, error: null }));
+    try {
+      if (modalRetirarSol.origen === 'SOLICITUD_TRASLADO') {
+        await retirarSolicitudTrasladoEscuela({
+          id: modalRetirarSol.id,
+          rbd: colegio.rbd,
+          motivo: modalRetirarSol.motivo.trim(),
+          periodo: periodoActivo,
+          usuarioActor,
+          rolActor
+        });
+      } else {
+        await retirarSolicitudMovimientoEscuela({
+          id: modalRetirarSol.id,
+          rbd: colegio.rbd,
+          motivo: modalRetirarSol.motivo.trim(),
+          usuarioActor,
+          rolActor
+        });
+      }
+      setModalRetirarSol({
+        open: false,
+        id: '',
+        origen: 'SOLICITUD_DOTACION',
+        titulo: '',
+        motivo: '',
+        procesando: false,
+        error: null
+      });
+      await onRefreshData();
+      await cargarDatos();
+      mostrarFeedback('Solicitud retirada y ficha docente restaurada.');
+    } catch (err: any) {
+      setModalRetirarSol(s => ({
+        ...s,
+        procesando: false,
+        error: err?.message || 'Error retirando la solicitud.'
+      }));
+    }
+  };
 
   const solicitudesNominaFiltradas = useMemo(() => {
     if (filtroTipoSolicitud === 'TODAS') return solicitudesNominaUnificadas;
@@ -740,14 +985,25 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
           </p>
         </div>
         {puedeEditarNecesidades ? (
-          <button
-            type="button"
-            onClick={abrirModalCrear}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs shrink-0 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nueva Necesidad</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={abrirModalCrear}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nueva Vacante / Cargo</span>
+            </button>
+            <button
+              type="button"
+              onClick={abrirModalNuevaSolicitudSlep}
+              disabled={docentesActivosEscuela.length === 0}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors disabled:opacity-45"
+            >
+              <Scale className="w-4 h-4" />
+              <span>Nueva Solicitud SLEP</span>
+            </button>
+          </div>
         ) : (
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold shrink-0">
             <Lock className="w-3.5 h-3.5" />
@@ -783,7 +1039,7 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
           }`}
         >
           <Scale className="w-3.5 h-3.5" />
-          <span>Solicitudes de Nómina (Horas · Art. 69 · Aut. Docente)</span>
+          <span>Solicitudes Aprobación SLEP (Traslado · Horas · Art. 69 · Dto. 352)</span>
           <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-purple-500/20 text-current tabular-nums">
             {solicitudesNominaUnificadas.length}
           </span>
@@ -1104,6 +1360,10 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                 [
                   { id: 'TODAS', label: `Todas (${solicitudesNominaUnificadas.length})` },
                   {
+                    id: 'TRASLADO',
+                    label: `Traslados (${solicitudesNominaUnificadas.filter(s => s.tipo === 'TRASLADO').length})`
+                  },
+                  {
                     id: 'HORAS',
                     label: `Aumento / Disminución Horas (${solicitudesNominaUnificadas.filter(s => s.tipo === 'HORAS').length})`
                   },
@@ -1113,7 +1373,11 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                   },
                   {
                     id: 'AUT_DOCENTE',
-                    label: `Autorización Docente Dto. 352 (${solicitudesNominaUnificadas.filter(s => s.tipo === 'AUT_DOCENTE').length})`
+                    label: `Autorización Dto. 352 (${solicitudesNominaUnificadas.filter(s => s.tipo === 'AUT_DOCENTE').length})`
+                  },
+                  {
+                    id: 'OTRO',
+                    label: `Otros (${solicitudesNominaUnificadas.filter(s => s.tipo === 'OTRO').length})`
                   }
                 ] as const
               ).map(tab => (
@@ -1186,17 +1450,71 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                       </p>
                     )}
                   </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-black border shrink-0 ${
-                      s.estado === 'APROBADO' || s.estado === 'Aprobado'
-                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                        : s.estado === 'RECHAZADO' || s.estado === 'Rechazado'
-                        ? 'bg-rose-100 text-rose-900 border-rose-300'
-                        : 'bg-amber-50 text-amber-900 border-amber-300'
-                    }`}
-                  >
-                    {s.estado}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-black border ${
+                        s.estado === 'APROBADO' || s.estado === 'Aprobado'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                          : s.estado === 'RECHAZADO' || s.estado === 'Rechazado'
+                          ? 'bg-rose-100 text-rose-900 border-rose-300'
+                          : 'bg-amber-50 text-amber-900 border-amber-300'
+                      }`}
+                    >
+                      {s.estado}
+                    </span>
+                    {puedeEditarNecesidades && s.editable && (s.origen === 'SOLICITUD_DOTACION' || s.origen === 'SOLICITUD_TRASLADO') && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setModalSolicitudSlep({
+                              open: true,
+                              editingId: s.id,
+                              editingOrigen: s.origen as 'SOLICITUD_DOTACION' | 'SOLICITUD_TRASLADO',
+                              docenteId: s.docenteId,
+                              tipoSolicitud:
+                                s.tipoMovimientoOriginal === 'TRASLADO' ||
+                                s.tipoMovimientoOriginal === 'AUMENTO_HORAS' ||
+                                s.tipoMovimientoOriginal === 'DISMINUCION_HORAS' ||
+                                s.tipoMovimientoOriginal === 'ACOGIMIENTO_ART_69' ||
+                                s.tipoMovimientoOriginal === 'AUTORIZACION_DOCENTE_DTO_352' ||
+                                s.tipoMovimientoOriginal === 'NO_CONTINUIDAD'
+                                  ? s.tipoMovimientoOriginal
+                                  : 'AUMENTO_HORAS',
+                              horasSolicitadas: s.horasSolicitadas,
+                              comunaDestino: s.comunaDestino || '',
+                              asignaturaHabilitada: s.asignaturaOCargo,
+                              justificacion: s.justificacion || '',
+                              guardando: false,
+                              error: null
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setModalRetirarSol({
+                              open: true,
+                              id: s.id,
+                              origen: s.origen as 'SOLICITUD_DOTACION' | 'SOLICITUD_TRASLADO',
+                              titulo: `${s.etiquetaTipo} · ${s.nombre}`,
+                              motivo: '',
+                              procesando: false,
+                              error: null
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          <span>Retirar</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1608,6 +1926,241 @@ export const NecesidadesDocentesView: React.FC<NecesidadesDocentesViewProps> = (
                   : modalMotivo.tipo === 'RETROTRAER'
                   ? 'Confirmar Retroceso'
                   : 'Confirmar Cancelación'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Crear / Editar Solicitud de Aprobación SLEP */}
+      {modalSolicitudSlep.open && (
+        <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <form
+            onSubmit={handleGuardarSolicitudSlep}
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-5 space-y-4 my-8"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-black text-slate-900 text-sm">
+                  {modalSolicitudSlep.editingId
+                    ? 'Editar Solicitud de Aprobación SLEP'
+                    : 'Nueva Solicitud de Aprobación Especial SLEP'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {colegio.nombre} (RBD {colegio.rbd}) · Periodo {periodoActivo}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalSolicitudSlep(s => ({ ...s, open: false }))}
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {modalSolicitudSlep.error && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800">
+                {modalSolicitudSlep.error}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {!modalSolicitudSlep.editingId && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Tipo de Solicitud Especial SLEP
+                    </label>
+                    <select
+                      value={modalSolicitudSlep.tipoSolicitud}
+                      onChange={e =>
+                        setModalSolicitudSlep(s => ({
+                          ...s,
+                          tipoSolicitud: e.target.value as any
+                        }))
+                      }
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                    >
+                      <option value="AUMENTO_HORAS">Aumento de Horas</option>
+                      <option value="DISMINUCION_HORAS">Disminución de Horas</option>
+                      <option value="TRASLADO">Solicitud de Traslado Voluntario</option>
+                      <option value="ACOGIMIENTO_ART_69">Acogimiento Artículo 69 (Tope 24h / 32 HA)</option>
+                      <option value="AUTORIZACION_DOCENTE_DTO_352">Solicitud Autorización Docente (Dto. 352 / SEREMI)</option>
+                      <option value="NO_CONTINUIDAD">Propuesta de No Continuidad</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Docente de la Nómina
+                    </label>
+                    <select
+                      value={modalSolicitudSlep.docenteId}
+                      onChange={e => {
+                        const d = docentesActivosEscuela.find(x => x.id === e.target.value);
+                        setModalSolicitudSlep(s => ({
+                          ...s,
+                          docenteId: e.target.value,
+                          horasSolicitadas: d ? d.horasContrato : s.horasSolicitadas,
+                          asignaturaHabilitada: d?.asignaturaPrincipal || ''
+                        }));
+                      }}
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white"
+                    >
+                      {docentesActivosEscuela.map(d => (
+                        <option key={d.id} value={d.id}>
+                          {d.nombres} {d.apellidos} ({d.run}) · {d.horasContrato}h
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {(modalSolicitudSlep.tipoSolicitud === 'AUMENTO_HORAS' ||
+                modalSolicitudSlep.tipoSolicitud === 'DISMINUCION_HORAS') && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Nueva Jornada Solicitada (1 - 44 hrs)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={44}
+                    required
+                    value={modalSolicitudSlep.horasSolicitadas}
+                    onChange={e =>
+                      setModalSolicitudSlep(s => ({ ...s, horasSolicitadas: Number(e.target.value) }))
+                    }
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl tabular-nums"
+                  />
+                </div>
+              )}
+
+              {modalSolicitudSlep.tipoSolicitud === 'TRASLADO' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Comuna de Destino Preferente (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={modalSolicitudSlep.comunaDestino}
+                    onChange={e =>
+                      setModalSolicitudSlep(s => ({ ...s, comunaDestino: e.target.value }))
+                    }
+                    placeholder="Ej: Chillán, Bulnes, San Ignacio..."
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                  />
+                </div>
+              )}
+
+              {modalSolicitudSlep.tipoSolicitud === 'AUTORIZACION_DOCENTE_DTO_352' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Asignatura para Autorización Docente SEREMI (Dto. 352)
+                  </label>
+                  <input
+                    type="text"
+                    value={modalSolicitudSlep.asignaturaHabilitada}
+                    onChange={e =>
+                      setModalSolicitudSlep(s => ({ ...s, asignaturaHabilitada: e.target.value }))
+                    }
+                    placeholder="Ej: Matemática, Inglés, Física..."
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Fundamento / Justificación para aprobación SLEP
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={modalSolicitudSlep.justificacion}
+                  onChange={e =>
+                    setModalSolicitudSlep(s => ({ ...s, justificacion: e.target.value }))
+                  }
+                  placeholder="Describe el fundamento pedagógico, operativo o personal de la solicitud..."
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setModalSolicitudSlep(s => ({ ...s, open: false }))}
+                className="px-3.5 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={modalSolicitudSlep.guardando}
+                className="px-4 py-2 text-xs font-bold bg-purple-700 hover:bg-purple-800 text-white rounded-xl shadow-sm disabled:opacity-50"
+              >
+                {modalSolicitudSlep.guardando ? 'Guardando...' : 'Guardar Solicitud'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Retirar Solicitud SLEP */}
+      {modalRetirarSol.open && (
+        <div className="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmarRetirarSol}
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-5 space-y-4"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-black text-slate-900 text-sm">Retirar Solicitud</h3>
+              <button
+                type="button"
+                onClick={() => setModalRetirarSol(s => ({ ...s, open: false }))}
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600">
+              Se retirará la solicitud <strong>{modalRetirarSol.titulo}</strong> y se revertirá el cambio pendiente en la ficha docente.
+            </p>
+            {modalRetirarSol.error && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800">
+                {modalRetirarSol.error}
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Motivo del retiro
+              </label>
+              <textarea
+                rows={3}
+                required
+                value={modalRetirarSol.motivo}
+                onChange={e => setModalRetirarSol(s => ({ ...s, motivo: e.target.value }))}
+                placeholder="Ej: Error de digitación o solicitud desistida por el docente..."
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setModalRetirarSol(s => ({ ...s, open: false }))}
+                className="px-3.5 py-2 text-xs font-bold bg-slate-100 text-slate-700 rounded-xl"
+              >
+                Volver
+              </button>
+              <button
+                type="submit"
+                disabled={modalRetirarSol.procesando}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl disabled:opacity-50"
+              >
+                {modalRetirarSol.procesando ? 'Retirando...' : 'Confirmar Retiro'}
               </button>
             </div>
           </form>

@@ -7,10 +7,17 @@ import {
   reiniciarTodaLaBaseDatos
 } from '../src/database/db';
 import {
+  actualizarSolicitudMovimientoEscuela,
   detectarYRegistrarSolicitudesDocente,
   listarSolicitudesMovimientoDotacion,
+  retirarSolicitudMovimientoEscuela,
   sancionarSolicitudDotacion
 } from '../src/services/solicitudesDotacionService';
+import {
+  guardarSolicitudTrasladoEscuela,
+  listarSolicitudesTrasladoEscuela,
+  retirarSolicitudTrasladoEscuela
+} from '../src/services/movilidadTerritorialService';
 import { Docente, Establecimiento } from '../src/types';
 
 const PERIODO = 2027;
@@ -142,5 +149,77 @@ describe('Solicitudes de Nómina (Horas, Art. 69 y Autorización Docente Dto. 35
     expect(actualizado.aplicaArticulo69).toBe(true);
     expect(actualizado.requiereAutorizacionDocente).toBe(false);
     expect(actualizado.estadoSancionGdp).toBe('Rechazado');
+  });
+
+  it('3. Permite al establecimiento editar y retirar solicitudes de horas y traslados pendientes', async () => {
+    const docBase: Docente = {
+      id: 'doc_sol_3',
+      rbd: RBD,
+      periodo: PERIODO,
+      run: '17.444.555-6',
+      nombres: 'CARLOS',
+      apellidos: 'DÍAZ',
+      calidadJuridica: 'TITULAR',
+      estamento: 'DOCENTE_AULA',
+      horasContrato: 30,
+      horasVigentesAnterior: 30,
+      horasSubvencionGeneralTitular: 30,
+      asignaturaPrincipal: 'Historia',
+      situacionFinalGdp: 'Vigente'
+    };
+    await guardarDocente(docBase);
+
+    const docAumento: Docente = { ...docBase, horasContrato: 36, propuestaGdp: 'Aumento Horas' };
+    await guardarDocente(docAumento);
+    const { solicitudesGeneradas } = await detectarYRegistrarSolicitudesDocente({
+      previo: docBase,
+      nuevo: docAumento,
+      establecimiento: escuela,
+      usuarioActor: 'director@slep.cl',
+      rolActor: 'director_establecimiento'
+    });
+    const solHrs = solicitudesGeneradas.find(s => s.tipoMovimiento === 'AUMENTO_HORAS')!;
+
+    const editada = await actualizarSolicitudMovimientoEscuela({
+      id: solHrs.id,
+      rbd: RBD,
+      horasSolicitadas: 38,
+      justificacionEscuela: 'Ajuste definitivo por 2 cursos nuevos',
+      usuarioActor: 'director@slep.cl'
+    });
+    expect(editada.horasSolicitadas).toBe(38);
+    expect(editada.deltaHoras).toBe(8);
+
+    await retirarSolicitudMovimientoEscuela({
+      id: solHrs.id,
+      rbd: RBD,
+      motivo: 'Error de planificación',
+      usuarioActor: 'director@slep.cl'
+    });
+    const docsPost = await listarDocentes(RBD, PERIODO);
+    expect(docsPost.find(d => d.id === docBase.id)?.horasContrato).toBe(30);
+
+    // Traslado voluntario desde la escuela
+    const tras = await guardarSolicitudTrasladoEscuela({
+      periodo: PERIODO,
+      docente: docBase,
+      comunaOrigen: escuela.comuna,
+      comunaDestinoPreferente: 'Bulnes',
+      fundamento: 'Acercamiento familiar',
+      usuarioActor: 'director@slep.cl',
+      nombreEstablecimiento: escuela.nombre
+    });
+    const listaTras = await listarSolicitudesTrasladoEscuela(RBD, PERIODO);
+    expect(listaTras).toHaveLength(1);
+    expect(listaTras[0].comunaDestinoPreferente).toBe('Bulnes');
+
+    await retirarSolicitudTrasladoEscuela({
+      id: tras.id,
+      rbd: RBD,
+      motivo: 'Docente desiste de traslado',
+      periodo: PERIODO,
+      usuarioActor: 'director@slep.cl'
+    });
+    expect(await listarSolicitudesTrasladoEscuela(RBD, PERIODO)).toHaveLength(0);
   });
 });

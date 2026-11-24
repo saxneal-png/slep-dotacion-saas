@@ -2525,6 +2525,238 @@ export async function listarSolicitudesMovilidad(
   return res[0].values.map(mapRowToSolicitud);
 }
 
+/**
+ * Consulta acotada al establecimiento para listar sus solicitudes de traslado voluntario.
+ */
+export async function listarSolicitudesTrasladoEscuela(
+  rbd: string,
+  periodo: number = 2027
+): Promise<SolicitudMovilidad[]> {
+  const rbdClean = String(rbd || '').trim();
+  if (!rbdClean) return [];
+  const db = await getDb();
+  const res = db.exec(
+    `SELECT ${SOLICITUD_SELECT_COLS} FROM solicitudes_movilidad WHERE periodo = ? AND rbd_origen = ? AND carril = 'TRASLADO_VOLUNTARIO' ORDER BY updated_at DESC;`,
+    [periodo, rbdClean]
+  );
+  if (!res.length) return [];
+  return res[0].values.map(mapRowToSolicitud);
+}
+
+/**
+ * Crea o edita una solicitud de traslado voluntario desde la pestaña Necesidades del establecimiento.
+ */
+export async function guardarSolicitudTrasladoEscuela(params: {
+  id?: string;
+  periodo?: number;
+  docente: Docente;
+  comunaOrigen?: string;
+  comunaDestinoPreferente?: string;
+  fundamento: string;
+  usuarioActor: string;
+  rolActor?: string;
+  nombreEstablecimiento?: string;
+}): Promise<SolicitudMovilidad> {
+  const fundamentoClean = String(params.fundamento || '').trim();
+  if (!fundamentoClean) {
+    throw new Error('Debe ingresar el fundamento de la solicitud de traslado.');
+  }
+  const periodo = params.periodo || params.docente.periodo || 2027;
+  const db = await getDb();
+  const nowIso = new Date().toISOString();
+  const solId =
+    params.id?.trim() ||
+    `sol_tras_${params.docente.rbd}_${periodo}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  if (params.id) {
+    const prev = db.exec('SELECT estado_flujo, rbd_origen FROM solicitudes_movilidad WHERE id = ? LIMIT 1;', [
+      params.id
+    ]);
+    if (prev.length && prev[0].values.length) {
+      const estPrev = String(prev[0].values[0][0] || 'POSTULADO');
+      const rbdPrev = String(prev[0].values[0][1] || '');
+      if (rbdPrev !== params.docente.rbd) {
+        throw new Error('No tiene permisos para editar una solicitud de otro establecimiento.');
+      }
+      if (estPrev !== 'POSTULADO') {
+        throw new Error('Solo se pueden editar solicitudes de traslado en estado POSTULADO.');
+      }
+    }
+  }
+
+  const d = params.docente;
+  const horasTit =
+    (d.horasSubvencionGeneralTitular || 0) + (d.horasSepTitular || 0) + (d.horasPieTitular || 0);
+  const fuenteActual: 'SUBVENCION_GENERAL' | 'SEP' | 'PIE' =
+    (d.horasPieTitular || 0) + (d.horasPieContrata || 0) > 0
+      ? 'PIE'
+      : (d.horasSepTitular || 0) + (d.horasSepContrata || 0) > 0
+      ? 'SEP'
+      : 'SUBVENCION_GENERAL';
+
+  const solicitudFinal: SolicitudMovilidad = {
+    id: solId,
+    periodo,
+    carril: 'TRASLADO_VOLUNTARIO',
+    docenteId: d.id,
+    runDocente: d.run,
+    nombreDocente: `${d.nombres} ${d.apellidos}`.trim(),
+    rbdOrigen: d.rbd,
+    comunaOrigen: params.comunaOrigen,
+    comunaDestinoPreferente: params.comunaDestinoPreferente?.trim() || undefined,
+    calidadJuridica: d.calidadJuridica,
+    horasContratoActual: d.horasContrato,
+    horasTitularesActuales: horasTit,
+    horasDisponiblesMover: d.horasContrato,
+    horasRemanentes: 0,
+    asignaturaPrincipal: d.asignaturaPrincipal,
+    tituloMencion: d.titulo,
+    aplicaArticulo69: d.aplicaArticulo69,
+    fuenteActual,
+    estadoFlujo: 'POSTULADO',
+    puntajeSalud: 0,
+    puntajeLeyKarin: 0,
+    puntajeCuidadoDependientes: 0,
+    puntajeDistanciaRural: 0,
+    puntajeAntiguedad: 0,
+    puntajePrioridadTotal: 0,
+    fundamento: fundamentoClean,
+    creadoPor: params.usuarioActor,
+    estamentoPersonal: 'DOCENTE',
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+
+  db.run(
+    `INSERT INTO solicitudes_movilidad (
+      id, periodo, carril, docente_id, run_docente, nombre_docente, rbd_origen,
+      comuna_origen, rbd_destino_preferente, comuna_destino_preferente, calidad_juridica,
+      horas_contrato_actual, horas_titulares_actuales, horas_disponibles_mover, horas_remanentes,
+      asignatura_principal, titulo_mencion, aplica_articulo_69, fuente_actual, estado_flujo,
+      puntaje_salud, puntaje_ley_karin, puntaje_cuidado_dependientes, puntaje_distancia_rural,
+      puntaje_antiguedad, puntaje_prioridad_total, fundamento, creado_por,
+      estamento_personal, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'POSTULADO', 0, 0, 0, 0, 0, 0, ?, ?, 'DOCENTE', ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      comuna_destino_preferente=excluded.comuna_destino_preferente,
+      fundamento=excluded.fundamento,
+      updated_at=excluded.updated_at;`,
+    [
+      solicitudFinal.id,
+      solicitudFinal.periodo,
+      solicitudFinal.carril,
+      solicitudFinal.docenteId,
+      solicitudFinal.runDocente,
+      solicitudFinal.nombreDocente,
+      solicitudFinal.rbdOrigen,
+      solicitudFinal.comunaOrigen || null,
+      solicitudFinal.comunaDestinoPreferente || null,
+      solicitudFinal.calidadJuridica,
+      solicitudFinal.horasContratoActual,
+      solicitudFinal.horasTitularesActuales,
+      solicitudFinal.horasDisponiblesMover,
+      solicitudFinal.asignaturaPrincipal || null,
+      solicitudFinal.tituloMencion || null,
+      solicitudFinal.aplicaArticulo69 ? 1 : 0,
+      solicitudFinal.fuenteActual,
+      solicitudFinal.fundamento || null,
+      solicitudFinal.creadoPor || null,
+      nowIso,
+      nowIso
+    ]
+  );
+
+  await persistDb(true);
+
+  if (isSupabaseEnabled()) {
+    void syncSupabaseMovilidad(
+      {
+        tabla: 'solicitudes_movilidad',
+        operacion: 'upsert',
+        payload: mapSolicitudToSupabase(solicitudFinal),
+        onConflict: 'id'
+      },
+      'guardar_solicitud_traslado_escuela'
+    );
+  }
+
+  await registrarMovimientoMovilidad({
+    periodo,
+    tipoMovimiento: 'SOLICITUD_MOVILIDAD',
+    entidad: 'SOLICITUD_MOVILIDAD',
+    entidadId: solicitudFinal.id,
+    codigoReferencia: solicitudFinal.runDocente,
+    rbdOrigen: solicitudFinal.rbdOrigen,
+    nombreEstablecimiento: params.nombreEstablecimiento,
+    comuna: params.comunaOrigen,
+    usuarioActor: params.usuarioActor,
+    rolActor: params.rolActor,
+    estadoNuevo: 'POSTULADO',
+    descripcion: `Solicitud de traslado voluntario (${solicitudFinal.nombreDocente}, ${solicitudFinal.horasContratoActual}h${solicitudFinal.comunaDestinoPreferente ? `, destino pref. ${solicitudFinal.comunaDestinoPreferente}` : ''}).`,
+    motivo: fundamentoClean
+  });
+
+  return solicitudFinal;
+}
+
+/**
+ * Permite al establecimiento retirar una solicitud de traslado voluntario mientras esté en estado POSTULADO.
+ */
+export async function retirarSolicitudTrasladoEscuela(params: {
+  id: string;
+  rbd: string;
+  motivo: string;
+  periodo?: number;
+  usuarioActor: string;
+  rolActor?: string;
+}): Promise<void> {
+  const motivoClean = String(params.motivo || '').trim();
+  if (!motivoClean) throw new Error('Debe ingresar un motivo para retirar la solicitud de traslado.');
+  const db = await getDb();
+  const res = db.exec(
+    'SELECT estado_flujo, rbd_origen, run_docente, nombre_docente FROM solicitudes_movilidad WHERE id = ? LIMIT 1;',
+    [params.id]
+  );
+  if (!res.length || !res[0].values.length) {
+    throw new Error('Solicitud de traslado no encontrada.');
+  }
+  const estado = String(res[0].values[0][0] || '');
+  const rbdOrigen = String(res[0].values[0][1] || '');
+  const runDoc = String(res[0].values[0][2] || '');
+  const nombreDoc = String(res[0].values[0][3] || '');
+  if (rbdOrigen !== params.rbd) {
+    throw new Error('No tiene permisos para retirar una solicitud de otro establecimiento.');
+  }
+  if (estado !== 'POSTULADO') {
+    throw new Error('Esta solicitud de traslado ya está en gestión en Mesa de Movilidad y no puede retirarse directamente.');
+  }
+
+  db.run('DELETE FROM solicitudes_movilidad WHERE id = ?;', [params.id]);
+  await persistDb(true);
+
+  if (isSupabaseEnabled()) {
+    void syncSupabaseMovilidad(
+      { tabla: 'solicitudes_movilidad', operacion: 'delete', match: { id: params.id } },
+      'retirar_solicitud_traslado_escuela'
+    );
+  }
+
+  await registrarMovimientoMovilidad({
+    periodo: params.periodo || 2027,
+    tipoMovimiento: 'CANCELACION_NECESIDAD',
+    entidad: 'SOLICITUD_MOVILIDAD',
+    entidadId: params.id,
+    codigoReferencia: runDoc,
+    rbdOrigen,
+    usuarioActor: params.usuarioActor,
+    rolActor: params.rolActor,
+    estadoAnterior: estado,
+    estadoNuevo: 'RETIRADA',
+    descripcion: `Solicitud de traslado voluntario de ${nombreDoc} retirada por el establecimiento.`,
+    motivo: motivoClean
+  });
+}
+
 export async function guardarSolicitudMovilidad(
   sol: Omit<SolicitudMovilidad, 'id' | 'puntajePrioridadTotal' | 'createdAt' | 'updatedAt'> & {
     id?: string;
