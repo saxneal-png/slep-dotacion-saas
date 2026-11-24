@@ -77,6 +77,7 @@ import {
   FILTRO_ESTAMENTO_FUERA_AULA,
   tieneFuncionesFueraDeAulaSinColaborativo
 } from '../utils/docenteFiltrosUtils';
+import { normalizarRut } from '../utils/rutUtils';
 
 interface DocentesDotacionViewProps {
   colegio: Establecimiento | null;
@@ -204,7 +205,8 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
   };
 
   const verFichaDocente = (d: Docente) => {
-    const consolidado = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
+    const runNorm = normalizarRut(d.run);
+    const consolidado = consolidadosTerritoriales.find(c => normalizarRut(c.run) === runNorm);
     if (consolidado) {
       setDocenteFicha(consolidado);
     }
@@ -480,7 +482,10 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
               mensaje: pedAulaRegular > 0 ? `Funcionario No Aula con ${pedAulaRegular} HA asignadas.` : 'Exento (Gestión Institucional / No Aula).'
             });
 
-      const docTerritorial = consolidadosTerritoriales.find(c => c.run.trim() === d.run.trim());
+      const runNorm = normalizarRut(d.run);
+      const docTerritorial = runNorm
+        ? consolidadosTerritoriales.find(c => normalizarRut(c.run) === runNorm)
+        : undefined;
 
       const sepPieTotalDoc = contratoSepDoc + contratoPieDoc;
       // Las horas de co-docencia de docentes de aula regular pueden ser financiadas con cualquier subvención (Subv. General, SEP o PIE).
@@ -546,12 +551,17 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
     });
   }, [docentes, asignaciones, colegio, cursos, consolidadosTerritoriales, regimenTabla, regimenProporcion]);
 
+  const excesoTerritorialCount = docentesAuditados.filter(
+    item => Boolean(item.docTerritorial?.excedeLimiteSlep)
+  ).length;
+
   const sobreasignadosCount = docentesAuditados.filter(
     item =>
       item.auditMulti.esInfractorExcesoLectivo ||
       item.valSobre.estaSobreasignado ||
       item.auditMulti.estadoSaldo === 'DEFICIT' ||
-      item.esImprocedenteFinanciamiento
+      item.esImprocedenteFinanciamiento ||
+      Boolean(item.docTerritorial?.excedeLimiteSlep)
   ).length;
 
   const cantidadFuncionesFueraAula = useMemo(() => {
@@ -600,9 +610,14 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
 
       let matchEstado = true;
       if (filtroEstadoCarga === 'SOBREASIGNADOS') {
-        matchEstado = auditMulti.esInfractorExcesoLectivo || valSobre.estaSobreasignado || auditMulti.estadoSaldo === 'DEFICIT' || esImprocedenteFinanciamiento;
+        matchEstado =
+          auditMulti.esInfractorExcesoLectivo ||
+          valSobre.estaSobreasignado ||
+          auditMulti.estadoSaldo === 'DEFICIT' ||
+          esImprocedenteFinanciamiento ||
+          Boolean(docTerritorial?.excedeLimiteSlep);
       } else if (filtroEstadoCarga === 'HOLGURA') {
-        matchEstado = auditMulti.estadoSaldo === 'HOLGURA';
+        matchEstado = auditMulti.estadoSaldo === 'HOLGURA' && !docTerritorial?.excedeLimiteSlep;
       } else if (filtroEstadoCarga === 'EXACTO') {
         matchEstado = auditMulti.estadoSaldo === 'EXACTO';
       }
@@ -821,7 +836,10 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
             <span>
-              <strong>Alerta Normativa Ley 20.903:</strong> <strong>{sobreasignadosCount} docente(s)</strong> con asignación de aula superior al tope legal.
+              <strong>Alerta Normativa Ley 20.903 / Estatuto Docente:</strong> <strong>{sobreasignadosCount} docente(s)</strong> con sobreasignación horaria
+              {excesoTerritorialCount > 0 && (
+                <> (incluye <strong>{excesoTerritorialCount}</strong> que superan el tope legal de 44 hrs entre colegios del SLEP)</>
+              )}.
             </span>
           </div>
           <button
@@ -1225,10 +1243,34 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                             )}
                           </span>
                         )}
-                        {esMultiEscuela && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {esMultiEscuela && docTerritorial.excedeLimiteSlep ? (
+                          <button
+                            type="button"
+                            onClick={() => verFichaDocente(d)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-900 border border-rose-300 hover:bg-rose-200 transition-colors cursor-pointer"
+                            title={`Infracción Territorial DFL 1: suma ${docTerritorial.horasTotalesSlep}h entre ${docTerritorial.contratos.length} colegios del SLEP (tope legal: 44h). Click para ver desglose.`}
+                          >
+                            <AlertTriangle className="w-3 h-3 text-rose-700 shrink-0" />
+                            Excede 44h SLEP ({docTerritorial.horasTotalesSlep}h / +{docTerritorial.excesoHorasSlep}h)
+                          </button>
+                        ) : esMultiEscuela ? (
+                          <button
+                            type="button"
+                            onClick={() => verFichaDocente(d)}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors cursor-pointer"
+                            title={`Docente compartido en ${docTerritorial.contratos.length} escuelas del SLEP (${docTerritorial.horasTotalesSlep}h de 44h). Click para ver ficha 360°.`}
+                          >
                             <Building2 className="w-3 h-3" />
-                            Multi-Escuela ({docTerritorial.horasTotalesSlep}h en SLEP)
+                            Multi-Escuela ({docTerritorial.horasTotalesSlep}h / 44h)
+                          </button>
+                        ) : null}
+                        {esMultiEscuela && docTerritorial.contratos.some(c => c.colegio.rbd !== colegio.rbd && (c.saldoHoras ?? 0) < 0) && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300"
+                            title="Este docente presenta déficit o sobreasignación en otro establecimiento del territorio."
+                          >
+                            <AlertTriangle className="w-3 h-3 text-amber-700 shrink-0" />
+                            Sobreasignado en otro colegio
                           </span>
                         )}
                         {d.aplicaArticulo69 && (
@@ -1404,9 +1446,32 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           </span>
                         </div>
                       ) : auditMulti.saldoHoras > 0 ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          +{auditMulti.saldoHoras} hrs (Libres)
-                        </span>
+                        docTerritorial?.excedeLimiteSlep ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span
+                              className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300"
+                              title={`Aunque aquí quedan ${auditMulti.saldoHoras}h locales sin asignar, el docente suma ${docTerritorial.horasTotalesSlep}h en el SLEP (> 44h). No asignar más horas.`}
+                            >
+                              ⚠ Excede 44h SLEP ({docTerritorial.horasTotalesSlep}h)
+                            </span>
+                            <span className="text-[9px] text-rose-700 font-semibold">
+                              +{auditMulti.saldoHoras}h locales bloqueadas
+                            </span>
+                          </div>
+                        ) : docTerritorial?.contratos.some(c => c.colegio.rbd !== colegio.rbd && (c.saldoHoras ?? 0) < 0) ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span
+                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300"
+                              title="Presenta holgura local aquí, pero tiene déficit/sobreasignación en otro colegio del SLEP."
+                            >
+                              +{auditMulti.saldoHoras} hrs (⚠ Otra esc.)
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            +{auditMulti.saldoHoras} hrs (Libres)
+                          </span>
+                        )
                       ) : auditMulti.saldoHoras < 0 ? (
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                           {auditMulti.saldoHoras} hrs (Déficit)
@@ -1517,6 +1582,10 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
                           cursos={cursos}
                           asignaciones={asignaciones}
                           docentes={docentes}
+                          todosLosDocentes={todosLosDocentes}
+                          todosLosColegios={todosLosColegios}
+                          todasLasAsignaciones={todasLasAsignaciones}
+                          todosLosCursos={todosLosCursos}
                           periodoActivo={periodoActivo}
                           onGuardarAsignacion={onGuardarAsignacionEfectiva}
                           onEliminarAsignacion={onEliminarAsignacionEfectiva}
@@ -1545,6 +1614,10 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
           colegio={colegio}
           cursos={cursos}
           asignaciones={asignaciones}
+          todosLosDocentes={todosLosDocentes}
+          todosLosColegios={todosLosColegios}
+          todasLasAsignaciones={todasLasAsignaciones}
+          todosLosCursos={todosLosCursos}
           periodoActivo={periodoActivo}
           onGuardarAsignacion={onGuardarAsignacionEfectiva}
           onEliminarAsignacion={onEliminarAsignacionEfectiva}
@@ -1559,6 +1632,9 @@ export const DocentesDotacionView: React.FC<DocentesDotacionViewProps> = ({
         editingDoc={editingDoc}
         rbd={colegio.rbd}
         periodoActivo={periodoActivo}
+        todosLosDocentes={todosLosDocentes}
+        todosLosColegios={todosLosColegios}
+        todasLasAsignaciones={todasLasAsignaciones}
       />
 
       {/* Modal Ficha 360° del Docente */}

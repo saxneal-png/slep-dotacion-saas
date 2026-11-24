@@ -1,4 +1,5 @@
-import { Docente, AsignacionHoraria, CursoSae } from '../types';
+import { Docente, AsignacionHoraria, CursoSae, Establecimiento } from '../types';
+import { normalizarRut, esRunValidoParaDedup } from '../utils/rutUtils';
 import {
   calcularAuditoriaDocenteMultitramo,
   buscarContratoMinimoPorTabla,
@@ -1097,5 +1098,142 @@ export function auditarCargaDocenteIntegral(
     deficitSubvencionGeneral,
     esImprocedenteFinanciamientoSepPie,
     isEducadoraParvulo: isEducadoraParvuloDoc
+  };
+}
+
+export interface DetalleOtroContratoSlep {
+  rbd: string;
+  nombreColegio: string;
+  horasContrato: number;
+  esSobreasignadoLocal: boolean;
+}
+
+export interface EvaluacionTopeTerritorialDocente {
+  runNormalizado: string;
+  esMultiEscuela: boolean;
+  horasOtrasEscuelas: number;
+  horasContratoActual: number;
+  horasTotalesSlep: number;
+  limiteLegal: number;
+  excesoHoras: number;
+  excedeLimite44h: boolean;
+  margenDisponibleEnSlep: number;
+  otrasEscuelas: DetalleOtroContratoSlep[];
+  tieneSobreasignacionEnOtraEscuela: boolean;
+}
+
+/**
+ * Evalúa si un docente (identificado por RUN válido) excede el tope legal de 44 horas
+ * semanales con el mismo sostenedor (SLEP) al sumar sus contratos en otros establecimientos.
+ */
+export function evaluarTopeTerritorialDocente(params: {
+  run: string;
+  rbdActual: string;
+  horasContratoActual: number;
+  todosLosDocentes: Docente[];
+  todosLosColegios?: Establecimiento[];
+  todasLasAsignaciones?: AsignacionHoraria[];
+  todosLosCursos?: CursoSae[];
+  limiteLegal?: number;
+}): EvaluacionTopeTerritorialDocente {
+  const {
+    run,
+    rbdActual,
+    horasContratoActual,
+    todosLosDocentes,
+    todosLosColegios = [],
+    todasLasAsignaciones,
+    todosLosCursos = [],
+    limiteLegal = 44
+  } = params;
+
+  const hActual = Number(horasContratoActual) || 0;
+  if (!esRunValidoParaDedup(run)) {
+    return {
+      runNormalizado: '',
+      esMultiEscuela: false,
+      horasOtrasEscuelas: 0,
+      horasContratoActual: hActual,
+      horasTotalesSlep: hActual,
+      limiteLegal,
+      excesoHoras: Math.max(0, hActual - limiteLegal),
+      excedeLimite44h: hActual > limiteLegal,
+      margenDisponibleEnSlep: limiteLegal,
+      otrasEscuelas: [],
+      tieneSobreasignacionEnOtraEscuela: false
+    };
+  }
+
+  const runNorm = normalizarRut(run);
+  const estMap = new Map<string, Establecimiento>(todosLosColegios.map(e => [e.rbd, e]));
+  const cursosMap = todosLosCursos.length > 0 ? new Map<string, CursoSae>(todosLosCursos.map(c => [c.id, c])) : null;
+
+  const otrosPorRbd = new Map<string, Docente[]>();
+  for (const d of todosLosDocentes) {
+    if (d.esVacanteNn || d.rbd === rbdActual) continue;
+    if (normalizarRut(d.run) !== runNorm) continue;
+    const arr = otrosPorRbd.get(d.rbd) || [];
+    arr.push(d);
+    otrosPorRbd.set(d.rbd, arr);
+  }
+
+  const otrasEscuelas: DetalleOtroContratoSlep[] = [];
+  let horasOtrasEscuelas = 0;
+  let tieneSobreasignacionEnOtraEscuela = false;
+
+  for (const [rbdOtro, docsOtro] of otrosPorRbd.entries()) {
+    const est = estMap.get(rbdOtro);
+    const horasOtro = docsOtro.reduce((s, d) => s + (Number(d.horasContrato) || 0), 0);
+    horasOtrasEscuelas += horasOtro;
+
+    let esSobreasignadoLocal = false;
+    if (todasLasAsignaciones && todasLasAsignaciones.length > 0) {
+      for (const dOtro of docsOtro) {
+        const asigsPropias = todasLasAsignaciones.filter(
+          a => a.rbd === rbdOtro && a.docenteId === dOtro.id
+        );
+        const asigsCoDoc = todasLasAsignaciones.filter(
+          a => a.rbd === rbdOtro && a.coDocenteId === dOtro.id && a.tieneCoDocente
+        );
+        if (asigsPropias.length > 0 || asigsCoDoc.length > 0) {
+          const audit = auditarCargaDocenteIntegral(
+            dOtro,
+            asigsPropias,
+            asigsCoDoc,
+            cursosMap || new Map<string, CursoSae>(),
+            est?.porcentajePrioritarios || 0
+          );
+          if (audit.estaSobreasignado) {
+            esSobreasignadoLocal = true;
+            tieneSobreasignacionEnOtraEscuela = true;
+          }
+        }
+      }
+    }
+
+    otrasEscuelas.push({
+      rbd: rbdOtro,
+      nombreColegio: est ? est.nombre : `RBD ${rbdOtro}`,
+      horasContrato: horasOtro,
+      esSobreasignadoLocal
+    });
+  }
+
+  const horasTotalesSlep = Number((hActual + horasOtrasEscuelas).toFixed(2));
+  const excesoHoras = Math.max(0, Number((horasTotalesSlep - limiteLegal).toFixed(2)));
+  const margenDisponibleEnSlep = Math.max(0, Number((limiteLegal - horasOtrasEscuelas).toFixed(2)));
+
+  return {
+    runNormalizado: runNorm,
+    esMultiEscuela: otrasEscuelas.length > 0,
+    horasOtrasEscuelas: Number(horasOtrasEscuelas.toFixed(2)),
+    horasContratoActual: hActual,
+    horasTotalesSlep,
+    limiteLegal,
+    excesoHoras,
+    excedeLimite44h: horasTotalesSlep > limiteLegal,
+    margenDisponibleEnSlep,
+    otrasEscuelas,
+    tieneSobreasignacionEnOtraEscuela
   };
 }

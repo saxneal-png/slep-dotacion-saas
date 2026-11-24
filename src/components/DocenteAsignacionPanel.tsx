@@ -40,8 +40,10 @@ import {
   getHorasAulaLectivaAsig,
   esTrabajoNoAulaPie,
   esDocenteEducadoraParvulos,
-  esDocenteEducacionEspecialPie
+  esDocenteEducacionEspecialPie,
+  evaluarTopeTerritorialDocente
 } from '../services/auditoriaDocenteService';
+import { AlertaTerritorialDocenteBanner } from './AlertaTerritorialDocenteBanner';
 import {
   InfoPlanResuelto,
   DisponibilidadAsignatura,
@@ -78,6 +80,10 @@ interface DocenteAsignacionPanelProps {
   cursos: CursoSae[];
   asignaciones: AsignacionHoraria[];
   docentes?: Docente[];
+  todosLosDocentes?: Docente[];
+  todosLosColegios?: Establecimiento[];
+  todasLasAsignaciones?: AsignacionHoraria[];
+  todosLosCursos?: CursoSae[];
   periodoActivo?: number;
   onGuardarAsignacion?: (asig: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
@@ -1875,10 +1881,25 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
   cursos,
   asignaciones,
   docentes = [],
+  todosLosDocentes = [],
+  todosLosColegios = [],
+  todasLasAsignaciones,
+  todosLosCursos = [],
   periodoActivo = 2027,
   onGuardarAsignacion,
   onEliminarAsignacion
 }) => {
+  const evalTerritorial = useMemo(() => {
+    return evaluarTopeTerritorialDocente({
+      run: docente.run,
+      rbdActual: colegio.rbd,
+      horasContratoActual: docente.horasContrato,
+      todosLosDocentes: todosLosDocentes.length > 0 ? todosLosDocentes : docentes,
+      todosLosColegios: todosLosColegios.length > 0 ? todosLosColegios : [colegio],
+      todasLasAsignaciones: todasLasAsignaciones || asignaciones,
+      todosLosCursos: todosLosCursos.length > 0 ? todosLosCursos : cursos
+    });
+  }, [docente.run, docente.horasContrato, colegio, todosLosDocentes, docentes, todosLosColegios, todasLasAsignaciones, asignaciones, todosLosCursos, cursos]);
   const [formActivo, setFormActivo] = useState<TipoFormularioActivo>(null);
   const [formRegularCursoId, setFormRegularCursoId] = useState<string | undefined>(undefined);
   const [formRegularAmbito, setFormRegularAmbito] = useState<AmbitoFormRegular | undefined>(undefined);
@@ -2417,6 +2438,9 @@ export const DocenteAsignacionPanel: React.FC<DocenteAsignacionPanelProps> = ({
   return (
     <div className="space-y-3.5">
       {/* Barra de Acciones / Botones de Asignación Rápida */}
+      {/* Alerta Territorial Multi-Escuela (>44h SLEP o sobreasignación en otra escuela) */}
+      <AlertaTerritorialDocenteBanner evaluacion={evalTerritorial} />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200">
         <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
           <Layers className="w-4 h-4 text-orange-600" />

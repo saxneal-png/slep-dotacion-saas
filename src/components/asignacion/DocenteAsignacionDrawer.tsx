@@ -17,7 +17,12 @@ import {
 } from 'lucide-react';
 import { AsignacionHoraria, CursoSae, Docente, Establecimiento } from '../../types';
 import { CATALOGO_BCEP_PARVULARIA, esNivelParvulario } from '@slep/mineduc-engine';
-import { auditarCargaDocenteIntegral, esDocenteEducadoraParvulos } from '../../services/auditoriaDocenteService';
+import {
+  auditarCargaDocenteIntegral,
+  esDocenteEducadoraParvulos,
+  evaluarTopeTerritorialDocente
+} from '../../services/auditoriaDocenteService';
+import { AlertaTerritorialDocenteBanner } from '../AlertaTerritorialDocenteBanner';
 import { useAsignacionDocente } from '../../hooks/useAsignacionDocente';
 import { ResumenImpactoAsignacion } from '../../services/curricularPlanService';
 import { DocenteSaldoStickyBar } from './DocenteSaldoStickyBar';
@@ -33,6 +38,10 @@ interface DocenteAsignacionDrawerProps {
   colegio: Establecimiento;
   cursos: CursoSae[];
   asignaciones: AsignacionHoraria[];
+  todosLosDocentes?: Docente[];
+  todosLosColegios?: Establecimiento[];
+  todasLasAsignaciones?: AsignacionHoraria[];
+  todosLosCursos?: CursoSae[];
   periodoActivo: number;
   onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void;
   onEliminarAsignacion?: (id: string) => Promise<void> | void;
@@ -47,6 +56,10 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
   colegio,
   cursos,
   asignaciones,
+  todosLosDocentes = [],
+  todosLosColegios = [],
+  todasLasAsignaciones,
+  todosLosCursos = [],
   periodoActivo,
   onGuardarAsignacion,
   onEliminarAsignacion
@@ -80,6 +93,19 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
     onEliminarAsignacion,
     docentesLista
   );
+
+  const evalTerritorial = useMemo(() => {
+    if (!docente) return null;
+    return evaluarTopeTerritorialDocente({
+      run: docente.run,
+      rbdActual: colegio.rbd,
+      horasContratoActual: docente.horasContrato,
+      todosLosDocentes: todosLosDocentes.length > 0 ? todosLosDocentes : docentesLista,
+      todosLosColegios: todosLosColegios.length > 0 ? todosLosColegios : [colegio],
+      todasLasAsignaciones: todasLasAsignaciones || asignaciones,
+      todosLosCursos: todosLosCursos.length > 0 ? todosLosCursos : cursos
+    });
+  }, [docente, colegio, todosLosDocentes, docentesLista, todosLosColegios, todasLasAsignaciones, asignaciones, todosLosCursos, cursos]);
 
   const idxActual = useMemo(() => {
     if (!docente) return -1;
@@ -220,6 +246,12 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
           isEducadoraParvulo={resumenNormativo.esEducadora}
           previewImpacto={previewHover}
         />
+
+        {evalTerritorial && (evalTerritorial.excedeLimite44h || evalTerritorial.tieneSobreasignacionEnOtraEscuela) && (
+          <div className="px-4 pt-2.5 shrink-0">
+            <AlertaTerritorialDocenteBanner evaluacion={evalTerritorial} compact />
+          </div>
+        )}
 
         {/* Navegación Interna del Drawer */}
         <div className="px-4 py-2 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 shrink-0">
@@ -761,6 +793,10 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
               cursos={cursos}
               asignaciones={asignaciones}
               docentes={docentesLista}
+              todosLosDocentes={todosLosDocentes}
+              todosLosColegios={todosLosColegios}
+              todasLasAsignaciones={todasLasAsignaciones}
+              todosLosCursos={todosLosCursos}
               periodoActivo={periodoActivo}
               onGuardarAsignacion={onGuardarAsignacion}
               onEliminarAsignacion={onEliminarAsignacion}

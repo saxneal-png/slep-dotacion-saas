@@ -49,7 +49,11 @@ import {
   esCursoModalidadEpja,
   esCursoNivelMedio34
 } from '../services/curricularPlanService';
-import { auditarCargaDocenteIntegral, esDocenteEducadoraParvulos } from '../services/auditoriaDocenteService';
+import {
+  auditarCargaDocenteIntegral,
+  esDocenteEducadoraParvulos,
+  evaluarTopeTerritorialDocente
+} from '../services/auditoriaDocenteService';
 import { ModalCombinarCursos } from '../components/ModalCombinarCursos';
 import { ModalDescombinarCurso } from '../components/ModalDescombinarCurso';
 import { ModalReconciliarMalla } from '../components/ModalReconciliarMalla';
@@ -68,6 +72,9 @@ export interface CurriculumDemandaViewProps {
   cursos: CursoSae[];
   docentes?: Docente[];
   asignaciones?: AsignacionHoraria[];
+  todosLosColegios?: Establecimiento[];
+  todosLosDocentes?: Docente[];
+  todasLasAsignaciones?: AsignacionHoraria[];
   onGuardarCurso: (curso: CursoSae) => void;
   onEliminarCurso: (id: string) => void;
   onGuardarAsignacion?: (a: AsignacionHoraria) => Promise<void> | void;
@@ -127,6 +134,9 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
   cursos,
   docentes = [],
   asignaciones = [],
+  todosLosColegios: propsTodosLosColegios,
+  todosLosDocentes: propsTodosLosDocentes,
+  todasLasAsignaciones: propsTodasLasAsignaciones,
   onGuardarCurso,
   onEliminarCurso,
   onGuardarAsignacion,
@@ -273,21 +283,40 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
     );
   };
 
-  // Cálculo de disponibilidad y carga horaria de cada docente/asistente
+  // Cálculo de disponibilidad y carga horaria de cada docente/asistente (cruzando tope 44h SLEP)
   const disponibilidadDocentes = useMemo(() => {
-    const mapa = new Map<string, { horasAsignadas: number; horasLibres: number }>();
+    const mapa = new Map<
+      string,
+      {
+        horasAsignadas: number;
+        horasLibres: number;
+        excedeLimite44h: boolean;
+        horasTotalesSlep: number;
+      }
+    >();
+    const rbdActual = colegio?.rbd || '';
     for (const d of docentes) {
       const asigsD = asignaciones.filter(a => a.docenteId === d.id || (a.coDocenteId === d.id && a.tieneCoDocente));
       const totalAsig = asigsD.reduce((sum, a) => {
         return sum + (a.horasPedagogicasAula || a.horasCronologicasPie || 0);
       }, 0);
+      const evalTerr = evaluarTopeTerritorialDocente({
+        run: d.run,
+        rbdActual: d.rbd || rbdActual,
+        horasContratoActual: d.horasContrato,
+        todosLosDocentes: (propsTodosLosDocentes && propsTodosLosDocentes.length > 0) ? propsTodosLosDocentes : docentes,
+        todosLosColegios: propsTodosLosColegios || (colegio ? [colegio] : []),
+        todasLasAsignaciones: propsTodasLasAsignaciones || asignaciones
+      });
       mapa.set(d.id, {
         horasAsignadas: totalAsig,
-        horasLibres: Math.max(0, d.horasContrato - totalAsig)
+        horasLibres: evalTerr.excedeLimite44h ? 0 : Math.max(0, d.horasContrato - totalAsig),
+        excedeLimite44h: evalTerr.excedeLimite44h,
+        horasTotalesSlep: evalTerr.horasTotalesSlep
       });
     }
     return mapa;
-  }, [docentes, asignaciones]);
+  }, [docentes, asignaciones, colegio, propsTodosLosDocentes, propsTodosLosColegios, propsTodasLasAsignaciones]);
 
   const esModoTransversal = cursoSeleccionadoPlan === 'TRANSVERSAL';
   const cursoActivo = esModoTransversal ? null : (cursos.find(c => c.id === cursoSeleccionadoPlan) || cursos[0]);
@@ -1531,6 +1560,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                       <div className="text-[10px] text-slate-500">
                                         RUN: {doc.run} • Contrato: {doc.horasContrato}h (Asig: {disp?.horasAsignadas || 0}h)
                                       </div>
+                                      {disp?.excedeLimite44h && (
+                                        <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                                          ⚠ Excede 44h SLEP ({disp.horasTotalesSlep}h)
+                                        </span>
+                                      )}
                                     </div>
                                   ) : (
                                     <span className="text-red-500 italic">Docente no encontrado (ID: {a.docenteId})</span>
@@ -1849,6 +1883,11 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                       <div className="text-[10px] text-slate-500">
                                         RUN: {doc.run} • {doc.estamento} • Contrato: {doc.horasContrato}h (Asig: {disp?.horasAsignadas || 0}h)
                                       </div>
+                                      {disp?.excedeLimite44h && (
+                                        <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                                          ⚠ Excede 44h SLEP ({disp.horasTotalesSlep}h)
+                                        </span>
+                                      )}
                                     </div>
                                   ) : (
                                     <span className="text-amber-600 italic">Docente no especificado</span>

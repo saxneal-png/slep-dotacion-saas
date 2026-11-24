@@ -3,6 +3,7 @@ import {
   obtenerDocentesConsolidadosTerritorio,
   consolidarCarteraTerritorial 
 } from '../src/services/dotacionCalculationService';
+import { evaluarTopeTerritorialDocente } from '../src/services/auditoriaDocenteService';
 import type { Establecimiento, Docente, AsignacionHoraria } from '../src/types';
 
 describe('Consolidación Territorial de Docentes Multi-Contrato y Financiamiento', () => {
@@ -291,5 +292,94 @@ describe('Consolidación Territorial de Docentes Multi-Contrato y Financiamiento
     // Andrea NO debe figurar en inconsistencias como falso positivo
     const falsoPositivoAndrea = resultado.inconsistencias.find(i => i.run === '15.234.567-8');
     expect(falsoPositivoAndrea).toBeUndefined();
+  });
+
+  it('evaluarTopeTerritorialDocente calcula margen disponible, exceso >44h y sobreasignación en otro colegio', () => {
+    const docentes: Docente[] = [
+      {
+        id: 'd-a',
+        rbd: '3451',
+        run: '14.555.666-7',
+        nombres: 'Luis',
+        apellidos: 'Méndez',
+        calidadJuridica: 'CONTRATA',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 30
+      },
+      {
+        id: 'd-b',
+        rbd: '3480',
+        run: '14555666-7', // sin puntos, debe normalizarse igual
+        nombres: 'Luis',
+        apellidos: 'Méndez',
+        calidadJuridica: 'CONTRATA',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 20
+      },
+      {
+        id: 'd-nn-a',
+        rbd: '3451',
+        run: 'POR PROVEER',
+        nombres: 'Vacante',
+        apellidos: 'A',
+        calidadJuridica: 'CONTRATA',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 30,
+        esVacanteNn: true
+      },
+      {
+        id: 'd-nn-b',
+        rbd: '3480',
+        run: 'POR PROVEER',
+        nombres: 'Vacante',
+        apellidos: 'B',
+        calidadJuridica: 'CONTRATA',
+        estamento: 'DOCENTE_AULA',
+        horasContrato: 30,
+        esVacanteNn: true
+      }
+    ];
+
+    // Asignación excesiva en Colegio B (20h contrato -> máx ~17 HA, pero tiene 28 HA)
+    const asigsExcesivas: AsignacionHoraria[] = [
+      {
+        id: 'a-exc',
+        rbd: '3480',
+        cursoId: 'c-b',
+        docenteId: 'd-b',
+        asignatura: 'Matemática',
+        horasPedagogicasAula: 28
+      }
+    ];
+
+    const evalColegioA = evaluarTopeTerritorialDocente({
+      run: '14.555.666-7',
+      rbdActual: '3451',
+      horasContratoActual: 30,
+      todosLosDocentes: docentes,
+      todosLosColegios: [colegioA, colegioB],
+      todasLasAsignaciones: asigsExcesivas
+    });
+
+    expect(evalColegioA.esMultiEscuela).toBe(true);
+    expect(evalColegioA.horasOtrasEscuelas).toBe(20);
+    expect(evalColegioA.horasTotalesSlep).toBe(50);
+    expect(evalColegioA.excedeLimite44h).toBe(true);
+    expect(evalColegioA.excesoHoras).toBe(6);
+    expect(evalColegioA.margenDisponibleEnSlep).toBe(24);
+    expect(evalColegioA.tieneSobreasignacionEnOtraEscuela).toBe(true);
+    expect(evalColegioA.otrasEscuelas).toHaveLength(1);
+    expect(evalColegioA.otrasEscuelas[0].nombreColegio).toBe('Colegio Quilamapu');
+
+    // Vacante NN no debe cruzarse entre colegios
+    const evalNn = evaluarTopeTerritorialDocente({
+      run: 'POR PROVEER',
+      rbdActual: '3451',
+      horasContratoActual: 30,
+      todosLosDocentes: docentes,
+      todosLosColegios: [colegioA, colegioB]
+    });
+    expect(evalNn.esMultiEscuela).toBe(false);
+    expect(evalNn.excedeLimite44h).toBe(false);
   });
 });

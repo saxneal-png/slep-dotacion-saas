@@ -1643,6 +1643,9 @@ export const App: React.FC = () => {
             cursos={cursos}
             docentes={docentes}
             asignaciones={asignaciones}
+            todosLosColegios={colegiosPermitidos}
+            todosLosDocentes={todosLosDocentes}
+            todasLasAsignaciones={todasLasAsignaciones}
             onGuardarCurso={handleGuardarCurso}
             onEliminarCurso={handleEliminarCurso}
             onGuardarAsignacion={handleGuardarAsignacion}
