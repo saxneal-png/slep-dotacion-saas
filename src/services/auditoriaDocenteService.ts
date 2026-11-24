@@ -887,7 +887,7 @@ export function auditarCargaDocenteIntegral(
     if (isEducadoraParvuloDoc && (esParv || !c)) {
       return regimenParvularioPredominante === '60_40';
     }
-    if (c) {
+    if (c && isEducadoraParvuloDoc) {
       return determinarRegimenNormativo(porcentajePrioritariosColegio, c.nivel) === '60_40';
     }
     return porcentajePrioritariosColegio >= 80;

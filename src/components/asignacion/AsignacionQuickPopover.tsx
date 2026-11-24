@@ -75,7 +75,7 @@ export const AsignacionQuickPopover: React.FC<AsignacionQuickPopoverProps> = ({
     : (cursos.find(c => c.id === cursoSeleccionadoId) || null);
   const esParvulariaCurso = Boolean(cursoEfectivo && esNivelParvulario(cursoEfectivo.nivel));
   const esEducadora = esDocenteEducadoraParvulos(docente);
-  const esFlujoParvularia = esParvulariaCurso;
+  const esFlujoParvularia = esParvulariaCurso && esEducadora;
   const esTallerSep = modalidad === 'TALLER_SEP';
   const esTrabajoColaborativo = modalidad === 'PIE_COLAB';
   const esTallerJec = modalidad === 'TALLER_JEC';

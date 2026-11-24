@@ -3,7 +3,7 @@ import { Check, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import { AsignacionHoraria, CursoSae, Docente, Establecimiento, PlanEstudioCurricular } from '../../types';
 import { esNivelParvulario, resolverCodigoYAmbitoAsignatura } from '@slep/mineduc-engine';
 import { listarPlanesEstudio } from '../../database/db';
-import { auditarCargaDocenteIntegral } from '../../services/auditoriaDocenteService';
+import { auditarCargaDocenteIntegral, esDocenteEducadoraParvulos } from '../../services/auditoriaDocenteService';
 import {
   calcularDisponibilidadCurso,
   calcularEstadoCursosParvularios,
@@ -473,6 +473,7 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                   </span>
                   {asignacionesCeldaActiva.map(a => {
                     const doc = docentesMap.get(a.docenteId);
+                    const esDocEdParv = doc ? esDocenteEducadoraParvulos(doc) : false;
                     return (
                       <div
                         key={a.id}
@@ -485,7 +486,7 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                           <p className="text-[10px] text-slate-500">
                             {a.asignatura} ·{' '}
                             <strong className="font-mono">
-                              {a.horasPedagogicasAula} {esNivelParvulario(celdaActiva.curso.nivel) ? 'h cron.' : 'HA'}
+                              {a.horasPedagogicasAula} {esNivelParvulario(celdaActiva.curso.nivel) && esDocEdParv ? 'h cron.' : 'HA'}
                             </strong>
                           </p>
                         </div>
@@ -568,11 +569,11 @@ export const SabanaCurricularView: React.FC<SabanaCurricularViewProps> = ({
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      {esNivelParvulario(celdaActiva.curso.nivel) ? 'Horas (60m)' : 'Horas (HA)'}
+                      {esNivelParvulario(celdaActiva.curso.nivel) && docResumenSeleccionado?.isEducadora ? 'Horas (60m)' : 'Horas (HA 45m)'}
                     </label>
                     <input
                       type="number"
-                      step={esNivelParvulario(celdaActiva.curso.nivel) ? '0.25' : '0.5'}
+                      step={esNivelParvulario(celdaActiva.curso.nivel) && docResumenSeleccionado?.isEducadora ? '0.25' : '0.5'}
                       min="0.25"
                       max="44"
                       value={horasInput}

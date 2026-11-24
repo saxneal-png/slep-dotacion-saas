@@ -788,7 +788,10 @@ const FormAsignarRegular: React.FC<FormRegularProps> = React.memo(({
 
   const esCursoEpjaForm = useMemo(() => esCursoModalidadEpja(cursoSeleccionado, infoPlan), [cursoSeleccionado, infoPlan]);
   const esMedio34Form = useMemo(() => esCursoNivelMedio34(cursoSeleccionado, infoPlan), [cursoSeleccionado, infoPlan]);
-  const esParvularioForm = useMemo(() => Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel)), [cursoSeleccionado]);
+  const esParvularioForm = useMemo(
+    () => esDocenteEducadoraParvulos(docente) && Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel)),
+    [docente, cursoSeleccionado]
+  );
   const esCursoTpForm = useMemo(() => esCursoModalidadTp(cursoSeleccionado, infoPlan, colegio), [cursoSeleccionado, infoPlan, colegio]);
   const puedeLibreDisposicion = !esCursoEpjaForm && !esParvularioForm && (infoPlan.esJec || datosDisp.horasLibrePlan > 0);
 
@@ -1524,18 +1527,18 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
   }, [cursoSeleccionado, planesDb]);
 
   useEffect(() => {
-    if (cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel)) {
+    if (esDocenteEducadoraParvulos(docente) && cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel)) {
       setTipoAsignaturaSeleccionada('__PERSONALIZADA__');
       setCoDocNombreCustom('Atención Directa y Co-Docencia Parvularia (DTO 306)');
       setCoDocTipo('CO_DOCENCIA');
-    } else if (infoPlan.asignaturas.length > 0) {
+    } else if (infoPlan.asignaturas.length > 0 && !(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel))) {
       setTipoAsignaturaSeleccionada(infoPlan.asignaturas[0].nombre);
       setCoDocNombreCustom('');
     } else {
       setTipoAsignaturaSeleccionada('__PERSONALIZADA__');
-      setCoDocNombreCustom('Apoyo Pedagógico en Aula');
+      setCoDocNombreCustom('Co-Docencia / Apoyo Pedagógico en Aula (45m)');
     }
-  }, [coDocCursoId, infoPlan, cursoSeleccionado]);
+  }, [coDocCursoId, infoPlan, cursoSeleccionado, docente]);
 
   const esPersonalizada = tipoAsignaturaSeleccionada === '__PERSONALIZADA__';
 
@@ -1552,7 +1555,7 @@ const FormAsignarCoDocencia: React.FC<FormCoDocenciaProps> = React.memo(({
       return;
     }
 
-    const esParv = !esDocenteEducacionEspecialPie(docente) && Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
+    const esParv = esDocenteEducadoraParvulos(docente) && Boolean(cursoSeleccionado && esNivelParvulario(cursoSeleccionado.nivel));
 
     const newAsig: AsignacionHoraria = {
       id: `asig-codoc-${Date.now()}`,

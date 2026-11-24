@@ -698,7 +698,7 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                               ? 'JEC'
                               : a.esCoDocencia
                               ? 'Co-Docencia'
-                              : c && esNivelParvulario(c.nivel)
+                              : resumenNormativo.esEducadora && c && esNivelParvulario(c.nivel)
                               ? 'Parvularia (60m)'
                               : 'Plan Regular'}
                           </span>
@@ -716,7 +716,7 @@ export const DocenteAsignacionDrawer: React.FC<DocenteAsignacionDrawerProps> = (
                               <Minus className="w-3 h-3" />
                             </button>
                             <span className="w-12 text-center font-bold">
-                              {a.horasPedagogicasAula}{c && esNivelParvulario(c.nivel) ? 'h*' : 'h'}
+                              {a.horasPedagogicasAula}{resumenNormativo.esEducadora && c && esNivelParvulario(c.nivel) ? 'h*' : ' HA'}
                             </span>
                             <button
                               type="button"

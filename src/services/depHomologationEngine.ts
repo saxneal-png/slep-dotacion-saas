@@ -12,6 +12,7 @@ import {
   MAPA_MINEDUC_65_35
 } from '@slep/mineduc-engine';
 import { formatearRut } from '../utils/rutUtils';
+import { esDocenteEducadoraParvulos } from './auditoriaDocenteService';
 
 // Tablas de Referencia Normativa Oficiales de la DEP (Rango A4:D47)
 // Mapeo exacto de Horas Aula Pedagógicas (HA) a [HA, Horas Lectivas Cronológicas, Horas No Lectivas Cronológicas, Jornada]
@@ -215,8 +216,10 @@ export function homologarDocenteAPal(
   const cursosIds = new Set(asigsDoc.map(a => a.cursoId));
   const cursosDoc = cursosColegio.filter(c => cursosIds.has(c.id));
 
+  const esDocenteEducadora = esDocenteEducadoraParvulos(docente);
+
   // 1. Detección de Nivel Pedagógico (Regla 31 DEP: Bi-nivel Básica/Media)
-  let tieneParvula = cursosDoc.some(c => /kínder|kinder|transición|parvul/i.test(c.nivel)) || /párvulo|parvulo/i.test(docente.titulo || docente.funcionPrincipal || '');
+  let tieneParvula = esDocenteEducadora && (cursosDoc.some(c => /kínder|kinder|transición|parvul/i.test(c.nivel)) || /párvulo|parvulo/i.test(docente.titulo || docente.funcionPrincipal || ''));
   let tieneBasica = cursosDoc.some(c => /básico|basica|básica|1° a 8°/i.test(c.nivel));
   let tieneMedia = cursosDoc.some(c => /medio|media|1° a 4°/i.test(c.nivel));
 
@@ -235,10 +238,6 @@ export function homologarDocenteAPal(
     return /kínder|kinder|pre-?kinder|nt1|nt2|transición|transicion|parvul|medio menor|medio mayor/i.test(nivel);
   };
 
-  const esDocenteEducadora = tieneParvula ||
-    docente.estamento === 'OTRA_ESTABLECIMIENTO' ||
-    /educadora|párvulo|parvulo/i.test(docente.titulo || docente.cargoInstitucional || docente.funcionPrincipal || '');
-
   // Helper para discriminar co-docencia y horas PIE
   const esAsignacionPie = (a: AsignacionHoraria) => {
     const ta = (a.tipoApoyo || '').toLowerCase();
@@ -255,10 +254,10 @@ export function homologarDocenteAPal(
   };
 
   const esCoDocenciaNoPie = (a: AsignacionHoraria) => {
-    // REGLA MINISTERIAL: Las educadoras que son parte de la permanencia de los estudiantes
-    // de párvulos con y sin JEC NO se consideran como co-docentes
+    // REGLA MINISTERIAL: Solo las Educadoras de Párvulos que cubren permanencia DTO 306
+    // no se consideran co-docentes en nivel parvulario. Un docente de aula regular sí cuenta en 45 min.
     const curso = cursosColegio.find(c => c.id === a.cursoId);
-    if (curso && esNivelParvularia(curso.nivel)) {
+    if (esDocenteEducadora && curso && esNivelParvularia(curso.nivel)) {
       return false;
     }
     if (esDocenteEducadora) {
@@ -357,7 +356,7 @@ export function homologarDocenteAPal(
     } else {
       const regNorm = determinarRegimenNormativo(
         establecimiento.porcentajePrioritarios || 0,
-        curso?.nivel || ''
+        esDocenteEducadora ? (curso?.nivel || '') : ''
       );
       regProp = regNorm === '60_40' ? '60/40' : '65/35';
     }

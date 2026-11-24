@@ -49,7 +49,7 @@ import {
   esCursoModalidadEpja,
   esCursoNivelMedio34
 } from '../services/curricularPlanService';
-import { auditarCargaDocenteIntegral } from '../services/auditoriaDocenteService';
+import { auditarCargaDocenteIntegral, esDocenteEducadoraParvulos } from '../services/auditoriaDocenteService';
 import { ModalCombinarCursos } from '../components/ModalCombinarCursos';
 import { ModalDescombinarCurso } from '../components/ModalDescombinarCurso';
 import { ModalReconciliarMalla } from '../components/ModalReconciliarMalla';
@@ -1497,6 +1497,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                           asignacionesPlanRegularCurso.map(a => {
                             const doc = docentes.find(d => d.id === a.docenteId);
                             const disp = doc ? disponibilidadDocentes.get(doc.id) : null;
+                            const esDocParv = Boolean(doc && esDocenteEducadoraParvulos(doc));
 
                             return (
                               <tr key={a.id} className="hover:bg-slate-50/70">
@@ -1536,7 +1537,7 @@ export const CurriculumDemandaView: React.FC<CurriculumDemandaViewProps> = ({
                                   )}
                                 </td>
                                 <td className="px-4 py-2.5 text-center font-bold text-slate-800">
-                                  {a.horasPedagogicasAula} {esCursoParvulario ? 'h (60m)' : 'HA'}
+                                  {a.horasPedagogicasAula} {esCursoParvulario && esDocParv ? 'h (60m)' : 'HA'}
                                 </td>
                                 <td className="px-4 py-2.5 text-center">
                                   {esAsignacionLibreDisposicionJec(a, cursoActivo || null, infoPlanActivo) ? (
