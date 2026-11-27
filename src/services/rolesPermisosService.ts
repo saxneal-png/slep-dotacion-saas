@@ -264,9 +264,10 @@ export class RolesPermisosService {
   }
 
   /** Vista agregada heredada (`PermisosRol`) derivada de la matriz granular. */
-  static derivarPermisosLegados(rol: unknown): PermisosRol {
+  static derivarPermisosLegados(rol: unknown, rolesAdicionales: RolId[] = []): PermisosRol {
     const r = normalizarRol(rol);
-    const can = (key: PermisoKey) => this.tienePermiso(r, key);
+    const todos = Array.from(new Set<RolId>([r, ...rolesAdicionales]));
+    const can = (key: PermisoKey) => todos.some(rolItem => this.tienePermiso(rolItem, key));
     const any = (keys: PermisoKey[]) => keys.some(can);
     const puedeEditar = any(['docentes.editar', 'curriculum.editar', 'asistentes.editar', 'salas_sae.editar', 'pie.editar', 'planes_estudio.editar']);
     return {
@@ -274,7 +275,7 @@ export class RolesPermisosService {
       puedeEliminarRegistros: any(['docentes.eliminar', 'curriculum.eliminar', 'asistentes.eliminar', 'salas_sae.eliminar']),
       puedeConfigurarSistema: any(PERMISOS_CONFIGURACIONES),
       puedeGestionarUsuarios: can('usuarios.editar'),
-      puedeAccederTodasEscuelas: getDefinicionRol(r).alcance !== 'establecimiento',
+      puedeAccederTodasEscuelas: todos.some(rolItem => getDefinicionRol(rolItem).alcance !== 'establecimiento'),
       puedeVerCarteraTerritorial: can('cartera.ver'),
       puedeVerConsolidadorMaster: can('consolidador.ver'),
       puedeVerAnalizadorSige: can('analizador.ver'),

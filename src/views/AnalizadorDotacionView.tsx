@@ -701,15 +701,15 @@ export const AnalizadorDotacionView: React.FC<AnalizadorDotacionViewProps> = ({
                 </button>
 
                 <button
-                  onClick={() => exportConsolidatedExcelBrowser(schools, teachers, courses, teacherLoads)}
+                  onClick={() => exportConsolidatedExcelBrowser(schools, teachers, courses, teacherLoads, asistentes)}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
-                  title="Descargar Excel oficial de 3 hojas con Consolidado, Auditoría y Carga por Cursos"
+                  title="Descargar Excel oficial con Consolidado, Auditoría Docente, Carga por Cursos y Asistentes de la Educación"
                 >
                   <Download className="w-3.5 h-3.5" /> Exportar Excel
                 </button>
 
                 <button
-                  onClick={() => exportCsvBrowser(schools)}
+                  onClick={() => exportCsvBrowser(schools, asistentes)}
                   className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-slate-200"
                   title="Exportar archivo CSV para sistemas SLEP"
                 >

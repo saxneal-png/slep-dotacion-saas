@@ -94,7 +94,7 @@ import { AuthSession, UsuarioSistema } from './types/authTypes';
 import { useEvaluadorPermisos, PermisosProvider } from './security/PermisosContext';
 import { getDefinicionRol, normalizarRol, esRolNivelCentral } from './security/rolesDefinitions';
 import { purgarTablasMovilidadParaEscuela } from './database/dbCore';
-import { colegiosVisibles, puedeAccederRbd } from './services/scopeService';
+import { colegiosVisibles, getAlcance, puedeAccederRbd } from './services/scopeService';
 import {
   usePresenciaGlobal,
   filtrarPresenciaPorAlcance,
@@ -112,7 +112,7 @@ export const App: React.FC = () => {
 
   const evaluadorPermisos = useEvaluadorPermisos(session);
   const permisos = evaluadorPermisos.legado;
-  const alcanceReal = session ? getDefinicionRol(normalizarRol(session.usuario.role)).alcance : null;
+  const alcanceReal = session ? getAlcance(session.usuario) : null;
   const [featureFlags, setFeatureFlags] = useState<FeatureFlagsMovilidad>(() => obtenerFeatureFlagsMovilidad());
   const rolEfectivoMovilidad = evaluadorPermisos.rol;
   const puedeVerMesaMovilidad = Boolean(
@@ -541,7 +541,7 @@ export const App: React.FC = () => {
             setTodosLosDocentes(allDocs);
             setTodasLasAsignaciones(allAsigs);
             setTodosLosAsistentes(allAsist);
-          } else if (rolNormal === 'asesor_uatp') {
+          } else if (rolNormal === 'asesor_uatp' && getAlcance(activeSession.usuario) === 'cartera') {
             // 2. Sincronizar asignaciones vigentes de asesor_uatp desde Supabase antes de resolver cartera
             try {
               const estNube = await SupabaseDotacionService.obtenerEstablecimientos();
@@ -1365,7 +1365,8 @@ export const App: React.FC = () => {
         diagnosticosColegiosPermitidos,
         colegioActivo?.asesorUatp || 'Asesor UATP',
         asignacionesScope,
-        cursosScope
+        cursosScope,
+        asistentesScope
       );
       const filename = `Consolidado_Dotacion_SLEP_Valle_Diguillin_${new Date().toISOString().split('T')[0]}.xlsx`;
       const guardado = await guardarArchivoNativoOEnNavegador(

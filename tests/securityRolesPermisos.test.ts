@@ -141,5 +141,16 @@ describe('Roles, Permisos y Scope Territorial RBAC', () => {
 
     expect(RolesPermisosService.tienePermiso('gdp_validador', k('gdp_validador', 'ejecutar'))).toBe(true);
     expect(RolesPermisosService.tienePermiso('gdp_validador', k('mesa_movilidad', 'ver'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('workflow', 'ver'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('docentes', 'ver'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('establecimiento_slep', 'exportar'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('estadisticas', 'exportar'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('analizador', 'ver'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('analizador', 'exportar'))).toBe(true);
+    expect(RolesPermisosService.tienePermiso('gdp_validador', k('planillas_dep', 'exportar'))).toBe(true);
+
+    const legadoDobleRol = RolesPermisosService.derivarPermisosLegados('asesor_uatp', ['gdp_validador']);
+    expect(legadoDobleRol.puedeAccederTodasEscuelas).toBe(true);
+    expect(legadoDobleRol.puedeExportarReportes).toBe(true);
   });
 });

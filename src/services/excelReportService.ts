@@ -2,9 +2,10 @@ import ExcelJS from 'exceljs';
 import {
   DiagnosticoColegioCompleto,
   consolidarCarteraTerritorial,
-  obtenerDocentesConsolidadosTerritorio
+  obtenerDocentesConsolidadosTerritorio,
+  obtenerAsistentesConsolidadosTerritorio
 } from './dotacionCalculationService';
-import { Establecimiento, Docente, AsignacionHoraria, CursoSae } from '../types';
+import { Establecimiento, Docente, AsignacionHoraria, CursoSae, AsistenteEducacion } from '../types';
 
 /**
  * Genera el archivo Excel corporativo oficial para el SLEP Valle Diguillín
@@ -16,7 +17,8 @@ export async function generarExcelConsolidadoSlep(
   diagnosticos: DiagnosticoColegioCompleto[],
   asesorNombre: string = 'UATP SLEP Valle Diguillín',
   asignaciones: AsignacionHoraria[] = [],
-  cursos: CursoSae[] = []
+  cursos: CursoSae[] = [],
+  asistentes: AsistenteEducacion[] = []
 ): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SLEP Valle Diguillín - Sistema de Dotación Docente';
@@ -51,6 +53,17 @@ export async function generarExcelConsolidadoSlep(
     right: { style: 'thin', color: { argb: 'CBD5E1' } }
   };
 
+  // Precomputar resumen de Asistentes de la Educación activos por RBD
+  const asistentesPorRbd = new Map<string, { count: number; horas: number }>();
+  for (const a of asistentes) {
+    if (a.activo === false) continue;
+    const rbdKey = String(a.rbd);
+    const prev = asistentesPorRbd.get(rbdKey) || { count: 0, horas: 0 };
+    prev.count += 1;
+    prev.horas += Number(a.horasContrato || 0);
+    asistentesPorRbd.set(rbdKey, prev);
+  }
+
   // ===========================================================================
   // HOJA 1: RESUMEN TERRITORIAL
   // ===========================================================================
@@ -58,7 +71,7 @@ export async function generarExcelConsolidadoSlep(
     views: [{ showGridLines: true }]
   });
 
-  wsResumen.mergeCells('A1:G1');
+  wsResumen.mergeCells('A1:K1');
   const titleCell = wsResumen.getCell('A1');
   titleCell.value = 'SERVICIO LOCAL DE EDUCACIÓN PÚBLICA VALLE DIGUILLÍN';
   titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
@@ -66,9 +79,9 @@ export async function generarExcelConsolidadoSlep(
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
   wsResumen.getRow(1).height = 30;
 
-  wsResumen.mergeCells('A2:G2');
+  wsResumen.mergeCells('A2:K2');
   const subCell = wsResumen.getCell('A2');
-  subCell.value = `INFORME CONSOLIDADO DE MATRIZ DE DOTACIÓN DOCENTE Y CAPACIDAD SAE - ASESORÍA UATP (${new Date().toLocaleDateString('es-CL')})`;
+  subCell.value = `INFORME CONSOLIDADO DE MATRIZ DE DOTACIÓN DOCENTE, ASISTENTES Y CAPACIDAD SAE - ASESORÍA UATP (${new Date().toLocaleDateString('es-CL')})`;
   subCell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FFFFFF' } };
   subCell.fill = titleFill;
   subCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -77,7 +90,8 @@ export async function generarExcelConsolidadoSlep(
   // Encabezados
   const headersResumen = [
     'RBD', 'Establecimiento', 'Comuna', 'Régimen', 'Matrícula Proy.', 'Cupo SAE',
-    'Horas Curriculares', 'Horas Docentes Disp.', 'Balance (Superávit/Déficit)'
+    'Horas Curriculares', 'Horas Docentes Disp.', 'Balance (Superávit/Déficit)',
+    'Asistentes (N°)', 'Horas Asistentes'
   ];
   wsResumen.getRow(4).values = headersResumen;
   wsResumen.getRow(4).height = 25;
@@ -94,6 +108,7 @@ export async function generarExcelConsolidadoSlep(
   for (const diag of diagnosticos) {
     const row = wsResumen.getRow(rowIdx);
     const bg = diag.balanzaGeneral;
+    const asisRbd = asistentesPorRbd.get(String(bg.rbd)) || { count: 0, horas: 0 };
     row.values = [
       bg.rbd,
       bg.nombre,
@@ -103,11 +118,13 @@ export async function generarExcelConsolidadoSlep(
       bg.totalCuposSae,
       bg.horasAulaDemandadasCurriculo,
       bg.horasLectivasDisponibles,
-      bg.superavitDeficitLectivo
+      bg.superavitDeficitLectivo,
+      asisRbd.count,
+      asisRbd.horas
     ];
 
     // Formato de celdas
-    for (let col = 1; col <= 9; col++) {
+    for (let col = 1; col <= 11; col++) {
       const c = row.getCell(col);
       c.border = borderStyle;
       if (col >= 5) c.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -131,8 +148,10 @@ export async function generarExcelConsolidadoSlep(
   totalRow.getCell(7).value = { formula: `SUM(G5:G${rowIdx - 1})` };
   totalRow.getCell(8).value = { formula: `SUM(H5:H${rowIdx - 1})` };
   totalRow.getCell(9).value = { formula: `SUM(I5:I${rowIdx - 1})` };
+  totalRow.getCell(10).value = { formula: `SUM(J5:J${rowIdx - 1})` };
+  totalRow.getCell(11).value = { formula: `SUM(K5:K${rowIdx - 1})` };
 
-  for (let c = 1; c <= 9; c++) {
+  for (let c = 1; c <= 11; c++) {
     const cell = totalRow.getCell(c);
     cell.border = { top: { style: 'double' }, bottom: { style: 'double' } };
     cell.font = { bold: true };
@@ -141,7 +160,8 @@ export async function generarExcelConsolidadoSlep(
 
   wsResumen.columns = [
     { width: 10 }, { width: 35 }, { width: 18 }, { width: 12 },
-    { width: 16 }, { width: 14 }, { width: 18 }, { width: 20 }, { width: 24 }
+    { width: 16 }, { width: 14 }, { width: 18 }, { width: 20 }, { width: 24 },
+    { width: 16 }, { width: 18 }
   ];
 
   // ===========================================================================
@@ -311,7 +331,7 @@ export async function generarExcelConsolidadoSlep(
   tIncons.fill = headerFill;
   tIncons.alignment = { horizontal: 'center' };
 
-  const headersIncons = ['Tipo Alerta', 'RUN Docente', 'Nombre Docente', 'Horas Totales', 'Detalle Escuelas'];
+  const headersIncons = ['Tipo Alerta', 'RUN Funcionario', 'Nombre Funcionario', 'Horas Totales', 'Detalle Escuelas'];
   wsCruces.getRow(3).values = headersIncons;
   headersIncons.forEach((_, idx) => {
     const c = wsCruces.getRow(3).getCell(idx + 1);
@@ -332,6 +352,27 @@ export async function generarExcelConsolidadoSlep(
     ];
     for (let c = 1; c <= 5; c++) {
       row.getCell(c).border = borderStyle;
+    }
+    rInc++;
+  }
+
+  const asistentesTerritorio = obtenerAsistentesConsolidadosTerritorio(establecimientos, asistentes);
+  for (const asis of asistentesTerritorio) {
+    if (!asis.excedeLimiteSlep) continue;
+    const row = wsCruces.getRow(rInc);
+    row.values = [
+      'EXCESO_JORNADA_ASISTENTE',
+      asis.run,
+      `${asis.nombres} ${asis.apellidos}`.trim(),
+      asis.horasTotalesSlep,
+      asis.contratos.map(c => `${c.colegio.nombre} (${c.horasContrato}h)`).join(' + ')
+    ];
+    for (let c = 1; c <= 5; c++) {
+      const cell = row.getCell(c);
+      cell.border = borderStyle;
+      if (c === 1 || c === 4) {
+        cell.font = { color: { argb: 'DC2626' }, bold: true };
+      }
     }
     rInc++;
   }
@@ -407,6 +448,206 @@ export async function generarExcelConsolidadoSlep(
   wsNominaTerritorial.columns = [
     { width: 15 }, { width: 30 }, { width: 22 }, { width: 45 }, { width: 18 },
     { width: 16 }, { width: 18 }, { width: 14 }, { width: 14 }, { width: 22 }
+  ];
+
+  // ===========================================================================
+  // HOJA 6: NÓMINA DE ASISTENTES DE LA EDUCACIÓN (DETALLE POR ESTABLECIMIENTO)
+  // ===========================================================================
+  const estMap = new Map<string, Establecimiento>(establecimientos.map(e => [String(e.rbd), e]));
+  const asistentesActivos = asistentes.filter(a => a.activo !== false);
+
+  const wsAsistentes = workbook.addWorksheet('Nómina Asistentes (Detalle)', {
+    views: [{ showGridLines: true }]
+  });
+
+  const headersAsis = [
+    'RBD', 'Colegio', 'RUN', 'Nombres y Apellidos', 'Estamento', 'Cargo / Función',
+    'Total Contrato (hrs)',
+    'Subv. Gen. Indef.', 'Subv. Gen. Plazo Fijo',
+    'SEP Indef.', 'SEP Plazo Fijo',
+    'PIE Indef.', 'PIE Plazo Fijo',
+    'Honorarios', 'Pro-Retención',
+    'Clasificación / Flags', 'Estado Contrato'
+  ];
+  wsAsistentes.getRow(1).values = headersAsis;
+  wsAsistentes.getRow(1).height = 25;
+  headersAsis.forEach((_, idx) => {
+    const c = wsAsistentes.getRow(1).getCell(idx + 1);
+    c.fill = headerFill;
+    c.font = headerFont;
+    c.alignment = { horizontal: 'center', vertical: 'middle' };
+    c.border = borderStyle;
+  });
+
+  let rAsis = 2;
+  for (const a of asistentesActivos) {
+    const est = estMap.get(String(a.rbd));
+    const subInd = Number(a.horasSubvencionGeneralIndefinido || 0);
+    const subPf = Number(a.horasSubvencionGeneralPlazoFijo || 0);
+    const sepInd = Number(a.horasSepIndefinido || 0);
+    const sepPf = Number(a.horasSepPlazoFijo || 0);
+    const pieInd = Number(a.horasPieIndefinido || 0);
+    const piePf = Number(a.horasPiePlazoFijo || 0);
+    const hon = Number(a.horasHonorarios || 0);
+    const proRet = Number(a.horasProRetencion || 0);
+    const horasContrato = Number(a.horasContrato || 0);
+
+    const flags: string[] = [];
+    if (a.esDuplaPsicosocial) flags.push('Dupla Psicosocial');
+    if (a.esEquipoPie || pieInd + piePf > 0) flags.push('Equipo PIE');
+    if (a.esTecnicoParvulo) flags.push('Técnico Párvulo');
+    if (a.esAuxiliarServicio) flags.push('Auxiliar Servicio');
+    if (a.esInspectorPatio) flags.push('Inspector Patio');
+    if (a.esVtf) flags.push('VTF');
+
+    const estadoContrato = horasContrato > 44
+      ? `EXCESO (+${horasContrato - 44}h)`
+      : horasContrato <= 0
+        ? 'SIN HORAS'
+        : 'CONFORME (≤44h)';
+
+    const row = wsAsistentes.getRow(rAsis);
+    row.values = [
+      a.rbd,
+      est ? est.nombre : `RBD ${a.rbd}`,
+      a.run,
+      `${a.apellidos}, ${a.nombres}`.trim().replace(/^,\s*/, ''),
+      a.estamento,
+      a.cargoFuncion || '',
+      horasContrato,
+      subInd,
+      subPf,
+      sepInd,
+      sepPf,
+      pieInd,
+      piePf,
+      hon,
+      proRet,
+      flags.join(', ') || 'Estándar',
+      estadoContrato
+    ];
+
+    for (let col = 1; col <= 17; col++) {
+      const c = row.getCell(col);
+      c.border = borderStyle;
+      if (col >= 7 && col <= 15) {
+        c.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+      if (col === 17 && horasContrato > 44) {
+        c.font = { color: { argb: 'DC2626' }, bold: true };
+      }
+    }
+    rAsis++;
+  }
+
+  if (rAsis > 2) {
+    const totalAsisRow = wsAsistentes.getRow(rAsis);
+    totalAsisRow.getCell(2).value = 'TOTAL ASISTENTES DE LA EDUCACIÓN';
+    totalAsisRow.getCell(2).font = { bold: true };
+    const colsSum = ['G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'];
+    colsSum.forEach((colLetter, i) => {
+      totalAsisRow.getCell(7 + i).value = { formula: `SUM(${colLetter}2:${colLetter}${rAsis - 1})` };
+    });
+    for (let c = 1; c <= 17; c++) {
+      const cell = totalAsisRow.getCell(c);
+      cell.border = { top: { style: 'double' }, bottom: { style: 'double' } };
+      cell.font = { bold: true };
+      if (c >= 7 && c <= 15) cell.alignment = { horizontal: 'right' };
+    }
+  }
+
+  wsAsistentes.columns = [
+    { width: 10 }, { width: 32 }, { width: 15 }, { width: 28 }, { width: 22 }, { width: 28 },
+    { width: 18 },
+    { width: 16 }, { width: 18 },
+    { width: 12 }, { width: 14 },
+    { width: 12 }, { width: 14 },
+    { width: 13 }, { width: 14 },
+    { width: 28 }, { width: 20 }
+  ];
+
+  // ===========================================================================
+  // HOJA 7: NÓMINA ASISTENTES TERRITORIAL & FINANCIAMIENTO (LEY 21.109)
+  // ===========================================================================
+  const wsAsisTerritorial = workbook.addWorksheet('Nómina Asistentes Territorial', {
+    views: [{ showGridLines: true }]
+  });
+
+  wsAsisTerritorial.mergeCells('A1:N1');
+  const tAsis = wsAsisTerritorial.getCell('A1');
+  tAsis.value = 'NÓMINA CONSOLIDADA DE ASISTENTES DE LA EDUCACIÓN, ESTABLECIMIENTOS Y FUENTES DE FINANCIAMIENTO';
+  tAsis.font = headerFont;
+  tAsis.fill = headerFill;
+  tAsis.alignment = { horizontal: 'center' };
+
+  const headersAsisTerritorial = [
+    'RUN',
+    'Nombres y Apellidos',
+    'Estamento Principal',
+    'Cargos / Funciones',
+    'Establecimientos Asignados',
+    'Horas Totales SLEP',
+    'Indefinido (hrs)',
+    'Plazo Fijo (hrs)',
+    'Subv. General (hrs)',
+    'SEP (hrs)',
+    'PIE (hrs)',
+    'Honorarios (hrs)',
+    'Pro-Retención (hrs)',
+    'Estado Legal (≤44h)'
+  ];
+  wsAsisTerritorial.getRow(3).values = headersAsisTerritorial;
+  headersAsisTerritorial.forEach((_, idx) => {
+    const c = wsAsisTerritorial.getRow(3).getCell(idx + 1);
+    c.fill = titleFill;
+    c.font = headerFont;
+    c.border = borderStyle;
+  });
+
+  let rAsisTer = 4;
+  for (const asis of asistentesTerritorio) {
+    const row = wsAsisTerritorial.getRow(rAsisTer);
+    const detalleColegios = asis.contratos
+      .map(c => `${c.colegio.nombre} (${c.horasContrato}h)`)
+      .join('; ');
+    const estado = asis.excedeLimiteSlep
+      ? `EXCESO (+${asis.excesoHorasSlep}h)`
+      : 'CONFORME (≤44h)';
+
+    row.values = [
+      asis.run,
+      `${asis.nombres} ${asis.apellidos}`.trim(),
+      asis.estamentoPrincipal,
+      asis.cargosPrincipales.join(', '),
+      detalleColegios,
+      asis.horasTotalesSlep,
+      asis.resumenFinanciamiento.indefinido,
+      asis.resumenFinanciamiento.plazoFijo,
+      asis.resumenFinanciamiento.subvencionGeneral,
+      asis.resumenFinanciamiento.sep,
+      asis.resumenFinanciamiento.pie,
+      asis.resumenFinanciamiento.honorarios,
+      asis.resumenFinanciamiento.proRetencion,
+      estado
+    ];
+
+    for (let c = 1; c <= 14; c++) {
+      const cell = row.getCell(c);
+      cell.border = borderStyle;
+      if (c >= 6 && c <= 13) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+      if (c === 14 && asis.excedeLimiteSlep) {
+        cell.font = { color: { argb: 'DC2626' }, bold: true };
+      }
+    }
+    rAsisTer++;
+  }
+
+  wsAsisTerritorial.columns = [
+    { width: 15 }, { width: 30 }, { width: 20 }, { width: 28 }, { width: 45 },
+    { width: 18 }, { width: 16 }, { width: 16 }, { width: 18 }, { width: 14 },
+    { width: 14 }, { width: 16 }, { width: 18 }, { width: 22 }
   ];
 
   const buffer = await workbook.xlsx.writeBuffer();

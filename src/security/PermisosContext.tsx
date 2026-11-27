@@ -73,15 +73,20 @@ export function useEvaluadorPermisos(session: AuthSession | null): PermisosConte
 
   return useMemo<PermisosContextValue>(() => {
     const ev = crearEvaluador(rol, rolesAdicionales);
+    const prioridadAlcance: Record<AlcanceRol, number> = { global: 3, equipo: 2, cartera: 1, establecimiento: 0 };
+    const alcanceEfectivo = todosLosRoles.reduce<AlcanceRol>((mejor, r) => {
+      const actual = getDefinicionRol(r).alcance;
+      return prioridadAlcance[actual] > prioridadAlcance[mejor] ? actual : mejor;
+    }, 'establecimiento');
     return {
       rol,
       rolReal,
       rolesAdicionales,
       todosLosRoles,
-      alcance: rol ? getDefinicionRol(rol).alcance : 'establecimiento',
+      alcance: rol ? alcanceEfectivo : 'establecimiento',
       esSuperUsuario: rol === 'super_usuario',
       ...ev,
-      legado: rol ? RolesPermisosService.derivarPermisosLegados(rol) : null,
+      legado: rol ? RolesPermisosService.derivarPermisosLegados(rol, rolesAdicionales) : null,
       rolSimulado: simulado,
       setRolSimulado: (r: RolId | null) => { if (esSuperReal) RolesPermisosService.setRolSimulado(r); }
     };

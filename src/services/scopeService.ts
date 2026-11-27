@@ -1,14 +1,30 @@
 import { Establecimiento } from '../types';
 import { AlcanceRol, UsuarioSistema } from '../types/authTypes';
-import { getDefinicionRol, normalizarRol } from '../security/rolesDefinitions';
+import { getDefinicionRol, normalizarRol, obtenerRolesEfectivosUsuario } from '../security/rolesDefinitions';
 
-type UsuarioScope = Pick<UsuarioSistema, 'id' | 'role' | 'nombreCompleto' | 'rbdAsignado' | 'carteraRbds' | 'asesoresSupervisados' | 'comunasPermitidas'>;
+type UsuarioScope = Pick<UsuarioSistema, 'id' | 'role' | 'rolesAdicionales' | 'nombreCompleto' | 'rbdAsignado' | 'carteraRbds' | 'asesoresSupervisados' | 'comunasPermitidas'>;
 
 const norm = (s?: string) => (s || '').trim().toLowerCase();
 
-export function getAlcance(usuario: Pick<UsuarioSistema, 'role'> | null | undefined): AlcanceRol {
+const ALCANCE_PRIORIDAD: Record<AlcanceRol, number> = {
+  global: 3,
+  equipo: 2,
+  cartera: 1,
+  establecimiento: 0
+};
+
+export function getAlcance(usuario: Pick<UsuarioSistema, 'role' | 'rolesAdicionales'> | null | undefined): AlcanceRol {
   if (!usuario) return 'establecimiento';
-  return getDefinicionRol(normalizarRol(usuario.role)).alcance;
+  const roles = obtenerRolesEfectivosUsuario(usuario);
+  if (roles.length === 0) return getDefinicionRol(normalizarRol(usuario.role)).alcance;
+  let mejor: AlcanceRol = 'establecimiento';
+  for (const r of roles) {
+    const a = getDefinicionRol(r).alcance;
+    if (ALCANCE_PRIORIDAD[a] > ALCANCE_PRIORIDAD[mejor]) {
+      mejor = a;
+    }
+  }
+  return mejor;
 }
 
 /** RBD de la cartera de un asesor: los asignados explícitamente + los que lo registran como asesorUatp. */

@@ -1,19 +1,31 @@
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import type { SchoolSummary, TeacherRecord, CourseLoadSummary, TeacherConsolidatedLoad } from '../../types/analizadorTypes';
+import type { AsistenteAnalizadoRecord } from './asistentesClassifier';
 
 export function exportConsolidatedExcelBrowser(
   schools: SchoolSummary[],
   teachers: TeacherRecord[],
   courses: CourseLoadSummary[] = [],
-  teacherLoads: TeacherConsolidatedLoad[] = []
+  teacherLoads: TeacherConsolidatedLoad[] = [],
+  asistentes: AsistenteAnalizadoRecord[] = []
 ) {
   const wb = XLSX.utils.book_new();
 
+  // Precomputar asistentes por RBD
+  const asistentesPorRbd = new Map<string, { count: number; horas: number }>();
+  for (const a of asistentes) {
+    const rbdKey = String(a.rbd);
+    const prev = asistentesPorRbd.get(rbdKey) || { count: 0, horas: 0 };
+    prev.count += 1;
+    prev.horas += Number(a.horas_contrato || 0);
+    asistentesPorRbd.set(rbdKey, prev);
+  }
+
   // 1. Hoja Consolidado Oficial SLEP
   const consolidatedHeaders = [
-    ['SERVICIO LOCAL DE EDUCACIÓN PÚBLICA (SLEP) - DOTACIÓN DOCENTE'],
-    ['CONSOLIDADO DE HORAS DOCENTES: AULA, TÉCNICAS Y DIRECTIVAS'],
+    ['SERVICIO LOCAL DE EDUCACIÓN PÚBLICA (SLEP) - DOTACIÓN DOCENTE Y ASISTENTES'],
+    ['CONSOLIDADO DE HORAS DOCENTES (AULA, TÉCNICAS, DIRECTIVAS) Y ASISTENTES DE LA EDUCACIÓN'],
     [''],
     [
       'RBD',
@@ -26,29 +38,37 @@ export function exportConsolidatedExcelBrowser(
       'TOTAL HORAS EE',
       'DOCENTES',
       'CURSOS',
+      'ASISTENTES (N°)',
+      'HORAS ASISTENTES',
       'ESTADO CUADRATURA',
     ],
   ];
 
-  const consolidatedRows = schools.map((s) => [
-    s.rbd,
-    s.establishment,
-    s.comuna || 'Sin Comuna',
-    s.matricula,
-    s.horas_aula,
-    s.horas_directivas,
-    s.horas_tecnicas,
-    s.total_horas_ee,
-    s.teachers_count,
-    s.courses_count || 0,
-    s.has_discrepancy ? `Descuadre (${s.discrepancy_note || 'Revisar'})` : 'Cuadrado',
-  ]);
+  const consolidatedRows = schools.map((s) => {
+    const asisRbd = asistentesPorRbd.get(String(s.rbd)) || { count: 0, horas: 0 };
+    return [
+      s.rbd,
+      s.establishment,
+      s.comuna || 'Sin Comuna',
+      s.matricula,
+      s.horas_aula,
+      s.horas_directivas,
+      s.horas_tecnicas,
+      s.total_horas_ee,
+      s.teachers_count,
+      s.courses_count || 0,
+      asisRbd.count,
+      Math.round(asisRbd.horas * 100) / 100,
+      s.has_discrepancy ? `Descuadre (${s.discrepancy_note || 'Revisar'})` : 'Cuadrado',
+    ];
+  });
 
   const totalMatricula = schools.reduce((acc, s) => acc + (s.matricula || 0), 0);
   const totalAula = schools.reduce((acc, s) => acc + (s.horas_aula || 0), 0);
   const totalDirectivas = schools.reduce((acc, s) => acc + (s.horas_directivas || 0), 0);
   const totalTecnicas = schools.reduce((acc, s) => acc + (s.horas_tecnicas || 0), 0);
   const totalHoras = schools.reduce((acc, s) => acc + (s.total_horas_ee || 0), 0);
+  const totalHorasAsistentes = asistentes.reduce((acc, a) => acc + (a.horas_contrato || 0), 0);
 
   const totalRow = [
     'TOTAL GENERAL',
@@ -61,6 +81,8 @@ export function exportConsolidatedExcelBrowser(
     Math.round(totalHoras * 100) / 100,
     teachers.length,
     courses.length,
+    asistentes.length,
+    Math.round(totalHorasAsistentes * 100) / 100,
     '',
   ];
 
@@ -81,6 +103,8 @@ export function exportConsolidatedExcelBrowser(
     { wch: 18 },
     { wch: 12 },
     { wch: 12 },
+    { wch: 16 },
+    { wch: 18 },
     { wch: 30 },
   ];
 
@@ -186,26 +210,114 @@ export function exportConsolidatedExcelBrowser(
     XLSX.utils.book_append_sheet(wb, wsCursos, 'CARGA POR CURSO Y DOCENTE');
   }
 
+  // 4. Hoja Asistentes de la Educación
+  if (asistentes.length > 0) {
+    const asisHeaders = [
+      [
+        'RBD',
+        'ESTABLECIMIENTO',
+        'COMUNA',
+        'RUN',
+        'NOMBRES',
+        'APELLIDOS',
+        'CARGO ORIGINAL',
+        'CARGO ESTÁNDAR',
+        'ESTAMENTO',
+        'HORAS CONTRATO',
+        'SUBV. GEN. INDEF.',
+        'SUBV. GEN. PLAZO FIJO',
+        'SEP INDEF.',
+        'SEP PLAZO FIJO',
+        'PIE INDEF.',
+        'PIE PLAZO FIJO',
+        'ESTADO CUADRATURA',
+        'ORIGEN CLASIFICACIÓN',
+        'ALERTAS',
+      ],
+    ];
+
+    const asisRows = asistentes.map((a) => [
+      a.rbd,
+      a.establishment,
+      a.comuna || 'Sin Comuna',
+      a.run,
+      a.nombres,
+      a.apellidos,
+      a.cargo_original,
+      a.cargo_estandar,
+      a.estamento,
+      a.horas_contrato,
+      a.horas_subvencion_general_indefinido,
+      a.horas_subvencion_general_plazo_fijo,
+      a.horas_sep_indefinido,
+      a.horas_sep_plazo_fijo,
+      a.horas_pie_indefinido,
+      a.horas_pie_plazo_fijo,
+      a.estado_cuadratura,
+      a.fuente_clasificacion,
+      (a.alertas || []).join('; '),
+    ]);
+
+    const wsAsistentes = XLSX.utils.aoa_to_sheet([...asisHeaders, ...asisRows]);
+    wsAsistentes['!cols'] = [
+      { wch: 12 },
+      { wch: 35 },
+      { wch: 18 },
+      { wch: 15 },
+      { wch: 24 },
+      { wch: 24 },
+      { wch: 28 },
+      { wch: 28 },
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 20 },
+      { wch: 35 },
+    ];
+
+    XLSX.utils.book_append_sheet(wb, wsAsistentes, 'ASISTENTES DE LA EDUCACIÓN');
+  }
+
   // Descargar archivo Excel
   const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   saveAs(data, `Consolidado_SLEP_Dotacion_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
-export function exportCsvBrowser(schools: SchoolSummary[]) {
-  const headers = ['RBD', 'ESTABLECIMIENTO', 'COMUNA', 'MATRICULA', 'HORAS_AULA', 'HORAS_DIRECTIVAS', 'HORAS_TECNICAS', 'TOTAL_HORAS_EE', 'DOCENTES', 'CURSOS'];
-  const rows = schools.map((s) => [
-    s.rbd,
-    `"${s.establishment.replace(/"/g, '""')}"`,
-    `"${(s.comuna || '').replace(/"/g, '""')}"`,
-    s.matricula,
-    s.horas_aula,
-    s.horas_directivas,
-    s.horas_tecnicas,
-    s.total_horas_ee,
-    s.teachers_count,
-    s.courses_count || 0,
-  ]);
+export function exportCsvBrowser(schools: SchoolSummary[], asistentes: AsistenteAnalizadoRecord[] = []) {
+  const asistentesPorRbd = new Map<string, { count: number; horas: number }>();
+  for (const a of asistentes) {
+    const rbdKey = String(a.rbd);
+    const prev = asistentesPorRbd.get(rbdKey) || { count: 0, horas: 0 };
+    prev.count += 1;
+    prev.horas += Number(a.horas_contrato || 0);
+    asistentesPorRbd.set(rbdKey, prev);
+  }
+
+  const headers = ['RBD', 'ESTABLECIMIENTO', 'COMUNA', 'MATRICULA', 'HORAS_AULA', 'HORAS_DIRECTIVAS', 'HORAS_TECNICAS', 'TOTAL_HORAS_EE', 'DOCENTES', 'CURSOS', 'ASISTENTES', 'HORAS_ASISTENTES'];
+  const rows = schools.map((s) => {
+    const asisRbd = asistentesPorRbd.get(String(s.rbd)) || { count: 0, horas: 0 };
+    return [
+      s.rbd,
+      `"${s.establishment.replace(/"/g, '""')}"`,
+      `"${(s.comuna || '').replace(/"/g, '""')}"`,
+      s.matricula,
+      s.horas_aula,
+      s.horas_directivas,
+      s.horas_tecnicas,
+      s.total_horas_ee,
+      s.teachers_count,
+      s.courses_count || 0,
+      asisRbd.count,
+      Math.round(asisRbd.horas * 100) / 100,
+    ];
+  });
 
   const csvContent = [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
   const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });

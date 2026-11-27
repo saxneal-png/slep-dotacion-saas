@@ -159,9 +159,14 @@ export const PERMISOS_POR_DEFECTO: Record<RolId, PermisoKey[]> = {
   gdp_validador: [
     k('colegios_asesorados', 'ver'),
     k('consolidador', 'ver'), k('consolidador', 'exportar'),
-    k('estadisticas', 'ver'),
+    k('estadisticas', 'ver'), k('estadisticas', 'exportar'),
     k('mesa_movilidad', 'ver'), k('mesa_movilidad', 'crear'), k('mesa_movilidad', 'editar'),
-    ...todo('solicitudes_dotacion', 'gdp_validador', 'centro_descargas', 'planillas_dep')
+    ...todo('solicitudes_dotacion', 'gdp_validador'),
+    ...solo('ver', ...MODS_ESTABLECIMIENTO),
+    k('sige', 'ver'),
+    k('analizador', 'ver'), k('analizador', 'exportar'),
+    k('establecimiento_slep', 'exportar'),
+    ...todo('centro_descargas', 'planillas_dep')
   ],
 
   director_establecimiento: [

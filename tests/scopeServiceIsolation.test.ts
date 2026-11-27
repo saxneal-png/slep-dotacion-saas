@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { colegiosVisibles, puedeAccederRbd } from '../src/services/scopeService';
+import { colegiosVisibles, getAlcance, puedeAccederRbd } from '../src/services/scopeService';
 import { Establecimiento } from '../src/types';
 
 const crearEscuela = (rbd: string, nombre: string, comuna: string, asesorUatp?: string): Establecimiento => ({
@@ -52,5 +52,31 @@ describe('Aislamiento estricto de cartera para Asesores UATP', () => {
       carteraRbds: []
     };
     expect(colegiosVisibles(sinCartera, escuelas)).toEqual([]);
+  });
+
+  it('otorga alcance global y acceso a todas las escuelas cuando un asesor_uatp tiene rol adicional gdp_validador', () => {
+    const asesorConGdp = {
+      id: 'u-ana-gdp',
+      role: 'asesor_uatp' as const,
+      rolesAdicionales: ['gdp_validador' as const],
+      nombreCompleto: 'Ana Asesora',
+      carteraRbds: ['1001']
+    };
+    expect(getAlcance(asesorConGdp)).toBe('global');
+    expect(colegiosVisibles(asesorConGdp, escuelas).map(e => e.rbd)).toEqual(['1001', '1002', '1003', '1004']);
+    expect(puedeAccederRbd(asesorConGdp, '1002', escuelas)).toBe(true);
+  });
+
+  it('mantiene aislamiento estricto de establecimiento aunque un director tuviera rolesAdicionales', () => {
+    const directorConExtra = {
+      id: 'u-dir',
+      role: 'director_establecimiento' as const,
+      rolesAdicionales: ['gdp_validador' as const],
+      nombreCompleto: 'Director Escuela A',
+      rbdAsignado: '1001'
+    };
+    expect(getAlcance(directorConExtra)).toBe('establecimiento');
+    expect(colegiosVisibles(directorConExtra, escuelas).map(e => e.rbd)).toEqual(['1001']);
+    expect(puedeAccederRbd(directorConExtra, '1002', escuelas)).toBe(false);
   });
 });
